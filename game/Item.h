@@ -8,6 +8,7 @@
 
 extern const int ARENA_POWERUP_MASK;
 extern const idEventDef EV_ResetFlag;
+extern const idEventDef EV_RespawnItem;
 extern const idEventDef EV_SetGravity;
 
 /*
@@ -62,6 +63,8 @@ public:
 	virtual bool			ClientStale( void );
 	virtual void			ClientUnstale( void );
 
+	int						IsVisible() { return srvReady; }
+
 	rvClientEntityPtr<rvClientEffect>	effectIdle;
 	bool					simpleItem;
 	bool					pickedUp;
@@ -98,7 +101,9 @@ private:
 
 	// synced through snapshots to indicate show/hide or pickupSkin state
 	// -1 on a client means undef, 0 not ready, 1 ready
+public: // FIXME: Temp hack while Eric gets back to me about why GameState.cpp is trying to access this directly
 	int						srvReady;
+private: // FIXME: Temp hack while Eric gets back to me about why GameState.cpp is trying to access this directly
 	int						clReady;
 
 	int						itemPVSArea;
@@ -148,6 +153,39 @@ protected:
 	int						droppedTime;
 	int						team;
 	bool					unique;
+};
+
+/*
+===============================================================================
+
+  riDeadZonePowerup
+
+===============================================================================
+*/
+
+class riDeadZonePowerup : public idItemPowerup {
+public:
+	CLASS_PROTOTYPE( riDeadZonePowerup );
+
+							riDeadZonePowerup();
+
+	void					Save( idSaveGame *savefile ) const;
+	void					Restore( idRestoreGame *savefile );
+
+	virtual bool			Pickup( idPlayer *player );
+
+	void					Spawn();
+	void					Show();
+
+	virtual bool			Collide( const trace_t &collision, const idVec3 &velocity );
+
+	int						powerup;
+
+protected:
+	void					ResetSpawn( int powerup );
+
+private:
+	void					Event_ResetSpawn( void );
 };
 
 /*

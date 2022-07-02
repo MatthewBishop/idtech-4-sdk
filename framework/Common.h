@@ -52,6 +52,8 @@ typedef enum {
 };
 // RAVEN END
 
+#define MAX_OUTPUT_HISTORY		16
+
 #define STRTABLE_ID				"#str_"
 #define STRTABLE_ID_LENGTH		5
 
@@ -263,7 +265,7 @@ public:
 // RAVEN END
 
 								// Begins redirection of console output to the given buffer.
-	virtual void				BeginRedirect( char *buffer, int buffersize, void (*flush)( const char * ) ) = 0;
+	virtual void				BeginRedirect( char *buffer, int buffersize, void (*flush)( const char * ), bool rcon = false ) = 0;
 
 								// Stops redirection of console output.
 	virtual void				EndRedirect( void ) = 0;
@@ -329,10 +331,19 @@ public:
 								// Returns the binding bound to the key
 	virtual const char *		BindingFromKey( const char *key ) = 0; 
 
+								// Directly sample a button.
+	virtual int					ButtonState( int key ) = 0;
+	
+								// Directly sample a keystate.
+	virtual int					KeyState( int key ) = 0;
+
 // mekberg: added
 	virtual int					GetRModeForMachineSpec( int machineSpec ) const = 0;
 	virtual void				SetDesiredMachineSpec( int machineSpec ) = 0;
 // RAVEN END
+
+								// returns true if we are currently executing an rcon operation
+	virtual bool				IsRCon( void ) const = 0;
 };
 
 extern idCommon *				common;

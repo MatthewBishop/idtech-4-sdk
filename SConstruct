@@ -14,8 +14,8 @@ conf_filename='site.conf'
 # ( we handle all those as strings )
 serialized=['CC', 'CXX', 'JOBS', 'BUILD', 'IDNET_HOST', 'GL_HARDLINK', 'DEDICATED',
 	'DEBUG_MEMORY', 'LIBC_MALLOC', 'ID_NOLANADDRESS', 'ID_MCHECK',
-	'TARGET_CORE', 'TARGET_CORE_SMP', 'TARGET_GAME', 'TARGET_MONO', 'TARGET_DEMO', 'NOCURL',
-	'BUILD_ROOT', 'Q4TEST', 'TARGET_GAMEPAK', 'PATCHLEVEL', 'OSX_BUILDSTYLE', 'SILENT' ]
+	'TARGET_CORE', 'TARGET_CORE_SMP', 'TARGET_GAME', 'TARGET_SPGAME', 'TARGET_MPGAME', 'TARGET_MONO', 'TARGET_MONO_IS_SP', 'TARGET_DEMO', 'NOCURL',
+	'BUILD_ROOT', 'Q4TEST', 'TARGET_GAMEPAK', 'OSX_BUILDSTYLE', 'SILENT', 'GCC_X86_ASM' ]
 
 # global build mode ------------------------------
 
@@ -37,7 +37,7 @@ erase """ + conf_filename + """ to start with default settings again
 CC (default gcc)
 CXX (default g++)
 	Specify C and C++ compilers (defaults gcc and g++)
-	ex: CC="gcc-3.3"
+	ex: CC="gcc-4.1"
 	You can use ccache and distcc, for instance:
 	CC="ccache distcc gcc" CXX="ccache distcc g++"
 
@@ -50,6 +50,7 @@ BUILD (default debug)
 	debug-all: no optimisations, debugging symbols
 	debug: -O -g
 	release: all optimisations, including CPU target etc.
+	test: release with debug symbols and all optimizations except omitted frame pointers
 
 BUILD_ROOT (default 'build')
 	change the build root directory
@@ -59,6 +60,9 @@ NOCONF (default 0, not saved)
 
 SILENT ( default 0, saved )
 	hide the compiler output, unless error
+
+GCC_X86_ASM ( defaul 0, saved )
+	compile in gcc x86 asm optimizations
 """
 
 if ( not g_sdk ):
@@ -76,10 +80,19 @@ TARGET_CORE_SMP (default 0)
 	Build an SMP-enabled core
 
 TARGET_GAME (default 1)
-	Build the game code
+	Build the singleplayer and multiplayer game code
+
+TARGET_SPGAME (default 0)
+	Build the singleplayer game code
+
+TARGET_MPGAME (default 0)
+	Build the multiplayer game code
 
 TARGET_MONO (default 0)
 	Build a monolithic binary
+
+TARGET_MONO_IS_SP (default 0)
+	Build the monolithic binary as singleplayer instead of multiplayer
 
 TARGET_DEMO (default 0)
 	Build demo client ( both a core and game, no mono )
@@ -123,8 +136,8 @@ SETUP_DEMO (default 0, not saved)
 SETUP_FULL (default 0, not saved)
 	build full setup. implies release
 
-PATCHLEVEL (default 0)
-	setup a patchlevel for si_version and installer name since I work Linux releases from a vendor tree and don't modify AutoVersion.h build numbers
+SETUP_INCREMENTAL (default 0, not saved)
+	builds the incremental setup
 
 TARGET_GAMEPAK (default 0, not saved)
     build a game pak pk4
@@ -191,15 +204,18 @@ elif ( OS == 'Darwin' ):
 
 # default settings -------------------------------
 
-CC = 'gcc'
-CXX = 'g++'
+CC = 'gcc-4.1'
+CXX = 'g++-4.1'
 JOBS = '1'
 BUILD = 'debug'
 DEDICATED = '0'
 TARGET_CORE = '1'
 TARGET_GAME = '1'
+TARGET_SPGAME = '0'
+TARGET_MPGAME = '0'
 TARGET_GAMEPAK = '0'
 TARGET_MONO = '0'
+TARGET_MONO_IS_SP = '0'
 TARGET_DEMO = '0'
 IDNET_HOST = ''
 GL_HARDLINK = '0'
@@ -214,6 +230,7 @@ SETUP_TAGGED = '0'
 SETUP_DEDICATED = '0'
 SETUP_DEMO = '0'
 SETUP_FULL = '0'
+SETUP_INCREMENTAL = '0'
 SETUP = '0'	# no cmdline control, will be set to 1 if any form of setup is requested
 SDK = '0'
 NOCONF = '0'
@@ -222,10 +239,10 @@ FIX_INCLUDES = '0'
 FIX_SUPER = '0'
 Q4TEST = '0'
 ASSETS = ''
-PATCHLEVEL = '0'
 OSX_BUILDSTYLE = '0'
 SILENT = '0'
 TARGET_CORE_SMP = '0'
+GCC_X86_ASM = '0'
 
 # end default settings ---------------------------
 
@@ -272,16 +289,17 @@ if ( not ARGUMENTS.has_key( 'NOCONF' ) or ARGUMENTS['NOCONF'] != '1' ):
 
 # configuration rules --------------------------
 
-if ( TARGET_GAMEPAK == '1' ):
-	TARGET_GAME = '1'
-
-if ( SETUP_TAGGED != '0' or SETUP_DEDICATED != '0' or SETUP_DEMO != '0' or SETUP_FULL != '0' ):
+if ( SETUP_TAGGED != '0' or SETUP_DEDICATED != '0' or SETUP_DEMO != '0' or SETUP_FULL != '0' or SETUP_INCREMENTAL != '0' ):
 	DEDICATED	= '2'
 	BUILD		= 'release'
 	SETUP		= '1'
 	TARGET_GAME = '1'
 	TARGET_CORE = '1'
+	TARGET_CORE_SMP = '1'
 	TARGET_GAMEPAK = '0'
+
+if ( TARGET_GAMEPAK == '1' ):
+	TARGET_GAME = '1'
 
 if ( SETUP != '0' ):
 	if ( SETUP_TAGGED != '0' ):
@@ -292,11 +310,28 @@ if ( SETUP != '0' ):
 	else:
 		Q4TEST = '0'
 
-if ( g_sdk or SDK != '0' ):
+if ( g_sdk ):
 	TARGET_CORE = '0'
-	TARGET_GAME = '1'
+	TARGET_CORE_SMP = '0'
 	TARGET_MONO = '0'
 	TARGET_DEMO = '0'
+
+if ( SDK != '0' ):
+	DEDICATED = '0'
+	TARGET_CORE = '0'
+	TARGET_CORE_SMP = '0'
+	TARGET_GAME = '0'
+	TARGET_MPGAME = '0'
+	TARGET_SPGAME = '0'
+	TARGET_MONO = '0'
+	TARGET_DEMO = '0'
+
+if ( TARGET_GAME == '1' ):
+	TARGET_MPGAME = '1'
+	TARGET_SPGAME = '1'
+
+if ( BUILD == 'test' ):
+	print 'WARNING: compiling a release build in test configuration'
 
 # end configuration rules ----------------------
 
@@ -349,6 +384,7 @@ if ( OS == 'Linux' ):
 	BASECPPFLAGS.append( '-fvisibility=hidden' )
 	# get the 64 bits machine on the distcc array to produce 32 bit binaries :)
 	BASECPPFLAGS.append( '-m32' )
+	BASELINKFLAGS.append( '-m32' )
 
 if ( g_sdk or SDK != '0' ):
 	BASECPPFLAGS.append( '-DQ4SDK' )
@@ -408,18 +444,26 @@ elif ( BUILD == 'debug' ):
 	BASECPPFLAGS.append( '-D_DEBUG' )
 	if ( ID_MCHECK == '0' ):
 		ID_MCHECK = '1'
+elif ( BUILD == 'test' ):
+	BASECPPFLAGS.append( '-g' )
+	BASECPPFLAGS.append( '-D_FINAL' )
+	BASECPPFLAGS.append( '-D_TEST' )
+	if ( OS == 'Linux' ):
+		# Don't omit frame pointers in the test build
+		OPTCPPFLAGS = [ '-O3', '-march=pentium3', '-Winline', '-ffast-math', '-fno-unsafe-math-optimizations' ]
+		if ( ID_MCHECK == '0' ):
+			ID_MCHECK = '2'
+	elif ( OS == 'Darwin' ):
+		OPTCPPFLAGS = [ '-O3', '-falign-functions=16', '-falign-loops=16', '-finline' ]
 elif ( BUILD == 'release' ):
 	BASECPPFLAGS.append( '-D_FINAL' )
 	if ( OS == 'Linux' ):
-		# -fomit-frame-pointer: gcc manual indicates -O sets this implicitely,
-		# only if that doesn't affect debugging
-		# on Linux, this affects backtrace capability, so I'm assuming this is needed
+		# -fomit-frame-pointer: "-O also turns on -fomit-frame-pointer on machines where doing so does not interfere with debugging."
+		#   on x86 have to set it explicitely
 		# -finline-functions: implicit at -O3
-		# -fschedule-insns2: implicit at -O3
-		# -funroll-loops ?
-		# -mfpmath=sse -msse ?
-		# -march=pentium3 ? ( -march=i686 == pentiumpro )
-		OPTCPPFLAGS = [ '-O3', '-march=i686', '-Winline', '-ffast-math', '-fomit-frame-pointer', '-finline-functions', '-fschedule-insns2' ]
+		# -fschedule-insns2: implicit at -O2
+		# no-unsafe-math-optimizations: that should be on by default really. hit some wonko bugs in physics code because of that
+		OPTCPPFLAGS = [ '-O3', '-march=pentium3', '-Winline', '-ffast-math', '-fno-unsafe-math-optimizations', '-fomit-frame-pointer' ]
 		if ( ID_MCHECK == '0' ):
 			ID_MCHECK = '2'
 	elif ( OS == 'Darwin' ):
@@ -446,8 +490,6 @@ if ( ID_NOLANADDRESS != '0' ):
 if ( ID_MCHECK == '1' ):
 	BASECPPFLAGS.append( '-DID_MCHECK' )
 
-CORECPPFLAGS.append( '-DID_PATCHLEVEL=\\".%s\\"' % PATCHLEVEL )
-
 # create the build environements
 
 if ( FIX_INCLUDES == '1' ):
@@ -458,11 +500,9 @@ if ( FIX_SUPER == '1' ):
 	CC = './sys/scons/fixsuper.py \'' + CC + '\''
 	CXX = './sys/scons/fixsuper.py \'' + CXX + '\''
 
-# NOTE: you need a patched scons to support building of ObjC and ObjC++ files
 g_base_env = Environment( ENV = os.environ, CC = CC, CXX = CXX, LINK = LINK, CPPFLAGS = BASECPPFLAGS, LINKFLAGS = BASELINKFLAGS, CPPPATH = CORECPPPATH, LIBPATH = CORELIBPATH, OS = OS )
 scons_utils.SetupUtils( g_base_env )
-if ( OS == 'Darwin' ):
-	g_base_env.Append( CXXFLAGS = [ '-Wno-invalid-offsetof' ] )
+g_base_env.Append( CXXFLAGS = [ '-Wno-invalid-offsetof' ] )
 
 g_env = g_base_env.Copy()
 
@@ -470,12 +510,12 @@ g_env['CPPFLAGS'] += OPTCPPFLAGS
 g_env['CPPFLAGS'] += CORECPPFLAGS
 g_env['LINKFLAGS'] += CORELINKFLAGS
 
-if ( BUILD != 'release' ):
+if ( BUILD != 'release' and BUILD != 'test' ):
 	g_env_noopt = g_env.Copy()
 else:
 	g_env_noopt = g_base_env.Copy()
 	g_env_noopt['CPPFLAGS'] += CORECPPFLAGS
-	g_env_noopt.Append( CPPFLAGS = '-O1' )
+#	g_env_noopt.Append( CPPFLAGS = '-O1' )
 	g_env_noopt['LINKFLAGS'] += CORELINKFLAGS
 
 g_game_env = g_base_env.Copy()
@@ -513,8 +553,9 @@ eventdefs = None
 # compile for SMP ( affects idlib and core )
 local_smp = 0
 idsdl_info = []
+local_mpgame = 0
 
-GLOBALS = 'g_env g_env_noopt g_game_env OS ID_MCHECK idlib_objects game_objects local_dedicated local_gamedll local_demo local_idlibpic curl_lib local_curl local_smp idsdl_info eventdefs GL_HARDLINK NOCURL Q4TEST OSX_BUILDSTYLE TARGET_CORE_SMP BUILD'
+GLOBALS = 'g_env g_env_noopt g_game_env OS ID_MCHECK idlib_objects game_objects local_dedicated local_gamedll local_demo local_idlibpic curl_lib local_curl local_smp idsdl_info local_mpgame eventdefs GL_HARDLINK NOCURL Q4TEST OSX_BUILDSTYLE TARGET_CORE_SMP BUILD GCC_X86_ASM'
 
 # end general configuration ----------------------
 
@@ -525,14 +566,15 @@ Export( 'GLOBALS ' + GLOBALS )
 quake4	= None
 q4ded	= None
 game	= None
+mpgame	= None
 q4_mon	= None
 
 Default( None )
 
 # build curl if needed
-if ( NOCURL == '0' and ( TARGET_CORE == '1' or TARGET_MONO == '1' ) ):
+if ( NOCURL == '0' and ( TARGET_CORE == '1' or TARGET_MONO == '1' or TARGET_CORE_SMP == '1' ) ):
 	# 1: debug, 2: release
-	if ( BUILD == 'release' ):
+	if ( BUILD == 'release' or BUILD == 'test' ):
 		local_curl = 2
 	else:
 		local_curl = 1
@@ -559,8 +601,11 @@ if ( TARGET_CORE_SMP == '1' ):
 	Export( 'GLOBALS ' + GLOBALS ) # update idlib_objects
 	quake4smp = SConscript( g_build + '/core-smp/sys/scons/SConscript.core' )
 
+	if ( BUILD != 'test' ):
+		quake4smp = InstallAs( '#quake4smp.%s' % cpu, quake4smp )
+
 	if ( OS == 'Linux' ):
-		Default( InstallAs( '#quake4smp.%s' % cpu, quake4smp ) )	
+		Default( quake4smp )
 	
 if ( TARGET_CORE == '1' ):
 	local_gamedll = 1
@@ -578,8 +623,11 @@ if ( TARGET_CORE == '1' ):
 		Export( 'GLOBALS ' + GLOBALS ) # update idlib_objects
 		quake4 = SConscript( g_build + '/core/sys/scons/SConscript.core' )
 
+		if ( BUILD != 'test' ):
+			quake4 = InstallAs( '#quake4.%s' % cpu, quake4 )
+
 		if ( OS == 'Linux' ):
-			Default( InstallAs( '#quake4.%s' % cpu, quake4 ) )
+			Default( quake4 )
 		
 	if ( DEDICATED == '1' or DEDICATED == '2' ):
 		local_dedicated = 1
@@ -592,30 +640,51 @@ if ( TARGET_CORE == '1' ):
 		Export( 'GLOBALS ' + GLOBALS )
 		q4ded = SConscript( g_build + '/dedicated/sys/scons/SConscript.core' )
 
-		if ( OS == 'Linux' ):
-			Default( InstallAs( '#q4ded.%s' % cpu, q4ded ) )
+		if ( BUILD != 'test' ):
+			q4ded = InstallAs( '#q4ded.%s' % cpu, q4ded )
 
-if ( TARGET_GAME == '1' ):
+		if ( OS == 'Linux' ):
+			Default( q4ded )
+
+if ( TARGET_SPGAME == '1' ):
 	local_gamedll = 1
 	local_demo = 0
 	local_dedicated = 0
 	local_idlibpic = 1
 	Export( 'GLOBALS ' + GLOBALS )
-	dupe = 0
-	if ( SDK == '1' ):
-		# building an SDK, use scons for dependencies walking
-		# clear the build directory to be safe
-		g_env.PreBuildSDK( g_build + '/game', PATCHLEVEL )
-		dupe = 1
-	BuildDir( g_build + '/game', '.', duplicate = dupe )
+	BuildDir( g_build + '/game', '.', duplicate = 0 )
 	idlib_objects = SConscript( g_build + '/game/sys/scons/SConscript.idlib' )
+	local_mpgame = 0
 	Export( 'GLOBALS ' + GLOBALS )
 	game = SConscript( g_build + '/game/sys/scons/SConscript.game' )
 
-	if ( OS == 'Darwin' ):
-		Default( InstallAs( '#game.so' , game ) )
-	else:
-		Default( InstallAs( '#game%s.so' % cpu, game ) )
+	if ( BUILD != 'test' ):
+		if ( OS == 'Darwin' ):
+			game = InstallAs( '#spgame.so' , game )
+		else:
+			game = InstallAs( '#spgame%s.so' % cpu, game )
+
+	Default( game )
+
+if ( TARGET_MPGAME == '1' ):
+	local_gamedll = 1
+	local_demo = 0
+	local_dedicated = 0
+	local_idlibpic = 1
+	Export( 'GLOBALS ' + GLOBALS )
+	BuildDir( g_build + '/mpgame', '.', duplicate = 0 )
+	idlib_objects = SConscript( g_build + '/mpgame/sys/scons/SConscript.idlib' )
+	local_mpgame = 1
+	Export( 'GLOBALS ' + GLOBALS )
+	mpgame = SConscript( g_build + '/mpgame/sys/scons/SConscript.game' )
+
+	if ( BUILD != 'test' ):
+		if ( OS == 'Darwin' ):
+			mpgame = InstallAs( '#mpgame.so' , mpgame )
+		else:
+			mpgame = InstallAs( '#mpgame%s.so' % cpu, mpgame )
+
+	Default( mpgame )
 	
 if ( TARGET_MONO == '1' ):
 	# the game in a single piece
@@ -623,6 +692,10 @@ if ( TARGET_MONO == '1' ):
 	local_dedicated = 0
 	local_demo = 0
 	local_idlibpic = 0
+	if ( TARGET_MONO_IS_SP == '1' ):
+		local_mpgame = 0
+	else:
+		local_mpgame = 1
 	if ( DEDICATED == '0' or DEDICATED == '2' ):
 		Export( 'GLOBALS ' + GLOBALS )
 		BuildDir( g_build + '/mono/glimp', '.', duplicate = 1 )
@@ -633,8 +706,11 @@ if ( TARGET_MONO == '1' ):
 		Export( 'GLOBALS ' + GLOBALS )
 		q4_mono = SConscript( g_build + '/mono/sys/scons/SConscript.core' )
 
+		if ( BUILD != 'test' ):
+			q4_mono = InstallAs( '#q4mono.%s' % cpu, q4_mono )
+
 		if ( OS == 'Linux' ):
-			Default( InstallAs( '#q4mono.%s' % cpu, q4_mono ) )
+			Default( q4_mono )
 	
 	if ( DEDICATED == '1' or DEDICATED == '2' ):
 		local_dedicated = 1
@@ -647,8 +723,11 @@ if ( TARGET_MONO == '1' ):
 		Export( 'GLOBALS ' + GLOBALS )
 		q4_monoded = SConscript( g_build + '/monoded/sys/scons/SConscript.core' )
 
+		if ( BUILD != 'test' ):
+			q4_monoded = InstallAs( '#q4monoded.%s' % cpu, q4_monoded )
+
 		if ( OS == 'Linux' ):
-			Default( InstallAs( '#q4monoded.%s' % cpu, q4_monoded ) )
+			Default( q4_monoded )
 
 if ( OS == 'Darwin' ):
 	src = []
@@ -668,33 +747,39 @@ if ( OS == 'Darwin' ):
 
 if ( SETUP == '1' ):
 	brandelf = Program( 'brandelf', 'sys/linux/setup/brandelf.c' )
-	setup_source = [ brandelf, quake4, q4ded, game ]
+	setup_source = [ brandelf, quake4, q4ded, game, quake4smp ]
 	do_gamepak = ( TARGET_GAMEPAK != '0' )
 	setups = []
 	if ( SETUP_TAGGED == '1' ):
 		g_env_tagged = g_env.Copy()
-		g_env_tagged.Prepare( do_gamepak, ASSETS, PATCHLEVEL )
+		g_env_tagged.Prepare( do_gamepak, ASSETS )
 		setup_tagged = Command( 'setup_tagged', setup_source, Action( g_env_tagged.BuildSetup ) )
 		Default( setup_tagged )
 		setups.append( setup_tagged )
 	if ( SETUP_DEMO == '1' ):
 		g_env_demo = g_env.Copy()
-		g_env_demo.Prepare( do_gamepak, ASSETS, PATCHLEVEL )
+		g_env_demo.Prepare( do_gamepak, ASSETS )
 		setup_demo = Command( 'setup_demo', setup_source, Action( g_env_demo.BuildSetup ) )
 		Default( setup_demo )
 		setups.append( setup_demo )
 	if ( SETUP_DEDICATED == '1' ):
 		g_env_ded = g_env.Copy()
-		g_env_ded.Prepare( do_gamepak, ASSETS, PATCHLEVEL )
+		g_env_ded.Prepare( do_gamepak, ASSETS )
 		setup_ded = Command( 'setup_ded', setup_source, Action( g_env_ded.BuildSetup ) )
 		Default( setup_ded )
 		setups.append( setup_ded )
 	if ( SETUP_FULL == '1' ):
 		g_env_full = g_env.Copy()
-		g_env_full.Prepare( do_gamepak, ASSETS, PATCHLEVEL )
+		g_env_full.Prepare( do_gamepak, ASSETS )
 		setup_full = Command( 'setup_full', setup_source, Action( g_env_full.BuildSetup ) )
 		Default( setup_full )
 		setups.append( setup_full )
+	if ( SETUP_INCREMENTAL == '1' ):
+		g_env_incr = g_env.Copy()
+		g_env_incr.Prepare( do_gamepak, ASSETS )
+		setup_incr = Command( 'setup_incremental', setup_source, Action( g_env_incr.BuildSetup ) )
+		Default( setup_incr )
+		setups.append( setup_incr )
 	# setup dependencies so they are built sequentially
 	i = 1
 	while ( i < len( setups ) ):
@@ -702,12 +787,13 @@ if ( SETUP == '1' ):
 		i += 1
 else:
 	if ( TARGET_GAMEPAK == '1' ):
-		game_pak = Command( 'gamepak', game, Action( g_env.BuildGamePak ) )
-		Default( game_pak )
+		spgame_pak = Command( 'spgamepak', game, Action( g_env.BuildGamePak ) )
+		Default( spgame_pak )
+		mpgame_pak = Command( 'mpgamepak', mpgame, Action( g_env.BuildGamePak ) )
+		Default( mpgame_pak )
 
 if ( SDK != '0' ):
 	setup_sdk = Command( 'sdk', [ ], Action( g_env.BuildSDK ) )
 	Default( setup_sdk )
-	g_env.Depends( setup_sdk, game ) 
 	
 # end targets ------------------------------------

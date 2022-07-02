@@ -14,6 +14,7 @@
 ===============================================================================
 */
 
+#include "mp/Buying.h"
 class idPlayer;
 class rvCTF_AssaultPoint;
 class rvItemCTFFlag;
@@ -27,12 +28,19 @@ typedef enum {
 	// ddynerman: new gametypes
 	GAME_1F_CTF,
 	GAME_ARENA_CTF,
-	GAME_ARENA_1F_CTF
+	GAME_ARENA_1F_CTF,	// is not used, but leaving it in the list so I don't offset GAME_DEADZONE
+
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
+	GAME_DEADZONE,
+	NUM_GAME_TYPES,
+// RITUAL END
 } gameType_t;
 
 
 // ddynerman: teams
 typedef enum {
+	TEAM_NONE = -1,
 	TEAM_MARINE,
 	TEAM_STROGG,
 	TEAM_MAX,
@@ -60,15 +68,16 @@ struct voteStruct_t {
 	int				m_fragLimit;
 	int				m_tourneyLimit;
 	int				m_captureLimit;
-	int				m_minPlayers;
+	int				m_buying;
 	int				m_teamBalance;
+	int				m_controlTime;
 	// restart is a flag only
 	// nextmap is a flag only but we don't technically support it (but doom had it so it's here)
 };
 
 typedef enum {
 	VOTEFLAG_RESTART		= 0x0001,
-	VOTEFLAG_MIN_PLAYERS	= 0x0002,
+	VOTEFLAG_BUYING			= 0x0002,
 	VOTEFLAG_TEAMBALANCE	= 0x0004,
 	VOTEFLAG_SHUFFLE		= 0x0008,
 	VOTEFLAG_KICK			= 0x0010,
@@ -78,6 +87,7 @@ typedef enum {
 	VOTEFLAG_TOURNEYLIMIT	= 0x0100,
 	VOTEFLAG_CAPTURELIMIT	= 0x0200,
 	VOTEFLAG_FRAGLIMIT		= 0x0400,
+	VOTEFLAG_CONTROLTIME	= 0x0800,
 } voteFlag_t;
 
 #define NUM_VOTES			11
@@ -180,6 +190,8 @@ enum announcerSound_t {
 	AS_TOURNEY_QUARTER_FINALS,
 	AS_TOURNEY_SEMI_FINALS,
 	AS_TOURNEY_FINAL_MATCH,
+	AS_GENERAL_TEAM_AMMOREGEN,
+	AS_GENERAL_TEAM_DOUBLER,
 	AS_NUM_SOUNDS
 };
 
@@ -187,6 +199,7 @@ typedef struct mpPlayerState_s {
 	int				ping;			// player ping
 	int				fragCount;		// kills
 	int				teamFragCount;	// teamplay awards
+	int				deadZoneScore;  // Score in dead zone
 	int				wins;
 	playerVote_t	vote;			// player's vote
 	bool			scoreBoardUp;	// toggle based on player scoreboard button, used to activate de-activate the scoreboard gui
@@ -227,7 +240,9 @@ const int ASYNC_PLAYER_INSTANCE_BITS = idMath::BitsForInteger( MAX_INSTANCES );
 const int ASYNC_PLAYER_DEATH_BITS = idMath::BitsForInteger( MP_PLAYER_MAXDEATHS );
 const int ASYNC_PLAYER_KILL_BITS = idMath::BitsForInteger( MP_PLAYER_MAXKILLS );
 //RAVEN END
-
+//RITUAL BEGIN
+const int MAX_TEAM_POWERUPS = 5;
+//RITUAL END
 // ddynerman: game state
 #include "mp/GameState.h"
 
@@ -289,6 +304,13 @@ public:
 
 	void			AddChatLine( const char *fmt, ... ) id_attribute((format(printf,2,3)));
 
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	void			OnBuyModeTeamVictory( int winningTeam );
+// squirrel: added DeadZone multiplayer mode
+	void			OnDeadZoneTeamVictory( int winningTeam );
+// RITUAL END
+
 	void			UpdateMainGui( void );
 // RAVEN BEGIN
 // bdube: global pickup sounds (powerups, etc)
@@ -305,15 +327,13 @@ public:
 #endif
 
 // jshepard: selects a map at random that will run with the current game type
-	bool			PickMap( idStr gameType );
+	bool			PickMap( idStr gameType, bool checkOnly = false );
 	void			ClearVote( int clientNum = -1 );
 	void			ResetRconGuiStatus( void );
 
 // RAVEN END
 
 	idUserInterface*	StartMenu( void );
-	
-	void			ClearMenu() { currentMenu = 0; }
 
 	const char*		HandleGuiCommands( const char *menuCommand );
 
@@ -361,7 +381,7 @@ public:
 		VOTE_GAMETYPE,
 		VOTE_KICK,
 		VOTE_MAP,
-		VOTE_MIN_PLAYERS,
+		VOTE_BUYING,
 		VOTE_NEXTMAP,
 // RAVEN BEGIN
 // shouchard:  added capturelimit, round limit, and autobalance to vote flags
@@ -370,6 +390,7 @@ public:
 		VOTE_AUTOBALANCE,
 		VOTE_MULTIFIELD,	// all the "packed" vote functions
 // RAVEN END
+		VOTE_CONTROLTIME,
 		VOTE_COUNT,
 		VOTE_NONE
 	} vote_flags_t;
@@ -390,6 +411,10 @@ public:
 		VOTE_GAMETYPE_TDM,
 		VOTE_GAMETYPE_CTF,
 		VOTE_GAMETYPE_ARENA_CTF,
+//RITUAL BEGIN
+//
+		VOTE_GAMETYPE_DEADZONE,
+//RITUAL END
 		VOTE_GAMETYPE_COUNT
 	} vote_gametype_t;
 // RAVEN END
@@ -446,6 +471,8 @@ public:
 		int			tourneyLimit;
 		int			timeLimit;
 		int			minPlayers;
+		int			controlTime;
+		bool		buying;
 		bool		autoBalance;
 		bool		shuffleTeams;
 	} serverAdminData_t;
@@ -456,6 +483,21 @@ public:
 	void			HandleServerAdminForceTeamSwitch( int clientNum );
 	bool			HandleServerAdminCommands( serverAdminData_t &data );
 // RAVEN END
+
+// RITUAL BEGIN
+	typedef struct mpTeamPowerups_s {
+		int powerup;
+		int time;
+		bool update;
+		int endTime;
+	} mpTeamPowerups_t;
+
+	mpTeamPowerups_t teamPowerups[TEAM_MAX][MAX_TEAM_POWERUPS];
+
+	void			AddTeamPowerup(int powerup, int time, int team);
+	void			UpdateTeamPowerups();
+	void			SetUpdateForTeamPowerups(int team);
+// RITUAL END
 
 	void			Precache( void );
 	
@@ -484,6 +526,7 @@ public:
 	void			AddPlayerTeamScore( idPlayer* player, int amount );
 	void			AddPlayerWin( idPlayer* player, int amount );
 	void			SetPlayerTeamScore( idPlayer* player, int value );
+	void			SetPlayerDeadZoneScore( idPlayer* player, float value );
 	void			SetPlayerScore( idPlayer* player, int value );
 	void			SetPlayerWin( idPlayer* player, int value );
 	void			SetHudOverlay( idUserInterface* overlay, int duration );
@@ -513,6 +556,8 @@ public:
 	int				GetTeamsTotalFrags( int i );
 	int				GetTeamsTotalScore( int i );
 	idUserInterface *GetMainGUI() {return mainGui;}
+
+	float			GetPlayerDeadZoneScore(idPlayer* player);
 
 	int				TeamLeader( void );
 
@@ -554,6 +599,10 @@ public:
 
 	idList<idEntityPtr<rvCTF_AssaultPoint> > assaultPoints;
 
+	// Buying Manager - authority for buying system game balance constants (awards,
+	// costs, etc.)
+	riBuyingManager	mpBuyingManager;
+
 	idUserInterface* statSummary;			// stat summary
 	rvTourneyGUI	tourneyGUI;
 
@@ -577,6 +626,34 @@ public:
 
 	void			SetShaderParms( renderView_t *view );
 	
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
+	int				NumberOfPlayersOnTeam( int team );
+	int				NumberOfAlivePlayersOnTeam( int team );
+	void			ReportZoneControllingPlayer( idPlayer* player );
+	void			ReportZoneController(int team, int pCount, int situation, idEntity* zoneTrigger = 0);
+	bool			IsValidTeam(int team);
+	void			ControlZoneStateChanged( int team );
+
+	int				powerupCount;
+	int				prevAnnouncerSnd;
+	int				defaultWinner;
+	int				deadZonePowerupCount;
+	dzState_t		dzState[ TEAM_MAX ];
+	float			marineScoreBarPulseAmount;
+	float			stroggScoreBarPulseAmount;
+// RITUAL END
+
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	bool			isBuyingAllowedRightNow;
+
+	void			OpenLocalBuyMenu( void );
+	void			RedrawLocalBuyMenu( void );
+	void			GiveCashToTeam( int team, float cashAmount );
+	bool			IsBuyingAllowedInTheCurrentGameMode( void );
+	bool			IsBuyingAllowedRightNow( void );
+// RITUAL END
 	static const char*	teamNames[ TEAM_MAX ];
 
 private:
@@ -616,6 +693,12 @@ private:
 	int				matchStartedTime;		// time current match started
 
 	// guis
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
+	//int				sqRoundNumber;			// round number in DeadZone; match expires when this equals "sq_numRoundsPerMatch" (cvar)
+// squirrel: Mode-agnostic buymenus
+	idUserInterface *buyMenu;				// buy menu
+// RITUAL END
 	idUserInterface *scoreBoard;			// scoreboard
 	idUserInterface *mainGui;				// ready / nick / votes etc.
 	idListGUI		*mapList;
@@ -658,11 +741,15 @@ public:
 
 private:
 
+	int				lastVOAnnounce;
+
 	int				lastReadyToggleTime;
 	bool			pureReady;				// defaults to false, set to true once server game is running with pure checksums
 	bool			currentSoundOverride;
 	int				switchThrottle[ 3 ];
 	int				voiceChatThrottle;
+
+	void			SetupBuyMenuItems();
 
 	idList<int>		privateClientIds;
 	int				privatePlayers;
@@ -712,6 +799,7 @@ private:
 	void			PlayAnnouncerSounds ( void );
 
 	int				teamScore[ TEAM_MAX ];
+	int				teamDeadZoneScore[ TEAM_MAX];
 	void			ClearTeamScores ( void );
 
 	void			UpdateLeader( idPlayer* oldLeader );

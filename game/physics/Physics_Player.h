@@ -113,8 +113,8 @@ public:	// common physics interface
 
 // RAVEN BEGIN
 // kfuller: Added
-	bool					IsNoclip ( void ) const;
-	bool					IsDead ( void ) const;
+	bool					IsNoclip( void ) const;
+	bool					IsDead( void ) const;
 // RAVEN END
 
 	void					SetClipModelNoLink( idClipModel *clip );
@@ -182,13 +182,16 @@ private:
 	void					SetWaterLevel( void );
 	void					DropTimers( void );
 	void					MovePlayer( int msec );
+
+	float					Pm_Accelerate( void );
+	float					Pm_AirAccelerate( void );
 };
 
-ID_INLINE bool idPhysics_Player::IsNoclip ( void ) const {
+ID_INLINE bool idPhysics_Player::IsNoclip( void ) const {
 	return current.movementType == PM_NOCLIP;
 }
 
-ID_INLINE bool idPhysics_Player::IsDead ( void ) const {
+ID_INLINE bool idPhysics_Player::IsDead( void ) const {
 	return current.movementType == PM_DEAD;
 }
 

@@ -37,6 +37,11 @@ const int	FOCUS_USABLE_TIME			= 100;
 
 const int	MAX_WEAPONS					= 16;
 const int	MAX_AMMO					= 16;
+const int	CARRYOVER_FLAG_AMMO			= 0x40000000;
+const int	CARRYOVER_FLAG_ARMOR_LIGHT	= 0x20000000;
+const int	CARRYOVER_FLAG_ARMOR_HEAVY	= 0x10000000;
+const int	CARRYOVER_WEAPONS_MASK		= 0x0FFFFFFF;
+const int	CARRYOVER_FLAGS_MASK		= 0xF0000000;
 
 const int	MAX_SKILL_LEVELS			= 4;
 
@@ -47,8 +52,10 @@ const int	DEATH_VOLUME				= 15;			// volume at death
 const int	SAVING_THROW_TIME			= 5000;			// maximum one "saving throw" every five seconds
 
 const int	ASYNC_PLAYER_INV_AMMO_BITS = idMath::BitsForInteger( 999 );	// 9 bits to cover the range [0, 999]
-const int	ASYNC_PLAYER_INV_CLIP_BITS = -7;								// -7 bits to cover the range [-1, 60]
-const int	ASYNC_PLAYER_INV_WPMOD_BITS = 3;								// 3 bits (max of 3 mods per gun)
+const int	ASYNC_PLAYER_INV_CLIP_BITS = -7;							// -7 bits to cover the range [-1, 60]
+const int	ASYNC_PLAYER_INV_WPMOD_BITS = 3;							// 3 bits (max of 3 mods per gun)
+// NOTE: protocol 69 used 6 bits, but that's only used for client -> server traffic, so doesn't affect backwards protocol replay compat
+const int	IMPULSE_NUMBER_OF_BITS		= 8;							// allows for 2<<X impulses
 
 #define MAX_CONCURRENT_VOICES	3
 
@@ -127,7 +134,16 @@ enum {
 	POWERUP_AMMOREGEN,
 	POWERUP_GUARD,
 	POWERUP_DOUBLER,
-	POWERUP_SCOUT,
+	POWERUP_SCOUT,	// == 1.2 / protocol 69's POWERUP_MAX-1
+
+	POWERUP_MODERATOR, // Note: This has to be here.  Otherwise, it breaks syncronization with some list elsewhere
+		
+	POWERUP_DEADZONE,
+
+	// Team Powerups
+	POWERUP_TEAM_AMMO_REGEN,
+	POWERUP_TEAM_HEALTH_REGEN,
+	POWERUP_TEAM_DAMAGE_MOD,
 	
 	POWERUP_MAX
 };
@@ -167,12 +183,23 @@ typedef enum {
 	PTS_NUM_STATES
 } playerTourneyStatus_t;
 
+typedef enum {
+	IBS_CAN_BUY = 0,
+	IBS_NOT_ALLOWED = 1,
+	IBS_ALREADY_HAVE = 2,
+	IBS_CANNOT_AFFORD = 3,
+} itemBuyStatus_t;
+
 const int	ASYNC_PLAYER_TOURNEY_STATUS_BITS = idMath::BitsForInteger( PTS_NUM_STATES );
 
 class idInventory {
 public:
 	int						maxHealth;
 	int						weapons;
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	int						carryOverWeapons;
+// RITUAL END
 	int						powerups;
 	int						armor;
 	int						maxarmor;
@@ -275,7 +302,6 @@ public:
 	int						oldFlags;
 
 	int						lastHitTime;			// last time projectile fired by player hit target
- 	int						lastSndHitTime;			// MP hit sound - != lastHitTime because we throttle
 	int						lastSavingThrowTime;	// for the "free miss" effect
 
 	struct playerFlags_s {
@@ -337,7 +363,13 @@ public:
 	bool					forceScoreBoard;
 	bool					forceRespawn;
 	int						forceScoreBoardTime;
-
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
+	bool					allowedToRespawn;
+// squirrel: Mode-agnostic buymenus
+	bool					inBuyZone;
+	bool					inBuyZonePrev;
+// RITUAL END
 	bool					spectating;
 	bool					lastHitToggle;
 	bool					lastArmorHit;
@@ -388,6 +420,10 @@ public:
 #endif
 //RAVEN END
 
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	float					buyMenuCash;
+// RITUAL END
 
 public:
 	CLASS_PROTOTYPE( idPlayer );
@@ -510,7 +546,7 @@ public:
 	void					StartBossBattle				( idEntity* ent );
 
 	// Powerups
-	bool					GivePowerUp					( int powerup, int time );
+	bool					GivePowerUp					( int powerup, int time, bool team = false );
 	void					ClearPowerUps				( void );
 
 	void					StartPowerUpEffect			( int powerup );
@@ -574,6 +610,16 @@ public:
 	virtual bool			HandleSingleGuiCommand( idEntity *entityGui, idLexer *src );
 	bool					GuiActive( void ) { return focusType == FOCUS_GUI; }
 
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	void					GenerateImpulseForBuyAttempt( const char* itemName );
+	bool					AttemptToBuyItem( const char* itemName );
+	bool					AttemptToBuyTeamPowerup( const char* itemName );
+	void					UpdateTeamPowerups( bool isBuying = false );
+	bool					CanBuy( void );
+	int						CanSelectWeapon				( const char* weaponName );
+	int						GetItemCost(const char* itemName);
+// RITUAL END
 	void					PerformImpulse( int impulse );
 	void					Spectate( bool spectate, bool force = false );
  	void					ToggleObjectives ( void );
@@ -740,6 +786,16 @@ public:
 
 	bool					AllowedVoiceDest( int from );
 
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer
+	itemBuyStatus_t			ItemBuyStatus( const char* itemName );
+	bool					CanBuyItem( const char* itemName );
+	void					GiveCash( float cashDeltaAmount );
+	void					ClampCash( float minCash, float maxCash );
+	void					SetCash( float newCashAmount );
+	void					ResetCash();
+// RITUAL END
+
 protected:
 	void					SetupHead( const char* modelKeyName = "", idVec3 headOffset = idVec3(0, 0, 0) );
 
@@ -778,6 +834,10 @@ private:
 	float					softFallDelta;
 	float					noFallDelta;
 
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	int						carryOverCurrentWeapon;
+// RITUAL END
 	int						currentWeapon;
 	int						idealWeapon;
 	int						previousWeapon;
@@ -923,18 +983,27 @@ private:
 	rvClientEffectPtr		flagEffect;
 	rvClientEffectPtr		arenaEffect;
 
+	rvClientEffectPtr		teamHealthRegen;
+	bool					teamHealthRegenPending;
+	rvClientEffectPtr		teamAmmoRegen;
+	bool					teamAmmoRegenPending;
+	rvClientEffectPtr		teamDoubler;
+	bool					teamDoublerPending;
+
 	idVec4					hitscanTint;
 	// end mp
 
 	int						lastImpulseTime;		// time of last impulse
 	idEntityPtr<idEntity>	bossEnemy;
 
-	const idDeclEntityDef*	cachedWeaponDefs [ MAX_WEAPONS ];
-	const idDeclEntityDef*	cachedPowerupDefs [ POWERUP_MAX ];
+	const idDeclEntityDef*	cachedWeaponDefs[ MAX_WEAPONS ];
+	const idDeclEntityDef*	cachedPowerupDefs[ POWERUP_MAX ];
 
 	bool					weaponChangeIconsUp;
 
 	int						oldInventoryWeapons;
+
+	const idDeclEntityDef*	itemCosts;
 
 	bool					WantSmoothing( void ) const;
 	void					PredictionErrorDecay( void );
@@ -1112,19 +1181,19 @@ ID_INLINE bool idPlayer::IsLeader( void ) {
  	return leader;
 }
 
-ID_INLINE bool idPlayer::IsZoomed ( void ) {
+ID_INLINE bool idPlayer::IsZoomed( void ) {
 	return zoomed;
 }
 
-ID_INLINE bool idPlayer::IsFlashlightOn ( void ) {
+ID_INLINE bool idPlayer::IsFlashlightOn( void ) {
 	return flashlightOn;
 }
 
-ID_INLINE rvViewWeapon* idPlayer::GetWeaponViewModel ( void ) const {
+ID_INLINE rvViewWeapon* idPlayer::GetWeaponViewModel( void ) const {
 	return weaponViewModel;
 }
 
-ID_INLINE idAnimatedEntity* idPlayer::GetWeaponWorldModel ( void ) const {
+ID_INLINE idAnimatedEntity* idPlayer::GetWeaponWorldModel( void ) const {
 	return weaponWorldModel;
 }
 

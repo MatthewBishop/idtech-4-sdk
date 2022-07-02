@@ -393,25 +393,29 @@ void Cmd_KillRagdolls_f( const idCmdArgs &args ) {
 // RAVEN END
 }
 
+
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
 /*
 ==================
-Cmd_Give_f
+GiveStuffToPlayer
 
-Give items to a client
+Used by the "give" and "buy" command line cmds
 ==================
 */
-void Cmd_Give_f( const idCmdArgs &args ) {
-	const char *name;
+void GiveStuffToPlayer( idPlayer* player, const char* name, const char* value )
+{
 	int			i;
 	bool		give_all;
-	idPlayer	*player;
+//	idPlayer* player = gameLocal.GetLocalPlayer();
 
-	player = gameLocal.GetLocalPlayer();
-	if ( !player || !gameLocal.CheatsOk() ) {
+	if( !player || !name )	{
 		return;
 	}
 
-	name = args.Argv( 1 );
+	if( !value ) {
+		value = "";
+	}
 
 	if ( idStr::Icmp( name, "all" ) == 0 ) {
 		give_all = true;
@@ -430,7 +434,7 @@ void Cmd_Give_f( const idCmdArgs &args ) {
 		}
 	}
 
-	if ( ( idStr::Cmpn( name, "weapon_", 7 ) == 0 ) || ( idStr::Cmpn( name, "item_", 5 ) == 0 ) || ( idStr::Cmpn( name, "ammo_", 5 ) == 0 ) ) {
+	if ( ( idStr::Cmpn( name, "weapon_", 7 ) == 0 ) || ( idStr::Cmpn( name, "item_", 5 ) == 0 ) || ( idStr::Cmpn( name, "ammo_", 5 ) == 0 ) || ( idStr::Icmp( name, "ammorefill" ) == 0 ) ) {
 		player->GiveItem( name );
 		return;
 	}
@@ -518,7 +522,7 @@ void Cmd_Give_f( const idCmdArgs &args ) {
 		player->GiveWeaponMods ( 0xFFFFFFFF );
 		return;
 	} else if ( !idStr::Cmpn( name, "wpmod_", 6 ) ) {
-		player->GiveWeaponMods ( (1<<(atoi(name+6)-1)) );
+		player->GiveWeaponMod(name);
 		return;
 	}
 
@@ -527,10 +531,29 @@ void Cmd_Give_f( const idCmdArgs &args ) {
 		return;
 	}
 
-	if ( !give_all && !player->Give( args.Argv(1), args.Argv(2) ) ) {
+	if ( !give_all && !player->Give( name, value ) ) {
 		gameLocal.Printf( "unknown item\n" );
 	}
 }
+
+/*
+==================
+Cmd_Give_f
+
+Give items to a client
+==================
+*/
+void Cmd_Give_f( const idCmdArgs &args ) {
+	idPlayer	*player;
+
+	player = gameLocal.GetLocalPlayer();
+	if ( !player || !gameLocal.CheatsOk() ) {
+		return;
+	}
+
+	GiveStuffToPlayer( player, args.Argv(1), args.Argv(2) );
+}
+// RITUAL END
 
 /*
 ==================
@@ -2895,6 +2918,28 @@ void Cmd_AddIcon_f( const idCmdArgs& args ) {
 	
 	iconManager->AddIcon( client, "textures/mp/awards/capture" );
 }
+// RAVEN END
+
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+void Cmd_ToggleBuyMenu_f( const idCmdArgs& args ) {
+	idPlayer* player = gameLocal.GetLocalPlayer();
+	if ( player && player->CanBuy() )
+	{
+		gameLocal.mpGame.OpenLocalBuyMenu();
+	}
+}
+
+void Cmd_BuyItem_f( const idCmdArgs& args ) {
+	idPlayer* player = gameLocal.GetLocalPlayer();
+	if ( !player ) {
+		common->Printf( "ERROR: Cmd_BuyItem_f() failed, since GetLocalPlayer() was NULL.\n", player );
+		return;
+	}
+
+	player->GenerateImpulseForBuyAttempt( args.Argv(1) );
+}
+// RITUAL END
 
 void Cmd_PlayerEmote_f( const idCmdArgs& args ) {
 	if( gameLocal.GetLocalPlayer() == NULL ) {
@@ -3164,7 +3209,7 @@ void idGameLocal::InitConsoleCommands( void ) {
 	cmdSystem->AddCommand( "ai_debugFilter",		Cmd_AI_DebugFilter_f,		CMD_FL_GAME,				"ai_debugMove and ai_debugTactical only work on the specified entity (if none, does one you're looking at)", idGameLocal::ArgCompletion_AIName );
 // ddynerman: multiple arena/CW stuff
 	cmdSystem->AddCommand( "setInstance",			Cmd_SetInstance_f,			CMD_FL_GAME,				"sets a player's world instance" );
-	cmdSystem->AddCommand( "addIcon",				Cmd_AddIcon_f,				CMD_FL_GAME,				"adds a test icon" );
+	cmdSystem->AddCommand( "addIcon",				Cmd_AddIcon_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"adds a test icon" );
 	cmdSystem->AddCommand( "listInstances",			Cmd_ListInstances_f,		CMD_FL_GAME,				"lists instances" );
 // ddynerman: emote anims
 	cmdSystem->AddCommand( "emote",					Cmd_PlayerEmote_f,			CMD_FL_GAME,				"plays an emote" );
@@ -3182,6 +3227,12 @@ void idGameLocal::InitConsoleCommands( void ) {
 	cmdSystem->AddCommand( "clientOverflowReliable", Cmd_ClientOverflowReliable_f, CMD_FL_GAME,				"" );
 #endif
 // RAVEN END
+// RITUAL START
+// squirrel: Mode-agnostic buymenus
+	cmdSystem->AddCommand( "buyMenu",				Cmd_ToggleBuyMenu_f,		CMD_FL_GAME,				"Toggle buy menu (if in a buy zone and the game type supports it)" );
+	cmdSystem->AddCommand( "buy",					Cmd_BuyItem_f,				CMD_FL_GAME,				"Buy an item (if in a buy zone and the game type supports it)" );
+// RITUAL END
+
 }
 
 /*

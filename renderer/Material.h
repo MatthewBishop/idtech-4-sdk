@@ -870,6 +870,7 @@ typedef idList<const idMaterial *> idMatList;
 class rvMaterialEdit
 {
 public:
+	virtual ~rvMaterialEdit() {}
 	virtual	void		SetGui( idMaterial *edit, const char *name ) = 0;
 	virtual int			GetImageWidth( const idMaterial *edit ) const = 0;
 	virtual int			GetImageHeight( const idMaterial *edit ) const = 0;

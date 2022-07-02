@@ -255,7 +255,7 @@ idItem::GetPhysicsToVisualTransform
 */
 bool idItem::GetPhysicsToVisualTransform( idVec3 &origin, idMat3 &axis ) {
 	if( simpleItem ) {
-		if( gameLocal.GetLocalPlayer() && gameLocal.GetLocalPlayer()->GetRenderView() ) {
+		if ( gameLocal.GetLocalPlayer() && gameLocal.GetLocalPlayer()->GetRenderView() ) {
 			if( gameLocal.GetLocalPlayer()->spectating ) {
 				idPlayer* spec = (idPlayer*)gameLocal.entities[ gameLocal.GetLocalPlayer()->spectator ];
 				if( spec && spec->GetRenderView() ) {
@@ -264,6 +264,9 @@ bool idItem::GetPhysicsToVisualTransform( idVec3 &origin, idMat3 &axis ) {
 			} else {
 				axis = gameLocal.GetLocalPlayer()->GetRenderView()->viewaxis;	
 			}
+		} else {
+			// dedicated server for instance
+			axis = mat3_identity;
 		}
 		origin = idVec3( 0.0f, 0.0f, 32.0f );
 		return true;
@@ -390,7 +393,7 @@ void idItem::Spawn( void ) {
 	idVec3		vSize;
 	idBounds	bounds(vec3_origin);
 
-	// check for triggerbounds, which allows for non-square triggers (useful for, say, a CTF flag)
+	// check for triggerbounds, which allows for non-square triggers (useful for, say, a CTF flag)	
 	if ( spawnArgs.GetVector( "triggerbounds", "16 16 16", vSize )) {
 		bounds.AddPoint(idVec3( vSize.x*0.5f,  vSize.y*0.5f, 0.0f));
 		bounds.AddPoint(idVec3(-vSize.x*0.5f, -vSize.y*0.5f, vSize.z));
@@ -585,16 +588,21 @@ bool idItem::GiveToPlayer( idPlayer *player ) {
 		return false;
 	}
 
-	// no pickups during warmup
-	/*if ( gameLocal.isMultiplayer && ( (gameLocal.mpGame.GetGameState() != idMultiplayerGame::GAMEON) ||  
-		(gameLocal.gameType == GAME_TOURNEY && tourneyManager->GetArena( player->GetInstance() ).GetState() != AS_ROUND ) ) ) {
-		return false;
-	}*/
-
 	if ( spawnArgs.GetBool( "inv_carry" ) ) {
 		return player->GiveInventoryItem( &spawnArgs );
 	} 
 	
+	// Handle the special ammo pickup that gives ammo for the weapon the player currently has
+	if ( spawnArgs.GetBool( "item_currentWeaponAmmo" ) ) {
+		const char *ammoName = player->weapon->GetAmmoNameForIndex(player->weapon->GetAmmoType());
+		if ( player->weapon->TotalAmmoCount() != player->weapon->maxAmmo && player->weapon->AmmoRequired() ) {
+			player->GiveItem(ammoName);
+			player->GiveInventoryItem( &spawnArgs );
+			return true;
+		}
+		return false;
+	} 
+
 	return player->GiveItem( this );
 }
 
@@ -626,22 +634,29 @@ bool idItem::Pickup( idPlayer *player ) {
 	//dropped weapon?
 	bool dropped = spawnArgs.GetBool( "dropped" );
 
-	if( gameLocal.isMultiplayer && !dropped && spawnArgs.FindKey( "weaponclass" ) 
-		&& gameLocal.serverInfo.GetBool( "si_weaponStay" ) && gameLocal.time > player->lastPickupTime + 1000 ) {
+	if ( gameLocal.isMultiplayer && !dropped && spawnArgs.FindKey( "weaponclass" ) 
+		&& gameLocal.IsWeaponsStayOn() && gameLocal.time > player->lastPickupTime + 1000 ) {
 		
 		idDict attr;
 		GetAttributes( attr );
 		const idKeyValue* arg = attr.FindKey( "weapon" );
 
-		if( arg ) {
-			if( !player->inventory.Give( player, player->spawnArgs, arg->GetKey(), arg->GetValue(), NULL, false, dropped, true ) ) {
+		if ( arg ) {
+			if ( !player->inventory.Give( player, player->spawnArgs, arg->GetKey(), arg->GetValue(), NULL, false, dropped, true ) ) {
 				StartSound( "snd_noacquire", SND_CHANNEL_ITEM, 0, false, NULL );
 			}
 		}
 	}
 
 	// only predict noacquire on client
-	if( gameLocal.isClient ) {
+	if ( gameLocal.isClient ) {
+		return false;
+	}
+
+	int givenToPlayer = spawnArgs.GetInt( "givenToPlayer", "-1" );
+	if ( player == NULL || ( givenToPlayer != -1 && givenToPlayer != player->entityNumber ) ) {
+		// idPlayer::GiveItem spawns an idItem for pickup, which appears at the origin before being picked
+		// and could sometimes be picked by someone else, particularly in buy mode when there is a play spawn sitting on the origin ;-)
 		return false;
 	}
 
@@ -669,7 +684,7 @@ bool idItem::Pickup( idPlayer *player ) {
 	if ( gameLocal.IsMultiplayer() ) {
 		if ( !dropped )	{
 			if ( spawnArgs.FindKey( "weaponclass" ) ) { 
-				if ( gameLocal.serverInfo.GetBool( "si_weaponStay" ) ) {
+				if ( gameLocal.IsWeaponsStayOn() ) {
 					return true;
 				}
 			}
@@ -712,6 +727,10 @@ bool idItem::Pickup( idPlayer *player ) {
 
 	if ( !gameLocal.isMultiplayer ) {
 		respawn = 0.0f;
+	} else if ( gameLocal.mpGame.IsBuyingAllowedInTheCurrentGameMode() ) {
+		if ( givenToPlayer != -1 ) {
+			respawn = 0.0f;
+		}
 	}
 
 	if ( respawn && !dropped && !no_respawn ) {
@@ -743,7 +762,7 @@ idItem::Hide
 void idItem::Hide( void ) {
 	srvReady = 0;
 	idEntity::Hide( );	
-	trigger->SetContents ( 0 );
+	trigger->SetContents( 0 );
 }
 
 /*
@@ -1097,7 +1116,7 @@ void idItemPowerup::Spawn( void ) {
 	type = spawnArgs.GetInt( "type", "0" );
 	
 	// If the powerup was dropped then make it dissapear using its remaining time.
-	if ( spawnArgs.GetBool( "dropped" ) ) {
+	if ( spawnArgs.GetBool( "dropped" ) && time != -1 ) {
 		droppedTime = gameLocal.time + time;
 		PostEventMS( &EV_Remove, time );
 	}
@@ -1123,13 +1142,13 @@ idItemPowerup::GiveToPlayer
 ================
 */
 bool idItemPowerup::GiveToPlayer( idPlayer *player ) {
-	if ( !player || player->spectating ) {
+	if ( player == NULL || player->spectating ) {
 		return false;
 	}
-	
+
 	// only one arena CTF powerup at a time
-	if( type >= POWERUP_AMMOREGEN && type <= POWERUP_SCOUT ) {
-		if( (player->inventory.powerups & ARENA_POWERUP_MASK) != 0 ) {
+	if ( type >= POWERUP_AMMOREGEN && type <= POWERUP_SCOUT ) {
+		if ( ( player->inventory.powerups & ARENA_POWERUP_MASK ) != 0 ) {
 			return false;
 		} 
 	}
@@ -2029,6 +2048,10 @@ bool rvItemCTFFlag::GiveToPlayer( idPlayer* player ) {
 			gameLocal.mpGame.AddPlayerTeamScore( player, 2 );
 			statManager->FlagReturned( player );
 			ResetFlag ( teamPowerup );
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+			player->GiveCash( (float)gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "playerCashAward_flagReturned", 0 ) );
+// RITUAL END
 		} else if ( player->PowerUpActive ( enemyPowerup ) ) {
 			// If they have the enemy flag then they score
 			if ( !gameLocal.mpGame.CanCapture ( player->team ) ) {
@@ -2048,6 +2071,10 @@ bool rvItemCTFFlag::GiveToPlayer( idPlayer* player ) {
 	}
 
 	player->GivePowerUp( enemyPowerup, -1 );
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	player->GiveCash( (float)gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "playerCashAward_flagStolen", 0 ) );
+// RITUAL END
 	return true;
 }
 
@@ -2187,3 +2214,162 @@ bool rvItemCTFFlag::Collide( const trace_t &collision, const idVec3 &velocity ) 
 	return false;
 }
 // RAVEN END
+
+
+
+
+const idEventDef EV_ResetSpawn ( "<resetspawn>" );
+CLASS_DECLARATION( idItemPowerup, riDeadZonePowerup )
+	EVENT( EV_ResetSpawn,		riDeadZonePowerup::Event_ResetSpawn )
+END_CLASS
+
+/*
+================
+riDeadZonePowerup::idItemPowerup
+================
+*/
+riDeadZonePowerup::riDeadZonePowerup() {
+}
+
+/*
+================
+riDeadZonePowerup::Save
+================
+*/
+void riDeadZonePowerup::Save( idSaveGame *savefile ) const {
+}
+
+/*
+================
+riDeadZonePowerup::Restore
+================
+*/
+void riDeadZonePowerup::Restore( idRestoreGame *savefile ) {
+}
+
+
+/*
+================
+riDeadZonePowerup::Show
+================
+*/
+void riDeadZonePowerup::Show()
+{
+	idItem::Show();
+}
+
+
+/*
+================
+riDeadZonePowerup::Spawn
+================
+*/
+void riDeadZonePowerup::Spawn( void ) {
+	powerup = POWERUP_DEADZONE;
+
+	time = SEC2MS( gameLocal.serverInfo.GetInt("si_deadZonePowerupTime") );
+
+	if ( spawnArgs.GetBool( "dropped" ) ) {
+		time = SEC2MS( spawnArgs.GetInt( "time", "10" ) );
+		if ( time > SEC2MS(10) )
+			time = SEC2MS(10);
+
+		Show();
+		CancelEvents(&EV_Remove);
+		PostEventSec( &EV_ResetSpawn, MS2SEC(time) );
+	}
+	else
+		Hide();
+}
+
+
+/*
+================
+riDeadZonePowerup::Pickup
+================
+*/
+bool riDeadZonePowerup::Pickup( idPlayer* player ) {
+	// regular pickup routine, but unique items need to think to know when to respawn
+	bool pickup;
+	if ( player->PowerUpActive(POWERUP_DEADZONE) )
+		return false;
+
+	pickup = idItemPowerup::Pickup( player );
+
+	if ( spawnArgs.GetBool( "dropped" ) ) {
+		// Cancel the respawn so the powerup doesn't get removed 
+		// from the player that just picked it up.
+		PostEventMS( &EV_Remove, 0 );
+		CancelEvents( &EV_ResetSpawn );
+	}
+
+	return pickup;
+}
+
+/*
+================
+riDeadZonePowerup::ResetSpawn
+================
+*/
+void riDeadZonePowerup::ResetSpawn( int powerup ) {
+	int count = 1;
+	idEntity* ent;
+	riDeadZonePowerup* spawnSpot = 0;
+	for ( ent = gameLocal.spawnedEntities.Next(); ent != NULL; ent = ent->spawnNode.Next() ) {
+
+		// If its not a DeadZone powerup then skip it
+		if ( !ent->IsType( riDeadZonePowerup::Type ) ) {
+			continue;			
+		}
+		
+		// Make sure its the right type first
+		riDeadZonePowerup* flag;
+		flag = static_cast<riDeadZonePowerup*>(ent);
+		if ( flag->powerup != powerup ) {
+			continue;
+		}
+		
+		if ( flag->spawnArgs.GetBool("dropped", "0") && flag == this ) {			
+			flag->PostEventMS( &EV_Remove, 0 );
+		} else {
+			if ( !flag->IsVisible() ) {
+				if ( !(rand()%count)  ) {
+					spawnSpot = flag;
+					if ( flag->spawnArgs.GetBool("dropped", "0") )
+						gameLocal.DPrintf("WARNING: Trying to spawn a powerup at a DROPPED location!");
+				}
+				count++;
+			}		
+		}
+	}	
+	
+	if ( spawnSpot ) {
+		spawnSpot->Show();
+		spawnSpot->PostEventMS( &EV_RespawnItem, 0 );			
+	}
+	else {
+		gameLocal.DPrintf("WARNING: Failed to find a valid spawn spot!");
+	}
+}
+  
+/*
+================
+riDeadZonePowerup::Collide
+================
+*/
+bool riDeadZonePowerup::Collide( const trace_t &collision, const idVec3 &velocity ) {
+	idEntity* lol = gameLocal.entities[ collision.c.entityNum ];
+	if ( gameLocal.isMultiplayer && collision.c.contents & CONTENTS_ITEMCLIP && lol && !lol->IsType( idItem::GetClassType() ) ) {
+		PostEventMS( &EV_ResetSpawn, 0 ); // Just respawn it.
+	}
+	return false;
+}
+
+/*
+================
+riDeadZonePowerup::Event_ResetFlag
+================
+*/
+void riDeadZonePowerup::Event_ResetSpawn( void ) {
+	ResetSpawn( POWERUP_DEADZONE );
+}

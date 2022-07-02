@@ -353,7 +353,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, const idLis
 		fc.event = idEventDef::FindEvent( (*fc.parmList)[0] );
 		if( !fc.event ) {
 			SAFE_DELETE_PTR( fc.parmList );
-			return va( "Event '%s' not found", (*fc.parmList)[0] );
+			return va( "Event '%s' not found", (*fc.parmList)[0].c_str() );
 		}
 		
 		fc.parmList->RemoveIndex( 0 );

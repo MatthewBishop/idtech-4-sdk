@@ -62,6 +62,7 @@ extern	rvBSEManager			*bse;
 class rvDeclEffectEdit
 {
 public:
+	virtual ~rvDeclEffectEdit() {}
 	virtual void 					Finish( class rvDeclEffect *edit ) = 0;
 	virtual class rvSegmentTemplate	*GetSegmentTemplate( class rvDeclEffect *edit, const char *name ) = 0;
 	virtual class rvSegmentTemplate	*GetSegmentTemplate( class rvDeclEffect *edit, int i ) = 0;

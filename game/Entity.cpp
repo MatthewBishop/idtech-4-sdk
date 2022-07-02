@@ -1785,7 +1785,7 @@ rvClientEffect* idEntity::PlayEffect( const idDecl *effect, jointHandle_t joint,
 // RAVEN END
 
 	RV_PUSH_SYS_HEAP_ID(RV_HEAP_ID_MULTIPLE_FRAME);
-	rvClientEffect* clientEffect = new rvClientEffect ( effect );
+	rvClientEffect* clientEffect = new rvClientEffect( effect );
 	RV_POP_HEAP();
 
 	if( !clientEffect ) {
@@ -1799,12 +1799,12 @@ rvClientEffect* idEntity::PlayEffect( const idDecl *effect, jointHandle_t joint,
 		return NULL;
 	}
 
-	clientEffect->SetOrigin ( originOffset );
-	clientEffect->SetAxis ( axisOffset );
-	clientEffect->Bind ( this, joint );
+	clientEffect->SetOrigin( originOffset );
+	clientEffect->SetAxis( axisOffset );
+	clientEffect->Bind( this, joint );
 	clientEffect->SetGravity( gameLocal.GetCurrentGravity( this ) );
 
-	if ( !clientEffect->Play ( gameLocal.time, loop, endOrigin ) ) {
+	if ( !clientEffect->Play( gameLocal.time, loop, endOrigin ) ) {
 		delete clientEffect;
 		return NULL;
 	}
@@ -1826,11 +1826,11 @@ rvClientEffect* idEntity::PlayEffect( const idDecl *effect, const idVec3& origin
 	}
 
 	if ( entityNumber == ENTITYNUM_WORLD ) {
-		return gameLocal.PlayEffect( effect, origin, axis, loop, endOrigin, broadcast, category, effectTint );
+		return gameLocal.PlayEffect( effect, origin, axis, loop, endOrigin, broadcast, false, category, effectTint );
 	}
 
 	// Calculate the local origin and axis from the given globals
-	localOrigin = (origin - renderEntity.origin) * renderEntity.axis.Transpose ( );
+	localOrigin = ( origin - renderEntity.origin ) * renderEntity.axis.Transpose();
 	localAxis   = axis * renderEntity.axis.Transpose();
 
 	if ( !gameLocal.isClient && broadcast ) {
@@ -1879,7 +1879,7 @@ rvClientEffect* idEntity::PlayEffect( const idDecl *effect, const idVec3& origin
 // RAVEN BEGIN
 // mwhitlock: Dynamic memory consolidation
 	RV_PUSH_SYS_HEAP_ID(RV_HEAP_ID_MULTIPLE_FRAME);
-	rvClientEffect* clientEffect = new rvClientEffect ( effect );
+	rvClientEffect* clientEffect = new rvClientEffect( effect );
 	RV_POP_HEAP();
 // RAVEN END
 
@@ -1894,12 +1894,12 @@ rvClientEffect* idEntity::PlayEffect( const idDecl *effect, const idVec3& origin
 		return NULL;
 	}
 
-	clientEffect->SetOrigin ( localOrigin );
-	clientEffect->SetAxis ( localAxis );
-	clientEffect->Bind ( this );
+	clientEffect->SetOrigin( localOrigin );
+	clientEffect->SetAxis( localAxis );
+	clientEffect->Bind( this );
 	clientEffect->SetGravity( gameLocal.GetCurrentGravity( this ) );
 
-	if ( !clientEffect->Play ( gameLocal.time, loop, endOrigin ) ) {
+	if ( !clientEffect->Play( gameLocal.time, loop, endOrigin ) ) {
 		delete clientEffect;
 		return NULL;
 	}
@@ -1923,10 +1923,7 @@ void idEntity::StopAllEffects( bool destroyParticles ) {
 
 	for( cent = clientEntities.Next(); cent != NULL; cent = next ) {
 		next = cent->bindNode.Next();
-// RAVEN BEGIN
-// jnewquist: Use accessor for static class type 
 		if ( cent->IsType ( rvClientEffect::GetClassType() ) ) {
-// RAVEN END
 			static_cast<rvClientEffect *>( cent )->Stop( destroyParticles );
 		}
 	}		
@@ -1950,24 +1947,21 @@ void idEntity::StopEffect( const idDecl *effect, bool destroyParticles ) {
 		next = cent->bindNode.Next();
 		
 		// Is this client entity an effect?
-// RAVEN BEGIN
-// jnewquist: Use accessor for static class type 
 		if ( !cent->IsType( rvClientEffect::GetClassType() ) ) {
-// RAVEN END
 			continue;
 		}
 		
 		// Now check to make sure its the specific effect we want to stop		
 		rvClientEffect* clientEffect;
 		clientEffect = static_cast<rvClientEffect *>( cent );
-		if ( clientEffect->GetEffectIndex ( ) == effect->Index() ) {
-			clientEffect->Stop ( destroyParticles );
+		if ( clientEffect->GetEffectIndex() == effect->Index() ) {
+			clientEffect->Stop( destroyParticles );
 		}
 	}
 }
 
-void idEntity::StopEffect ( const char* effectName, bool destroyParticles ) {
-	StopEffect ( gameLocal.GetEffect ( spawnArgs, effectName ), destroyParticles );
+void idEntity::StopEffect( const char* effectName, bool destroyParticles ) {
+	StopEffect( gameLocal.GetEffect( spawnArgs, effectName ), destroyParticles );
 }
 
 // RAVEN END
@@ -5718,27 +5712,24 @@ void idEntity::ReadBindFromSnapshot( const idBitMsgDelta &msg ) {
 	if ( bindEntityNum != ENTITYNUM_NONE ) {
 		master = gameLocal.entities[ bindEntityNum ];
 
-		if ( master != bindMaster ) {
-			if ( bindMaster ) {
-				Unbind();
+		bindOrientated = ( bindInfo >> GENTITYNUM_BITS ) & 1;
+		bindPos = ( bindInfo >> ( GENTITYNUM_BITS + 3 ) );
+		switch( ( bindInfo >> ( GENTITYNUM_BITS + 1 ) ) & 3 ) {
+			case 1: {
+				BindToJoint( master, (jointHandle_t) bindPos, bindOrientated );
+				break;
 			}
-			bindOrientated = ( bindInfo >> GENTITYNUM_BITS ) & 1;
-			bindPos = ( bindInfo >> ( GENTITYNUM_BITS + 3 ) ) & 3;
-			switch( ( bindInfo >> ( GENTITYNUM_BITS + 1 ) ) & 3 ) {
-				case 1: {
-					BindToJoint( master, (jointHandle_t) bindPos, bindOrientated );
-					break;
-				}
-				case 2: {
-					BindToBody( master, bindPos, bindOrientated );
-					break;
-				}
-				default: {
-					Bind( master, bindOrientated );
-					break;
-				}
+			case 2: {
+				BindToBody( master, bindPos, bindOrientated );
+				break;
+			}
+			default: {
+				Bind( master, bindOrientated );
+				break;
 			}
 		}
+	} else if ( bindMaster ) {
+		Unbind();
 	}
 }
 
@@ -6403,7 +6394,7 @@ void idAnimatedEntity::UpdateAnimation( void ) {
 	// get the latest frame bounds
 	animator.GetBounds( gameLocal.time, renderEntity.bounds );
 	if ( renderEntity.bounds.IsCleared() && !fl.hidden ) {
-		gameLocal.DPrintf( "%d: inside out bounds\n", gameLocal.time );
+		gameLocal.DPrintf( "idAnimatedEntity %s %d: inside out bounds - %d\n", GetName(), entityNumber, gameLocal.time );
 	}
 
 	// update the renderEntity

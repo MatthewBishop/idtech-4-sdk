@@ -251,6 +251,7 @@ private:
 class rvSoundShaderEdit
 {
 public:
+	virtual ~rvSoundShaderEdit() {}
 	virtual	const char *	GetSampleName( const idSoundShader *sound, int index ) const = 0;
 	virtual	int				GetSamplesPerSec( const idSoundShader *sound, int index ) const = 0;
 	virtual	int				GetNumChannels( const idSoundShader *sound, int index ) const = 0;

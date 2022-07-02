@@ -151,10 +151,8 @@ def SetupUtils( env ):
 	if ( os.path.exists( 'sys/scons/SDK.py' ) ):
 		import SDK
 		sdk = SDK.idSDK()
-		env.PreBuildSDK = sdk.PreBuildSDK
 		env.BuildSDK = sdk.BuildSDK
 	else:
-		env.PreBuildSDK = NotImplementedStub
 		env.BuildSDK = NotImplementedStub
 
 	if ( os.path.exists( 'sys/scons/Setup.py' ) ):

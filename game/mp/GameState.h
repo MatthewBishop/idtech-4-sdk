@@ -26,7 +26,8 @@ typedef enum {
 	GS_DM,
 	GS_TEAMDM,
 	GS_CTF,
-	GS_TOURNEY
+	GS_TOURNEY,
+	GS_DZ
 } gameStateType_t;
 
 typedef enum {
@@ -85,6 +86,7 @@ public:
 	void			WriteNetworkInfo( idFile *file, int clientNum );
 	void			ReadNetworkInfo( idFile *file, int clientNum );
 
+	void			SpawnDeadZonePowerup();
 protected:
 	static gameStateType_t type;
 	rvGameState*	previousGameState;
@@ -394,5 +396,88 @@ ID_INLINE const char* rvTourneyGameState::GetRoundDescription( void ) {
 ID_INLINE int rvTourneyGameState::GetTourneyCount( void ) {
 	assert( type == GS_TOURNEY );
 	return tourneyCount;
+}
+
+/*
+===============================================================================
+
+riDZGameState
+
+Game state info for Dead Zone
+
+===============================================================================
+*/
+
+// current control zone state
+enum dzState_t {
+	DZ_NONE = 0,
+	DZ_TAKEN,
+	DZ_LOST,
+	DZ_DEADLOCK,
+	DZ_MARINES_TAKEN,
+	DZ_MARINES_LOST,
+	DZ_STROGG_TAKEN,
+	DZ_STROGG_LOST,
+	DZ_MARINE_TO_STROGG,
+	DZ_STROGG_TO_MARINE,
+	DZ_MARINE_DEADLOCK,
+	DZ_STROGG_DEADLOCK,
+	DZ_MARINE_REGAIN,
+	DZ_STROGG_REGAIN
+};
+
+struct dzStatus_t {
+	dzState_t	state;
+	int			clientNum;
+};
+
+class riDZGameState : public rvGameState {
+public:
+					riDZGameState( bool allocPrevious = true );
+					~riDZGameState( void );
+	virtual void	Clear( void );
+
+
+	virtual void	SendState( int clientNum = -1 );
+	virtual void	ReceiveState( const idBitMsg& msg );
+
+	virtual void	SendInitialState( int clientNum );
+
+	virtual void	PackState( idBitMsg& outMsg );
+	virtual void	WriteState( idBitMsg &msg );
+
+	virtual void	UnpackState( const idBitMsg& inMsg );
+
+	virtual void	GameStateChanged( void );
+	virtual void	Run( void );
+	
+	void			SetDZState( int dz, dzState_t newState );
+	dzState_t		GetDZState( int dz );
+
+	bool			operator==( const riDZGameState& rhs ) const;
+	riDZGameState&	operator=( const riDZGameState& rhs );
+
+	int				dzTriggerEnt;
+	int				dzShaderParm;
+
+private:
+	dzStatus_t		dzStatus[ TEAM_MAX ];	
+
+	void ControlZoneStateChanged( int team );
+};
+
+
+ID_INLINE dzState_t riDZGameState::GetDZState( int dz ) {
+	assert( dz >= 0 && dz < TEAM_MAX );
+
+	return dzStatus[ dz ].state;
+}
+
+ID_INLINE bool operator==( const dzStatus_t& lhs, const dzStatus_t rhs ) {
+	return (lhs.state == rhs.state) && (lhs.clientNum == rhs.clientNum);
+}
+
+ID_INLINE bool operator!=( const dzStatus_t& lhs, const dzStatus_t rhs ) {
+	return (lhs.state != rhs.state) || (lhs.clientNum != rhs.clientNum);
 }
 #endif

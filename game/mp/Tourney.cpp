@@ -233,7 +233,17 @@ void rvTourneyArena::UpdateState( void ) {
 				
 				//back to normal play?
 			} else if ( TimeLimitHit() ) {
-				gameLocal.mpGame.PrintMessageEvent( -1, MSG_TIMELIMIT );
+				// only send to clients in this arena, the times may be getting out of sync between the arenas during a round ( #13196 )
+				int i;
+				for ( i = 0; i < MAX_CLIENTS; i++ ) {
+					idPlayer* player = (idPlayer*)gameLocal.entities[ i ];
+					if ( !player ) {
+						continue;
+					}
+					if ( player->GetArena() == arenaID ) {
+						gameLocal.mpGame.PrintMessageEvent( i, MSG_TIMELIMIT );
+					}
+				}
 				if( GetLeader() == NULL ) {
 					// if tied at timelimit hit, goto sudden death
 					NewState( AS_SUDDEN_DEATH );
@@ -353,7 +363,8 @@ void rvTourneyArena::RemovePlayer( idPlayer* player ) {
 	}
 
 	if( !playerInArena ) {
-		gameLocal.Error( "rvTourneyArena::RemovePlayer() - Called on player who is not in arena '%d'\n", arenaID );
+		// occasionally happens if a client has dropped ( the bystander maybe )
+		common->Warning( "rvTourneyArena::RemovePlayer() - Called on player who is not in arena '%d'\n", arenaID );
 	}
 }
 

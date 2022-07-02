@@ -75,11 +75,19 @@ idMultiplayerGame::idMultiplayerGame
 ================
 */
 idMultiplayerGame::idMultiplayerGame() {
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	buyMenu = NULL;
+// RITUAL END
 	scoreBoard = NULL;
 	statSummary = NULL;
 	mainGui = NULL;
 	mapList = NULL;
 	msgmodeGui = NULL;
+	defaultWinner = -1;
+	deadZonePowerupCount = -1;
+	marineScoreBarPulseAmount = 0.0f;
+	stroggScoreBarPulseAmount = 0.0f;
 
 	memset( lights, 0, sizeof( lights ) );
 	memset( lightHandles, -1, sizeof( lightHandles ) );
@@ -89,6 +97,15 @@ idMultiplayerGame::idMultiplayerGame() {
 	for( int i = 0; i < TEAM_MAX; i++ ) {
 		teamScore[ i ] = 0;
 		flagEntities[ i ] = NULL;
+		teamDeadZoneScore[i] = 0;
+	}
+
+	for( int i = 0; i < TEAM_MAX; i++ ) 
+	for( int j = 0; j < MAX_TEAM_POWERUPS; j++ ) {
+		teamPowerups[i][j].powerup = 0;
+		teamPowerups[i][j].time = 0;
+		teamPowerups[i][j].endTime = 0;
+		teamPowerups[i][j].update = false;
 	}
 
 	announcerSoundQueue.Clear();
@@ -128,7 +145,15 @@ idMultiplayerGame::Reset
 void idMultiplayerGame::Reset() {
 	Clear();
 	assert( !scoreBoard && !mainGui && !mapList );
+
+	mpBuyingManager.Reset();
 	
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	buyMenu = uiManager->FindGui( "guis/buymenu.gui", true, false, true );
+	buyMenu->SetStateString( "field_credits", "$0.00");
+	buyMenu->SetStateBool( "gameDraw", true );
+// RITUAL END
 	PACIFIER_UPDATE;
 	scoreBoard = uiManager->FindGui( "guis/scoreboard.gui", true, false, true );
 
@@ -265,6 +290,8 @@ void idMultiplayerGame::Reset() {
 	UpdatePrivatePlayerCount();
 	
 	lastReadyToggleTime = -1;
+
+	cvarSystem->SetCVarBool( "s_voiceChatTest", false );
 }
 
 /*
@@ -302,6 +329,8 @@ void idMultiplayerGame::SpawnPlayer( int clientNum ) {
 	if ( clientNum == gameLocal.localClientNum ) {
 		tourneyGUI.SetupTourneyGUI( gameLocal.GetLocalPlayer()->mphud, scoreBoard );
 	}
+
+	lastVOAnnounce = 0;
 }
 
 /*
@@ -324,6 +353,8 @@ void idMultiplayerGame::Clear() {
 	nextMenu = 0;
 	pureReady = false;
 	scoreBoard = NULL;
+	buyMenu = NULL;
+	isBuyingAllowedRightNow = false;
 	statSummary = NULL;
 	mainGui = NULL;
 	msgmodeGui = NULL;
@@ -336,6 +367,8 @@ void idMultiplayerGame::Clear() {
 
 	voteValue.Clear();
 	voteString.Clear();
+
+	prevAnnouncerSnd = -1;
 
 	localisedGametype.Clear();
 
@@ -385,7 +418,29 @@ idMultiplayerGame::ClearMap
 */
 void idMultiplayerGame::ClearMap( void ) {
 	assaultPoints.Clear();
-//	MapRestart();
+	ClearAnnouncerSounds();
+	announcerPlayTime = 0;
+	powerupCount = 0;
+	marineScoreBarPulseAmount = 0.0f;
+	stroggScoreBarPulseAmount = 0.0f;
+	prevAnnouncerSnd = -1;
+
+	for( int i = 0; i < TEAM_MAX; i++ ) 
+	for( int j = 0; j < MAX_TEAM_POWERUPS; j++ ) {
+		teamPowerups[i][j].powerup = 0;
+		teamPowerups[i][j].time = 0;
+		teamPowerups[i][j].endTime = 0;
+		teamPowerups[i][j].update = false;
+	}
+
+	// Dead Zone uses teamFragCount as the "player score"
+	// so we need to clear it at the beginning of every round.
+	if ( gameLocal.gameType == GAME_DEADZONE ) {
+		for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+			playerState[i].teamFragCount = 0;
+			playerState[i].deadZoneScore = 0;
+		}
+	}
 }
 
 /*
@@ -573,7 +628,7 @@ idMultiplayerGame::CanCapture
 Determines if the given flag can be captured in the given gamestate
 ================
 */
-bool idMultiplayerGame::CanCapture ( int team ) {
+bool idMultiplayerGame::CanCapture( int team ) {
 	// no AP's in one flag
 	if( gameLocal.gameType == GAME_1F_CTF || gameLocal.gameType == GAME_ARENA_1F_CTF ) {
 		return true;
@@ -598,11 +653,23 @@ bool idMultiplayerGame::CanCapture ( int team ) {
 	return false;
 }
 
-void idMultiplayerGame::FlagCaptured ( idPlayer *player ) {
+void idMultiplayerGame::FlagCaptured( idPlayer *player ) {
 	if( !gameLocal.isClient ) {
 		AddTeamScore( player->team, 1 );
 		AddPlayerTeamScore( player, 5 );
 		
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+		if( gameLocal.mpGame.IsBuyingAllowedInTheCurrentGameMode() )
+		{
+			float teamCashAward = (float) gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "teamCashAward_flagCapture", 0 );
+			GiveCashToTeam( player->team, teamCashAward );
+
+			float cashAward = (float) gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "playerCashAward_flagCapture", 0 );
+			player->GiveCash( cashAward );
+		}
+// RITUAL END
+
 		gameLocal.ClearForwardSpawns();
 		
 		for( int i = 0; i < assaultPoints.Num(); i++ ) {
@@ -661,7 +728,15 @@ void idMultiplayerGame::ReceiveDeathMessage( idPlayer *attacker, int attackerSco
 	if( gameLocal.GetLocalPlayer() == NULL ) {
 		return;
 	}
-	
+
+// RITUAL BEGIN
+// squirrel: force buy menu open when you die
+	//if( gameLocal.IsMultiplayer() && gameLocal.mpGame.IsBuyingAllowedInTheCurrentGameMode() && victim == gameLocal.GetLocalPlayer() )
+	//{
+	//	OpenLocalBuyMenu();
+	//}
+// RITUAL END
+
 	const char* icon = "";
 
 	// if methodOfDeath is in range [0, MAX_WEAPONS - 1] it refers to a specific weapon. MAX_WEAPONS refers to
@@ -1021,20 +1096,47 @@ void idMultiplayerGame::UpdateTeamScoreboard( idUserInterface *scoreBoard ) {
 
 // RAVEN BEGIN
 // mekberg: redid this
-			if ( gameLocal.gameType == GAME_TDM ) {
+			if ( gameLocal.gameType == GAME_TDM )
+			{
 				scoreBoard->SetStateString ( 
 				va("team_%i_scores_item_%i", rankedPlayer->team, numTeamEntries[ rankedPlayer->team ]), 
 				va("%s\t%s\t%s\t%s\t%s\t%i\t%i\t%i\t", 
-				( useReady ? (rankedPlayer->IsReady() ? I_READY : I_NOT_READY) : "" ),					// ready icon
+				( useReady ? (rankedPlayer->IsReady() ? I_READY : I_NOT_READY) : "" ),			// ready icon
 				( player->IsPlayerMuted( rankedPlayer ) ? I_VOICE_DISABLED : I_VOICE_ENABLED ), // mute icon
 				( player->IsFriend( rankedPlayer ) ? I_FRIEND_ENABLED : I_FRIEND_DISABLED ),	// friend icon
 				rankedPlayer->GetUserInfo()->GetString( "ui_name" ),							// name
 				rankedPlayer->GetUserInfo()->GetString( "ui_clan" ),							// clan
-				rankedScore,										 							// score									
+				rankedScore,										 							// score
 				GetPlayerTime( rankedPlayer ),													// time
 				playerState[ rankedPlayer->entityNumber ].ping ) );								// ping
 				numTeamEntries[ rankedPlayer->team ]++;
-			} else {
+			}
+			//else if ( gameLocal.gameType == GAME_DEADZONE )
+			//{
+			//	// mekberg: made this check slightly more sane.
+			//	const char* flagString = "";
+			//	if ( rankedPlayer->PowerUpActive( rankedPlayer->team ? POWERUP_CTF_MARINEFLAG : POWERUP_CTF_STROGGFLAG ) ) {
+			//		flagString = ( rankedPlayer->team ? I_FLAG_MARINE : I_FLAG_STROGG );
+			//	} else if ( gameLocal.gameType == GAME_ARENA_CTF && gameLocal.GetLocalPlayer() && rankedPlayer->team == gameLocal.GetLocalPlayer()->team ) {
+			//		flagString = rankedPlayer->GetArenaPowerupString( );
+			//	}
+			//	scoreBoard->SetStateString ( 
+			//	va("team_%i_scores_item_%i", rankedPlayer->team, numTeamEntries[ rankedPlayer->team ]), 
+			//	va("%s\t%s\t%s\t%s\t%s\t%s\t%.01f\t%i\t%i\t%i\t", 
+			//	( useReady ? (rankedPlayer->IsReady() ? I_READY : I_NOT_READY) : "" ),			// ready icon
+			//	( player->IsPlayerMuted( rankedPlayer ) ? I_VOICE_DISABLED : I_VOICE_ENABLED ), // mute icon
+			//	( player->IsFriend( rankedPlayer ) ? I_FRIEND_ENABLED : I_FRIEND_DISABLED ),	// friend icon
+			//	flagString,																		// shouchard: twhitaker: updated steve's original flag system 
+			//	rankedPlayer->GetUserInfo()->GetString( "ui_name" ),							// name
+			//	rankedPlayer->GetUserInfo()->GetString( "ui_clan" ),							// clan
+			//	rankedScore * 0.1f,										 						// score
+			//	playerState[ rankedPlayer->entityNumber ].fragCount,							// kills
+			//	GetPlayerTime( rankedPlayer ),													// time
+			//	playerState[ rankedPlayer->entityNumber ].ping ) );								// ping
+			//	numTeamEntries[ rankedPlayer->team ]++;
+			//}
+			else
+			{
 				// mekberg: made this check slightly more sane.
 				const char* flagString = "";
 				if ( rankedPlayer->PowerUpActive( rankedPlayer->team ? POWERUP_CTF_MARINEFLAG : POWERUP_CTF_STROGGFLAG ) ) {
@@ -1045,14 +1147,14 @@ void idMultiplayerGame::UpdateTeamScoreboard( idUserInterface *scoreBoard ) {
 				scoreBoard->SetStateString ( 
 				va("team_%i_scores_item_%i", rankedPlayer->team, numTeamEntries[ rankedPlayer->team ]), 
 				va("%s\t%s\t%s\t%s\t%s\t%s\t%i\t%i\t%i\t%i\t", 
-				( useReady ? (rankedPlayer->IsReady() ? I_READY : I_NOT_READY) : "" ),					// ready icon
+				( useReady ? (rankedPlayer->IsReady() ? I_READY : I_NOT_READY) : "" ),			// ready icon
 				( player->IsPlayerMuted( rankedPlayer ) ? I_VOICE_DISABLED : I_VOICE_ENABLED ), // mute icon
 				( player->IsFriend( rankedPlayer ) ? I_FRIEND_ENABLED : I_FRIEND_DISABLED ),	// friend icon
 				flagString,																		// shouchard: twhitaker: updated steve's original flag system 
 				rankedPlayer->GetUserInfo()->GetString( "ui_name" ),							// name
 				rankedPlayer->GetUserInfo()->GetString( "ui_clan" ),							// clan
-				rankedScore,										 							// score	
-				playerState[ rankedPlayer->entityNumber ].fragCount,							// kills					
+				rankedScore,										 							// score
+				playerState[ rankedPlayer->entityNumber ].fragCount,							// kills
 				GetPlayerTime( rankedPlayer ),													// time
 				playerState[ rankedPlayer->entityNumber ].ping ) );								// ping
 				numTeamEntries[ rankedPlayer->team ]++;
@@ -1120,6 +1222,8 @@ void idMultiplayerGame::UpdateTeamScoreboard( idUserInterface *scoreBoard ) {
 	scoreBoard->SetStateString( "servertimelimit", va( "%s: %d", common->GetLocalizedString( "#str_107659" ), gameLocal.serverInfo.GetInt( "si_timeLimit" ) ) );
 	if ( gameLocal.IsFlagGameType() ) {
 		scoreBoard->SetStateString( "serverlimit", va( "%s: %d", common->GetLocalizedString( "#str_107661" ), gameLocal.serverInfo.GetInt( "si_captureLimit" ) ) );
+	} else if ( gameLocal.gameType == GAME_DEADZONE ) {
+		scoreBoard->SetStateString( "serverlimit", va( "%s: %d", common->GetLocalizedString( "#str_122008" ), gameLocal.serverInfo.GetInt( "si_controlTime" ) ) );		
 	} else {
 		scoreBoard->SetStateString( "serverlimit", va( "%s: %d", common->GetLocalizedString( "#str_107660" ), gameLocal.serverInfo.GetInt( "si_fragLimit" ) ) );		
 	}
@@ -1400,7 +1504,7 @@ idMultiplayerGame::GameTime
 ================
 */
 const char *idMultiplayerGame::GameTime( void ) {
-	static char buff[16];
+	static char buff[32];
 	int m, s, t, ms;
 
 	bool inCountdown = false;
@@ -1418,9 +1522,9 @@ const char *idMultiplayerGame::GameTime( void ) {
 		if ( ms <= 0 ) {
 			// in tourney mode use a different string since warmups happen before each round
 			// (not really before the overall game)
-			strcpy( buff, va( "%s --", (gameState->GetMPGameState() == COUNTDOWN && gameLocal.gameType == GAME_TOURNEY) ? common->GetLocalizedString( "#str_107721" ) : common->GetLocalizedString( "#str_107706" ) ) );
+			idStr::snPrintf( buff, sizeof( buff ), "%s --", ( gameState->GetMPGameState() == COUNTDOWN && gameLocal.gameType == GAME_TOURNEY ) ? common->GetLocalizedString( "#str_107721" ) : common->GetLocalizedString( "#str_107706" ) );
 		} else {
-			sprintf( buff, "%s %i", (gameState->GetMPGameState() == COUNTDOWN && gameLocal.gameType == GAME_TOURNEY) ? common->GetLocalizedString( "#str_107721" ) : common->GetLocalizedString( "#str_107706" ), s );
+			idStr::snPrintf( buff, sizeof( buff ), "%s %i", (gameState->GetMPGameState() == COUNTDOWN && gameLocal.gameType == GAME_TOURNEY) ? common->GetLocalizedString( "#str_107721" ) : common->GetLocalizedString( "#str_107706" ), s );
 		}
 	} else {
 		int timeLimit = gameLocal.serverInfo.GetInt( "si_timeLimit" );
@@ -1816,7 +1920,7 @@ void idMultiplayerGame::ExecuteVote( void ) {
 			needRestart = gameLocal.NeedRestart();
 			cmdSystem->BufferCommandText( CMD_EXEC_NOW, "rescanSI" " " __FILE__ " " __LINESTR__ );
 			if ( needRestart ) {
-				cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "nextMap" );
+				gameLocal.sessionCommand = "nextMap";
 			}
 			break;
 		case VOTE_FRAGLIMIT:
@@ -1824,7 +1928,7 @@ void idMultiplayerGame::ExecuteVote( void ) {
 			needRestart = gameLocal.NeedRestart();
 			cmdSystem->BufferCommandText( CMD_EXEC_NOW, "rescanSI" " " __FILE__ " " __LINESTR__ );
 			if ( needRestart ) {
-				cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "nextMap" );
+				gameLocal.sessionCommand = "nextMap";
 			}
 			break;
 		case VOTE_GAMETYPE:
@@ -1838,16 +1942,18 @@ void idMultiplayerGame::ExecuteVote( void ) {
 			cvarSystem->SetCVarString( "si_map", voteValue );
 			cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "serverMapRestart\n");
 			break;
-		case VOTE_MIN_PLAYERS:
-			cvarSystem->SetCVarString( "si_minPlayers", voteValue );
-			cmdSystem->BufferCommandText( CMD_EXEC_NOW, "rescanSI" " " __FILE__ " " __LINESTR__ );
+		case VOTE_BUYING:
+			if ( gameLocal.GetCurrentDemoProtocol() == 69 )
+				gameLocal.Error("MIN_PLAYERS vote in a Quake 4 1.2 recorded demo ( protocol 69 ) is not supported.");
+			cvarSystem->SetCVarString( "si_isBuyingEnabled", voteValue );
+			//cmdSystem->BufferCommandText( CMD_EXEC_NOW, "rescanSI" " " __FILE__ " " __LINESTR__ );
+			cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "serverMapRestart\n");
 			break;
 // RAVEN BEGIN
 // shouchard:  added capture limit
 		case VOTE_CAPTURELIMIT:
 			si_captureLimit.SetInteger( atoi( voteValue ) );
-			cmdSystem->BufferCommandText( CMD_EXEC_NOW, "rescanSI" " " __FILE__ " " __LINESTR__ );
-			cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "nextMap" );
+			gameLocal.sessionCommand = "nextMap";
 			break;
 		// todo:  round limit here (if we add it)
 		case VOTE_AUTOBALANCE:
@@ -1858,6 +1964,10 @@ void idMultiplayerGame::ExecuteVote( void ) {
 			ExecutePackedVote();
 			break;
 // RAVEN END
+		case VOTE_CONTROLTIME:
+			si_controlTime.SetInteger( atoi( voteValue ) );
+			gameLocal.sessionCommand = "nextMap";
+			break;
 		case VOTE_NEXTMAP:
 			cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "serverNextMap\n" );
 			break;
@@ -1960,11 +2070,14 @@ void idMultiplayerGame::ClientCallPackedVote( const voteStruct_t &voteData ) {
 	if ( 0 != ( voteData.m_fieldFlags & VOTEFLAG_FRAGLIMIT ) ) {
 		outMsg.WriteShort( idMath::ClampShort( voteData.m_fragLimit ) );
 	}
-	if ( 0 != ( voteData.m_fieldFlags & VOTEFLAG_MIN_PLAYERS ) ) {
-		outMsg.WriteShort( idMath::ClampShort( voteData.m_minPlayers ) );
+	if ( 0 != ( voteData.m_fieldFlags & VOTEFLAG_BUYING ) ) {
+		outMsg.WriteShort( idMath::ClampShort( voteData.m_buying) );
 	}
 	if ( 0 != ( voteData.m_fieldFlags & VOTEFLAG_TEAMBALANCE ) ) {
 		outMsg.WriteByte( idMath::ClampChar( voteData.m_teamBalance ) );
+	}
+	if ( 0 != ( voteData.m_fieldFlags & VOTEFLAG_CONTROLTIME ) ) {
+		outMsg.WriteShort( idMath::ClampShort( voteData.m_controlTime ) );
 	}
 	networkSystem->ClientSendReliableMessage( outMsg );
 }
@@ -2001,7 +2114,7 @@ void idMultiplayerGame::ServerCallPackedVote( int clientNum, const idBitMsg &msg
 	// clear any unallowed votes
 	int disallowedVotes = gameLocal.serverInfo.GetInt( "si_voteFlags" );
 	for( int i = 0; i < NUM_VOTES; i++ ) {
-		if( disallowedVotes & (1 << i) ) {
+		if ( disallowedVotes & (1 << i) ) {
 			voteData.m_fieldFlags &= ~(1 << i);
 		}
 	}
@@ -2022,7 +2135,7 @@ void idMultiplayerGame::ServerCallPackedVote( int clientNum, const idBitMsg &msg
 		char buffer[128];
 		msg.ReadString( buffer, sizeof( buffer ) );
 		voteData.m_map = buffer;
-		if ( 0 == idStr::Icmp( buffer, si_map.GetString() ) ) {		
+		if ( 0 == idStr::Icmp( buffer, si_map.GetString() ) ) {
 			//gameLocal.ServerSendChatMessage( clientNum, "server", "Selected map is the same as current map." );
 			// mekberg: localized string
 			const char* mapName = si_map.GetString();
@@ -2061,6 +2174,9 @@ void idMultiplayerGame::ServerCallPackedVote( int clientNum, const idBitMsg &msg
 			case VOTE_GAMETYPE_ARENA_CTF:
 				voteString = "Arena CTF";
 				break;
+			case VOTE_GAMETYPE_DEADZONE:
+				voteString = "DeadZone";
+				break;
 			case VOTE_GAMETYPE_DM:
 			default:
 				voteString = "DM";
@@ -2072,12 +2188,6 @@ void idMultiplayerGame::ServerCallPackedVote( int clientNum, const idBitMsg &msg
 			validVote = false;
 			voteData.m_fieldFlags &= ( ~VOTEFLAG_GAMETYPE );
 		}
-//jshepard: if chosen gametype is CT`F and our map doesn't support CTF, change the map to a random CTF map.
-//jshepard: Let's wait until the vote is resolved before we do this!
-/*		if( voteData.m_gameType == VOTE_GAMETYPE_CTF || voteData.m_gameType == VOTE_GAMETYPE_ARENA_CTF )	{
-			PickMap( "CTF");
-			voteData.m_map = si_map.GetString();
-		} */
 	}
 
 	// timelimit
@@ -2153,13 +2263,13 @@ void idMultiplayerGame::ServerCallPackedVote( int clientNum, const idBitMsg &msg
 		}
 	} */
 
-	// minplayers
-	if ( 0 != ( voteData.m_fieldFlags & VOTEFLAG_MIN_PLAYERS ) ) {
-		voteData.m_minPlayers = msg.ReadShort();
-		if ( voteData.m_minPlayers == si_minPlayers.GetInteger() ) {
-			gameLocal.ServerSendChatMessage( clientNum, "server", "#str_107733" );
+	// buying
+	if ( 0 != ( voteData.m_fieldFlags & VOTEFLAG_BUYING ) ) {
+		voteData.m_buying = msg.ReadShort();
+		if ( voteData.m_buying == si_isBuyingEnabled.GetInteger() ) {
+			gameLocal.ServerSendChatMessage( clientNum, "server", "#str_122013" );
 			validVote = false;
-			voteData.m_fieldFlags &= ( ~VOTEFLAG_MIN_PLAYERS );
+			voteData.m_buying &= ( ~VOTEFLAG_BUYING );
 		}
 	}
 
@@ -2170,6 +2280,16 @@ void idMultiplayerGame::ServerCallPackedVote( int clientNum, const idBitMsg &msg
 			gameLocal.ServerSendChatMessage( clientNum, "server", "#str_104403" );
 			validVote = false;
 			voteData.m_fieldFlags &= ( ~VOTEFLAG_TEAMBALANCE );
+		}
+	}
+
+	// control time
+	if ( 0 != ( voteData.m_fieldFlags & VOTEFLAG_CONTROLTIME ) ) {
+		voteData.m_controlTime = msg.ReadShort();
+		if ( voteData.m_controlTime == si_controlTime.GetInteger() ) {
+			gameLocal.ServerSendChatMessage( clientNum, "server", "#str_122017" );
+			validVote = false;
+			voteData.m_fieldFlags &= ( ~VOTEFLAG_CONTROLTIME );
 		}
 	}
 
@@ -2268,12 +2388,12 @@ void idMultiplayerGame::ClientStartPackedVote( int clientNum, const voteStruct_t
 				maxWindows = true;
 			}
 		}
-		if ( 0 != ( currentVoteData.m_fieldFlags & VOTEFLAG_MIN_PLAYERS ) ) {
+		if ( 0 != ( currentVoteData.m_fieldFlags & VOTEFLAG_BUYING ) ) {
 			mpHud->SetStateString( va( "voteInfo_%d", voteLineCount ), 
-				va( common->GetLocalizedString( "#str_104424" ), currentVoteData.m_minPlayers ));
+				va( common->GetLocalizedString( "#str_122011" ), currentVoteData.m_buying ? common->GetLocalizedString( "#str_104341" ) : common->GetLocalizedString( "#str_104342" ) ) );
 
 			mainGui->SetStateString( va( "voteData_item_%d", menuVoteLineCount ), 
-				va( common->GetLocalizedString( "#str_104424" ), currentVoteData.m_minPlayers ));
+				va( common->GetLocalizedString( "#str_122011" ), currentVoteData.m_buying  ? common->GetLocalizedString( "#str_104341" ) : common->GetLocalizedString( "#str_104342" ) ) );
 
 			voteLineCount++;
 			menuVoteLineCount++;
@@ -2288,6 +2408,20 @@ void idMultiplayerGame::ClientStartPackedVote( int clientNum, const voteStruct_t
 
 			mainGui->SetStateString( va( "voteData_item_%d", menuVoteLineCount ),
 				va( common->GetLocalizedString( "#str_104427" ), currentVoteData.m_teamBalance ? common->GetLocalizedString( "#str_104341" ) : common->GetLocalizedString( "#str_104342" ) ) );
+
+			voteLineCount++;
+			menuVoteLineCount++;
+			if( voteLineCount == 7)	{
+				voteLineCount = 6;
+				maxWindows = true;
+			}
+		}
+		if ( 0 != ( currentVoteData.m_fieldFlags & VOTEFLAG_CONTROLTIME) ) {
+			mpHud->SetStateString( va( "voteInfo_%d", voteLineCount ),
+				va( common->GetLocalizedString( "#str_122009" ), currentVoteData.m_controlTime ) );
+
+			mainGui->SetStateString( va( "voteData_item_%d", menuVoteLineCount ),
+				va( common->GetLocalizedString( "#str_122009" ), currentVoteData.m_controlTime ) );
 
 			voteLineCount++;
 			menuVoteLineCount++;
@@ -2318,10 +2452,10 @@ void idMultiplayerGame::ClientStartPackedVote( int clientNum, const voteStruct_t
 				mapName = common->GetLocalizedString( mapDef->dict.GetString( "name", mapName ) );
 			}
 			mpHud->SetStateString( va( "voteInfo_%d", voteLineCount ),
-				va( "%s: %s", common->GetLocalizedString( "#str_200040" ), mapName ) );
+				va( common->GetLocalizedString( "#str_104429" ), mapName ) );
 
 			mainGui->SetStateString( va( "voteData_item_%d", menuVoteLineCount ),
-				va( "%s: %s", common->GetLocalizedString( "#str_200040" ), mapName ) );
+				va( common->GetLocalizedString( "#str_104429" ), mapName ) );
 
 			voteLineCount++;
 			menuVoteLineCount++;
@@ -2344,6 +2478,9 @@ void idMultiplayerGame::ClientStartPackedVote( int clientNum, const voteStruct_t
 					break;
 				case VOTE_GAMETYPE_ARENA_CTF:
 					gameTypeString = common->GetLocalizedString( "#str_110015" );
+					break;
+				case VOTE_GAMETYPE_DEADZONE:
+					gameTypeString = "DeadZone";
 					break;
 				case VOTE_GAMETYPE_DM:
 				default:
@@ -2448,6 +2585,12 @@ void idMultiplayerGame::ServerStartPackedVote( int clientNum, const voteStruct_t
 		return;
 	}
 
+	// #13705: clients passing a vote during server restart could abuse the voting system into passing the vote right away after the new map loads
+	if ( !playerState[ clientNum ].ingame ) {
+		common->Printf( "ignore vote called by client %d: not in game\n", clientNum );
+		return;
+	}
+
 	// setup
 	yesVotes = 1;
 	noVotes = 0;
@@ -2488,11 +2631,14 @@ void idMultiplayerGame::ServerStartPackedVote( int clientNum, const voteStruct_t
 	if ( 0 != ( voteData.m_fieldFlags & VOTEFLAG_CAPTURELIMIT ) ) {
 		outMsg.WriteShort( idMath::ClampShort( voteData.m_captureLimit ) );
 	}
-	if ( 0 != ( voteData.m_fieldFlags & VOTEFLAG_MIN_PLAYERS ) ) {
-		outMsg.WriteShort( idMath::ClampShort( voteData.m_minPlayers ) );
+	if ( 0 != ( voteData.m_fieldFlags & VOTEFLAG_BUYING ) ) {
+		outMsg.WriteShort( idMath::ClampShort( voteData.m_buying ) );
 	}
 	if ( 0 != ( voteData.m_fieldFlags & VOTEFLAG_TEAMBALANCE ) ) {
 		outMsg.WriteByte( idMath::ClampChar( voteData.m_teamBalance ) );
+	}
+	if ( 0 != ( voteData.m_fieldFlags & VOTEFLAG_CONTROLTIME ) ) {
+		outMsg.WriteShort( idMath::ClampShort( voteData.m_controlTime ) );
 	}
 	networkSystem->ServerSendReliableMessage( -1, outMsg );
 }
@@ -2516,13 +2662,18 @@ void idMultiplayerGame::ExecutePackedVote( void ) {
 	if ( 0 != ( currentVoteData.m_fieldFlags & VOTEFLAG_RESTART ) ) {
 		needRestart = true;
 	}
-	if ( 0 != ( currentVoteData.m_fieldFlags & VOTEFLAG_MIN_PLAYERS ) ) {
-		si_minPlayers.SetInteger( currentVoteData.m_minPlayers );
+	if ( 0 != ( currentVoteData.m_fieldFlags & VOTEFLAG_BUYING ) ) {
+		si_isBuyingEnabled.SetInteger( currentVoteData.m_buying );
 		needRescanSI = true;
+		needRestart = true;
 	}
 	if ( 0 != ( currentVoteData.m_fieldFlags & VOTEFLAG_TEAMBALANCE ) ) {
 		si_autobalance.SetInteger( currentVoteData.m_teamBalance );
 		needRescanSI = true;
+	}
+	if ( 0 != ( currentVoteData.m_fieldFlags & VOTEFLAG_CONTROLTIME ) ) {
+		si_controlTime.SetInteger( currentVoteData.m_controlTime );
+		cmdSystem->BufferCommandText( CMD_EXEC_NOW, "rescanSI" );
 	}
 	if ( 0 != ( currentVoteData.m_fieldFlags & VOTEFLAG_SHUFFLE ) ) {
 		ShuffleTeams();
@@ -2554,6 +2705,10 @@ void idMultiplayerGame::ExecutePackedVote( void ) {
 				break;
 			case VOTE_GAMETYPE_ARENA_CTF:
 				gameTypeString = "Arena CTF";
+				runPickMap = true;
+				break;
+			case VOTE_GAMETYPE_DEADZONE:
+				gameTypeString = "DeadZone";
 				runPickMap = true;
 				break;
 			case VOTE_GAMETYPE_DM:
@@ -2597,7 +2752,7 @@ void idMultiplayerGame::ExecutePackedVote( void ) {
 	}
 
 	if ( needNextMap ) {
-		cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "nextMap" );	
+		gameLocal.sessionCommand = "nextMap";
 	}
 	else if ( needRestart || gameLocal.NeedRestart() ) {
 		cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "serverMapRestart" );	
@@ -2736,6 +2891,7 @@ void idMultiplayerGame::CommonRun( void ) {
 			bool isTied = ( rankedTeams[ 0 ].Second() == rankedTeams[ 1 ].Second() );
 
 			if ( !wasTied && isTied ) {
+				if ( gameLocal.gameType != GAME_DEADZONE )
 				ScheduleAnnouncerSound( AS_TEAM_TEAMS_TIED, gameLocal.time );
 			} else if ( (leadingTeam != oldLeadingTeam && !isTied) || ( wasTied && !isTied ) ) {
 				ScheduleAnnouncerSound( leadingTeam ? AS_TEAM_STROGG_LEAD : AS_TEAM_MARINES_LEAD, gameLocal.time );
@@ -2892,6 +3048,242 @@ void idMultiplayerGame::ClientRun( void ) {
 
 /*
 ================
+idMultiplayerGame::ReportZoneControllingPlayer
+================
+*/
+void idMultiplayerGame::ReportZoneControllingPlayer( idPlayer* player )
+{
+	if ( !player )
+		return;
+
+	playerState[player->entityNumber].deadZoneScore += gameLocal.GetMSec();
+	playerState[player->entityNumber].teamFragCount = playerState[player->entityNumber].deadZoneScore / 1000;
+
+	float cashPerSecondForDeadZoneControl = (float) gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "playerCashAward_deadZoneControlPerSecond", 0 );
+//	player->GiveCash( cashPerSecondForDeadZoneControl * 0.001f * (float) gameLocal.GetMSec() );
+	player->buyMenuCash += ( cashPerSecondForDeadZoneControl * 0.001f * (float) gameLocal.GetMSec() );
+}
+
+
+/*
+================
+idMultiplayerGame::ReportZoneController
+================
+*/
+void idMultiplayerGame::ReportZoneController(int team, int pCount, int situation, idEntity* zoneTrigger)
+{
+	powerupCount = pCount;
+
+	idTrigger_Multi* zTrigger = 0;
+	if ( zoneTrigger && zoneTrigger->IsType( idTrigger_Multi::GetClassType() ) ) {
+		zTrigger = static_cast<idTrigger_Multi *>( zoneTrigger );
+	}
+
+	if ( gameLocal.mpGame.GetGameState()->GetMPGameState() != GAMEON && gameLocal.mpGame.GetGameState()->GetMPGameState() != SUDDENDEATH )
+	{
+		// We're not playing right now.  However, make sure all the clients are updated to know 
+		// that the zone is neutral.
+		((riDZGameState*)gameState)->SetDZState(TEAM_MARINE, DZ_NONE);
+		((riDZGameState*)gameState)->SetDZState(TEAM_STROGG, DZ_NONE);
+		if ( zTrigger && zTrigger->spawnArgs.MatchPrefix( "entityAffect" ) ) {
+			idEntity* targetEnt = gameLocal.FindEntity(zTrigger->spawnArgs.GetString("entityAffect", ""));
+			if ( targetEnt ) {
+				((riDZGameState*)gameState)->dzTriggerEnt = targetEnt->entityNumber;
+				((riDZGameState*)gameState)->dzShaderParm = 2;
+				targetEnt->SetShaderParm(7, 2.0f);
+			}
+		}
+		return;
+	}
+
+	if ( IsValidTeam(team) ) {
+		const int t = gameLocal.serverInfo.GetInt( "si_controlTime" );
+		teamDeadZoneScore[team] += gameLocal.GetMSec() * powerupCount;
+		teamScore[team] = (int)((float)teamDeadZoneScore[team] / 1000.0f);	
+
+		// We have a winner!
+		if ( teamDeadZoneScore[team] > t*1000 ) {
+			// Set the shaders and lights back to neutral.  
+			if ( zTrigger->spawnArgs.MatchPrefix( "colorTarget" ) ) {
+				const idKeyValue *arg;
+				int refLength = strlen( "colorTarget" );
+				int num = zTrigger->spawnArgs.GetNumKeyVals();
+				for( int i = 0; i < num; i++ ) {
+					arg = zTrigger->spawnArgs.GetKeyVal( i );
+					if ( arg->GetKey().Icmpn( "colorTarget", refLength ) == 0 ) {
+						idStr targetStr = arg->GetValue();
+						idEntity* targetEnt = gameLocal.FindEntity(targetStr);
+						if ( targetEnt ) {
+							targetEnt->SetColor(idVec3(0.75f, 0.75f, 0.75f));
+						}
+					}
+				}
+			}
+
+			if ( zTrigger && zTrigger->spawnArgs.MatchPrefix( "entityAffect" ) ) {
+				idEntity* targetEnt = gameLocal.FindEntity(zTrigger->spawnArgs.GetString("entityAffect", ""));
+				if ( targetEnt ) {
+					((riDZGameState*)gameState)->dzTriggerEnt = targetEnt->entityNumber;
+					((riDZGameState*)gameState)->dzShaderParm = 2;
+					targetEnt->SetShaderParm(7, 2.0f);
+				}
+			}
+
+			OnDeadZoneTeamVictory( team );
+
+			return;
+		}
+	}
+
+	// Someone took control of a zone, report this to the 
+	if ( situation == DZ_MARINES_TAKEN || situation == DZ_STROGG_TAKEN || situation == DZ_MARINE_TO_STROGG ||
+		situation == DZ_STROGG_TO_MARINE || situation == DZ_MARINE_REGAIN || situation == DZ_STROGG_REGAIN ) {
+		((riDZGameState*)gameState)->SetDZState(TEAM_MARINE, DZ_NONE); // Clear hacked deadlock
+		((riDZGameState*)gameState)->SetDZState(team, DZ_TAKEN);
+	}
+
+	const int NOCHANGE = -2;
+	const int DEADLOCK = 3;
+	int controlSit = NOCHANGE;
+	switch ( situation ) {
+		case DZ_NONE : 
+			controlSit = NOCHANGE;
+			break;
+		case DZ_MARINES_TAKEN : 
+			controlSit = TEAM_MARINE;
+			break;
+		case DZ_MARINES_LOST :
+			controlSit = TEAM_NONE;
+			((riDZGameState*)gameState)->SetDZState(TEAM_MARINE, DZ_LOST);
+			break;
+		case DZ_STROGG_TAKEN : 
+			controlSit = TEAM_STROGG;
+			break;
+		case DZ_STROGG_LOST : 
+			controlSit = TEAM_NONE;
+			((riDZGameState*)gameState)->SetDZState(TEAM_STROGG, DZ_LOST);
+			break;
+		case DZ_MARINE_TO_STROGG :
+			controlSit = TEAM_STROGG;
+			break;
+		case DZ_STROGG_TO_MARINE :
+			controlSit = TEAM_MARINE;
+			break;
+		case DZ_MARINE_DEADLOCK : 
+			controlSit = DEADLOCK;
+			((riDZGameState*)gameState)->SetDZState(TEAM_MARINE, DZ_DEADLOCK);
+			break;
+		case DZ_STROGG_DEADLOCK : 
+			controlSit = DEADLOCK;
+			((riDZGameState*)gameState)->SetDZState(TEAM_MARINE, DZ_DEADLOCK);
+			break;
+		case DZ_MARINE_REGAIN :
+			controlSit = TEAM_MARINE;
+			break;
+		case DZ_STROGG_REGAIN : 
+			controlSit = TEAM_STROGG;
+			break;
+	}
+
+	if ( zTrigger && controlSit == NOCHANGE && zTrigger->spawnArgs.MatchPrefix( "entityAffect" ) ) {
+		// There's been no change in status, but keep these variables updated on the client
+		idEntity* targetEnt = gameLocal.FindEntity(zTrigger->spawnArgs.GetString("entityAffect", ""));
+		if ( targetEnt ) {
+			((riDZGameState*)gameState)->dzTriggerEnt = targetEnt->entityNumber;
+			((riDZGameState*)gameState)->dzShaderParm = (int)targetEnt->GetRenderEntity()->shaderParms[7];
+		}
+	}
+
+	if ( controlSit == NOCHANGE || !zTrigger )
+		return; // We're done.
+
+	idVec3 colorVec;
+	int parmNum = 2;
+	if ( controlSit == TEAM_NONE ) {
+		colorVec = idVec3(0.75f, 0.75f, 0.75f);
+		parmNum = 2;
+	}
+	else if ( controlSit == TEAM_MARINE ) {
+		colorVec = idVec3(0.0f, 1.0f, 0.0f);
+		parmNum = 0;
+	}
+	else if ( controlSit == TEAM_STROGG ) {
+		colorVec = idVec3(1.0f, 0.5f, 0.0f);
+		parmNum = 1;
+	}
+	else if ( controlSit == DEADLOCK )  {
+		colorVec = idVec3(1.0f, 0.0f, 0.0f);
+		parmNum = 3;
+	}
+
+	if ( zTrigger->spawnArgs.MatchPrefix( "colorTarget" ) ) {
+		const idKeyValue *arg;
+		int refLength = strlen( "colorTarget" );
+		int num = zTrigger->spawnArgs.GetNumKeyVals();
+		for( int i = 0; i < num; i++ ) {
+			arg = zTrigger->spawnArgs.GetKeyVal( i );
+			if ( arg->GetKey().Icmpn( "colorTarget", refLength ) == 0 ) {
+				idStr targetStr = arg->GetValue();
+				idEntity* targetEnt = gameLocal.FindEntity(targetStr);
+				if ( targetEnt ) {
+					targetEnt->SetColor(colorVec);
+				}
+			}
+		}
+	}
+
+	if ( zTrigger && zTrigger->spawnArgs.MatchPrefix( "entityAffect" ) ) {
+		idEntity* targetEnt = gameLocal.FindEntity(zTrigger->spawnArgs.GetString("entityAffect", ""));
+		if ( targetEnt ) {
+			((riDZGameState*)gameState)->dzTriggerEnt = targetEnt->entityNumber;
+			((riDZGameState*)gameState)->dzShaderParm = parmNum;
+			targetEnt->SetShaderParm(7, (float)parmNum);
+		}
+	}
+}
+
+
+
+bool idMultiplayerGame::IsValidTeam(int team)
+{
+	if ( team == TEAM_MARINE || team == TEAM_STROGG )
+		return true;
+
+	return false;
+}
+
+
+void idMultiplayerGame::OnDeadZoneTeamVictory( int winningTeam )
+{
+	OnBuyModeTeamVictory( winningTeam );
+
+	gameState->NewState( GAMEREVIEW );
+}
+
+void idMultiplayerGame::OnBuyModeTeamVictory( int winningTeam )
+  {
+  	if( !IsBuyingAllowedInTheCurrentGameMode() )
+  		return;
+  
+  	float teamCashForWin	= (float) gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "teamCashAward_gameModeWin", 0 );
+  	float teamCashForTie	= (float) gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "teamCashAward_gameModeTie", 0 );
+  	float teamCashForLoss	= (float) gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "teamCashAward_gameModeLoss", 0 );
+  
+  	if( winningTeam == TEAM_NONE )
+  	{
+  		GiveCashToTeam( TEAM_MARINE, teamCashForTie );
+  		GiveCashToTeam( TEAM_STROGG, teamCashForTie );
+  	}
+  	else
+  	{
+  		int losingTeam = 1 - winningTeam;
+  		GiveCashToTeam( winningTeam, teamCashForWin );
+  		GiveCashToTeam( losingTeam, teamCashForLoss );
+  	}
+ }
+
+/*
+================
 idMultiplayerGame::Run
 ================
 */
@@ -2908,6 +3300,9 @@ void idMultiplayerGame::Run( void ) {
 
 	CheckSpecialLights( );
 
+//RITUAL BEGIN
+	UpdateTeamPowerups();
+//RITUAL END
 	gameState->Run();
 
 	gameState->SendState();
@@ -2964,9 +3359,12 @@ void idMultiplayerGame::UpdateMainGui( void ) {
 		mainGui->SetStateInt( "teamoff", 1 );
 	}
 // RAVEN END		
-	mainGui->SetStateInt( "teamon", gameLocal.gameType == GAME_TDM ? 1 : 0 );
-	mainGui->SetStateInt( "teamoff", gameLocal.gameType != GAME_TDM ? 1 : 0 );
-	if ( gameLocal.gameType == GAME_TDM ) {
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
+	mainGui->SetStateInt( "teamon", (gameLocal.gameType == GAME_TDM || gameLocal.gameType == GAME_DEADZONE) ? 1 : 0 );
+	mainGui->SetStateInt( "teamoff", !(gameLocal.gameType == GAME_TDM || gameLocal.gameType == GAME_DEADZONE) ? 1 : 0 );
+	if ( gameLocal.gameType == GAME_TDM || gameLocal.gameType == GAME_DEADZONE ) {
+// RITUAL END
 		idPlayer *p = gameLocal.GetClientByNum( gameLocal.localClientNum );
 		if ( p ) {
 			mainGui->SetStateInt( "team", p->team );
@@ -3079,6 +3477,43 @@ void idMultiplayerGame::UpdateMainGui( void ) {
 
 /*
 ================
+idMultiplayerGame::SetupBuyMenuItems
+================
+*/
+void idMultiplayerGame::SetupBuyMenuItems()
+{
+	idPlayer* player = gameLocal.GetLocalPlayer();
+	if ( !player ) 
+		return;
+
+	buyMenu->SetStateInt( "buyStatus_shotgun", player->ItemBuyStatus( "weapon_shotgun" ) );
+	buyMenu->SetStateInt( "buyStatus_hyperblaster", player->ItemBuyStatus( "weapon_hyperblaster" ) );
+	buyMenu->SetStateInt( "buyStatus_grenadelauncher", player->ItemBuyStatus( "weapon_grenadelauncher" ) );
+	buyMenu->SetStateInt( "buyStatus_nailgun", player->ItemBuyStatus( "weapon_nailgun" ) );
+	buyMenu->SetStateInt( "buyStatus_rocketlauncher", player->ItemBuyStatus( "weapon_rocketlauncher" ) );
+	buyMenu->SetStateInt( "buyStatus_railgun", player->ItemBuyStatus( "weapon_railgun" ) );
+	buyMenu->SetStateInt( "buyStatus_lightninggun", player->ItemBuyStatus( "weapon_lightninggun" ) );
+	//	buyMenu->SetStateInt( "buyStatus_dmg", player->ItemBuyStatus( "weapon_dmg" ) );
+	buyMenu->SetStateInt( "buyStatus_napalmgun", player->ItemBuyStatus( "weapon_napalmgun" ) );
+
+	buyMenu->SetStateInt( "buyStatus_lightarmor", player->ItemBuyStatus( "item_armor_small" ) );
+	buyMenu->SetStateInt( "buyStatus_heavyarmor", player->ItemBuyStatus( "item_armor_large" ) );
+	buyMenu->SetStateInt( "buyStatus_ammorefill", player->ItemBuyStatus( "ammorefill" ) );
+
+	buyMenu->SetStateInt( "buyStatus_special0", player->ItemBuyStatus( "ammo_regen" ) );
+	buyMenu->SetStateInt( "buyStatus_special1", player->ItemBuyStatus( "health_regen" ) );
+	buyMenu->SetStateInt( "buyStatus_special2", player->ItemBuyStatus( "damage_boost" ) );
+
+	buyMenu->SetStateInt( "playerTeam", player->team );
+
+	if ( player->weapon )
+		buyMenu->SetStateString( "ammoIcon", player->weapon->spawnArgs.GetString ( "inv_icon" ) );
+
+	buyMenu->SetStateInt( "player_weapon", player->GetCurrentWeapon() );
+}
+
+/*
+================
 idMultiplayerGame::StartMenu
 ================
 */
@@ -3094,6 +3529,7 @@ idUserInterface* idMultiplayerGame::StartMenu( void ) {
 	}
 
 	int i, j;
+
 	if ( currentMenu ) {
 		currentMenu = 0;
  		cvarSystem->SetCVarBool( "ui_chat", false );
@@ -3112,7 +3548,6 @@ idUserInterface* idMultiplayerGame::StartMenu( void ) {
 	}
 
 	nextMenu = 0;
-	gameLocal.sessionCommand = "";	// in case we used "game_startMenu" to trigger the menu
 	if ( currentMenu == 1 ) {
 		UpdateMainGui();
 
@@ -3248,7 +3683,60 @@ idUserInterface* idMultiplayerGame::StartMenu( void ) {
 		UpdateSummaryBoard( statSummary );
 		statSummary->SetStateFloat( "ready", 0 );
 		statSummary->StateChanged( gameLocal.time );
+
+		// Moved the announcer sound here. This way we can be sure the client has updated team score information by this point.
+		// #13576 #13544 causing double sounds because it's getting triggered twice at endgame ( from GameStateChanged and from ReceiveAllStats )
+		// the move to here was for fixing some problem when running at the previous location ( GameStateChanged )
+		// there are too many codepaths leading to various orders of ReceiveAllStats and GameStateChanged
+		// various attempts to flag the right call that should trigger the sound failed, so just using a timeout now
+		if ( gameLocal.time - lastVOAnnounce > 1000 ) {
+			idPlayer* player = gameLocal.GetLocalPlayer();
+			if ( gameLocal.IsTeamGame() ) {
+				int winningTeam = GetScoreForTeam( TEAM_MARINE ) > GetScoreForTeam( TEAM_STROGG ) ? TEAM_MARINE : TEAM_STROGG;
+				if( player->team == winningTeam ) {
+					ScheduleAnnouncerSound( AS_GENERAL_YOU_WIN, gameLocal.time );
+				} else {
+					ScheduleAnnouncerSound( AS_GENERAL_YOU_LOSE, gameLocal.time );
+				}
+			} else if ( gameLocal.gameType != GAME_TOURNEY ) {
+				if( player->GetRank() == 0 ) {
+					ScheduleAnnouncerSound( AS_GENERAL_YOU_WIN, gameLocal.time );
+				} else {
+					ScheduleAnnouncerSound( AS_GENERAL_YOU_LOSE, gameLocal.time );
+				}
+			}
+			lastVOAnnounce = gameLocal.time;
+		}
+
 		return statSummary;
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	} else if ( currentMenu == 4 ) {
+		//if( mpClientGameState.gameState.currentState == COUNTDOWN ) {
+			idPlayer* player = gameLocal.GetLocalPlayer();
+			buyMenu->SetStateString( "field_credits", va("%i", (int)player->buyMenuCash) );
+			buyMenu->SetStateInt( "price_shotgun", player->GetItemCost("weapon_shotgun") );
+			buyMenu->SetStateInt( "price_hyperblaster", player->GetItemCost("weapon_hyperblaster") );
+			buyMenu->SetStateInt( "price_grenadelauncher", player->GetItemCost( "weapon_grenadelauncher" ) );
+			buyMenu->SetStateInt( "price_nailgun", player->GetItemCost( "weapon_nailgun" ) );
+			buyMenu->SetStateInt( "price_rocketlauncher", player->GetItemCost( "weapon_rocketlauncher" ) );
+			buyMenu->SetStateInt( "price_railgun", player->GetItemCost( "weapon_railgun" ) );
+			buyMenu->SetStateInt( "price_lightninggun", player->GetItemCost( "weapon_lightninggun" ) );
+			//			buyMenu->SetStateInt( "price_dmg", player->GetItemCost( "weapon_dmg" ) );
+			buyMenu->SetStateInt( "price_napalmgun", player->GetItemCost( "weapon_napalmgun" ) );
+
+			buyMenu->SetStateInt( "price_lightarmor", player->GetItemCost( "item_armor_small" ) );
+			buyMenu->SetStateInt( "price_heavyarmor", player->GetItemCost( "item_armor_large" ) );
+			buyMenu->SetStateInt( "price_ammorefill", player->GetItemCost( "ammorefill" ) );
+
+			buyMenu->SetStateInt( "price_special0", player->GetItemCost( "ammo_regen" ) );
+			buyMenu->SetStateInt( "price_special1", player->GetItemCost( "health_regen" ) );
+			buyMenu->SetStateInt( "price_special2", player->GetItemCost( "damage_boost" ) );
+			SetupBuyMenuItems();
+			buyMenu->Activate(true, gameLocal.time);
+			return buyMenu;
+		//}
+// RITUAL END
 	}
 
 	return NULL;
@@ -3260,13 +3748,17 @@ idMultiplayerGame::DisableMenu
 ================
 */
 void idMultiplayerGame::DisableMenu( void ) {
-	gameLocal.sessionCommand = "";	// in case we used "game_startMenu" to trigger the menu
 	if ( currentMenu == 1 ) {
 		mainGui->Activate( false, gameLocal.time );
 	} else if ( currentMenu == 2 ) {
 		msgmodeGui->Activate( false, gameLocal.time );
 	} else if( currentMenu == 3 ) {
 		statSummary->Activate( false, gameLocal.time );
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	} else if( currentMenu == 4 ) {
+		buyMenu->Activate( false, gameLocal.time );
+// RITUAL END
 	}
 
 	// copy over name from temp cvar
@@ -3380,12 +3872,18 @@ const char* idMultiplayerGame::HandleGuiCommands( const char *_menuCommand ) {
 #else
 	else if( currentMenu == 2 ) {
 		currentGui = msgmodeGui;
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	} else if ( currentMenu == 4 ) {
+		currentGui = buyMenu;
+// jmartel: make sure var is initialized (compiler complained)
 	} else if( currentMenu == 3 ) {
 		currentGui = statSummary;
 	} else {
 		gameLocal.Warning( "idMultiplayerGame::HandleGuiCommands() - Unknown current menu '%d'\n", currentMenu );
 		currentGui = mainGui;
 	}
+// RITUAL END
 #endif
 	
 
@@ -3625,10 +4123,10 @@ const char* idMultiplayerGame::HandleGuiCommands( const char *_menuCommand ) {
 				voteData.m_fieldFlags |= VOTEFLAG_SPECTATORS;
 			} */
 			// minimum players 
-			int uiMinPlayers = mainGui->GetStateInt( "minplayers" );
-			if ( uiMinPlayers != gameLocal.serverInfo.GetInt( "si_minPlayers" ) ) {
-				voteData.m_minPlayers = uiMinPlayers;
-				voteData.m_fieldFlags |= VOTEFLAG_MIN_PLAYERS;
+			int uiBuying = mainGui->GetStateInt( "buying" );
+			if ( uiBuying != gameLocal.serverInfo.GetInt( "si_isBuyingEnabled" ) ) {
+				voteData.m_buying = uiBuying;
+				voteData.m_fieldFlags |= VOTEFLAG_BUYING;
 			} 
 			// roundlimit (tourney only)
 			int uiTourneyLimit = mainGui->GetStateInt( "tourneylimit" );
@@ -3641,6 +4139,12 @@ const char* idMultiplayerGame::HandleGuiCommands( const char *_menuCommand ) {
 			if ( uiCaptureLimit != gameLocal.serverInfo.GetInt( "si_captureLimit" ) ) {
 				voteData.m_captureLimit = uiCaptureLimit;
 				voteData.m_fieldFlags |= VOTEFLAG_CAPTURELIMIT;
+			}
+			// controltime (deadzone only)
+			int uiControlTime = mainGui->GetStateInt( "controlTime" );
+			if ( uiControlTime != gameLocal.serverInfo.GetInt( "si_controlTime" ) ) {
+				voteData.m_controlTime = uiControlTime;
+				voteData.m_fieldFlags |= VOTEFLAG_CONTROLTIME;
 			}
 			// fraglimit (DM & TDM only)
 			int uiFragLimit = mainGui->GetStateInt( "fraglimit" );
@@ -3737,6 +4241,9 @@ const char* idMultiplayerGame::HandleGuiCommands( const char *_menuCommand ) {
 					break;
 				case VOTE_GAMETYPE_ARENA_CTF:
 					gameType = "Arena CTF";
+					break;
+				case VOTE_GAMETYPE_DEADZONE:
+					gameType = "DeadZone";
 					break;
 			}
 			if ( NULL == gameType || 0 == *gameType || 0 == idStr::Icmp( gameType, "singleplayer" ) ) {
@@ -3870,8 +4377,9 @@ const char* idMultiplayerGame::HandleGuiCommands( const char *_menuCommand ) {
 			mainGui->SetStateInt( "timelimit", gameLocal.serverInfo.GetInt( "si_timeLimit" ) );
 			mainGui->SetStateInt( "tourneylimit", gameLocal.serverInfo.GetInt( "si_tourneyLimit" ) );
 			mainGui->SetStateInt( "capturelimit", gameLocal.serverInfo.GetInt( "si_captureLimit" ) );
+			mainGui->SetStateInt( "controlTime", gameLocal.serverInfo.GetInt( "si_controlTime" ) );
 			mainGui->SetStateInt( "vote_val6_sel", gameLocal.serverInfo.GetInt( "si_autobalance" ) );
-			mainGui->SetStateInt( "minplayers", gameLocal.serverInfo.GetInt( "si_minPlayers" ) );
+			mainGui->SetStateInt( "buying", gameLocal.serverInfo.GetInt( "si_isBuyingEnabled" ) );
 			mainGui->SetStateInt( "fraglimit", gameLocal.serverInfo.GetInt( "si_fraglimit" ) );
 			mainGui->SetStateInt( "si_shuffleteams", 0 );
 			mainGui->StateChanged( gameLocal.time );
@@ -3925,8 +4433,9 @@ const char* idMultiplayerGame::HandleGuiCommands( const char *_menuCommand ) {
 			mainGui->SetStateInt( "sa_timelimit", gameLocal.serverInfo.GetInt( "si_timeLimit" ) );
 			mainGui->SetStateInt( "sa_tourneylimit", gameLocal.serverInfo.GetInt( "si_tourneyLimit" ) );
 			mainGui->SetStateInt( "sa_capturelimit", gameLocal.serverInfo.GetInt( "si_captureLimit" ) );
+			mainGui->SetStateInt( "sa_controlTime", gameLocal.serverInfo.GetInt( "si_controlTime" ) );
 			mainGui->SetStateInt( "sa_autobalance", gameLocal.serverInfo.GetInt( "si_autobalance" ) );
-			mainGui->SetStateInt( "sa_minPlayers", gameLocal.serverInfo.GetInt( "si_minPlayers" ) );
+			mainGui->SetStateInt( "sa_buying", gameLocal.serverInfo.GetInt( "si_isBuyingEnabled" ) );
 			mainGui->SetStateInt( "sa_fraglimit", gameLocal.serverInfo.GetInt( "si_fraglimit" ) );
 			mainGui->SetStateInt( "sa_shuffleteams", 0 );
 // mekberg: get the ban list if not server
@@ -3973,6 +4482,8 @@ const char* idMultiplayerGame::HandleGuiCommands( const char *_menuCommand ) {
 				gameType = "CTF";
 			} else if ( VOTE_GAMETYPE_ARENA_CTF == gameTypeInt ) {
 				gameType = "Arena CTF";
+			} else if ( VOTE_GAMETYPE_DEADZONE == gameTypeInt ) {
+				gameType = "DeadZone";
 			} else {
 				gameType = "DM";
 			}
@@ -4082,13 +4593,17 @@ const char* idMultiplayerGame::HandleGuiCommands( const char *_menuCommand ) {
 				case VOTE_GAMETYPE_ARENA_CTF:
 					data.gameType = GAME_ARENA_CTF;
 					break;
+				case VOTE_GAMETYPE_DEADZONE:
+					data.gameType = GAME_DEADZONE;
 			}
 			data.captureLimit = mainGui->GetStateInt( "sa_captureLimit" );
 			data.fragLimit = mainGui->GetStateInt( "sa_fragLimit" );
 			data.tourneyLimit = mainGui->GetStateInt( "sa_tourneylimit" );
 			data.timeLimit = mainGui->GetStateInt( "sa_timeLimit" );
-			data.minPlayers = mainGui->GetStateInt( "sa_minPlayers" );
+			data.buying = mainGui->GetStateInt( "sa_buying" );
 			data.autoBalance = 0 != mainGui->GetStateInt( "sa_autobalance" );
+			data.buying = 0 != mainGui->GetStateInt( "sa_buying" );
+			data.controlTime = mainGui->GetStateInt( "sa_controlTime" );
 			data.shuffleTeams = 0 != mainGui->GetStateInt( "sa_shuffleteams" );
 
 			// make the call to change the server data
@@ -4503,6 +5018,16 @@ bool idMultiplayerGame::Draw( int clientNum ) {
 			msgmodeGui->Redraw( gameLocal.time );
 		} else if( currentMenu == 3 ) {
 			DrawStatSummary();
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+		} else if( currentMenu == 4 ) {
+			SetupBuyMenuItems();
+			player->UpdateHudStats( buyMenu );
+			buyMenu->HandleNamedEvent( "update_buymenu" );
+			idPlayer* player = gameLocal.GetLocalPlayer();
+			buyMenu->SetStateString( "field_credits", va("%i", (int)player->buyMenuCash) );
+			buyMenu->Redraw(gameLocal.time);
+// RITUAL END
 		}
 	} else {
 #if 0
@@ -4569,6 +5094,43 @@ void idMultiplayerGame::UpdateHud( idUserInterface* _mphud ) {
 	mpGameState_t state = gameState->GetMPGameState();
 	_mphud->SetStateString( "timeleft", GameTime() );
 
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	/// Set "credits" gui element
+	if( gameLocal.mpGame.IsBuyingAllowedInTheCurrentGameMode() ) {
+		int cash = 0;
+		idPlayer* localPlayer = gameLocal.GetLocalPlayer();
+		if ( !localPlayer ) {
+			assert( gameLocal.GetDemoState() == DEMO_PLAYING && gameLocal.IsServerDemo() );
+			assert( gameLocal.GetDemoFollowClient() >= 0 );
+			assert( gameLocal.entities[ gameLocal.GetDemoFollowClient() ] && gameLocal.entities[ gameLocal.GetDemoFollowClient() ]->IsType( idPlayer::GetClassType() ) );
+			localPlayer = static_cast< idPlayer * >( gameLocal.entities[ gameLocal.GetDemoFollowClient() ] );
+		}
+
+		idPlayer* specPlayer = NULL;
+		if ( localPlayer->spectating )
+			specPlayer = gameLocal.GetClientByNum( localPlayer->spectator );
+		
+		if ( specPlayer )
+			cash = (int)specPlayer->buyMenuCash;
+		else
+			cash = (int)localPlayer->buyMenuCash;
+
+		if( localPlayer->CanBuy() ) {
+			_mphud->SetStateString("credits", va("%s %d  %s", common->GetLocalizedString( "#str_122015" ), 
+				cash, common->GetLocalizedString( "#str_122016" )));
+		}
+		else {
+			_mphud->SetStateString("credits", va("%s %d", common->GetLocalizedString( "#str_122015" ), cash));
+		}
+	}
+	else
+	{
+		_mphud->SetStateString("credits", "");
+	}
+// RITUAL END
+
+
 	bool inNonTimedState = (state == SUDDENDEATH) || (state == WARMUP) || (state == GAMEREVIEW);
 	bool inCountdownState = (state == COUNTDOWN);
 	if( gameLocal.gameType == GAME_TOURNEY ) {
@@ -4609,6 +5171,65 @@ void idMultiplayerGame::UpdateHud( idUserInterface* _mphud ) {
 			_mphud->SetStateString( "player2_rank", "" );
 		}
 	} 
+	
+	// RITUAL BEGIN
+	// squirrel: added DeadZone multiplayer mode
+	if( gameLocal.gameType == GAME_DEADZONE ) {
+
+		static int lastMarineScore = teamScore[ TEAM_MARINE ];
+		static int lastStroggScore = teamScore[ TEAM_STROGG ];
+		int marineScore = teamScore[ TEAM_MARINE ];
+		int stroggScore = teamScore[ TEAM_STROGG ];
+		const float asymptoticAverageWeight = 0.95f;
+
+		/// Check if Marines have scored since last frame
+		if( marineScore != lastMarineScore )
+		{
+			/// Pulse the bar's color
+			marineScoreBarPulseAmount = 1.0f;
+
+			// Play the pulse sound
+			idStr pulseSnd = "snd_dzpulse_happy";
+			if ( localPlayer->team != TEAM_MARINE )
+				pulseSnd = "snd_dzpulse_unhappy";
+
+			localPlayer->StartSound( pulseSnd, SND_CHANNEL_ANY, 0, false, NULL );
+		}
+		else
+		{
+			/// Asymptotic-average back to the normal color
+			marineScoreBarPulseAmount *= asymptoticAverageWeight;
+		}
+
+		/// Check if Strogg have scored since last frame
+		if( stroggScore != lastStroggScore )
+		{
+			/// Pulse the bar's color
+			stroggScoreBarPulseAmount = 1.0f;
+
+			// Play the pulse sound
+			idStr pulseSnd = "snd_dzpulse_happy";
+			if ( localPlayer->team != TEAM_STROGG )
+				pulseSnd = "snd_dzpulse_unhappy";
+
+			localPlayer->StartSound( pulseSnd, SND_CHANNEL_ANY, 0, false, NULL );
+		}
+		else
+		{
+			/// Asymptotic-average back to the normal color
+			stroggScoreBarPulseAmount *= asymptoticAverageWeight;
+		}
+
+		/// Set "gameStatus" gui element
+		_mphud->SetStateString("gameStatus", "" );
+
+		_mphud->SetStateFloat( "marine_pulse_amount", marineScoreBarPulseAmount );
+		_mphud->SetStateFloat( "strogg_pulse_amount", stroggScoreBarPulseAmount );
+
+		lastMarineScore = teamScore[ TEAM_MARINE ];
+		lastStroggScore = teamScore[ TEAM_STROGG ];
+	}
+	// RITUAL END
 
 	if( gameLocal.gameType == GAME_TOURNEY && localPlayer->GetArena() == MAX_ARENAS ) {
 		int numWaitingArenaPlayers = 0;
@@ -4846,7 +5467,7 @@ void idMultiplayerGame::AddChatLine( const char *fmt, ... ) {
 	
 }
 
-void idMultiplayerGame::DrawStatSummary( void ) {
+void idMultiplayerGame::DrawStatSummary( void ) {	
 	if ( !statSummary->GetStateFloat( "ready" ) ) {
 		statSummary->SetStateFloat( "ready", 1 );
 		statSummary->HandleNamedEvent( "chatFocus" );
@@ -4879,12 +5500,20 @@ void idMultiplayerGame::WriteToSnapshot( idBitMsgDelta &msg ) const {
 	idEntity*	ent;
 
 	assert( MAX_CLIENTS % 8 == 0 );
+// RITUAL BEGIN - DeadZone Messages
+	msg.WriteBits(isBuyingAllowedRightNow, 1);
+	msg.WriteShort(powerupCount);
+	msg.WriteFloat( marineScoreBarPulseAmount );
+	msg.WriteFloat( stroggScoreBarPulseAmount );
+// RITUAL END
+
 
 // RAVEN BEGIN
 // ddynerman: CTF scoring
 // FIXME - not in the snapshot
 	for( i = 0; i < TEAM_MAX; i++ ) {
 		msg.WriteShort( teamScore[i] );
+		msg.WriteLong( teamDeadZoneScore[i] );
 	}
 // RAVEN END
 
@@ -4908,6 +5537,7 @@ void idMultiplayerGame::WriteToSnapshot( idBitMsgDelta &msg ) const {
 			msg.WriteBits( value, ASYNC_PLAYER_FRAG_BITS );
 			value = idMath::ClampInt( MP_PLAYER_MINFRAGS, MP_PLAYER_MAXFRAGS, playerState[i].teamFragCount );
 			msg.WriteBits( value, ASYNC_PLAYER_FRAG_BITS );
+			msg.WriteLong( playerState[i].deadZoneScore );
 			value = idMath::ClampInt( 0, MP_PLAYER_MAXWINS, playerState[i].wins );
 			msg.WriteBits( value, ASYNC_PLAYER_WINS_BITS );
 			// only transmit instance info in tourney
@@ -4942,10 +5572,31 @@ void idMultiplayerGame::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 	int 		i, newInstance;
 	byte		ingame[ MAX_CLIENTS / 8 ];
 	idEntity*	ent;
+	bool		proto69 = ( gameLocal.GetCurrentDemoProtocol() == 69 );
+
+	if ( proto69 ) {
+		isBuyingAllowedRightNow = false;
+		powerupCount = 0;
+		marineScoreBarPulseAmount = 0;
+		stroggScoreBarPulseAmount = 0;
+	} else {
+// RITUAL BEGIN - DeadZone & buying Messages
+		isBuyingAllowedRightNow = msg.ReadBits(1);
+		powerupCount = msg.ReadShort();
+		// TTimo: NOTE: sounds excessive to be transmitting floats for that
+		marineScoreBarPulseAmount = msg.ReadFloat();
+		stroggScoreBarPulseAmount = msg.ReadFloat();
+// RITUAL END
+	}
 
 	// CTF/TDM scoring
 	for( i = 0; i < TEAM_MAX; i++ ) {
 		teamScore[ i ] = msg.ReadShort( );
+		if ( proto69 ) {
+			teamDeadZoneScore[ i ] = 0;
+		} else {
+			teamDeadZoneScore[ i ] = msg.ReadLong( );
+		}
 	}
 
 	msg.ReadData( ingame, MAX_CLIENTS / 8 );
@@ -4962,6 +5613,11 @@ void idMultiplayerGame::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 			ent = gameLocal.entities[ i ];
 			playerState[ i ].fragCount = msg.ReadBits( ASYNC_PLAYER_FRAG_BITS );
 			playerState[ i ].teamFragCount = msg.ReadBits( ASYNC_PLAYER_FRAG_BITS );
+			if ( proto69 ) {
+				playerState[ i ].deadZoneScore = 0;				
+			} else {
+				playerState[ i ].deadZoneScore = msg.ReadLong();
+			}
 			playerState[ i ].wins = msg.ReadBits( ASYNC_PLAYER_WINS_BITS );
 			if( gameLocal.gameType == GAME_TOURNEY ) {
 				if( msg.ReadBits( 1 ) ) {
@@ -5013,7 +5669,7 @@ void idMultiplayerGame::PlayGlobalItemAcquireSound( int defIndex ) {
 		byte msgBuf[1024];
 		outMsg.Init( msgBuf, sizeof( msgBuf ) );
 		outMsg.WriteByte( GAME_RELIABLE_MESSAGE_ITEMACQUIRESOUND );
-		outMsg.WriteBits ( defIndex, gameLocal.entityDefBits );
+		outMsg.WriteBits( defIndex, gameLocal.entityDefBits );
 		gameLocal.ServerSendInstanceReliableMessage( gameLocal.currentThinkingEntity, -1, outMsg );
 	}	
 }
@@ -5025,7 +5681,9 @@ idMultiplayerGame::PrintMessageEvent
 ================
 */
 void idMultiplayerGame::PrintMessageEvent( int to, msg_evt_t evt, int parm1, int parm2 ) {
-	switch ( evt ) {
+	idPlayer *p = gameLocal.GetLocalPlayer();
+	if ( to == -1 || ( p && to == p->entityNumber ) ) {
+		switch ( evt ) {
 		case MSG_SUICIDE:
 			assert( parm1 >= 0 );
 			AddChatLine( common->GetLocalizedString( "#str_104293" ), gameLocal.userInfo[ parm1 ].GetString( "ui_name" ) );
@@ -5054,10 +5712,10 @@ void idMultiplayerGame::PrintMessageEvent( int to, msg_evt_t evt, int parm1, int
 			break;
 		case MSG_FORCEREADY:
 			AddChatLine( common->GetLocalizedString( "#str_104286" ), gameLocal.userInfo[ parm1 ].GetString( "ui_name" ) );
-// RAVEN BEGIN
-// jnewquist: Use accessor for static class type 
+			// RAVEN BEGIN
+			// jnewquist: Use accessor for static class type 
 			if ( gameLocal.entities[ parm1 ] && gameLocal.entities[ parm1 ]->IsType( idPlayer::GetClassType() ) ) {
-// RAVEN END
+				// RAVEN END
 				static_cast< idPlayer * >( gameLocal.entities[ parm1 ] )->forcedReady = true;
 			}
 			break;
@@ -5068,20 +5726,23 @@ void idMultiplayerGame::PrintMessageEvent( int to, msg_evt_t evt, int parm1, int
 			AddChatLine( common->GetLocalizedString( "#str_104284" ) );
 			break;
 		case MSG_FRAGLIMIT:
-			 if ( gameLocal.gameType == GAME_TDM ) {
-// RAVEN BEGIN
-// rhummer: localized "Strogg" and "Marine"
-				 AddChatLine( common->GetLocalizedString( "#str_107665" ), parm1 ? common->GetLocalizedString( "#str_108025" ) : common->GetLocalizedString( "#str_108026" ) );
-// RAVEN END
+			// RITUAL BEGIN
+			// squirrel: added DeadZone multiplayer mode
+			if ( gameLocal.gameType == GAME_TDM || gameLocal.gameType == GAME_DEADZONE ) {
+				// RITUAL END
+				// RAVEN BEGIN
+				// rhummer: localized "Strogg" and "Marine"
+				AddChatLine( common->GetLocalizedString( "#str_107665" ), parm1 ? common->GetLocalizedString( "#str_108025" ) : common->GetLocalizedString( "#str_108026" ) );
+				// RAVEN END
 			} else {
 				AddChatLine( common->GetLocalizedString( "#str_104281" ), gameLocal.userInfo[ parm1 ].GetString( "ui_name" ) );
 			}
 			break;
 		case MSG_CAPTURELIMIT:
-// RAVEN BEGIN
-// rhummer: localized "%s team hit the capture limit." and "Strogg and "Marine"
+			// RAVEN BEGIN
+			// rhummer: localized "%s team hit the capture limit." and "Strogg and "Marine"
 			AddChatLine( common->GetLocalizedString( "#str_108027" ), parm1 ? common->GetLocalizedString( "#str_108025" ) : common->GetLocalizedString( "#str_108026" ) );
-// RAVEN END
+			// RAVEN END
 			break;
 		case MSG_HOLYSHIT:
 			AddChatLine( common->GetLocalizedString( "#str_106732" ) );
@@ -5089,6 +5750,7 @@ void idMultiplayerGame::PrintMessageEvent( int to, msg_evt_t evt, int parm1, int
 		default:
 			gameLocal.DPrintf( "PrintMessageEvent: unknown message type %d\n", evt );
 			return;
+		}
 	}
 	if ( !gameLocal.isClient ) {
 		idBitMsg outMsg;
@@ -5233,7 +5895,7 @@ void idMultiplayerGame::CheckSpecialLights( void ) {
 		else if ( p->PowerUpActive( POWERUP_CTF_STROGGFLAG ) ) {
 			stroggFlagCarrier = p;
 		}
-		else if( p->PowerUpActive( POWERUP_QUADDAMAGE ) ) {
+		else if( p->PowerUpActive( POWERUP_QUADDAMAGE ) || p->PowerUpActive( POWERUP_TEAM_DAMAGE_MOD )) {
 			quadDamageCarrier = p;
 		}
 		else if( p->PowerUpActive( POWERUP_REGENERATION ) ) {
@@ -5245,31 +5907,31 @@ void idMultiplayerGame::CheckSpecialLights( void ) {
 	}
 
 	if ( marineFlagCarrier ) {
-		UpdateLight ( MPLIGHT_CTF_MARINE, marineFlagCarrier );
+		UpdateLight( MPLIGHT_CTF_MARINE, marineFlagCarrier );
 	} else {
 		FreeLight( MPLIGHT_CTF_MARINE );
 	}
 
 	if ( stroggFlagCarrier ) {
-		UpdateLight ( MPLIGHT_CTF_STROGG, stroggFlagCarrier );
+		UpdateLight( MPLIGHT_CTF_STROGG, stroggFlagCarrier );
 	} else {
 		FreeLight( MPLIGHT_CTF_STROGG );
 	}
 
 	if ( quadDamageCarrier ) {
-		UpdateLight ( MPLIGHT_QUAD, quadDamageCarrier );
+		UpdateLight( MPLIGHT_QUAD, quadDamageCarrier );
 	} else {
 		FreeLight( MPLIGHT_QUAD );
 	}
 
 	if ( regenerationCarrier ) {
-		UpdateLight ( MPLIGHT_REGEN, regenerationCarrier );
+		UpdateLight( MPLIGHT_REGEN, regenerationCarrier );
 	} else {
 		FreeLight( MPLIGHT_REGEN );
 	}
 
 	if ( hasteCarrier ) {
-		UpdateLight ( MPLIGHT_HASTE, hasteCarrier );
+		UpdateLight( MPLIGHT_HASTE, hasteCarrier );
 	} else {
 		FreeLight( MPLIGHT_HASTE );
 	}
@@ -5413,11 +6075,11 @@ void idMultiplayerGame::Vote_f( const idCmdArgs &args ) {
 /*
 ================
 idMultiplayerGame::CallVote_f
+moved this over the use the packed voting
+still only does one vote though, can easily be extended to do more
 ================
 */
 void idMultiplayerGame::CallVote_f( const idCmdArgs &args ) { 
-// RAVEN BEGIN
-// shouchard:  implemented for testing
 	const char *szArg1 = args.Argv(1);
 	const char *szArg2 = args.Argv(2);
 	if ( '\0' == *szArg1 ) {
@@ -5426,86 +6088,85 @@ void idMultiplayerGame::CallVote_f( const idCmdArgs &args ) {
 		return;
 	}
 
-	vote_flags_t voteFlags = VOTE_NONE;
+	voteStruct_t voteData;
+	memset( &voteData, 0, sizeof( voteData ) );
+
 	if ( 0 == idStr::Icmp( szArg1, "restart" ) ) {
-		voteFlags = VOTE_RESTART;
+		voteData.m_fieldFlags |= VOTEFLAG_RESTART;
 	} else if ( 0 == idStr::Icmp( szArg1, "timelimit" ) ) {
 		if ( '\0' == *szArg2 ) {
 			common->Printf( common->GetLocalizedString( "#str_104406" ) );
 			return;
 		}
-		voteFlags = VOTE_TIMELIMIT;
+		voteData.m_fieldFlags |= VOTEFLAG_TIMELIMIT;
+		voteData.m_timeLimit = atoi( szArg2 );
 	} else if ( 0 == idStr::Icmp( szArg1, "fraglimit" ) ) {
 		if ( '\0' == *szArg2 ) {
 			common->Printf( common->GetLocalizedString( "#str_104407" ) );
 			return;
 		}
-		voteFlags = VOTE_FRAGLIMIT;
+		voteData.m_fieldFlags |= VOTEFLAG_FRAGLIMIT;
+		voteData.m_fragLimit = atoi( szArg2 );
 	} else if ( 0 == idStr::Icmp( szArg1, "gametype" ) ) {
 		if ( '\0' == *szArg2 ) {
 			common->Printf( common->GetLocalizedString( "#str_104408" ) );
 			common->Printf( common->GetLocalizedString( "#str_104409" ) );
 			return;
 		}
-		voteFlags = VOTE_GAMETYPE;
-		// the use of magic numbers here and relying on the return of a 
-		// static buffer creeps the hell outta me--just in case you wondered.
-		if ( 0 == idStr::Icmp( szArg2, "DM" ) ) {
-			szArg2 = va("%d", VOTE_GAMETYPE_DM);
-		} else if ( 0 == idStr::Icmp( szArg2, "Tourney" ) ) {
-			szArg2 = va("%d", VOTE_GAMETYPE_TOURNEY);
-		} else if ( 0 == idStr::Icmp( szArg2, "Team DM" ) ) {
-			szArg2 = va("%d", VOTE_GAMETYPE_TDM);
-		} else if ( 0 == idStr::Icmp( szArg2, "CTF" ) ) {
-			szArg2 = va( "%d", VOTE_GAMETYPE_CTF );
-		} else if ( 0 == idStr::Icmp( szArg2, "Arena CTF" ) ) {
-			szArg2 = va( "%d", VOTE_GAMETYPE_ARENA_CTF );
-		} else {
-			common->Printf( common->GetLocalizedString( "#str_104410" ) );
-			common->Printf( common->GetLocalizedString( "#str_104409" ) );
-			return;
-		}
+		voteData.m_fieldFlags |= VOTEFLAG_GAMETYPE;
+		voteData.m_gameType = gameLocal.mpGame.GameTypeToVote( szArg2 );
 	}
 	else if ( 0 == idStr::Icmp( szArg1, "kick" ) ) {
 		if ( '\0' == *szArg2 ) {
 			common->Printf( common->GetLocalizedString( "#str_104412" ) );
 			return;
 		}
-		voteFlags = VOTE_KICK;
+		voteData.m_kick = gameLocal.mpGame.GetClientNumFromPlayerName( szArg2 );
+		if ( voteData.m_kick >= 0 ) {
+			voteData.m_fieldFlags |= VOTEFLAG_KICK;
+		}
 	} else if ( 0 == idStr::Icmp( szArg1, "map" ) ) {
 		if ( '\0' == *szArg2 ) {
 			common->Printf( common->GetLocalizedString( "#str_104413" ) );
 			return;
 		}
-		voteFlags = VOTE_MAP;
-	} else if ( 0 == idStr::Icmp( szArg1, "minplayers" ) ) {
+		voteData.m_fieldFlags |= VOTEFLAG_MAP;
+		voteData.m_map = szArg2;
+	} else if ( 0 == idStr::Icmp( szArg1, "buying" ) ) {
 		if ( '\0' == *szArg2 ) {
-			common->Printf( common->GetLocalizedString( "#str_104414" ) );
+			common->Printf( common->GetLocalizedString( "#str_122012" ) );
 			return;
 		}
-		voteFlags = VOTE_MIN_PLAYERS;
-	} else if ( 0 == idStr::Icmp( szArg1, "nextmap" ) ) {
-		voteFlags = VOTE_NEXTMAP;
+		voteData.m_fieldFlags |= VOTEFLAG_BUYING;
+		voteData.m_buying = atoi( szArg2 );
 	} else if ( 0 == idStr::Icmp( szArg1, "capturelimit" ) ) {
 		if ( '\0' == *szArg2 ) {
 			common->Printf( common->GetLocalizedString( "#str_104415" ) );
 			return;
 		}
-		voteFlags = VOTE_CAPTURELIMIT;
-	//} else if ( 0 == idStr::Icmp( szArg1, "roundlimit")) {
+		voteData.m_fieldFlags |= VOTEFLAG_CAPTURELIMIT;
+		voteData.m_captureLimit = atoi( szArg2 );
 	} else if ( 0 == idStr::Icmp( szArg1, "autobalance" ) ) {
 		if ( '\0' == *szArg2 ) {
 			common->Printf( common->GetLocalizedString( "#str_104416" ) );
 		}
-		voteFlags = VOTE_AUTOBALANCE;
+		voteData.m_fieldFlags |= VOTEFLAG_TEAMBALANCE;
+		voteData.m_teamBalance = atoi( szArg2 );
+	} else if ( 0 == idStr::Icmp( szArg1, "controlTime" ) ) {
+		if ( '\0' == *szArg2 ) {
+			common->Printf( common->GetLocalizedString( "#str_122002" ) ); // Squirrel@Ritual - Localized for 1.2 Patch
+		}
+		voteData.m_fieldFlags |= VOTEFLAG_CONTROLTIME;
+		voteData.m_controlTime = atoi(szArg2 );
 	} else {
 		common->Printf( common->GetLocalizedString( "#str_104404" ) );
 		common->Printf( common->GetLocalizedString( "#str_104405" ) );
 		return;
 	}
 
-	gameLocal.mpGame.ClientCallVote( voteFlags, szArg2 );
-// RAVEN END
+	if ( voteData.m_fieldFlags != 0 ) {
+		gameLocal.mpGame.ClientCallPackedVote( voteData );
+	}
 }
 
 // RAVEN BEGIN
@@ -5734,7 +6395,7 @@ void idMultiplayerGame::ClientUpdateVote( vote_result_t status, int yesCount, in
 			outMsg.WriteShort( idMath::ClampShort( voteData.m_fragLimit ) );
 			outMsg.WriteShort( idMath::ClampShort( voteData.m_tourneyLimit ) );
 			outMsg.WriteShort( idMath::ClampShort( voteData.m_captureLimit ) );
-			outMsg.WriteShort( idMath::ClampShort( voteData.m_minPlayers ) );
+			outMsg.WriteShort( idMath::ClampShort( voteData.m_buying ) );
 			outMsg.WriteByte( idMath::ClampChar( voteData.m_teamBalance ) );
 		}
 		networkSystem->ServerSendReliableMessage( -1, outMsg );
@@ -5880,12 +6541,13 @@ idMultiplayerGame::ServerCallVote
 */
 void idMultiplayerGame::ServerCallVote( int clientNum, const idBitMsg &msg ) {
 	vote_flags_t	voteIndex;
-	int				vote_timeLimit, vote_fragLimit, vote_clientNum, vote_gameTypeIndex, vote_minPlayers; //, vote_kickIndex;
+	int				vote_timeLimit, vote_fragLimit, vote_clientNum, vote_gameTypeIndex, vote_buying; //, vote_kickIndex;
 // RAVEN BEGIN
 // shouchard:  added capture limit and autobalance
 	int				vote_captureLimit;
 	bool			vote_autobalance;
 // RAVEN END
+	int			vote_controlTime;
 	char			value[ MAX_STRING_CHARS ];
 
 	assert( clientNum != -1 );
@@ -5969,6 +6631,13 @@ void idMultiplayerGame::ServerCallVote( int clientNum, const idBitMsg &msg ) {
 					strcpy( value, "Arena CTF" );
 					break;
 // RAVEN END
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
+				case VOTE_GAMETYPE_DEADZONE:
+					strcpy( value, "DeadZone" );
+					break;
+// RITUAL END
+
 			}
 			if ( !idStr::Icmp( value, gameLocal.serverInfo.GetString( "si_gameType" ) ) ) {
 				gameLocal.ServerSendChatMessage( clientNum, "server", "#str_104259" );
@@ -6032,20 +6701,17 @@ void idMultiplayerGame::ServerCallVote( int clientNum, const idBitMsg &msg ) {
 #endif
 			break;
 		}
-		case VOTE_MIN_PLAYERS: {
-			vote_minPlayers = strtol( value, NULL, 10 );
-			if ( vote_minPlayers == gameLocal.serverInfo.GetInt( "si_minPlayers" ) ) {
-				gameLocal.ServerSendChatMessage( clientNum, "server", "#str_107733" );
-				common->DPrintf( "client %d: already at the voted Min Players\n", clientNum );
+		case VOTE_BUYING: {
+			if ( gameLocal.GetCurrentDemoProtocol() == 69 )
+				gameLocal.Error("MIN_PLAYERS vote in a pre-1.2 recorded demo is not supported.");
+			vote_buying = strtol( value, NULL, 10 );
+			if ( vote_buying == gameLocal.serverInfo.GetInt( "si_isBuyingEnabled" ) ) {
+				gameLocal.ServerSendChatMessage( clientNum, "server", "#str_122013" );
+				common->DPrintf( "client %d: already at the voted buying mode\n", clientNum );
 				return;					
 			}
-			if ( vote_minPlayers < si_minPlayers.GetMinValue() || vote_minPlayers > si_minPlayers.GetMaxValue() ) {
-				gameLocal.ServerSendChatMessage( clientNum, "server", "#str_107734" );
-				common->DPrintf( "client %d: min players value out of range for vote: %s\n", clientNum, value );
-				return;
-			}
 			ServerStartVote( clientNum, voteIndex, value );
-			ClientStartVote( clientNum, va( common->GetLocalizedString( "#str_107735" ), vote_minPlayers ) );
+			ClientStartVote( clientNum, va( common->GetLocalizedString( "#str_122014" ), vote_buying ) );
 			break;
 		}
 // RAVEN BEGIN
@@ -6085,6 +6751,23 @@ void idMultiplayerGame::ServerCallVote( int clientNum, const idBitMsg &msg ) {
 			break;
 		}
 // RAVEN END
+		case VOTE_CONTROLTIME: {
+			vote_controlTime = strtol( value, NULL, 10 );
+			if ( vote_controlTime == gameLocal.serverInfo.GetInt( "si_controlTime" ) ) {
+				gameLocal.ServerSendChatMessage( clientNum, "server", "#str_122017" );
+				common->DPrintf( "client %d: already at the voted Control Time\n", clientNum );
+				return;					
+			}
+			if ( vote_controlTime < si_controlTime.GetMinValue() || vote_controlTime > si_controlTime.GetMaxValue() ) {
+				gameLocal.ServerSendChatMessage( clientNum, "server", "#str_122018" );
+				common->DPrintf( "client %d: controlTime value out of range for vote: %s\n", clientNum, value );
+				return;
+			}
+
+			ServerStartVote( clientNum, voteIndex, value );
+			ClientStartVote( clientNum, "si_controlTime" );
+			break;
+		}
 		default: {
 			gameLocal.ServerSendChatMessage( clientNum, "server", "#str_104297", va( "%d", ( int )voteIndex ) );
 			common->DPrintf( "client %d: unknown vote index %d\n", clientNum, voteIndex );
@@ -6129,18 +6812,6 @@ void idMultiplayerGame::CheckAbortGame( void ) {
 	if ( gameState->GetMPGameState() != COUNTDOWN && gameState->GetMPGameState() != GAMEON && gameState->GetMPGameState() != SUDDENDEATH ) {
 		return;
 	}
-
-//RAVEN BEGIN
-//asalmon: on X360 just end the game if there aren't enough people
-#ifdef _XENON
-	if ( !EnoughClientsToPlay() )
-	{
-		gameState->NewState( GAMEREVIEW );
-		Live()->PlayedRound();
-	}
-	return;
-#endif
-//RAVEN END
 
 	// in tourney, if we don't have enough clients to play we need to cycle back to 
 	// warmup to re-seed
@@ -6232,6 +6903,7 @@ void idMultiplayerGame::MapRestart( void ) {
 	// mekberg: moved this before the updateUI just in case these values weren't reset.
 	for ( int i = 0; i < TEAM_MAX; i++ ) {
 		teamScore[ i ] = 0;
+		teamDeadZoneScore[i] = 0;
 	}
 
 	// mekberg: Re-wrote this loop to always updateUI. Previously the player would be
@@ -6302,6 +6974,10 @@ void idMultiplayerGame::SwitchToTeam( int clientNum, int oldteam, int newteam ) 
  			p->ServerSendInstanceEvent( idPlayer::EVENT_ABORT_TELEPORTER, NULL, false, -1 );
 			p->SetPrivateCameraView( NULL );
 		}
+//RITUAL BEGIN
+		p->inventory.carryOverWeapons = 0;
+		p->ResetCash();
+//RITUAL END
 		p->Kill( true, true );
 		CheckAbortGame();
 	}
@@ -6489,7 +7165,7 @@ void idMultiplayerGame::Precache( void ) {
 	if ( !gameLocal.isMultiplayer ) {
 		return;
 	}
-	gameLocal.FindEntityDefDict( "player_marine", false );
+	gameLocal.FindEntityDef( "player_marine", false );
 	
 	// MP game sounds
 	for ( i = 0; i < AS_NUM_SOUNDS; i++ ) {
@@ -6827,8 +7503,9 @@ void idMultiplayerGame::ClientVoiceMute( int muteClient, bool mute ) {
 		return;
 	}
 
-	if( !gameLocal.mpGame.IsInGame( muteClient ) ) {
-		gameLocal.Warning( "idMultiplayerGame::ClientVoiceMute() - Invalid client '%d' specified\n", muteClient );
+	if ( muteClient == -1 || !gameLocal.mpGame.IsInGame( muteClient ) ) {
+		gameLocal.Warning( "idMultiplayerGame::ClientVoiceMute() - Invalid client '%d' specified", muteClient );
+		return;
 	}
 
 	// do the mute/unmute
@@ -6871,7 +7548,7 @@ int idMultiplayerGame::GetClientNumFromPlayerName( const char *playerName ) {
 	}
 
 	if ( -1 == clientNum ) {
-		common->Warning( "idMultiplayerGame::GetClientNumFromPlayerName():  unknown player '%s'\n", playerName );
+		common->Warning( "idMultiplayerGame::GetClientNumFromPlayerName():  unknown player '%s'", playerName );
 	}
 
 	return clientNum;
@@ -7060,6 +7737,8 @@ bool idMultiplayerGame::HandleServerAdminCommands( serverAdminData_t &data ) {
 		nGameType = GAME_TOURNEY;
 	} else if ( 0 == idStr::Icmp( szGameType, "Arena CTF" ) ) {
 		nGameType = GAME_ARENA_CTF;
+	} else if ( 0 == idStr::Icmp( szGameType, "DeadZone" ) ) {
+		nGameType = GAME_DEADZONE;
 	} else {
 		nGameType = GAME_SP;
 	}
@@ -7073,6 +7752,7 @@ bool idMultiplayerGame::HandleServerAdminCommands( serverAdminData_t &data ) {
 
 			// mekberg: hack, if we had 1f ctf the gui index wouldn't be off =(
 			case GAME_1F_CTF:		szGameType = "Arena CTF";	runPickMap = true; break;
+			case GAME_DEADZONE:		szGameType = "DeadZone";	runPickMap = true; break;
 			default:
 			case GAME_DM:			szGameType = "DM";			break;
 		}
@@ -7096,11 +7776,16 @@ bool idMultiplayerGame::HandleServerAdminCommands( serverAdminData_t &data ) {
 		}
 	} 
 
+	if ( gameLocal.serverInfo.GetBool( "si_isBuyingEnabled" ) != data.buying )
+		restartNeeded = true;
+
 	// Rcon these cvars if this isn't the server. We can trust the input from the gui that the
 	// gametype and map always match.
 	if ( !gameLocal.isServer ) {
 		cmdSystem->BufferCommandText( CMD_EXEC_NOW, va( "rcon si_autoBalance %d",	data.autoBalance ) );
+		cmdSystem->BufferCommandText( CMD_EXEC_NOW, va( "rcon si_isBuyingEnabled %d", data.buying ) );
 		cmdSystem->BufferCommandText( CMD_EXEC_NOW, va( "rcon si_captureLimit %d",	data.captureLimit ) );
+		cmdSystem->BufferCommandText( CMD_EXEC_NOW, va( "rcon si_controlTime %d",	data.controlTime ) );
 		cmdSystem->BufferCommandText( CMD_EXEC_NOW, va( "rcon si_fragLimit %d",		data.fragLimit ) );
 		cmdSystem->BufferCommandText( CMD_EXEC_NOW, va( "rcon si_gameType %s",		szGameType ) );
 		cmdSystem->BufferCommandText( CMD_EXEC_NOW, va( "rcon si_map %s",			data.mapName.c_str() ) );
@@ -7118,7 +7803,7 @@ bool idMultiplayerGame::HandleServerAdminCommands( serverAdminData_t &data ) {
 		if( restartNeeded )	{
 			cmdSystem->BufferCommandText( CMD_EXEC_NOW, "rcon serverMapRestart" );
 		} else if( data.restartMap || nextMapNeeded || idStr::Icmp( gameLocal.serverInfo.GetString( "si_map" ), data.mapName.c_str() ) ) {
-			cmdSystem->BufferCommandText( CMD_EXEC_NOW, "rcon nextMap" );
+			cmdSystem->BufferCommandText( CMD_EXEC_NOW, "rcon serverNextMap" );
 		}
 		else
 		{
@@ -7166,20 +7851,24 @@ bool idMultiplayerGame::HandleServerAdminCommands( serverAdminData_t &data ) {
 		si_timeLimit.SetInteger( data.timeLimit );
 		anyChanges = true;
 	}
-	if ( data.minPlayers != gameLocal.serverInfo.GetInt( "si_minPlayers" ) ) {
-		si_minPlayers.SetInteger( data.minPlayers );
+	if ( data.buying != gameLocal.serverInfo.GetBool( "si_isBuyingEnabled" ) ) {
+		si_isBuyingEnabled.SetInteger( data.buying );
 		anyChanges = true;
+		restartNeeded = true;
 	}
 	if ( data.autoBalance != gameLocal.serverInfo.GetBool( "si_autobalance" ) ) {
 		si_autobalance.SetBool( data.autoBalance );
 		anyChanges = true;
 	}
-
+	if ( data.controlTime != gameLocal.serverInfo.GetInt( "si_controlTime" ) ) {
+		si_controlTime.SetInteger( data.controlTime );
+		anyChanges = true;
+	}
 	
 	if ( nextMapNeeded )	{
 		ClientUpdateVote( VOTE_RESET, 0, 0, currentVoteData );
 		vote = VOTE_NONE;
-		cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "nextMap" );
+		gameLocal.sessionCommand = "nextMap";
 		return anyChanges;
 	}
 	else if ( gameLocal.NeedRestart() || restartNeeded ) {
@@ -7340,10 +8029,12 @@ const char* idMultiplayerGame::announcerSoundDefs[ AS_NUM_SOUNDS ] = {
 	"announce_tourney_prelims",				// AS_TOURNEY_PRELIMS
 	"announce_tourney_quarter_finals",		// AS_TOURNEY_QUARTER_FINALS
 	"announce_tourney_semi_finals",			// AS_TOURNEY_SEMI_FINALS
-	"announce_tourney_final_match"			// AS_TOURNEY_FINAL_MATCH
+	"announce_tourney_final_match",			// AS_TOURNEY_FINAL_MATCH
+	"sound/vo/mp/9_99_320_10",				// AS_GENERAL_TEAM_AMMOREGEN
+	"sound/vo/mp/9_99_360_6"				// AS_GENERAL_TEAM_DOUBLER
 };
 
-void idMultiplayerGame::ScheduleAnnouncerSound ( announcerSound_t sound, float time, int instance, bool allowOverride ) {
+void idMultiplayerGame::ScheduleAnnouncerSound( announcerSound_t sound, float time, int instance, bool allowOverride ) {
 	if( !gameLocal.GetLocalPlayer() ) {
 		return;
 	}
@@ -7359,19 +8050,19 @@ void idMultiplayerGame::ScheduleAnnouncerSound ( announcerSound_t sound, float t
 	announcerSoundNode_t* newSound = new announcerSoundNode_t;
 	newSound->soundShader = sound;
 	newSound->time = time;
-	newSound->announcerSoundNode.SetOwner ( newSound );
+	newSound->announcerSoundNode.SetOwner( newSound );
 	newSound->instance = instance;
 	newSound->allowOverride = allowOverride;
 
 	announcerSoundNode_t* snd = NULL;
 	for ( snd = announcerSoundQueue.Next(); snd != NULL; snd = snd->announcerSoundNode.Next() ) {
 		if ( snd->time > newSound->time ) {
-			newSound->announcerSoundNode.InsertBefore ( snd->announcerSoundNode );
+			newSound->announcerSoundNode.InsertBefore( snd->announcerSoundNode );
 			break;
 		}
 	}
 	if ( snd == NULL ) {
- 		newSound->announcerSoundNode.AddToEnd ( announcerSoundQueue );
+ 		newSound->announcerSoundNode.AddToEnd( announcerSoundQueue );
 	}
 }
 
@@ -7523,13 +8214,13 @@ void idMultiplayerGame::PlayAnnouncerSounds( void ) {
 			snd->announcerSoundNode.Remove();
 			delete snd;
 		} else {
-		snd->announcerSoundNode.Remove();
+			snd->announcerSoundNode.Remove();
 
-		gameLocal.GetLocalPlayer()->StartSoundShader( declManager->FindSound( announcerSoundDefs[ snd->soundShader ], false ), SND_CHANNEL_MP_ANNOUNCER, 0, false, &length );
-		currentSoundOverride = snd->allowOverride;
-		lastAnnouncerSound = snd->soundShader;
+			gameLocal.GetLocalPlayer()->StartSoundShader( declManager->FindSound( announcerSoundDefs[ snd->soundShader ], false ), SND_CHANNEL_MP_ANNOUNCER, 0, false, &length );
+			currentSoundOverride = snd->allowOverride;
+			lastAnnouncerSound = snd->soundShader;
 
-		delete snd;
+			delete snd;
 		}
 
 		// if sounds remain to be played, check again	
@@ -7540,6 +8231,7 @@ void idMultiplayerGame::PlayAnnouncerSounds( void ) {
 void idMultiplayerGame::ClearTeamScores ( void ) {
 	for ( int i = 0; i < TEAM_MAX; i++ ) {
 		teamScore[ i ] = 0;
+		teamDeadZoneScore[i] = 0;
 	}
 }
 
@@ -7625,6 +8317,20 @@ void idMultiplayerGame::SetPlayerTeamScore( idPlayer* player, int value ) {
 	playerState[ player->entityNumber ].teamFragCount = idMath::ClampInt( MP_PLAYER_MINFRAGS, MP_PLAYER_MAXFRAGS, value );
 }
 
+void idMultiplayerGame::SetPlayerDeadZoneScore( idPlayer* player, float value ) {
+	if( player == NULL ) {
+		gameLocal.Warning( "idMultiplayerGame::SetPlayerDeadZoneScore() - NULL player specified" );
+		return;
+	}
+
+	if( player->entityNumber < 0 || player->entityNumber >= MAX_CLIENTS ) {
+		gameLocal.Warning( "idMultiplayerGame::SetPlayerDeadZoneScore() - Bad player entityNumber '%d'\n", player->entityNumber );
+		return;
+	}
+
+	playerState[ player->entityNumber ].deadZoneScore = value;
+}
+
 void idMultiplayerGame::SetPlayerWin( idPlayer* player, int value ) {
 	if( player == NULL ) {
 		gameLocal.Warning( "idMultiplayerGame::SetPlayerWin() - NULL player specified" );
@@ -7659,7 +8365,10 @@ void idMultiplayerGame::ClientSetInstance( const idBitMsg& msg ) {
 	gameLocal.GetInstance( 0 )->SetSpawnInstanceID( instance );
 	// on the client, we delete all entities, 
 	// the server will send over new ones
-	gameLocal.InstanceClear( instance );
+	gameLocal.InstanceClear();
+	// set the starting offset for repopulation back to matching what the server will have
+	// this should be covered by setting indexes when populating the instances as well, but it doesn't hurt
+	gameLocal.firstFreeIndex = MAX_CLIENTS;
 
 	player->SetArena( instance );
 	player->SetInstance( instance );
@@ -7708,6 +8417,11 @@ const char* idMultiplayerGame::GetLongGametypeName( const char* gametype ) {
 		return common->GetLocalizedString( "#str_107681" );
 	} else if( !idStr::Icmp( gametype, "Arena One Flag CTF" ) ) {
 		return common->GetLocalizedString( "#str_107682" );
+	// RITUAL BEGIN
+    // squirrel: added DeadZone multiplayer mode
+	} else if( !idStr::Icmp( gametype, "DeadZone" ) ) {
+		return common->GetLocalizedString( "#str_122001" ); // Squirrel@Ritual - Localized for 1.2 Patch
+    // RITUAL END
 	}
 
 	return "";
@@ -7724,9 +8438,15 @@ int	idMultiplayerGame::GameTypeToVote( const char *gameType ) {
 		return VOTE_GAMETYPE_CTF;
 	} else if ( 0 == idStr::Icmp( gameType, "Arena CTF" ) ) {
 		return VOTE_GAMETYPE_ARENA_CTF;
+	} else if ( 0 == idStr::Icmp( gameType, "DeadZone" ) ) {
+		return VOTE_GAMETYPE_DEADZONE;
 	}
 
 	return VOTE_GAMETYPE_DM;
+}
+
+float idMultiplayerGame::GetPlayerDeadZoneScore( idPlayer* player ) {
+	return playerState[ player->entityNumber ].deadZoneScore;
 }
 
 int idMultiplayerGame::GetPlayerTime( idPlayer* player ) {
@@ -7796,6 +8516,12 @@ void idMultiplayerGame::ReceiveRemoteConsoleOutput( const char* output ) {
 		mainGui->SetStateString( "admin_console_history", rconHistory.c_str() );
 	}
 }
+
+/*
+===============
+idMultiplayerGame::ShuffleTeams
+===============
+*/
 void idMultiplayerGame::ShuffleTeams( void ) {
 	// turn off autobalance if its on
 	bool autoBalance = gameLocal.serverInfo.GetBool( "si_autoBalance" );
@@ -7858,6 +8584,9 @@ void idMultiplayerGame::SetGameType( void ) {
 	} else if ( ( idStr::Icmp( gameLocal.serverInfo.GetString( "si_gameType" ), "Arena One Flag CTF" ) == 0 ) ) {
 		gameLocal.gameType = GAME_ARENA_1F_CTF;
 		gameState = new rvCTFGameState();
+	} else if ( ( idStr::Icmp( gameLocal.serverInfo.GetString( "si_gameType" ), "DeadZone" ) == 0 ) ) {
+		gameLocal.gameType = GAME_DEADZONE;
+		gameState = new riDZGameState;
 	} else {
 		gameLocal.Error( "idMultiplayerGame::SetGameType() - Unknown gametype '%s'\n", gameLocal.serverInfo.GetString( "si_gameType" ) );
 	}
@@ -7912,7 +8641,7 @@ int idMultiplayerGame::GetTeamsTotalScore( int i ) {
 idMultiplayerGame::PickMap
 ===============
 */
-bool idMultiplayerGame::PickMap( idStr gameType ) {
+bool idMultiplayerGame::PickMap( idStr gameType, bool checkOnly ) {
 	
 	idStrList maps;
 	int miss = 0;
@@ -7924,25 +8653,32 @@ bool idMultiplayerGame::PickMap( idStr gameType ) {
 
 	mapName = si_map.GetString();
 
-	//if we didn't set up a gametype, grab the current game type.
-	if( gameType.IsEmpty() )	{
+	// if we didn't set up a gametype, grab the current game type.
+	if ( gameType.IsEmpty() )	{
 		gameType = si_gameType.GetString();
 	}
 
-	//if we're playing a map of this gametype, don't change.
+	// if we're playing a map of this gametype, don't change.
 	mapDecl = declManager->FindType( DECL_MAPDEF, mapName, false );
 	mapDef = static_cast<const idDeclEntityDef *>( mapDecl );
 	if ( mapDef ) {
 		btype = mapDef->dict.GetInt( gameType );
-		if(btype)
-		{					
-			cvarSystem->SetCVarString("si_map",mapName);
+		if ( btype ) {
+			// ( not sure what the gloubi boulga is about re-setting si_map two ways after reading it at the start of the function already )
+			cvarSystem->SetCVarString( "si_map", mapName );
 			si_map.SetString( mapName );
-			return false;
-			
+			return false;			
 		}
 	}
 
+	if ( checkOnly ) {
+		// always allow switching to DM mode, whatever the settings on the map ( DM should always be possible )
+		if ( !idStr::Icmp( si_gameType.GetString(), "DM" ) ) {
+			return false;
+		}
+		// don't actually change anything, indicate we would
+		return true;
+	}
 
 	int i;
 	idFileList *files;
@@ -8004,7 +8740,7 @@ bool idMultiplayerGame::PickMap( idStr gameType ) {
 	}
 
 	//something is wrong and there are no maps for this game type.  This should never happen.
-	gameLocal.Warning( "No maps found for game type: %s.\n", gameType.c_str() );
+	gameLocal.Error( "No maps found for game type: %s.\n", gameType.c_str() );
 	return false;
 }
 
@@ -8206,6 +8942,9 @@ const char *idMultiplayerGame::LocalizeGametype( void ) {
 	gameType = gameLocal.serverInfo.GetString( "si_gametype" );
 	localisedGametype = gameType;
 
+	if( !idStr::Icmp( gameType, "DM" ) ) {
+		localisedGametype = common->GetLocalizedString( "#str_110011" );
+	}
 	if( !idStr::Icmp( gameType, "Tourney" ) ) {
 		localisedGametype = common->GetLocalizedString( "#str_110012" );
 	}
@@ -8218,8 +8957,8 @@ const char *idMultiplayerGame::LocalizeGametype( void ) {
 	if( !idStr::Icmp( gameType, "Arena CTF" ) ) {
 		localisedGametype = common->GetLocalizedString( "#str_110015" );
 	}
-	if( !idStr::Icmp( gameType, "DM" ) ) {
-		localisedGametype = common->GetLocalizedString( "#str_110011" );
+	if( !idStr::Icmp( gameType, "DeadZone" ) ) {
+		localisedGametype = common->GetLocalizedString( "#str_122001" ); // Squirrel@Ritual - Localized for 1.2 Patch
 	}
 
 	return( localisedGametype.c_str() );
@@ -8254,3 +8993,218 @@ int idMultiplayerGame::VerifyTeamSwitch( int wantTeam, idPlayer *player ) {
 
 	return (balanceTeam == -1) ? wantTeam : balanceTeam;
 }
+
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
+/*
+================
+idMultiplayerGame::NumberOfPlayersOnTeam
+================
+*/
+int idMultiplayerGame::NumberOfPlayersOnTeam( int team )
+{
+	int teamPlayerCount = 0;
+
+	for ( int i = 0; i < gameLocal.numClients; i++ )
+	{
+		idEntity *ent = gameLocal.entities[ i ];
+		if ( ent && ent->IsType( idPlayer::GetClassType() ) )
+		{
+			idPlayer* entPlayer = static_cast< idPlayer * >( ent );
+			if( entPlayer->team == team )
+			{
+				teamPlayerCount ++;
+			}
+		}
+	}
+
+	return teamPlayerCount;
+}
+
+
+/*
+================
+idMultiplayerGame::NumberOfAlivePlayersOnTeam
+================
+*/
+int idMultiplayerGame::NumberOfAlivePlayersOnTeam( int team )
+{
+	int teamAlivePlayerCount = 0;
+
+	for ( int i = 0; i < gameLocal.numClients; i++ )
+	{
+		idEntity *ent = gameLocal.entities[ i ];
+		if ( ent && ent->IsType( idPlayer::GetClassType() ) )
+		{
+			idPlayer* entPlayer = static_cast< idPlayer * >( ent );
+			if( entPlayer->team == team && entPlayer->allowedToRespawn )
+			{
+				teamAlivePlayerCount ++;
+			}
+		}
+	}
+
+	return teamAlivePlayerCount;
+}
+
+
+// RITUAL END
+
+
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+/*
+================
+idMultiplayerGame::OpenLocalBuyMenu
+================
+*/
+void idMultiplayerGame::OpenLocalBuyMenu( void )
+{
+	// Buy menu work in progress
+	//if ( gameLocal.mpGame.GetCurrentMenu() == 4 )
+	//{	
+	//		return;
+	//}
+
+	if ( currentMenu == 4 )
+		return; // Already open
+
+	gameLocal.sessionCommand = "game_startmenu";
+	gameLocal.mpGame.nextMenu = 4;
+}
+
+/*	
+================
+idMultiplayerGame::RedrawLocalBuyMenu
+================
+*/
+void idMultiplayerGame::RedrawLocalBuyMenu( void )
+{
+	if ( !buyMenu )
+		return;
+
+	SetupBuyMenuItems();
+	buyMenu->HandleNamedEvent( "update_buymenu" );
+}
+
+
+/*
+================
+idMultiplayerGame::GiveCashToTeam
+================
+*/
+void idMultiplayerGame::GiveCashToTeam( int team, float cashAmount )
+{
+	for ( int i = 0; i < gameLocal.numClients; i++ )
+	{
+		idEntity *ent = gameLocal.entities[ i ];
+		if ( ent && ent->IsType( idPlayer::GetClassType() ) )
+		{
+			idPlayer* entPlayer = static_cast< idPlayer * >( ent );
+			if( entPlayer->team == team )
+			{
+				entPlayer->GiveCash( cashAmount );
+			}
+		}
+	}
+
+}
+
+
+/*
+================
+idMultiplayerGame::IsBuyingAllowedInTheCurrentGameMode
+================
+*/
+bool idMultiplayerGame::IsBuyingAllowedInTheCurrentGameMode( void ) {
+	if ( !gameLocal.isMultiplayer ) {
+		return false;
+	}
+
+	if ( gameLocal.gameType != GAME_TOURNEY ) {
+		return gameLocal.serverInfo.GetBool( "si_isBuyingEnabled" );
+	}
+
+	return false;
+}
+
+
+/*
+================
+idMultiplayerGame::IsBuyingAllowedRightNow
+================
+*/
+bool idMultiplayerGame::IsBuyingAllowedRightNow( void )
+{
+	return ( IsBuyingAllowedInTheCurrentGameMode() && isBuyingAllowedRightNow );
+}
+
+
+void idMultiplayerGame::AddTeamPowerup(int powerup, int time, int team)
+{
+	int i;
+	for ( i=0; i<MAX_TEAM_POWERUPS; i++ )
+	{
+		if ( teamPowerups[team][i].powerup == powerup )
+		{
+			//teamPowerups[team][i].time = teamPowerups[team][i].endTime - gameLocal.time + time;
+			//teamPowerups[team][i].endTime += time;
+			// Just reset the time to it's maximum.  This effectively caps the time
+			// from accumulating infinitely if the players are very wealthy.
+			teamPowerups[team][i].endTime = gameLocal.time + time;
+			teamPowerups[team][i].time = time;
+			teamPowerups[team][i].update = true;
+			return;
+		}
+	}
+
+	// If we get here, the powerup wasn't previously active, so find the first
+	// empty slot available and activate the powerup
+	for ( i=0; i<MAX_TEAM_POWERUPS; i++ )
+	{
+		if ( teamPowerups[team][i].powerup == 0 )
+		{
+			teamPowerups[team][i].powerup = powerup;
+			teamPowerups[team][i].endTime = gameLocal.time + time;
+			teamPowerups[team][i].time = time;
+			teamPowerups[team][i].update = true;
+			return;
+		}
+	}
+}
+
+void idMultiplayerGame::UpdateTeamPowerups( void ) {
+	int i,j;
+	for ( i=0; i<TEAM_MAX; i++ )
+	for ( j=0; j<MAX_TEAM_POWERUPS; j++ )
+	{
+		if ( teamPowerups[i][j].powerup == 0 )
+			continue;
+
+		if ( teamPowerups[i][j].endTime < gameLocal.time )
+		{
+			// Expired
+			teamPowerups[i][j].powerup = 0;
+			teamPowerups[i][j].time = 0;
+			teamPowerups[i][j].endTime = 0;
+			teamPowerups[i][j].update = false;
+		}
+		else
+		{
+			teamPowerups[i][j].time = teamPowerups[i][j].endTime - gameLocal.time;
+		}
+	}
+}
+
+void idMultiplayerGame::SetUpdateForTeamPowerups(int team)
+{
+	int i;
+	for ( i=0; i<MAX_TEAM_POWERUPS; i++ )
+	{
+		if ( teamPowerups[team][i].powerup != 0 )
+			teamPowerups[team][i].update = true;
+	}
+}
+
+// RITUAL END
+

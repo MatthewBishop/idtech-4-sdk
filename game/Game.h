@@ -53,6 +53,37 @@ enum demoReliableGameMessage_t {
 	DEMO_RECORD_COUNT
 };
 
+//
+// these defines work for all startsounds from all entity types
+// make sure to change script/doom_defs.script if you add any channels, or change their order
+//
+typedef enum {
+	SND_CHANNEL_ANY = SCHANNEL_ANY,
+	SND_CHANNEL_VOICE = SCHANNEL_ONE,
+	SND_CHANNEL_VOICE2,
+	SND_CHANNEL_BODY,
+	SND_CHANNEL_BODY2,
+	SND_CHANNEL_BODY3,
+	SND_CHANNEL_WEAPON,
+	SND_CHANNEL_ITEM,
+	SND_CHANNEL_HEART,
+	SND_CHANNEL_DEMONIC,
+	SND_CHANNEL_RADIO,
+
+	// internal use only.  not exposed to script or framecommands.
+	SND_CHANNEL_AMBIENT,
+	SND_CHANNEL_DAMAGE
+
+// RAVEN BEGIN
+// bdube: added custom to tell us where the end of the predefined list is
+	,
+	SND_CHANNEL_POWERUP,
+	SND_CHANNEL_POWERUP_IDLE,
+	SND_CHANNEL_MP_ANNOUNCER,
+	SND_CHANNEL_CUSTOM
+// RAVEN END
+} gameSoundChannel_t;
+
 // RAVEN BEGIN
 // bdube: forward reference
 class rvClientEffect;
@@ -63,6 +94,11 @@ struct ClientStats_t {
 	bool	isLagged;
 	bool	isNewFrame;
 };
+
+typedef struct userOrigin_s {
+	idVec3	origin;
+	int		followClient;
+} userOrigin_t;
 
 class idGame {
 public:
@@ -89,6 +125,10 @@ public:
 
 	// Retrieve the game's userInfo dict for a client.
 	virtual const idDict *		GetUserInfo( int clientNum ) = 0;
+
+	// Sets the user info for a viewer.
+	// The game can modify the user info in the returned dictionary pointer.
+	virtual const idDict *		RepeaterSetUserInfo( int clientNum, const idDict &userInfo ) = 0;
 
 	// Checks to see if a client is active
 	virtual bool				IsClientActive( int clientNum ) = 0;
@@ -131,10 +171,13 @@ public:
 	// lastCatchupFrame is always true except if we are running several game frames in a row and this one is not the last one
 	// subsystems which can tolerate skipping frames will not run during those catchup frames
 	// several game frames in a row happen when game + renderer time goes above the tick time ( 16ms )
-	virtual gameReturn_t		RunFrame( const usercmd_t *clientCmds, int activeEditors, bool lastCatchupFrame ) = 0;
+	virtual gameReturn_t		RunFrame( const usercmd_t *clientCmds, int activeEditors, bool lastCatchupFrame, int serverGameFrame ) = 0;
 
 	virtual void				MenuFrame( void ) = 0;
 // RAVEN END
+
+	// Runs a repeater frame
+	virtual void				RepeaterFrame( const userOrigin_t *clientOrigins, bool lastCatchupFrame, int serverGameFrame ) = 0;
 
 	// Makes rendering and sound system calls to display for a given clientNum.
 	virtual bool				Draw( int clientNum ) = 0;
@@ -156,7 +199,7 @@ public:
 	virtual allowReply_t		ServerAllowClient( int clientId, int numClients, const char *IP, const char *guid, const char *password, const char *privatePassword, char reason[MAX_STRING_CHARS] ) = 0;
 
 	// Connects a client.
-	virtual void				ServerClientConnect( int clientNum ) = 0;
+	virtual void				ServerClientConnect( int clientNum, const char *guid ) = 0;
 
 	// Spawns the player entity to be used by the client.
 	virtual void				ServerClientBegin( int clientNum ) = 0;
@@ -167,11 +210,23 @@ public:
 	// Writes initial reliable messages a client needs to recieve when first joining the game.
 	virtual void				ServerWriteInitialReliableMessages( int clientNum ) = 0;
 
+	// Early check to deny connect.
+	virtual allowReply_t		RepeaterAllowClient( int clientId, int numClients, const char *IP, const char *guid, bool repeater, const char *password, const char *privatePassword, char reason[MAX_STRING_CHARS] ) = 0;
+
+	// Connects a client.
+	virtual void				RepeaterClientConnect( int clientNum ) = 0;
+
+	// Spawns the player entity to be used by the client.
+	virtual void				RepeaterClientBegin( int clientNum ) = 0;
+
+	// Disconnects a client and removes the player entity from the game.
+	virtual void				RepeaterClientDisconnect( int clientNum ) = 0;
+
+	// Writes initial reliable messages a client needs to recieve when first joining the game.
+	virtual void				RepeaterWriteInitialReliableMessages( int clientNum ) = 0;
+
 	// Writes a snapshot of the server game state for the given client.
-// RAVEN BEGIN
-// jnewquist: Use dword array to match pvs array so we don't have endianness problems.
-	virtual void				ServerWriteSnapshot( int clientNum, int sequence, idBitMsg &msg, dword *clientInPVS, int numPVSClients ) = 0;
-// RAVEN END
+	virtual void				ServerWriteSnapshot( int clientNum, int sequence, idBitMsg &msg, dword *clientInPVS, int numPVSClients, int lastSnapshotFrame ) = 0;
 
 	// Patches the network entity states at the server with a snapshot for the given client.
 	virtual bool				ServerApplySnapshot( int clientNum, int sequence ) = 0;
@@ -179,8 +234,14 @@ public:
 	// Processes a reliable message from a client.
 	virtual void				ServerProcessReliableMessage( int clientNum, const idBitMsg &msg ) = 0;
 
+	// Patches the network entity states at the server with a snapshot for the given client.
+	virtual bool				RepeaterApplySnapshot( int clientNum, int sequence ) = 0;
+
+	// Processes a reliable message from a client.
+	virtual void				RepeaterProcessReliableMessage( int clientNum, const idBitMsg &msg ) = 0;
+
 	// Reads a snapshot and updates the client game state.
-	virtual void				ClientReadSnapshot( int clientNum, int sequence, const int gameFrame, const int gameTime, const int dupeUsercmds, const int aheadOfServer, const idBitMsg &msg ) = 0;
+	virtual void				ClientReadSnapshot( int clientNum, int snapshotSequence, const int gameFrame, const int gameTime, const int dupeUsercmds, const int aheadOfServer, const idBitMsg &msg ) = 0;
 
 	// Patches the network entity states at the client with a snapshot.
 	virtual bool				ClientApplySnapshot( int clientNum, int sequence ) = 0;
@@ -201,7 +262,7 @@ public:
 
 // RAVEN END
 
-	virtual idStr				GetBestGameType( const char* map, const char* gametype ) = 0;
+	virtual bool				ValidateServerSettings( const char *map, const char *gameType ) = 0;
 
 	// Returns a summary of stats for a given client
 	virtual void				GetClientStats( int clientNum, char *data, const int len ) = 0;
@@ -211,10 +272,13 @@ public:
 
 	virtual bool				DownloadRequest( const char *IP, const char *guid, const char *paks, char urls[ MAX_STRING_CHARS ] ) = 0;
 
+	// return true to allow download from the built-in http server
+	virtual bool				HTTPRequest( const char *IP, const char *file, bool isGamePak ) = 0;
+
 // RAVEN BEGIN
 // jscott: for the effects system
 	virtual void				StartViewEffect( int type, float time, float scale ) = 0;
-	virtual rvClientEffect*		PlayEffect ( const idDecl *effect, const idVec3& origin, const idMat3& axis, bool loop = false, const idVec3& endOrigin = vec3_origin, bool broadcast = false, effectCategory_t category = EC_IGNORE, const idVec4& effectTint = vec4_one ) = 0;
+	virtual rvClientEffect*		PlayEffect( const idDecl *effect, const idVec3& origin, const idMat3& axis, bool loop = false, const idVec3& endOrigin = vec3_origin, bool broadcast = false, bool predictBit = false, effectCategory_t category = EC_IGNORE, const idVec4& effectTint = vec4_one ) = 0;
 	virtual void				GetPlayerView( idVec3 &origin, idMat3 &axis ) = 0;
 	virtual const idVec3		GetCurrentGravity( const idVec3& origin, const idMat3& axis ) const = 0;
 	virtual void				Translation( trace_t &trace, idVec3 &source, idVec3 &dest, idTraceModel *trm, int clipMask ) = 0;
@@ -264,7 +328,10 @@ public:
 // RAVEN END
 
 	// Set the demo state.
-	virtual void				SetDemoState( demoState_t state, bool serverDemo ) = 0;
+	virtual void				SetDemoState( demoState_t state, bool serverDemo, bool timeDemo ) = 0;
+
+	// Set the repeater state; engine will call this with true for isRepeater if this is a repeater, and true for serverIsRepeater if we are connected to a repeater
+	virtual void				SetRepeaterState( bool isRepeater, bool serverIsRepeater ) = 0;
 
 	// Writes current network info to a file (used as initial state for demo recording).
 	virtual void				WriteNetworkInfo( idFile* file, int clientNum ) = 0;
@@ -276,10 +343,31 @@ public:
 	virtual bool				ValidateDemoProtocol( int minor_ref, int minor ) = 0;
 
 	// Write a snapshot for server demo recording.
-	virtual void				ServerWriteDemoSnapshot( int sequence, idBitMsg &msg ) = 0;
+	virtual void				ServerWriteServerDemoSnapshot( int sequence, idBitMsg &msg, int lastSnapshotFrame ) = 0;
 
 	// Read a snapshot from a server demo stream.
-	virtual void				ClientReadDemoSnapshot( int sequence, const int gameFrame, const int gameTime, const idBitMsg &msg ) = 0;
+	virtual void				ClientReadServerDemoSnapshot( int sequence, const int gameFrame, const int gameTime, const idBitMsg &msg ) = 0;
+
+	// Write a snapshot for repeater clients.
+	virtual void				RepeaterWriteSnapshot( int clientNum, int sequence, idBitMsg &msg, dword *clientInPVS, int numPVSClients, const userOrigin_t &pvs_origin, int lastSnapshotFrame ) = 0;
+
+	// Done writing snapshots for repeater clients.
+	virtual void				RepeaterEndSnapshots( void ) = 0;
+
+	// Read a snapshot from a repeater stream.
+	virtual void				ClientReadRepeaterSnapshot( int sequence, const int gameFrame, const int gameTime, const int aheadOfServer, const idBitMsg &msg ) = 0;
+
+	// Get the currently followed client in demo playback
+	virtual int					GetDemoFollowClient( void ) = 0;
+
+	// Build a bot's userCmd
+	virtual void				GetBotInput( int clientNum, usercmd_t &userCmd ) = 0;
+
+	// Return the name of a gui to override the loading screen
+	virtual const char *		GetLoadingGui( const char *mapDeclName ) = 0;
+
+	// Set any additional gui variables needed by the loading screen
+	virtual void				SetupLoadingGui( idUserInterface *gui ) = 0;
 };
 
 extern idGame *					game;
@@ -575,7 +663,11 @@ extern rvGameLog *				gameLog;
 // 9: bump up for 1.1 patch
 // 9: Q4 Gold
 // 10: Patch 2 changes
-const int GAME_API_VERSION		= 10;
+// 14: 1.3
+// 26: 1.4 beta
+// 30: 1.4
+// 37: 1.4.2
+const int GAME_API_VERSION		= 37;
 
 struct gameImport_t {
 

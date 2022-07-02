@@ -378,6 +378,13 @@ void idProjectile::Launch( const idVec3 &start, const idVec3 &dir, const idVec3 
 	fuse				= spawnArgs.GetFloat( "fuse" ) + ( spawnArgs.GetFloat( "fuse_random", "0" ) * gameLocal.random.RandomFloat() );
 	bounceCount			= spawnArgs.GetInt( "bounce_count", "-1" );
 	
+	//spawn impact entity information
+	impactEntity				= spawnArgs.GetString("def_impactEntity","");
+	numImpactEntities			= spawnArgs.GetInt("numImpactEntities","0");
+	ieMinPitch					= spawnArgs.GetInt("ieMinPitch","0");
+	ieMaxPitch					= spawnArgs.GetInt("ieMaxPitch","0");
+	ieSlicePercentage			= spawnArgs.GetFloat("ieSlicePercentage","0.0");
+	
 	projectileFlags.detonate_on_world	= spawnArgs.GetBool( "detonate_on_world" );
 	projectileFlags.detonate_on_actor	= spawnArgs.GetBool( "detonate_on_actor" );
 	projectileFlags.randomShaderSpin	= spawnArgs.GetBool( "random_shader_spin" );
@@ -385,6 +392,8 @@ void idProjectile::Launch( const idVec3 &start, const idVec3 &dir, const idVec3 
 
 	lightStartTime = 0;
 	lightEndTime = 0;
+
+	impactedEntity = 0;
 
 	if ( health ) {
 		fl.takedamage = true;
@@ -750,6 +759,12 @@ bool idProjectile::Collide( const trace_t &collision, const idVec3 &velocity, bo
 	}
 // RAVEN END
  
+	//Spawn any impact entities if necessary.
+	SpawnImpactEntities(collision, velocity);
+
+	//Apply any impact force if the necessary
+	//ApplyImpactForce(ent, collision, dir);
+ 
 	// MP: projectiles open doors
 	if ( gameLocal.isMultiplayer && ent->IsType( idDoor::GetClassType() ) && !static_cast< idDoor * >(ent)->IsOpen() && !ent->spawnArgs.GetBool( "no_touch" ) ) {
 		ent->ProcessEvent( &EV_Activate , this );
@@ -920,6 +935,78 @@ bool idProjectile::Collide( const trace_t &collision, const idVec3 &velocity, bo
 	Explode( &collision, false, ignore );
 
 	return true;
+}
+
+void idProjectile::SpawnImpactEntities(const trace_t& collision, const idVec3 velocity)
+{
+	if( impactEntity.Length() == 0 || numImpactEntities == 0 )
+		return;
+
+	const idDict* impactEntityDict = gameLocal.FindEntityDefDict(impactEntity);
+	if(impactEntityDict == NULL)
+		return;
+
+	idVec3 tempDirection;
+	idVec3 direction;
+	direction.Zero();
+
+	idVec3 up = collision.c.normal;
+
+	//Calculate the axes for that are oriented to the impact point. 
+	idMat3 impactAxes;
+
+	idVec3 right = velocity.Cross(up);
+	idVec3 forward = up.Cross(right);
+
+	right.Normalize();
+	forward.Normalize();
+	impactAxes[0] = forward;
+	impactAxes[1] = right;
+	impactAxes[2] = up;
+
+	//Calculate the reflection vector by calculating the forward component and up component of the projectile direction
+	//idVec3 reflectionVelocity = (forward * (velocity*0.33f * forward));// - (up * (velocity * up));
+	idVec3 reflectionVelocity = up * 0.01f;
+
+	//The algorithm below will launch entities at a random pitch and somewhat random yaw.
+	//The yaw is calculated by dividing 360 by the number of entities to spawn. This creates
+	//a distribution slice. Then using the slice percentage, this will determine how much of the
+	//slice to use.
+	//This creates a random,but somewhat even coverage of the circle.
+
+	//Calculate the slice size and pick a random start position.
+    int sliceSize = 360 / numImpactEntities;
+	int startPosition = rvRandom::irand(0, 360);
+
+	//Move the origin away from the collision point. This prevents the projectiles
+	//from colliding with the surface.
+	idVec3 origin = collision.endpos;
+	origin += 10.0f * collision.c.normal;
+	for(int i = 0;i < numImpactEntities; i++)
+	{
+		idProjectile* spawnProjectile = NULL;
+		gameLocal.SpawnEntityDef(*impactEntityDict,(idEntity**)&spawnProjectile);
+		if(spawnProjectile != NULL)
+		{
+			int pitch = rvRandom::irand(ieMinPitch, ieMaxPitch);
+			int sliceMiddle = (i * sliceSize) + startPosition;
+			int sliceSloppiness = (sliceSize * ieSlicePercentage) / 2;
+
+			int yaw = rvRandom::irand(sliceMiddle - sliceSloppiness, sliceMiddle + sliceSloppiness);
+			yaw = yaw % 360;
+
+			float cosPitch = idMath::Cos(DEG2RAD(pitch));
+			tempDirection.x = cosPitch * idMath::Cos(DEG2RAD(yaw));
+			tempDirection.y = cosPitch * idMath::Sin(DEG2RAD(yaw));
+			tempDirection.z = idMath::Sin(DEG2RAD(pitch));
+
+			spawnProjectile->SetOwner(owner);
+
+			//Now orient the direction to the surface world orientation.
+			direction = impactAxes * tempDirection;
+			spawnProjectile->Launch(origin, direction, reflectionVelocity);
+		}
+	}
 }
 
 /*

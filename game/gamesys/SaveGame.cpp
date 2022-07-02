@@ -1020,13 +1020,14 @@ void idRestoreGame::CreateObjects( void ) {
 	objects.SetNum( num + 1 );
 	memset( objects.Ptr(), 0, sizeof( objects[ 0 ] ) * objects.Num() );
 
-	for( i = 1; i < objects.Num(); i++ ) {
+	for ( i = 1; i < objects.Num(); i++ ) {
 		ReadString( classname );
 		type = idClass::GetClass( classname );
 		if ( !type ) {
 			Error( "idRestoreGame::CreateObjects: Unknown class '%s'", classname.c_str() );
 		}
 		objects[ i ] = type->CreateInstance();
+		assert( objects[ i ] != NULL );
 	}
 }
 

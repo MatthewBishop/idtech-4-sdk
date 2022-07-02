@@ -1,4 +1,3 @@
-
 #include "../precompiled.h"
 #pragma hdrstop
 
@@ -14,9 +13,7 @@
 //                                                        E
 //===============================================================
 
-#ifdef _WINDOWS
-
-#include "Simd_InstructionMacros.h"
+#if defined( _WINDOWS )
 
 // with alignment
 #define KFLOATINITS(   SRC0, COUNT, PRE, POST )				KFLOATINITDSS( SRC0,SRC0,SRC0,COUNT,PRE,POST )

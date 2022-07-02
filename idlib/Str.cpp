@@ -2215,3 +2215,18 @@ void idStr::Split( idList<idStr>& list, const char delimiter, const char groupDe
 	Split( c_str(), list, delimiter, groupDelimiter );
 }
 // RAVEN END
+
+idStr idStr::GetLastColorCode( void ) const {
+	for ( int i = Length(); i > 0; i-- ) {
+		int escapeType = 0;
+		int escapeLength = idStr::IsEscape( &data[i-1], &escapeType );
+
+		if ( escapeLength && ( escapeType == S_ESCAPE_COLORINDEX || S_ESCAPE_COLOR ) ) {
+			idStr result = "";
+			result.Append( &data[i-1], escapeLength );
+			return result;
+		}
+	}
+
+	return "";
+} 

@@ -31,6 +31,7 @@
 idCVar net_predictionErrorDecay( "net_predictionErrorDecay", "112", CVAR_FLOAT | CVAR_GAME | CVAR_NOCHEAT, "time in milliseconds it takes to fade away prediction errors", 0.0f, 200.0f );
 idCVar net_showPredictionError( "net_showPredictionError", "-1", CVAR_INTEGER | CVAR_GAME | CVAR_NOCHEAT, "show prediction errors for the given client", -1, MAX_CLIENTS );
 
+
 /*
 ===============================================================================
 
@@ -195,11 +196,12 @@ idInventory::Clear
 ==============
 */
 void idInventory::Clear( void ) {
-	maxHealth		= 0;
-	weapons			= 0;
-	powerups		= 0;
-	armor			= 0;
-	maxarmor		= 0;
+	maxHealth			= 0;
+	weapons				= 0;
+	carryOverWeapons	= 0;
+	powerups			= 0;
+	armor				= 0;
+	maxarmor			= 0;
 	secretAreasDiscovered = 0;
 
 	memset( ammo, 0, sizeof( ammo ) );
@@ -932,7 +934,7 @@ bool idInventory::Give( idPlayer *owner, const idDict &spawnArgs, const char *st
 				//already have this weapon
 				if ( !dropped ) {
 					//a placed weapon item
-					if ( gameLocal.serverInfo.GetBool( "si_weaponStay" ) ) {
+					if ( gameLocal.IsWeaponsStayOn() ) {
 						//don't pick up weapons at all if you already have them...
 						continue;
 					}
@@ -950,7 +952,10 @@ bool idInventory::Give( idPlayer *owner, const idDict &spawnArgs, const char *st
 
  			if ( !gameLocal.world->spawnArgs.GetBool( "no_Weapons" ) || ( weaponName == "weapon_fists" ) ) {
  				if ( ( weapons & ( 1 << i ) ) == 0 || gameLocal.isMultiplayer ) {
- 					if ( owner->GetUserInfo()->GetBool( "ui_autoSwitch" ) && idealWeapon && !checkOnly ) {
+					if ( ( owner->GetUserInfo()->GetBool( "ui_autoSwitch" ) 
+						|| ( gameLocal.isMultiplayer && gameLocal.mpGame.IsBuyingAllowedInTheCurrentGameMode() ) )
+						&& idealWeapon && !checkOnly )
+					{
 						// client prediction should not get here
 						assert( !gameLocal.isClient );
  						*idealWeapon = i;
@@ -1092,7 +1097,6 @@ idPlayer::idPlayer() {
 	oldFlags				= 0;
 
 	lastHitTime				= 0;
- 	lastSndHitTime			= 0;
 	lastSavingThrowTime		= 0;
 
 	weapon					= NULL;
@@ -1119,6 +1123,13 @@ idPlayer::idPlayer() {
 	forceScoreBoard			= false;
 	forceScoreBoardTime		= 0;
 	forceRespawn			= false;
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
+	allowedToRespawn		= true;
+// squirrel: Mode-agnostic buymenus
+	inBuyZone				= false;
+	inBuyZonePrev			= false;
+// RITUAL END
 	spectating				= false;
 	spectator				= 0;
 	forcedReady				= false;
@@ -1153,6 +1164,10 @@ idPlayer::idPlayer() {
 	landChange				= 0;
 	landTime				= 0;
 
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	carryOverCurrentWeapon	= -1;
+// RITUAL END
 	currentWeapon			= -1;
 	idealWeapon				= -1;
 	previousWeapon			= -1;
@@ -1261,6 +1276,11 @@ idPlayer::idPlayer() {
 	intentDir.Zero();
 	aasSensor = rvAASTacticalSensor::CREATE_SENSOR(this);
 
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	ResetCash();
+// RITUAL END
+
 	zoomFov.Init ( 0, 0, DefaultFov(), DefaultFov() );
 	zoomed					= false;
 	
@@ -1310,6 +1330,15 @@ idPlayer::idPlayer() {
 		voiceDest[i] = -1;
 		voiceDestTimes[i] = 0;
 	}
+
+	itemCosts = NULL;
+
+	teamHealthRegen		= NULL;
+	teamHealthRegenPending	= false;
+	teamAmmoRegen			= NULL;
+	teamAmmoRegenPending	= false;
+	teamDoubler			= NULL;		
+	teamDoublerPending		= false;
 }
 
 /*
@@ -1391,19 +1420,35 @@ idPlayer::SetupWeaponEntity
 ==============
 */
 void idPlayer::SetupWeaponEntity( void ) {
-	int w;
-	const char* weap;
+	int						w;
+	const char				*weap;
+	const idDeclEntityDef	*decl;
+	idEntity				*spawn;
 	
 	// don't setup weapons for spectators
 	if ( gameLocal.isClient || (weaponViewModel && weaponWorldModel) || spectating ) {
 		return;
 	}
+
+	idDict					args;
 	
 	if ( !weaponViewModel ) {
 		// setup the view model
 // RAVEN BEGIN
 // jnewquist: Use accessor for static class type 
-		weaponViewModel = static_cast<rvViewWeapon*>( gameLocal.SpawnEntityType( rvViewWeapon::GetClassType(), NULL ) );
+		decl = static_cast< const idDeclEntityDef * >( declManager->FindType( DECL_ENTITYDEF, "player_viewweapon", false, false ) );
+		if ( !decl ) {
+			gameLocal.Error( "entityDef not found: player_viewweapon" );
+		}
+		args.Set( "name", va( "%s_weapon", name.c_str() ) );
+		args.SetInt( "instance", instance );
+		args.Set( "classname", decl->GetName() );
+		spawn = NULL;
+		gameLocal.SpawnEntityDef( args, &spawn );
+		if ( !spawn ) {
+			gameLocal.Error( "idPlayer::SetupWeaponEntity: failed to spawn weaponViewModel" );
+		}
+		weaponViewModel = static_cast<rvViewWeapon*>(spawn);
 		weaponViewModel->SetName( va("%s_weapon", name.c_str() ) );
 		weaponViewModel->SetInstance( instance );
 	}
@@ -1411,8 +1456,19 @@ void idPlayer::SetupWeaponEntity( void ) {
 			
 	if ( !weaponWorldModel ) {
 		// setup the world model
-		weaponWorldModel = static_cast<idAnimatedEntity*>( gameLocal.SpawnEntityType( idAnimatedEntity::GetClassType(), NULL ) );
-// RAVEN END
+		decl = static_cast< const idDeclEntityDef * >( declManager->FindType( DECL_ENTITYDEF, "player_animatedentity", false, false ) );
+		if ( !decl ) {
+			gameLocal.Error( "entityDef not found: player_animatedentity" );
+		}
+		args.Set( "name", va( "%s_weapon_world", name.c_str() ) );
+		args.SetInt( "instance", instance );
+		args.Set( "classname", decl->GetName() );
+		spawn = NULL;
+		gameLocal.SpawnEntityDef( args, &spawn );
+		if ( !spawn ) {
+			gameLocal.Error( "idPlayer::SetupWeaponEntity: failed to spawn weaponWorldModel" );
+		}
+		weaponWorldModel = static_cast<idAnimatedEntity*>(spawn);
 		weaponWorldModel->fl.networkSync = true;
 		weaponWorldModel->SetName ( va("%s_weapon_world", name.c_str() ) );
 		weaponWorldModel->SetInstance( instance );
@@ -1664,7 +1720,7 @@ void idPlayer::Init( void ) {
 	hasteEffect			= NULL;
 	flagEffect			= NULL;
 	arenaEffect			= NULL;
-		
+
 	quadOverlay			= declManager->FindMaterial( spawnArgs.GetString( "mtr_quaddamage_overlay" ), false );
 	hasteOverlay		= declManager->FindMaterial( spawnArgs.GetString( "mtr_haste_overlay" ), false );
 	regenerationOverlay = declManager->FindMaterial( spawnArgs.GetString( "mtr_regeneration_overlay" ), false );
@@ -1691,6 +1747,22 @@ void idPlayer::Init( void ) {
 	jumpDuringHitch = false;
 
 	lastPickupTime = 0;
+
+	if ( teamHealthRegenPending ) {
+		assert( teamHealthRegen == NULL );
+		teamHealthRegenPending = false;
+		teamHealthRegen = PlayEffect( "fx_guard", renderEntity.origin, renderEntity.axis, true );
+	}
+	if ( teamAmmoRegenPending ) {
+		assert( teamAmmoRegen == NULL );
+		teamAmmoRegenPending = false;
+		teamAmmoRegen = PlayEffect( "fx_ammoregen", renderEntity.origin, renderEntity.axis, true );
+	}
+	if ( teamDoublerPending ) {
+		assert( teamDoubler == NULL );
+		teamDoublerPending = false;
+		teamDoubler = PlayEffect( "fx_doubler", renderEntity.origin, renderEntity.axis, true );
+	}
 }
 
 /*
@@ -1974,6 +2046,12 @@ void idPlayer::Spawn( void ) {
 	if( gameLocal.isClient && gameLocal.localClientNum == entityNumber && usercmd.angles[ 0 ] == 0 && usercmd.angles[ 1 ] == 0 && usercmd.angles[ 2 ] == 0 ) {
 		deltaViewAngles = ang_zero;
 	}
+//RITUAL BEGIN
+	carryOverCurrentWeapon = currentWeapon;
+	inventory.carryOverWeapons = 0;
+//RITUAL END
+
+	itemCosts = static_cast< const idDeclEntityDef * >( declManager->FindType( DECL_ENTITYDEF, "ItemCostConstants", false ) );
 }
 
 /*
@@ -2023,7 +2101,7 @@ void idPlayer::Save( idSaveGame *savefile ) const {
  	savefile->WriteInt( oldFlags );
 
 	savefile->WriteInt( lastHitTime );
- 	savefile->WriteInt( lastSndHitTime );
+ 	savefile->WriteInt( 0 );
 	savefile->WriteInt( lastSavingThrowTime );
 
 	// idBoolFields don't need to be saved, just re-linked in Restore
@@ -2291,7 +2369,8 @@ void idPlayer::Restore( idRestoreGame *savefile ) {
  	oldFlags = 0;
 
 	savefile->ReadInt( lastHitTime );
- 	savefile->ReadInt( lastSndHitTime );
+	int foo;
+ 	savefile->ReadInt( foo );
 	savefile->ReadInt( lastSavingThrowTime );
 
 	savefile->Read( &pfl, sizeof( pfl ) );
@@ -2570,6 +2649,10 @@ void idPlayer::PrepareForRestart( void ) {
 	Spectate( true );
 
 	forceRespawn = true;
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
+	allowedToRespawn = true;
+// RITUAL END
 	
 	// we will be restarting program, clear the client entities from program-related things first
 	ShutdownThreads();
@@ -2611,8 +2694,8 @@ void idPlayer::ServerSpectate( bool spectate ) {
 	if ( spectating != spectate ) {
 		// if we select spectating on the client 
 		// mekberg: drop and clear powerups from the player.
-		DropPowerups ( );	
-		ClearPowerUps ( );
+		DropPowerups();
+		ClearPowerUps();
  		Spectate( spectate );
 		gameLocal.mpGame.GetGameState()->Spectate( this );
    		if ( spectate ) {
@@ -2700,6 +2783,15 @@ void idPlayer::SpawnToPoint( const idVec3 &spawn_origin, const idAngles &spawn_a
 
 	assert( !gameLocal.isClient );
 
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	if ( gameLocal.mpGame.IsBuyingAllowedInTheCurrentGameMode() ) {
+		// Record previous weapons for later restoration
+		inventory.carryOverWeapons &= ~CARRYOVER_WEAPONS_MASK;
+		inventory.carryOverWeapons |= inventory.weapons;
+	}
+// RITUAL END
+
 	respawning = true;
 
 	Init();
@@ -2776,7 +2868,7 @@ void idPlayer::SpawnToPoint( const idVec3 &spawn_origin, const idAngles &spawn_a
 				// currentThinkingEntity not set here (called out of Run())
 				idEntity* thinker = gameLocal.currentThinkingEntity;
 				gameLocal.currentThinkingEntity = this;
-				gameLocal.PlayEffect ( spawnArgs, "fx_spawn", renderEntity.origin, idVec3(0,0,1).ToMat3(), false, vec3_origin, true );
+				gameLocal.PlayEffect( spawnArgs, "fx_spawn", renderEntity.origin, idVec3(0,0,1).ToMat3(), false, vec3_origin, true );
 				lastTeleFX = gameLocal.time;
 				gameLocal.currentThinkingEntity = thinker;
  			}
@@ -2814,6 +2906,46 @@ void idPlayer::SpawnToPoint( const idVec3 &spawn_origin, const idAngles &spawn_a
 	}
 
 	privateCameraView = NULL;
+
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+	if( gameLocal.isMultiplayer && gameLocal.mpGame.IsBuyingAllowedInTheCurrentGameMode() )
+	{
+		// restore previous weapons
+		inventory.weapons |= inventory.carryOverWeapons & CARRYOVER_WEAPONS_MASK;
+		for( int weaponIndex = 0; weaponIndex < MAX_WEAPONS; weaponIndex++ )
+		{
+			if( inventory.weapons & ( 1 << weaponIndex ) )
+			{
+				int ammoIndex	= inventory.AmmoIndexForWeaponIndex( weaponIndex );
+				inventory.ammo[ ammoIndex ] = inventory.StartingAmmoForWeaponIndex( weaponIndex );
+			}
+		}
+
+		/// Restore armor purchased while dead
+		if( inventory.carryOverWeapons & CARRYOVER_FLAG_ARMOR_LIGHT )
+		{
+			inventory.carryOverWeapons &= ~CARRYOVER_FLAG_ARMOR_LIGHT;
+			GiveItem( "item_armor_small" );
+		}
+
+		if( inventory.carryOverWeapons & CARRYOVER_FLAG_ARMOR_HEAVY )
+		{
+			inventory.carryOverWeapons &= ~CARRYOVER_FLAG_ARMOR_HEAVY;
+			GiveItem( "item_armor_large" );
+		}
+
+		if( inventory.carryOverWeapons & CARRYOVER_FLAG_AMMO )
+		{
+			inventory.carryOverWeapons &= ~CARRYOVER_FLAG_AMMO;
+			GiveItem( "ammorefill" );
+		}
+
+		// Reactivate team powerups
+		gameLocal.mpGame.SetUpdateForTeamPowerups(team);
+		UpdateTeamPowerups();
+	}
+// RITUAL END
 
 	BecomeActive( TH_THINK );
 
@@ -2864,12 +2996,6 @@ void idPlayer::RestorePersistantInfo( void ) {
  	health = spawnArgs.GetInt( "health", "100" );
  	if ( !gameLocal.isClient ) {
  		idealWeapon = spawnArgs.GetInt( "current_weapon", "0" );
-#ifdef _XENON
- 		// nrausch: needs to happen in order to restore the current weapon after an autosave
- 		if ( !gameLocal.isMultiplayer ) {
- 			SetWeapon( idealWeapon );
- 		}
-#endif
  	}
 }
 
@@ -3180,6 +3306,9 @@ bool idPlayer::UserInfoChanged( void ) {
 					}
 				}
 			}
+
+			// ATVI DevTrack #13224 - update on each team change
+			iconManager->UpdateTeamIcons();
 
 			latchedTeam = team;
 		}
@@ -3833,6 +3962,12 @@ void idPlayer::FireWeapon( void ) {
 	idMat3 axis;
 	idVec3 muzzle;
 
+//RITUAL BEGIN
+	if( gameLocal.GetIsFrozen() && gameLocal.gameType == GAME_DEADZONE )
+	{
+		return;
+	}
+//RITUAL END
 	if ( privateCameraView ) {
 		return;
 	}
@@ -3844,19 +3979,27 @@ void idPlayer::FireWeapon( void ) {
 	}
 
 	if ( !hiddenWeapon && weapon->IsReady() ) {
-		if ( weapon->AmmoInClip() || weapon->AmmoAvailable() ) {
-			pfl.attackHeld = true;
-			weapon->BeginAttack();
+		// cheap hack so in MP the LG isn't allowed to fire in the short lapse while it goes from Fire -> Idle before changing to another weapon
+		// this gimps the weapon a lil bit but is consistent with the visual feedback clients are getting since 1.0
+		bool noFireWhileSwitching = false;
+		noFireWhileSwitching = ( gameLocal.isMultiplayer && idealWeapon != currentWeapon && weapon->NoFireWhileSwitching() );
+		if ( !noFireWhileSwitching ) {
+			if ( weapon->AmmoInClip() || weapon->AmmoAvailable() ) {
+				pfl.attackHeld = true;
+				weapon->BeginAttack();
+			} else {
+				pfl.attackHeld = false;
+				pfl.weaponFired = false;
+				StopFiring();
+				NextBestWeapon();
+			}
 		} else {
-			pfl.attackHeld = false;
-			pfl.weaponFired = false;
 			StopFiring();
-			NextBestWeapon();
 		}
 	}
 	// If reloading when fire is hit cancel the reload
-	else if ( weapon->IsReloading ( ) ) {
-		weapon->CancelReload ( );
+	else if ( weapon->IsReloading() ) {
+		weapon->CancelReload();
 	}
 /* twhitaker: removed this at the request of Matt Vainio.
 	if ( !gameLocal.isMultiplayer ) {
@@ -4051,7 +4194,7 @@ bool idPlayer::GiveItem( idItem *item ) {
 					if ( Give( arg->GetKey(), arg->GetValue(), dropped ) ) {
 						gave = true;
 					} else if ( !dropped//not a dropped weapon
-						&& gameLocal.serverInfo.GetBool( "si_weaponStay" ) ) {
+						&& gameLocal.IsWeaponsStayOn() ) {
 						//if failed to give weapon, don't give anything else with the weapon
 						skipRestOfKeys = true;
 					}
@@ -4119,6 +4262,10 @@ bool idPlayer::GiveItem( idItem *item ) {
 		hud->SetStateString ( "itemicon", item->spawnArgs.GetString( "inv_icon" ) );
 		hud->HandleNamedEvent ( "itemPickup" );
 	}
+//RITUAL BEGIN
+	if ( gameLocal.mpGame.IsBuyingAllowedInTheCurrentGameMode() )
+		gameLocal.mpGame.RedrawLocalBuyMenu();
+//RITUAL END
 
 	return gave;
 }
@@ -4183,6 +4330,24 @@ float idPlayer::PowerUpModifier( int type ) {
 		}
 	}
 
+//RITUAL BEGIN
+	if( PowerUpActive( POWERUP_TEAM_DAMAGE_MOD ) ) {
+		switch( type ) {
+			case PMOD_PROJECTILE_DAMAGE: {
+				mod *= 1.75f;
+				break;
+			}
+			case PMOD_MELEE_DAMAGE: {
+				mod *= 1.75f;
+				break;
+			}
+			case PMOD_FIRERATE: {
+				mod *= 0.80f;
+				break;
+			}
+		}
+	}
+//RITUAL END	
 	if( PowerUpActive( POWERUP_SCOUT ) ) {
 		switch( type ) {
 			case PMOD_FIRERATE: {
@@ -4217,33 +4382,36 @@ void idPlayer::StartPowerUpEffect( int powerup ) {
 
 	switch( powerup ) {
 		case POWERUP_CTF_MARINEFLAG: {
-			AddClientModel ( "mp_ctf_flag_pole" );
-			AddClientModel ( "mp_ctf_marine_flag_world" );
+			AddClientModel( "mp_ctf_flag_pole" );
+			AddClientModel( "mp_ctf_marine_flag_world" );
 			flagEffect = PlayEffect( "fx_ctf_marine_flag_world", animator.GetJointHandle( spawnArgs.GetString( "flagEffectJoint" ) ), spawnArgs.GetVector( "flagEffectOrigin" ), physicsObj.GetAxis(), true );
 			break;
 		}
 
 		case POWERUP_CTF_STROGGFLAG: {
-			AddClientModel ( "mp_ctf_flag_pole" );
-			AddClientModel ( "mp_ctf_strogg_flag_world" );
+			AddClientModel( "mp_ctf_flag_pole" );
+			AddClientModel( "mp_ctf_strogg_flag_world" );
 			flagEffect = PlayEffect( "fx_ctf_strogg_flag_world", animator.GetJointHandle( spawnArgs.GetString( "flagEffectJoint" ) ), spawnArgs.GetVector( "flagEffectOrigin" ), physicsObj.GetAxis(), true );
 			break;
 		}
 
 		case POWERUP_CTF_ONEFLAG: {
-			AddClientModel ( "mp_ctf_one_flag" );
+			AddClientModel( "mp_ctf_one_flag" );
 			break;
 		}
-
+		case POWERUP_DEADZONE: {
+			PlayEffect( "fx_deadzone", animator.GetJointHandle( "origin" ), true );		
+			break;
+		}
 		case POWERUP_QUADDAMAGE: {
 			powerUpOverlay = quadOverlay;
 
-			StopEffect ( "fx_regeneration" );
-			PlayEffect ( "fx_quaddamage", animator.GetJointHandle( "chest" ), true );			
-			StartSound ( "snd_quaddamage_idle", SND_CHANNEL_POWERUP_IDLE, 0, false, NULL );
+			StopEffect( "fx_regeneration" );
+			PlayEffect( "fx_quaddamage", animator.GetJointHandle( "chest" ), true );			
+			StartSound( "snd_quaddamage_idle", SND_CHANNEL_POWERUP_IDLE, 0, false, NULL );
 
 			// Spawn quad effect
-			powerupEffect = gameLocal.GetEffect ( spawnArgs, "fx_quaddamage_crawl" );
+			powerupEffect = gameLocal.GetEffect( spawnArgs, "fx_quaddamage_crawl" );
 			powerupEffectTime = gameLocal.time;
 			powerupEffectType = POWERUP_QUADDAMAGE;
 
@@ -4251,15 +4419,29 @@ void idPlayer::StartPowerUpEffect( int powerup ) {
 		}
 
 		case POWERUP_REGENERATION: {
-			powerUpOverlay = regenerationOverlay;
 
-			StopEffect ( "fx_quaddamage" );
-			PlayEffect ( "fx_regeneration", animator.GetJointHandle( "chest" ), true );
+			// when buy mode is enabled, we use the guard effect for team powerup regen ( more readable than everyone going red )
+			if ( gameLocal.IsTeamPowerups() ) {
+				// don't setup the powerup on dead bodies, it will float up where the body is invisible and the orientation will be messed up
+				if ( teamHealthRegen == NULL ) {
+					if ( health <= 0 ) {
+						// we can't start it now, it will be floating where the hidden dead body is
+						teamHealthRegenPending = true;
+					} else {
+						teamHealthRegen = PlayEffect( "fx_guard", renderEntity.origin, renderEntity.axis, true );
+					}
+				}
+			} else {
+				powerUpOverlay = regenerationOverlay;
 
-			// Spawn quad effect
-			powerupEffect = gameLocal.GetEffect ( spawnArgs, "fx_regeneration" );			
-			powerupEffectTime = gameLocal.time;
-			powerupEffectType = POWERUP_REGENERATION;
+				StopEffect( "fx_quaddamage" );
+				PlayEffect( "fx_regeneration", animator.GetJointHandle( "chest" ), true );
+
+				// Spawn regen effect
+				powerupEffect = gameLocal.GetEffect( spawnArgs, "fx_regeneration" );			
+				powerupEffectTime = gameLocal.time;
+				powerupEffectType = POWERUP_REGENERATION;
+			}
 
 			break;
 		}
@@ -4267,7 +4449,7 @@ void idPlayer::StartPowerUpEffect( int powerup ) {
 		case POWERUP_HASTE: {
 			powerUpOverlay = hasteOverlay;
 
-			hasteEffect = PlayEffect ( "fx_haste", GetPhysics()->GetOrigin(), GetPhysics()->GetAxis(), true );
+			hasteEffect = PlayEffect( "fx_haste", GetPhysics()->GetOrigin(), GetPhysics()->GetAxis(), true );
 			break;
 		}
 		
@@ -4279,22 +4461,62 @@ void idPlayer::StartPowerUpEffect( int powerup ) {
 		}
 
 		case POWERUP_GUARD: {
-			arenaEffect = PlayEffect ( "fx_guard", physicsObj.GetOrigin(), physicsObj.GetAxis(), true );
+			if ( arenaEffect != NULL ) {
+				// don't accumulate. clear whatever was there
+				arenaEffect->Stop( true );
+			}
+			arenaEffect = PlayEffect( "fx_guard", physicsObj.GetOrigin(), physicsObj.GetAxis(), true );
 			break;
 		}
 		
 		case POWERUP_SCOUT: {
-			arenaEffect = PlayEffect ( "fx_scout", physicsObj.GetOrigin(), physicsObj.GetAxis(), true );
+			if ( arenaEffect != NULL ) {
+				// don't accumulate. clear whatever was there
+				arenaEffect->Stop( true );
+			}
+			arenaEffect = PlayEffect( "fx_scout", physicsObj.GetOrigin(), physicsObj.GetAxis(), true );
 			break;
 		}
 		
 		case POWERUP_AMMOREGEN: {
-			arenaEffect = PlayEffect ( "fx_ammoregen", physicsObj.GetOrigin(), physicsObj.GetAxis(), true );
+			if ( gameLocal.IsTeamPowerups() ) {
+				if ( teamAmmoRegen == NULL ) {
+					if ( health <= 0 ) {
+						teamAmmoRegenPending = true;
+					} else {
+						teamAmmoRegen = PlayEffect( "fx_ammoregen", renderEntity.origin, renderEntity.axis, true );
+					}
+				}
+			} else {
+				assert( health > 0 );
+				if ( arenaEffect != NULL ) {
+					// don't accumulate. clear whatever was there
+					arenaEffect->Stop( true );
+				}
+				arenaEffect = PlayEffect( "fx_ammoregen", renderEntity.origin, renderEntity.axis, true );
+			}
 			break;
 		}
 		
+		case POWERUP_TEAM_DAMAGE_MOD: {
+			assert( gameLocal.IsTeamPowerups() );
+			if ( teamDoubler == NULL ) {
+				if ( health <= 0 ) {
+					teamDoublerPending = true;
+				} else {
+					teamDoubler = PlayEffect( "fx_doubler", renderEntity.origin, renderEntity.axis, true );				
+				}
+			}
+			break;
+		}
+
 		case POWERUP_DOUBLER: {
-			arenaEffect = PlayEffect ( "fx_doubler", physicsObj.GetOrigin(), physicsObj.GetAxis(), true );
+			assert( health > 0 );
+			if ( arenaEffect != NULL ) {
+				// don't accumulate. clear whatever was there
+				arenaEffect->Stop( true );
+			}
+			arenaEffect = PlayEffect( "fx_doubler", renderEntity.origin, renderEntity.axis, true );
 			break;
 		}
 	}
@@ -4318,7 +4540,6 @@ void idPlayer::StopPowerUpEffect( int powerup ) {
 			StopSound( SND_CHANNEL_POWERUP_IDLE, false );
 		}
 
-
 	switch( powerup ) {
 		case POWERUP_QUADDAMAGE: {
 			powerupEffect = NULL;
@@ -4329,11 +4550,16 @@ void idPlayer::StopPowerUpEffect( int powerup ) {
 			break;
 		}
 		case POWERUP_REGENERATION: {
-			powerupEffect = NULL;
-			powerupEffectTime = 0;
-			powerupEffectType = 0;
+			if ( gameLocal.IsTeamPowerups() ) {
+				teamHealthRegenPending = false;
+				StopEffect( "fx_guard" );
+			} else {
+				powerupEffect = NULL;
+				powerupEffectTime = 0;
+				powerupEffectType = 0;
 
-			StopEffect( "fx_regeneration" );
+				StopEffect( "fx_regeneration" );
+			}
 			break;
 		}
 		case POWERUP_HASTE: {
@@ -4345,19 +4571,23 @@ void idPlayer::StopPowerUpEffect( int powerup ) {
 			break;
 		}
 		case POWERUP_CTF_STROGGFLAG: {
-			RemoveClientModel ( "mp_ctf_flag_pole" );
-			RemoveClientModel ( "mp_ctf_strogg_flag_world" );
+			RemoveClientModel( "mp_ctf_flag_pole" );
+			RemoveClientModel( "mp_ctf_strogg_flag_world" );
 			StopEffect( "fx_ctf_strogg_flag_world" );
 			break;
 		}
 		case POWERUP_CTF_MARINEFLAG: {
-			RemoveClientModel ( "mp_ctf_flag_pole" );
-			RemoveClientModel ( "mp_ctf_marine_flag_world" );
+			RemoveClientModel( "mp_ctf_flag_pole" );
+			RemoveClientModel( "mp_ctf_marine_flag_world" );
 			StopEffect( "fx_ctf_marine_flag_world" );
 			break;
 		}
 		case POWERUP_CTF_ONEFLAG: {
 			RemoveClientModel ( "mp_ctf_one_flag" );
+			break;
+		}
+	  case POWERUP_DEADZONE: {
+			StopEffect( "fx_deadzone" );
 			break;
 		}
 		case POWERUP_SCOUT: {
@@ -4368,11 +4598,15 @@ void idPlayer::StopPowerUpEffect( int powerup ) {
 			StopEffect( "fx_guard" );
 			break;
 		}
+		case POWERUP_TEAM_DAMAGE_MOD:
+			teamDoublerPending = false;
+			// fallthrough
 		case POWERUP_DOUBLER: {
 			StopEffect( "fx_doubler" );
 			break;
 		}
 		case POWERUP_AMMOREGEN: {
+			teamAmmoRegenPending = false;
 			StopEffect( "fx_ammoregen" );
 			break;
 		}
@@ -4387,7 +4621,7 @@ back into snapshot.  We don't want to announce powerups in this case
 (just re-start effects)
 ===============
 */
-bool idPlayer::GivePowerUp( int powerup, int time ) {
+bool idPlayer::GivePowerUp( int powerup, int time, bool team ) {
 	if ( powerup < 0 || powerup >= POWERUP_MAX ) {
 		gameLocal.Warning( "Player given power up %i\n which is out of range", powerup );
 		return false;
@@ -4400,6 +4634,8 @@ bool idPlayer::GivePowerUp( int powerup, int time ) {
 		msg.Init( msgBuf, sizeof( msgBuf ) );
 		msg.WriteShort( powerup );
 		msg.WriteBits( 1, 1 );
+		// team flag only needed for POWERUP_AMMOREGEN
+		msg.WriteBits( team, 1 );
 		ServerSendEvent( EVENT_POWERUP, &msg, false, -1 );
 	}
 
@@ -4419,6 +4655,7 @@ bool idPlayer::GivePowerUp( int powerup, int time ) {
 					mphud->HandleNamedEvent( "main_notice" );
 				}
 			}
+			UpdateTeamPowerups();
 			break;
 		}
 
@@ -4430,6 +4667,7 @@ bool idPlayer::GivePowerUp( int powerup, int time ) {
 					mphud->HandleNamedEvent( "main_notice" );
 				}
 			}
+			UpdateTeamPowerups();
 			break;
 		}
 
@@ -4441,6 +4679,7 @@ bool idPlayer::GivePowerUp( int powerup, int time ) {
 					mphud->HandleNamedEvent( "main_notice" );
 				}
 			}
+			UpdateTeamPowerups();
 			break;
 		}
 		
@@ -4452,7 +4691,11 @@ bool idPlayer::GivePowerUp( int powerup, int time ) {
 		case POWERUP_REGENERATION: {
 			nextHealthPulse = gameLocal.time + HEALTH_PULSE;
 
-			gameLocal.mpGame.ScheduleAnnouncerSound( AS_GENERAL_REGENERATION, gameLocal.time, gameLocal.gameType == GAME_TOURNEY ? GetInstance() : -1 );
+			// Have to test for this because buying the team regeneration powerup will cause
+			// this to get hit multiple times as the server distributes the powerups to the clients.
+			if ( gameLocal.GetLocalPlayer() == this ) {
+				gameLocal.mpGame.ScheduleAnnouncerSound( AS_GENERAL_REGENERATION, gameLocal.time, gameLocal.gameType == GAME_TOURNEY ? GetInstance() : -1 );
+			}
 			break;
 		}
 		case POWERUP_HASTE: {
@@ -4476,13 +4719,28 @@ bool idPlayer::GivePowerUp( int powerup, int time ) {
 			break;
 		}
 		case POWERUP_AMMOREGEN: {
-			//noop
+			if ( team && gameLocal.GetLocalPlayer() == this ) {
+				gameLocal.mpGame.ScheduleAnnouncerSound( AS_GENERAL_TEAM_AMMOREGEN, gameLocal.time, gameLocal.gameType == GAME_TOURNEY ? GetInstance() : -1 );
+			}
 			break;
 		}
-		case POWERUP_DOUBLER: {
-			//noop
+		case POWERUP_TEAM_DAMAGE_MOD: {
+			if ( gameLocal.GetLocalPlayer() == this ) {
+				gameLocal.mpGame.ScheduleAnnouncerSound( AS_GENERAL_TEAM_DOUBLER, gameLocal.time, gameLocal.gameType == GAME_TOURNEY ? GetInstance() : -1 );
+			}
 			break;
 		}
+//RITUAL BEGIN
+		case POWERUP_DEADZONE: {
+			if ( playClientEffects && this == gameLocal.GetLocalPlayer() ) {
+				if ( mphud ) {
+					mphud->SetStateString( "main_notice_text", common->GetLocalizedString( "#str_122000" ) ); // Squirrel@Ritual - Localized for 1.2 Patch
+					mphud->HandleNamedEvent( "main_notice" );
+				}
+			}
+			break;
+		}
+//RITUAL END
 	}
 
 	// only start effects if in our instances and snapshot
@@ -4514,10 +4772,12 @@ void idPlayer::ClearPowerup( int i ) {
 
 	//if the player doesn't have quad, regen, haste or invisibility remaining on him, remove the power up overlay.
 	if( !( 
+			(inventory.powerups & ( 1 << POWERUP_TEAM_DAMAGE_MOD ) ) ||
 			(inventory.powerups & ( 1 << POWERUP_QUADDAMAGE ) ) || 
 			(inventory.powerups & ( 1 << POWERUP_REGENERATION ) ) || 
 			(inventory.powerups & ( 1 << POWERUP_HASTE ) ) || 
-			(inventory.powerups & ( 1 << POWERUP_INVISIBILITY ) ) 
+			(inventory.powerups & ( 1 << POWERUP_INVISIBILITY ) ) ||
+			(inventory.powerups & ( 1 << POWERUP_DEADZONE ) ) 
 		) )	{
 
 		powerUpOverlay = NULL;
@@ -4602,7 +4862,11 @@ void idPlayer::UpdatePowerUps( void ) {
 			}
 
 			continue;
-		} else if( inventory.powerupEndTime[ i ] != -1 && gameLocal.isServer ) {
+		} else if ( inventory.powerupEndTime[ i ] != -1 && gameLocal.isServer ) {
+			// This particular powerup needs to respawn in a special way.
+			if ( i == POWERUP_DEADZONE ) {
+				gameLocal.mpGame.GetGameState()->SpawnDeadZonePowerup();
+			}
 			// Powerup time has run out so take it away from the player
 			ClearPowerup( i );
 		}
@@ -4619,43 +4883,48 @@ void idPlayer::UpdatePowerUps( void ) {
 
 	// Reneration regnerates faster when less than maxHealth and can regenerate up to maxHealth * 2
 	if ( gameLocal.time > nextHealthPulse ) {
-		if ( PowerUpActive ( POWERUP_REGENERATION ) || PowerUpActive ( POWERUP_GUARD ) ) {
-			int healthBoundary = inventory.maxHealth; // health will regen faster under this value, slower above
-			int healthTic = 15;
+// RITUAL BEGIN
+// squirrel: health regen only applies if you have positive health
+		if( health > 0 ) {
+			if ( PowerUpActive ( POWERUP_REGENERATION ) || PowerUpActive ( POWERUP_GUARD ) ) {
+				int healthBoundary = inventory.maxHealth; // health will regen faster under this value, slower above
+				int healthTic = 15;
 
-			if( PowerUpActive ( POWERUP_GUARD ) ) {
-				// guard max health == 200, so set the boundary back to 100
-				healthBoundary = inventory.maxHealth / 2;
-				if( PowerUpActive (POWERUP_REGENERATION) ) {
-					healthTic = 30;
+				if( PowerUpActive ( POWERUP_GUARD ) ) {
+					// guard max health == 200, so set the boundary back to 100
+					healthBoundary = inventory.maxHealth / 2;
+					if( PowerUpActive (POWERUP_REGENERATION) ) {
+						healthTic = 30;
+					}
 				}
+
+				if ( health < healthBoundary ) {
+					// only actually give health on the server
+					if( gameLocal.isServer ) {
+						health += healthTic;
+						if ( health > (healthBoundary * 1.1f) ) {
+							health = healthBoundary * 1.1f;
+						}
+					}
+					StartSound ( "snd_powerup_regen", SND_CHANNEL_POWERUP, 0, false, NULL );
+					nextHealthPulse = gameLocal.time + HEALTH_PULSE;
+				} else if ( health < (healthBoundary * 2) ) {
+					if( gameLocal.isServer ) {
+						health += healthTic / 3;
+						if ( health > (healthBoundary * 2) ) {
+							health = healthBoundary * 2;
+						}
+					}
+					StartSound ( "snd_powerup_regen", SND_CHANNEL_POWERUP, 0, false, NULL );
+					nextHealthPulse = gameLocal.time + HEALTH_PULSE;
+				}	
+			// Health above max technically isnt a powerup but functions as one so handle it here
+			} else if ( health > inventory.maxHealth && gameLocal.isServer ) { 
+				nextHealthPulse = gameLocal.time + HEALTH_PULSE;
+				health--;
 			}
-
-			if ( health < healthBoundary ) {
-				// only actually give health on the server
-				if( gameLocal.isServer ) {
-					health += healthTic;
-					if ( health > (healthBoundary * 1.1f) ) {
-						health = healthBoundary * 1.1f;
-					}
-				}
-				StartSound ( "snd_powerup_regen", SND_CHANNEL_POWERUP, 0, false, NULL );
-				nextHealthPulse = gameLocal.time + HEALTH_PULSE;
-			} else if ( health < (healthBoundary * 2) ) {
-				if( gameLocal.isServer ) {
-					health += healthTic / 3;
-					if ( health > (healthBoundary * 2) ) {
-						health = healthBoundary * 2;
-					}
-				}
-				StartSound ( "snd_powerup_regen", SND_CHANNEL_POWERUP, 0, false, NULL );
-				nextHealthPulse = gameLocal.time + HEALTH_PULSE;
-			}	
-		// Health above max technically isnt a powerup but functions as one so handle it here
-		} else if ( health > inventory.maxHealth && gameLocal.isServer ) { 
-			nextHealthPulse = gameLocal.time + HEALTH_PULSE;
-			health--;
 		}
+// RITUAL END
 	}
 
 	// Regenerate ammo
@@ -5056,11 +5325,53 @@ idPlayer::GiveItem
 ===============
 */
 void idPlayer::GiveItem( const char *itemname ) {
-	idDict args;
+	idDict	args;
 
 	args.Set( "classname", itemname );
 	args.Set( "owner", name.c_str() );
-	gameLocal.SpawnEntityDef( args );
+	args.Set( "givenToPlayer", va( "%d", entityNumber ) );
+
+	if ( gameLocal.mpGame.IsBuyingAllowedInTheCurrentGameMode() ) {
+		// check if this is a weapon
+		if( !idStr::Icmpn( itemname, "weapon_", 7 ) ) {
+			int weaponIndex = SlotForWeapon( itemname );
+			if( weaponIndex >= 0 && weaponIndex < MAX_WEAPONS )
+			{
+				int weaponIndexBit = ( 1 << weaponIndex );
+				inventory.weapons |= weaponIndexBit;
+				inventory.carryOverWeapons |= weaponIndexBit;
+				carryOverCurrentWeapon = weaponIndex;
+			}
+		}
+
+		// if the player is dead, credit him with this armor or ammo purchase
+		if ( health <= 0 ) {
+			if( !idStr::Icmp( itemname, "item_armor_small" ) ) {
+				inventory.carryOverWeapons |= CARRYOVER_FLAG_ARMOR_LIGHT;
+			} else if( !idStr::Icmp( itemname, "item_armor_large" ) ) {
+				inventory.carryOverWeapons |= CARRYOVER_FLAG_ARMOR_HEAVY;
+			} else if( !idStr::Icmp( itemname, "ammorefill" ) ) {
+				inventory.carryOverWeapons |= CARRYOVER_FLAG_AMMO;
+			}
+		} else {
+			if ( !idStr::Icmp( itemname, "ammorefill" ) ) {
+				int i;
+				for ( i = 0 ; i < MAX_AMMOTYPES; i++ ) {
+					int a = gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( rvWeapon::GetAmmoNameForIndex( i ), 0 );
+					inventory.ammo[i] += a; 
+					if ( inventory.ammo[i] > inventory.MaxAmmoForAmmoClass( this, rvWeapon::GetAmmoNameForIndex(i) ) ) {
+						inventory.ammo[i] = inventory.MaxAmmoForAmmoClass( this, rvWeapon::GetAmmoNameForIndex(i) );
+					}
+				}
+			}
+		}
+	}
+
+	// spawn the item if the player is alive
+	if ( health > 0 && idStr::Icmp( itemname, "ammorefill" ) ) {
+		gameLocal.SpawnEntityDef( args );
+	}
+
 }
 
 /*
@@ -5513,7 +5824,7 @@ idEntity* idPlayer::DropItem ( const char* itemClass, const idDict& customArgs, 
 idPlayer::DropPowerups
 =================
 */
-void idPlayer::DropPowerups ( void ) {
+void idPlayer::DropPowerups( void ) {
 	int			i;
 	idEntity*	item;
 
@@ -5524,6 +5835,26 @@ void idPlayer::DropPowerups ( void ) {
 			continue;
 		}		
 		
+		// These powerups aren't dropped
+		if ( i >= POWERUP_TEAM_AMMO_REGEN && i <= POWERUP_TEAM_DAMAGE_MOD )
+			continue;
+
+		// Don't drop this either with buying enabled.
+		if ( i == POWERUP_REGENERATION && gameLocal.mpGame.IsBuyingAllowedInTheCurrentGameMode() )
+			continue;
+
+		/// Don't drop arena rune powerups in non-Arena modes
+		if( gameLocal.gameType != GAME_ARENA_CTF )
+		{
+			if( i == POWERUP_AMMOREGEN || 
+				i == POWERUP_GUARD || 
+				i == POWERUP_DOUBLER || 
+				i == POWERUP_SCOUT )
+			{
+				continue;
+			}
+		}
+
 		const idDeclEntityDef* def;
 		def = GetPowerupDef ( i );
 		if ( !def ) {
@@ -5613,6 +5944,13 @@ void idPlayer::DropWeapon( void ) {
 	if( !gameLocal.isMultiplayer ) {
 		return;
 	}
+
+// RITUAL BEGIN
+// squirrel: don't drop weapons in Buying modes unless "always drop" is on
+	if( gameLocal.mpGame.IsBuyingAllowedInTheCurrentGameMode() && !gameLocal.serverInfo.GetBool( "si_dropWeaponsInBuyingModes" ) ) {
+		return;
+	}
+// RITUAL END
 
  	if ( spectating || weaponGone || !weapon ) {
 		return;
@@ -5705,17 +6043,7 @@ idPlayer::Weapon_Combat
 */
 void idPlayer::Weapon_Combat( void ) {
 	
- 	if ( influenceActive || !weaponEnabled || gameLocal.inCinematic || privateCameraView 
-#ifdef _XENON
- 		|| objectiveSystemOpen 
-#endif
- 		) {
-#ifdef _XENON
-		if ( objectiveSystemOpen && pfl.attackHeld ) {
- 			pfl.attackHeld = false;
- 			weapon->EndAttack();
-		}
-#endif
+ 	if ( influenceActive || !weaponEnabled || gameLocal.inCinematic || privateCameraView ) {
 		return;
 	}
 
@@ -5737,29 +6065,23 @@ void idPlayer::Weapon_Combat( void ) {
  		if ( !weapon || weaponCatchup ) {
  			assert( gameLocal.isClient );
    			weaponGone = false;
-   			SetWeapon ( idealWeapon );
+   			SetWeapon( idealWeapon );
 
 			weapon->NetCatchup();
 			
-			SetAnimState ( ANIMCHANNEL_TORSO, "Torso_Idle", 0 );
-			SetAnimState ( ANIMCHANNEL_LEGS, "Legs_Idle", 0 );
+			SetAnimState( ANIMCHANNEL_TORSO, "Torso_Idle", 0 );
+			SetAnimState( ANIMCHANNEL_LEGS, "Legs_Idle", 0 );
 			UpdateState();
 		} else {
  			if ( weapon->IsReady() || weapon->IsReloading() ) {
  				weapon->PutAway();
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-				// Caching resource data for next weapon will go here!
-#endif
-// RAVEN END
  			}
  
  			if ( weapon->IsHolstered() && weaponViewModel ) {
 				assert( idealWeapon >= 0 );
 				assert( idealWeapon < MAX_WEAPONS );
 
-				SetWeapon ( idealWeapon );
+				SetWeapon( idealWeapon );
 
 				weapon->Raise();
 			}
@@ -5848,14 +6170,8 @@ void idPlayer::Weapon_NPC( void ) {
 	if ( idealWeapon != currentWeapon ) {
 		Weapon_Combat();
 	}
-	//UGH: hack! So blaster doesn't discharge when pointed at NPC...
-	//UGH undone! This hack is no longer needed. :)
-//	if ( currentWeapon != SlotForWeapon ( "weapon_blaster" ) ) {
-//		StopFiring();
-		//weapon->LowerWeapon();
-//	}
 
-	if( currentWeapon )	{
+	if ( currentWeapon )	{
 		StopFiring();
 	}
 
@@ -6001,8 +6317,6 @@ void idPlayer::UpdateWeapon( void ) {
 	if ( hiddenWeapon && tipUp && usercmd.buttons & BUTTON_ATTACK ) {
 		HideTip();
 	}
-	
-
 
 	// Make sure the weapon is in a settled state before preventing thinking due
 	// to drag entity.  This way things like hitting reload, zoom, etc, wont crash
@@ -6628,10 +6942,12 @@ void idPlayer::UpdateFocus( void ) {
 	for ( i = 0; i < listedClipModels; i++ ) {
 		clip = clipModelList[ i ];
 		ent = clip->GetEntity();
-
-		if ( ent->IsHidden() ) {
+//RITUAL BEGIN
+//singlis: if ent is null, continue;
+		if(ent == NULL || ent->IsHidden()) {
 			continue;
 		}
+//RITUAL END
 
 		float focusLength = (ent->GetPhysics()->GetOrigin() - start).LengthFast() - ent->GetPhysics()->GetBounds().GetRadius();
 		//  SP only
@@ -7814,6 +8130,298 @@ bool idPlayer::ExitVehicle ( bool force ) {
 	return true;
 }
 
+
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+
+/*
+==============
+GetItemCost
+==============
+*/
+int idPlayer::GetItemCost( const char* itemName ) {
+	if ( !itemCosts ) {
+		assert( false );
+		return 99999;
+	}
+	return itemCosts->dict.GetInt( itemName, "99999" );
+}
+
+/*
+==============
+GetItemBuyImpulse
+==============
+*/
+int GetItemBuyImpulse( const char* itemName )
+{
+	struct ItemBuyImpulse
+	{
+		const char*	itemName;
+		int			itemBuyImpulse;
+	};
+
+	ItemBuyImpulse itemBuyImpulseTable[] =
+	{
+		{ "weapon_shotgun",					IMPULSE_100, },
+		{ "weapon_machinegun",				IMPULSE_101, },
+		{ "weapon_hyperblaster",			IMPULSE_102, },
+		{ "weapon_grenadelauncher",			IMPULSE_103, },
+		{ "weapon_nailgun",					IMPULSE_104, },
+		{ "weapon_rocketlauncher",			IMPULSE_105, },
+		{ "weapon_railgun",					IMPULSE_106, },
+		{ "weapon_lightninggun",			IMPULSE_107, },
+		//									IMPULSE_108 - Unused
+		{ "weapon_napalmgun",				IMPULSE_109, },
+		//		{ "weapon_dmg",						IMPULSE_110, },
+		//									IMPULSE_111 - Unused
+		//									IMPULSE_112 - Unused
+		//									IMPULSE_113 - Unused
+		//									IMPULSE_114 - Unused
+		//									IMPULSE_115 - Unused
+		//									IMPULSE_116 - Unused
+		//									IMPULSE_117 - Unused
+		{ "item_armor_small",				IMPULSE_118, },
+		{ "item_armor_large",				IMPULSE_119, },
+		{ "ammorefill",						IMPULSE_120, },
+		//									IMPULSE_121 - Unused
+		//									IMPULSE_122 - Unused
+		{ "ammo_regen",						IMPULSE_123, },
+		{ "health_regen",					IMPULSE_124, },
+		{ "damage_boost",					IMPULSE_125, },
+		//									IMPULSE_126 - Unused
+		//									IMPULSE_127 - Unused
+	};
+	const int itemBuyImpulseTableSize = sizeof(itemBuyImpulseTable) / sizeof(itemBuyImpulseTable[0]);
+
+	for( int i = 0; i < itemBuyImpulseTableSize; ++ i )
+	{
+		if( !stricmp( itemBuyImpulseTable[ i ].itemName, itemName ) )
+		{
+			return itemBuyImpulseTable[ i ].itemBuyImpulse;
+		}
+	}
+
+	return 0;
+}
+
+
+bool idPlayer::CanBuyItem( const char* itemName )
+{
+	itemBuyStatus_t buyStatus = ItemBuyStatus( itemName );
+	return( buyStatus == IBS_CAN_BUY );
+}
+
+
+itemBuyStatus_t idPlayer::ItemBuyStatus( const char* itemName )
+{
+	idStr itemNameStr = itemName;
+	if ( itemNameStr == "notimplemented" )
+	{
+		return IBS_NOT_ALLOWED;
+	}
+	else if( !idStr::Cmpn( itemName, "wpmod_", 6 ) )
+	{
+		return IBS_NOT_ALLOWED;
+	}
+	else if( itemNameStr == "item_armor_small" )
+	{
+		if( inventory.armor >= 190 )
+			return IBS_ALREADY_HAVE;
+
+		if( inventory.carryOverWeapons & CARRYOVER_FLAG_ARMOR_LIGHT )
+			return IBS_ALREADY_HAVE;
+
+		if( PowerUpActive( POWERUP_SCOUT ) )
+			return IBS_NOT_ALLOWED;
+	}
+	else if( itemNameStr == "item_armor_large" )
+	{
+		if( inventory.armor >= 190 )
+			return IBS_ALREADY_HAVE;
+
+		if( inventory.carryOverWeapons & CARRYOVER_FLAG_ARMOR_HEAVY )
+			return IBS_ALREADY_HAVE;
+
+		if( PowerUpActive( POWERUP_SCOUT ) )
+			return IBS_NOT_ALLOWED;
+	}
+	else if( itemNameStr == "ammorefill" )
+	{
+		if( inventory.carryOverWeapons & CARRYOVER_FLAG_AMMO )
+			return IBS_ALREADY_HAVE;
+
+		// If we are full of ammo for all weapons, you can't buy the ammo refill anymore.
+		bool fullAmmo = true;
+		for ( int i = 0 ; i < MAX_AMMOTYPES; i++ )
+		{
+			if ( inventory.ammo[i] != inventory.MaxAmmoForAmmoClass( this, rvWeapon::GetAmmoNameForIndex(i) ) )
+				fullAmmo = false;
+		}
+		if ( fullAmmo )
+			return IBS_NOT_ALLOWED;
+	}
+	else if ( itemNameStr == "fc_armor_regen" )
+	{
+		return IBS_NOT_ALLOWED;
+	}
+
+	if ( gameLocal.gameType == GAME_DM || gameLocal.gameType == GAME_TOURNEY || gameLocal.gameType == GAME_ARENA_CTF || gameLocal.gameType == GAME_1F_CTF || gameLocal.gameType == GAME_ARENA_1F_CTF ) {
+		if ( itemNameStr == "ammo_regen" )
+			return IBS_NOT_ALLOWED;
+		if ( itemNameStr == "health_regen" )
+			return IBS_NOT_ALLOWED;
+		if ( itemNameStr == "damage_boost" )
+			return IBS_NOT_ALLOWED;
+	}
+
+	if ( CanSelectWeapon(itemName) != -1 )
+		return IBS_ALREADY_HAVE;
+
+	int cost = GetItemCost(itemName);
+	if ( cost > (int)buyMenuCash )
+	{
+		return IBS_CANNOT_AFFORD;
+	}
+
+	return IBS_CAN_BUY;
+}
+
+/*
+==============
+idPlayer::UpdateTeamPowerups
+==============
+*/
+void idPlayer::UpdateTeamPowerups( bool isBuying ) {
+	for ( int i=0; i<MAX_TEAM_POWERUPS; i++ )
+	{
+		// If the powerup needs updating...
+		if ( gameLocal.mpGame.teamPowerups[team][i].powerup != 0 && gameLocal.mpGame.teamPowerups[team][i].update )
+		{
+			int powerup = gameLocal.mpGame.teamPowerups[team][i].powerup;
+			int time = gameLocal.mpGame.teamPowerups[team][i].time;
+
+			// Go through all the clients and update the status of this powerup.
+			for( int j = 0; j < gameLocal.numClients; j++ ) {
+				idEntity* ent = gameLocal.entities[ j ];
+
+				if ( !ent )
+					continue;
+
+				if ( !ent->IsType( idPlayer::Type ) )
+					continue;
+
+				idPlayer* player = static_cast< idPlayer * >( ent );
+
+				// Not my teammate
+				if ( player->team != team )
+					continue;
+			
+				// when a teammate respawns while a powerup is active, we don't want to go through other players which already have the powerup
+				// otherwise they'll get multiple VO announces
+				// ignore this when setting up powerups after a buying impulse, it only means someone is buying before expiration
+				if ( !isBuying && ( ( player->inventory.powerups & ( 1 << powerup ) ) != 0 ) ) {
+					continue;
+				}
+
+				player->GivePowerUp( powerup, time, true );
+			}
+
+			gameLocal.mpGame.teamPowerups[team][i].update = false;
+		}
+	}
+}
+
+
+/*
+==============
+idPlayer::AttemptToBuyTeamPowerup
+==============
+*/
+bool idPlayer::AttemptToBuyTeamPowerup( const char* itemName )
+{
+	idStr itemNameStr = itemName;
+
+	if ( itemNameStr == "ammo_regen" ) {
+		gameLocal.mpGame.AddTeamPowerup(POWERUP_AMMOREGEN, SEC2MS(30), team);
+		UpdateTeamPowerups( true );
+		return true;
+	}
+	else if ( itemNameStr == "health_regen" ) {
+		gameLocal.mpGame.AddTeamPowerup(POWERUP_REGENERATION, SEC2MS(30), team);
+		UpdateTeamPowerups( true );
+		return true;
+	}
+	else if ( itemNameStr == "damage_boost" ) {
+		gameLocal.mpGame.AddTeamPowerup(POWERUP_TEAM_DAMAGE_MOD, SEC2MS(30), team);
+		UpdateTeamPowerups( true );
+		return true;
+	}
+
+	return false;
+}
+
+/*
+==============
+idPlayer::AttemptToBuyItem
+==============
+*/
+bool idPlayer::AttemptToBuyItem( const char* itemName )
+{
+	if ( gameLocal.isClient ) {
+		return false;
+	}
+
+	if( !itemName ) {
+		return false;
+	}
+
+	int itemCost = GetItemCost( itemName );
+
+	/// Check if the player is allowed to buy this item
+	if( !CanBuyItem( itemName ) )
+	{
+		return false;
+	}
+
+	const char* playerName = GetUserInfo()->GetString( "ui_name" );
+	common->DPrintf( "Player %s about to buy item %s; player has %d (%g) credits, cost is %d\n", playerName, itemName, (int)buyMenuCash, buyMenuCash, itemCost );
+
+	buyMenuCash -= (float)itemCost;
+
+	common->DPrintf( "Player %s just bought item %s; player now has %d (%g) credits, cost was %d\n", playerName, itemName, (int)buyMenuCash, buyMenuCash, itemCost );
+
+
+	// Team-based effects
+	idStr itemNameStr = itemName;
+
+	if ( itemNameStr == "ammo_regen" || itemNameStr == "health_regen" || itemNameStr == "damage_boost" ) {
+		return AttemptToBuyTeamPowerup(itemName);
+	}
+
+	GiveStuffToPlayer( this, itemName, NULL );
+	gameLocal.mpGame.RedrawLocalBuyMenu();
+	return true;
+}
+
+bool idPlayer::CanBuy( void ) {
+	bool ret = gameLocal.mpGame.IsBuyingAllowedRightNow();
+	if ( !ret ) {
+		return false;
+	}
+	return !spectating;
+}
+
+
+void idPlayer::GenerateImpulseForBuyAttempt( const char* itemName ) {
+	if ( !CanBuy() )
+		return;
+
+	int itemBuyImpulse = GetItemBuyImpulse( itemName );
+	PerformImpulse( itemBuyImpulse );
+}
+// RITUAL END
+
+
 /*
 ==============
 idPlayer::PerformImpulse
@@ -7840,7 +8448,7 @@ void idPlayer::PerformImpulse( int impulse ) {
  		assert( entityNumber == gameLocal.localClientNum );
 		msg.Init( msgBuf, sizeof( msgBuf ) );
 		msg.BeginWriting();
-		msg.WriteBits( impulse, 6 );
+		msg.WriteBits( impulse, IMPULSE_NUMBER_OF_BITS );
 		ClientSendEvent( EVENT_IMPULSE, &msg );
 	}
 
@@ -7956,6 +8564,39 @@ void idPlayer::PerformImpulse( int impulse ) {
 			idFuncRadioChatter::RepeatLast();
 			break;
 		}
+
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+		case IMPULSE_100:	AttemptToBuyItem( "weapon_shotgun" );				break;
+		case IMPULSE_101:	AttemptToBuyItem( "weapon_machinegun" );			break;
+		case IMPULSE_102:	AttemptToBuyItem( "weapon_hyperblaster" );			break;
+		case IMPULSE_103:	AttemptToBuyItem( "weapon_grenadelauncher" );		break;
+		case IMPULSE_104:	AttemptToBuyItem( "weapon_nailgun" );				break;
+		case IMPULSE_105:	AttemptToBuyItem( "weapon_rocketlauncher" );		break;
+		case IMPULSE_106:	AttemptToBuyItem( "weapon_railgun" );				break;
+		case IMPULSE_107:	AttemptToBuyItem( "weapon_lightninggun" );			break;
+		case IMPULSE_108:	break; // Unused
+		case IMPULSE_109:	AttemptToBuyItem( "weapon_napalmgun" );				break;
+		case IMPULSE_110:	/* AttemptToBuyItem( "weapon_dmg" );*/				break;
+		case IMPULSE_111:	break; // Unused
+		case IMPULSE_112:	break; // Unused
+		case IMPULSE_113:	break; // Unused
+		case IMPULSE_114:	break; // Unused
+		case IMPULSE_115:	break; // Unused
+		case IMPULSE_116:	break; // Unused
+		case IMPULSE_117:	break; // Unused
+		case IMPULSE_118:	AttemptToBuyItem( "item_armor_small" );				break;
+		case IMPULSE_119:	AttemptToBuyItem( "item_armor_large" );				break;
+		case IMPULSE_120:	AttemptToBuyItem( "ammorefill" );					break;
+		case IMPULSE_121:	break; // Unused
+		case IMPULSE_122:	break; // Unused
+		case IMPULSE_123:	AttemptToBuyItem( "ammo_regen" );					break;
+		case IMPULSE_124:	AttemptToBuyItem( "health_regen" );					break;
+		case IMPULSE_125:	AttemptToBuyItem( "damage_boost" );					break;
+		case IMPULSE_126:	break; // Unused
+		case IMPULSE_127:	break; // Unused
+// RITUAL END
+
 		case IMPULSE_50: {
 			ToggleFlashlight ( );
 			break;
@@ -8046,11 +8687,20 @@ idPlayer::EvaluateControls
 void idPlayer::EvaluateControls( void ) {
 	// check for respawning
 	if ( pfl.dead || pfl.objectiveFailed ) {
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
+		if( allowedToRespawn ) {
 		if ( ( gameLocal.time > minRespawnTime ) && ( usercmd.buttons & BUTTON_ATTACK ) ) {
 			forceRespawn = true;
 		} else if ( gameLocal.time > maxRespawnTime ) {
 			forceRespawn = true;
 		}
+	}
+		else
+		{
+			Spectate(true);
+		}
+// RITUAL END
 	}
 
 	// in MP, idMultiplayerGame decides spawns
@@ -8738,6 +9388,12 @@ void idPlayer::Think( void ) {
 		usercmd.upmove = 0;
 	}
 
+	if( gameLocal.GetIsFrozen() && gameLocal.gameType == GAME_DEADZONE )
+	{
+		usercmd.forwardmove = 0;
+		usercmd.rightmove = 0;
+		usercmd.upmove = 0;
+	}
 	
 	// zooming
 	bool zoom = (usercmd.buttons & BUTTON_ZOOM) && CanZoom();
@@ -8979,6 +9635,11 @@ void idPlayer::Think( void ) {
 		}
 		common->DPrintf( "%d: enemies\n", num );
 	}
+
+	if ( !inBuyZonePrev )
+		inBuyZone = false;
+
+	inBuyZonePrev = false;
 }
 
 /*
@@ -9075,20 +9736,54 @@ void idPlayer::Killed( idEntity *inflictor, idEntity *attacker, int damage, cons
 		health = -999;
 	}
 
-// RAVEN BEGIN
-// rjohnson: keep this off for better performance
-#if 0
-	// Turn off bounding boxes when the player dies
-	if ( gameLocal.isMultiplayer ) {
-		use_combat_bbox = false;
-	}
-#endif
-// RAVEN END
-
 	if ( pfl.dead ) {
 		pfl.pain = true;
 		return;
 	}
+
+// squirrel: Mode-agnostic buymenus
+	if ( gameLocal.isMultiplayer ) {
+		if( gameLocal.mpGame.IsBuyingAllowedInTheCurrentGameMode() )
+		{
+			if( gameLocal.mpGame.GetGameState()->GetMPGameState() != WARMUP )
+			{
+				/// Remove the player's armor
+				inventory.armor = 0;
+
+				/// Preserve this player's weapons at the state of his death, to be restored on respawn
+				carryOverCurrentWeapon = currentWeapon;
+				inventory.carryOverWeapons = inventory.weapons;
+
+				if( attacker )
+				{
+					idPlayer* killer = NULL;
+					if ( attacker->IsType( idPlayer::Type ) )
+					{
+						killer = static_cast<idPlayer*>(attacker);
+						if( killer == this )
+						{
+							// Killed by self
+							float cashAward = (float) gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "playerCashAward_killingSelf", 0 );
+							killer->GiveCash( cashAward );
+						}
+						else if( gameLocal.IsTeamGame() && killer->team == team )
+						{
+							// Killed by teammate
+							float cashAward = (float) gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "playerCashAward_killingTeammate", 0 );
+							killer->GiveCash( cashAward );
+						}
+						else
+						{
+							// Killed by enemy
+							float cashAward = (float) gameLocal.mpGame.mpBuyingManager.GetOpponentKillCashAward();
+							killer->GiveCash( cashAward );
+						}
+					}
+				}
+			}
+		}
+	}
+// RITUAL END
 
 	bool noDrop = false;
 	if ( inflictor 
@@ -9177,8 +9872,6 @@ void idPlayer::Killed( idEntity *inflictor, idEntity *attacker, int damage, cons
 				lastKiller = NULL;
 			}
 
-// ATTN - THIS CODE SPAWNS GIBS, PLEASE DON'T REMOVE IT
-#ifndef CENSOR_GERMAN
 			if ( health < -20 || killer->PowerUpActive( POWERUP_QUADDAMAGE ) ) {
 				gibDeath = true;
 				gibDir = dir;
@@ -9187,7 +9880,6 @@ void idPlayer::Killed( idEntity *inflictor, idEntity *attacker, int damage, cons
 					ClientGib( dir );
 				}
 			}
-#endif
 
 			if( !isTelefragged ) {
 				if ( inflictor->IsType( idProjectile::GetClassType() ) ) {
@@ -9217,28 +9909,31 @@ void idPlayer::Killed( idEntity *inflictor, idEntity *attacker, int damage, cons
 	}
 
 	if ( gameLocal.isMultiplayer && gameLocal.IsFlagGameType() ) {
-		if ( PowerUpActive ( POWERUP_CTF_MARINEFLAG ) ) {
-			RemoveClientModel ( "mp_ctf_flag_pole" );
-			RemoveClientModel ( "mp_ctf_marine_flag_world" );
+		if ( PowerUpActive( POWERUP_CTF_MARINEFLAG ) ) {
+			RemoveClientModel( "mp_ctf_flag_pole" );
+			RemoveClientModel( "mp_ctf_marine_flag_world" );
 			StopEffect( "fx_ctf_marine_flag_world" );
-		} else if ( PowerUpActive ( POWERUP_CTF_STROGGFLAG ) ) { 
-			RemoveClientModel ( "mp_ctf_flag_pole" );
-			RemoveClientModel ( "mp_ctf_strogg_flag_world" );
+		} else if ( PowerUpActive( POWERUP_CTF_STROGGFLAG ) ) { 
+			RemoveClientModel( "mp_ctf_flag_pole" );
+			RemoveClientModel( "mp_ctf_strogg_flag_world" );
 			StopEffect( "fx_ctf_strogg_flag_world" );
 		} else if ( PowerUpActive( POWERUP_CTF_ONEFLAG ) ) {
-			RemoveClientModel ( "mp_ctf_one_flag" );
+			RemoveClientModel( "mp_ctf_one_flag" );
 		}
 
-		if( PowerUpActive( POWERUP_CTF_STROGGFLAG ) || PowerUpActive( POWERUP_CTF_MARINEFLAG ) || PowerUpActive( POWERUP_CTF_ONEFLAG ) ) {
+		if ( PowerUpActive( POWERUP_CTF_STROGGFLAG ) || PowerUpActive( POWERUP_CTF_MARINEFLAG ) || PowerUpActive( POWERUP_CTF_ONEFLAG ) ) {
+			idPlayer* killer = (idPlayer*)attacker;
+			if ( killer != NULL && killer->IsType( idPlayer::GetClassType() ) && killer != this ) {
+				if ( killer->team != team ) {
+					// killing the flag carrier gives killer double cash
+					killer->GiveCash( (float) gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "playerCashAward_killingOpponentFlagCarrier", 0 ) );
+				}
+			}
 			statManager->FlagDropped( this, attacker );
 		}
 	}
 
-	//if ( noDrop ) {
-	//	RespawnFlags();
-	//} else {
-	DropPowerups ( );	
-	//}
+	DropPowerups();	
 
 	ClearPowerUps();
 
@@ -9246,7 +9941,7 @@ void idPlayer::Killed( idEntity *inflictor, idEntity *attacker, int damage, cons
 
 	// AI sometimes needs to respond to having killed someone.
 	// Note: Would it be better to make this a virtual funciton of... something?
-	aiManager.RemoveTeammate ( this );
+	aiManager.RemoveTeammate( this );
 	
 	isChatting = false;
 }
@@ -9344,8 +10039,6 @@ void idPlayer::CalcDamagePoints( idEntity *inflictor, idEntity *attacker, const 
 	*armor = armorSave;
 }
 
-//#define INSTA_TEST
-
 /*
 ============
 Damage
@@ -9442,14 +10135,6 @@ void idPlayer::Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &di
 	// We pass in damageScale, because this function calculates a modified damageScale 
 	// based on g_skill, and we don't want to compensate for skill level twice.
 	CalcDamagePoints( inflictor, attacker, &damageDef->dict, damageScale, location, &damage, &armorSave );
-
-#ifdef INSTA_TEST
-	if ( gameLocal.isMultiplayer ) {
-		if ( attacker && attacker->IsType( idPlayer::GetClassType() ) && attacker != this ) {
-			damage = 100;
-		}
-	}
-#endif
 
 	//
 	// determine knockback
@@ -10588,6 +11273,7 @@ void idPlayer::SetLastHitTime( int time, bool armorHit ) {
 			}
 
 		}
+		lastHitTime = time;
 		lastArmorHit = armorHit;
 		lastHitToggle ^= 1;
 	}
@@ -10791,70 +11477,7 @@ void idPlayer::Event_SelectWeapon( const char *weaponName ) {
 	int weaponNum;
 
 	if ( gameLocal.isClient ) {
-// RAVEN BEGIN
-// nrausch: we need to support a select weapon event in multiplayer to make the quick select ui work
-#ifdef _XENON
-		int impulse = 0;
-	
-		// Because of the spawnargs stuff, we can't really change this...
-		// so drill through each possible weapon name and figure out the correct impulse
-		if ( idStr::Icmp( weaponName, "weapon_blaster" ) == 0 )
-		{
-			impulse = 0;
-		}
-		else if ( idStr::Icmp( weaponName, "weapon_machinegun" ) == 0 )
-		{
-			impulse = 1;
-		}
-		else if ( idStr::Icmp( weaponName, "weapon_shotgun" ) == 0 )
-		{
-			impulse = 2;
-		}
-		else if ( idStr::Icmp( weaponName, "weapon_nailgun" ) == 0 )
-		{
-			impulse = 5;
-		}
-		else if ( idStr::Icmp( weaponName, "weapon_hyperblaster" ) == 0 )
-		{
-			impulse = 3;
-		}
-		else if ( idStr::Icmp( weaponName, "weapon_rocketlauncher" ) == 0 )
-		{
-			impulse = 6;
-		}	
-		else if ( idStr::Icmp( weaponName, "weapon_lightninggun" ) == 0 )
-		{
-			impulse = 8;
-		}
-		else if ( idStr::Icmp( weaponName, "weapon_grenadelauncher" ) == 0 )
-		{
-			impulse = 4;
-		}
-		else if ( idStr::Icmp( weaponName, "weapon_railgun" ) == 0 )
-		{
-			impulse = 7;
-		}	
-		else if ( idStr::Icmp( weaponName, "weapon_gauntlet" ) == 0 )
-		{
-			impulse = 0;
-		}	
-		else if ( idStr::Icmp( weaponName, "weapon_dmg" ) == 0 )
-		{
-			impulse = 9;
-		}	
-		
-		if ( impulse > 0 && impulse != 10 ) {
-			const char *weap = spawnArgs.GetString( va( "def_weapon%d", impulse ) );
-			if ( !inventory.HasAmmo( weap ) ) {
-				return;
-			}
-		}
-
-		usercmdGen->StuffImpulse( impulse );
-#else
  		gameLocal.Warning( "Cannot switch weapons from script in multiplayer" );
-#endif
-// RAVEN END
  		return;
  	}
 
@@ -10883,6 +11506,7 @@ void idPlayer::Event_SelectWeapon( const char *weaponName ) {
 
  	UpdateHudWeapon();
 }
+
 /*
 ==================
 idPlayer::Event_GetAmmoData
@@ -11109,7 +11733,7 @@ void idPlayer::Event_ExitTeleporter( void ) {
 
 	UpdateVisuals();
 
-	gameLocal.PlayEffect ( spawnArgs, "fx_teleport", GetPhysics()->GetOrigin(), idVec3(0,0,1).ToMat3(), false, vec3_origin );
+	gameLocal.PlayEffect( spawnArgs, "fx_teleport", GetPhysics()->GetOrigin(), idVec3(0,0,1).ToMat3(), false, vec3_origin );
 
 	StartSound( "snd_teleport_exit", SND_CHANNEL_ANY, 0, false, NULL );
 
@@ -11154,20 +11778,6 @@ idPlayer::LocalClientPredictionThink
 */
 void idPlayer::LocalClientPredictionThink( void ) {
 	renderEntity_t *headRenderEnt;
-
-#if 0
-// rjohnson: disabled because of too many string look ups
-
-// RAVEN BEGIN
-// shouchard:  profiling
-	// probably the worst way to get the number of players evar
-	if ( cvarSystem->GetCVarBool( "net_debugFrameTime" ) ) {
-		int value = cvarSystem->GetCVarInteger( "net_debugPlayerCount" );
-		value++;
-		cvarSystem->SetCVarInteger( "net_debugPlayerCount", value );
-	}
-// RAVEN END
-#endif
 
 	oldFlags = usercmd.flags;
 	oldButtons = usercmd.buttons;
@@ -11348,20 +11958,6 @@ idPlayer::NonLocalClientPredictionThink
 
 void idPlayer::NonLocalClientPredictionThink( void ) {
 	renderEntity_t *headRenderEnt;
-
-#if 0
-// rjohnson: disabled because of too many string look ups
-
-// RAVEN BEGIN
-// shouchard:  profiling
-	// probably the worst way to get the number of players evar
-	if ( cvarSystem->GetCVarBool( "net_debugFrameTime" ) ) {
-		int value = cvarSystem->GetCVarInteger( "net_debugPlayerCount" );
-		value++;
-		cvarSystem->SetCVarInteger( "net_debugPlayerCount", value );
-	}
-// RAVEN END
-#endif
 
 	oldFlags = usercmd.flags;
 	oldButtons = usercmd.buttons;
@@ -11758,6 +12354,10 @@ void idPlayer::WriteToSnapshot( idBitMsgDelta &msg ) const {
  	} else {
  		msg.WriteBits( 0, 1 );
  	}
+//RITUAL BEGIN
+	msg.WriteBits( inBuyZone, 1 );
+	msg.WriteLong( (int)buyMenuCash );
+//RITUAL END
 }
 
 /*
@@ -11769,6 +12369,7 @@ void idPlayer::ReadFromSnapshot( const idBitMsgDelta &msg ) {
  	int		i, oldHealth, newIdealWeapon, weaponSpawnId, weaponWorldSpawnId;
  	bool	newHitToggle, stateHitch, newHitArmor;
 	int		lastKillerEntity;
+	bool	proto69 = ( gameLocal.GetCurrentDemoProtocol() == 69 );
 
  	if ( snapshotSequence - lastSnapshotSequence > 1 ) {
  		stateHitch = true;
@@ -11781,15 +12382,9 @@ void idPlayer::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 
 	physicsObj.ReadFromSnapshot( msg );
 	ReadBindFromSnapshot( msg );
-///	if( gameLocal.localClientNum == entityNumber ) {
-//		gameLocal.Printf( "BEFORE delta view: %s\n", deltaViewAngles.ToString() );
-//	}
 	deltaViewAngles[0] = msg.ReadDeltaFloat( 0.0f );
 	deltaViewAngles[1] = msg.ReadDeltaFloat( 0.0f );
 	deltaViewAngles[2] = msg.ReadDeltaFloat( 0.0f );
-//	if( gameLocal.localClientNum == entityNumber ) {
-//		gameLocal.Printf( "AFTER delta view: %s\n", deltaViewAngles.ToString() );
-//	}
 	health = msg.ReadShort();
 	inventory.armor = msg.ReadByte();
  	lastDamageDef = msg.ReadBits( gameLocal.entityDefBits );
@@ -11799,7 +12394,6 @@ void idPlayer::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 	inventory.weapons = msg.ReadBits( MAX_WEAPONS );
  	weaponSpawnId = msg.ReadBits( 32 );
  	weaponWorldSpawnId = msg.ReadBits( 32 );
-	//headSpawnId = msg.ReadBits( 32 );
 	int latchedSpectator = spectator;
 	spectator = msg.ReadBits( idMath::BitsForInteger( MAX_CLIENTS ) );
 	if ( spectating && latchedSpectator != spectator && this == gameLocal.GetLocalPlayer() ) {
@@ -11823,6 +12417,9 @@ void idPlayer::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 		if ( gameLocal.entities[ spectator ] ) {
 			idPlayer *p = static_cast< idPlayer * >( gameLocal.entities[ spectator ] );
 			p->UpdateHudWeapon( p->currentWeapon );
+			if ( p->weapon ) {
+				p->weapon->SpectatorCycle();
+			}
 		}
 	}
  	newHitToggle = msg.ReadBits( 1 ) != 0;
@@ -11874,7 +12471,19 @@ void idPlayer::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 			rvWeapon::SkipFromSnapshot( msg );
 		}
 	}
-
+	if ( proto69 ) {
+		inBuyZone = false;
+		buyMenuCash = 0.0f;
+	} else {
+//RITUAL BEGIN
+		inBuyZone = msg.ReadBits( 1 ) != 0;
+		int cash = msg.ReadLong();
+		if ( cash != (int)buyMenuCash ) {
+			buyMenuCash = (float)cash;
+			gameLocal.mpGame.RedrawLocalBuyMenu();
+		}
+//RITUAL END
+	}
  	// no msg reading below this
 	
 	// if not a local client assume the client has all ammo types
@@ -11909,13 +12518,10 @@ void idPlayer::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 			ClientDamageEffects ( def->dict, lastDamageDir, ( oldHealth - health ) * 4 );
 		}
 
-// ATTN - THIS CODE SPAWNS GIBS, PLEASE DON'T REMOVE IT
-#ifndef CENSOR_GERMAN
 		//gib them here
 		if ( health < -20 || ( lastKiller && lastKiller->PowerUpActive( POWERUP_QUADDAMAGE )) )	{	
 			ClientGib( lastDamageDir );
 		}		
-#endif
 
 		if ( weapon ) {
 			weapon->OwnerDied();
@@ -11927,7 +12533,7 @@ void idPlayer::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 		}
 	} else if ( oldHealth <= 0 && health > 0 ) {
  		// respawn
-		common->DPrintf( "idPlayer::ReadFromSnapshot() - Player respawn detected for %d '%s' - re-enabling clip\n", entityNumber, GetUserInfo()->GetString( "ui_name" ) );
+		//common->DPrintf( "idPlayer::ReadFromSnapshot() - Player respawn detected for %d '%s' - re-enabling clip\n", entityNumber, GetUserInfo()->GetString( "ui_name" ) );
 
 		// this is the first time we've seen the player since we heard he died - he may have picked up
 		// some powerups since he actually spawned in, so restore those
@@ -12016,8 +12622,13 @@ void idPlayer::ReadPlayerStateFromSnapshot( const idBitMsgDelta &msg ) {
  		}
 	}
 
-	for( i = 0; i < POWERUP_MAX; i ++ ) {
+	int powerup_max = gameLocal.GetCurrentDemoProtocol() == 69 ? 11 : POWERUP_MAX;
+	for ( i = 0; i < powerup_max; i ++ ) {
 		inventory.powerupEndTime[ i ] = msg.ReadLong();
+	}
+	while ( i < POWERUP_MAX ) {
+		inventory.powerupEndTime[ i ] = 0;
+		i++;
 	}
 
 	if ( gameLocal.IsMultiplayer() ) {
@@ -12043,7 +12654,7 @@ bool idPlayer::ServerReceiveEvent( int event, int time, const idBitMsg &msg ) {
 	// client->server events
 	switch( event ) {
 		case EVENT_IMPULSE: {
-			PerformImpulse( msg.ReadBits( 6 ) );
+			PerformImpulse( msg.ReadBits( IMPULSE_NUMBER_OF_BITS ) );
 			return true;
 		}
 		case EVENT_EMOTE: {
@@ -12079,12 +12690,16 @@ bool idPlayer::ClientReceiveEvent( int event, int time, const idBitMsg &msg ) {
  			return true;
  		case EVENT_POWERUP: {
  			powerup = msg.ReadShort();
- 			start = msg.ReadBits( 1 ) != 0;
+ 			start = ( msg.ReadBits( 1 ) != 0 );
  			if ( start ) {
- 				GivePowerUp( powerup, 0 );
+				bool team = false;
+				if ( gameLocal.GetCurrentDemoProtocol() != 69 ) {
+					team = ( msg.ReadBits( 1 ) != 0 );
+				}
+ 				GivePowerUp( powerup, 0, team );
  			} else {
  				ClearPowerup( powerup );
- 			}	
+ 			}
  
  			return true;
  		}
@@ -12475,6 +13090,7 @@ void idPlayer::SetInitialHud ( void ) {
 	}
 
 	mphud->HandleNamedEvent( "InitHud" );
+	mphud->HandleNamedEvent( "TeamChange" );
 	
 	if( gameLocal.IsFlagGameType() ) {
 		mphud->SetStateFloat( "ap", gameLocal.mpGame.assaultPoints.Num() );
@@ -12642,7 +13258,7 @@ void idPlayer::ClientGib( const idVec3& dir ) {
 	
 
 	//play gib fx
-	gameLocal.PlayEffect ( spawnArgs, "fx_gib", GetPhysics()->GetOrigin(), GetPhysics()->GetAxis() );
+	gameLocal.PlayEffect( spawnArgs, "fx_gib", GetPhysics()->GetOrigin(), GetPhysics()->GetAxis() );
 
 	// gibs are PVS agnostic.  If we gib a player outside of our PVS, set the oldHealth
 	// to below 0 so when this player re-appears in our snap we respawn him
@@ -13354,17 +13970,17 @@ bool idPlayer::AllowedVoiceDest( int from ) {
 	free = -1;
 	for( i = 0; i < MAX_CONCURRENT_VOICES; i++ ) {
 
-		if ( voiceDest[i] == from ) {
+		if( voiceDest[i] == from ) {
 			voiceDestTimes[i] = gameLocal.time;
 			return true;
 		}
 
-		if ( voiceDestTimes[i] + 200 < gameLocal.time ) {
+		if( voiceDestTimes[i] + 200 < gameLocal.time ) {
 			free = i;
 		}
 	}
 
-	if ( free > -1 ) {
+	if( free > -1 ) {
 		voiceDest[free] = from;
 		voiceDestTimes[i] = gameLocal.time;
 		return true;
@@ -13372,3 +13988,90 @@ bool idPlayer::AllowedVoiceDest( int from ) {
 
 	return false;
 }
+
+// RITUAL BEGIN
+void idPlayer::ClampCash( float minCash, float maxCash )
+{
+	if( buyMenuCash < minCash )
+		buyMenuCash = minCash;
+
+	if( buyMenuCash > maxCash )
+		buyMenuCash = maxCash;
+}
+
+void idPlayer::GiveCash( float cashDeltaAmount )
+{
+	//int minCash = gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "playerMinCash", 0 );
+	//int maxCash = gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "playerMaxCash", 0 );
+	float minCash = (float) gameLocal.serverInfo.GetInt("si_buyModeMinCredits");
+	float maxCash = (float) gameLocal.serverInfo.GetInt("si_buyModeMaxCredits");
+
+	float oldCash = buyMenuCash;
+	buyMenuCash += cashDeltaAmount;
+	ClampCash( minCash, maxCash );
+
+	if( (int)buyMenuCash != (int)oldCash )
+	{
+		gameLocal.mpGame.RedrawLocalBuyMenu();
+	}
+
+	if( (int)buyMenuCash > (int)oldCash )
+	{
+		// Play the "get cash" sound
+//		gameLocal.GetLocalPlayer()->StartSound( "snd_buying_givecash", SND_CHANNEL_ANY, 0, false, NULL );
+	}
+	else if( (int)buyMenuCash < (int)oldCash )
+	{
+		// Play the "lose cash" sound
+//		gameLocal.GetLocalPlayer()->StartSound( "snd_buying_givecash", SND_CHANNEL_ANY, 0, false, NULL );
+	}
+}
+
+void idPlayer::SetCash( float newCashAmount )
+{
+	//int minCash = gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "playerMinCash", 0 );
+	//int maxCash = gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "playerMaxCash", 0 );
+	float minCash = (float) gameLocal.serverInfo.GetInt("si_buyModeMinCredits");
+	float maxCash = (float) gameLocal.serverInfo.GetInt("si_buyModeMaxCredits");
+
+	buyMenuCash = newCashAmount;
+	ClampCash( minCash, maxCash );
+}
+
+void idPlayer::ResetCash()
+{
+	//int minCash = gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "playerMinCash", 0 );
+	//int maxCash = gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "playerMaxCash", 0 );
+	//buyMenuCash = gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( "playerStartingCash", 0 );
+
+	float minCash = (float) gameLocal.serverInfo.GetInt("si_buyModeMinCredits");
+	float maxCash = (float) gameLocal.serverInfo.GetInt("si_buyModeMaxCredits");
+	buyMenuCash = (float) gameLocal.serverInfo.GetInt("si_buyModeStartingCredits");
+	ClampCash( minCash, maxCash );
+}
+
+/**
+ * Checks to see if the player can accept this item in their inventory
+ *
+ * weaponName Name of the weapon.
+ */
+int idPlayer::CanSelectWeapon(const char* weaponName)
+{
+	int weaponNum = -1;
+	if(weaponName == NULL)
+		return weaponNum;
+
+	for( int i = 0; i < MAX_WEAPONS; i++ ) {
+		if ( inventory.weapons & ( 1 << i ) ) {
+			const char *weap = spawnArgs.GetString( va( "def_weapon%d", i ) );
+			if ( !idStr::Cmp( weap, weaponName ) ) {
+				weaponNum = i;
+				break;
+			}
+		}
+	}
+
+	return weaponNum;
+}
+
+// RITUAL END

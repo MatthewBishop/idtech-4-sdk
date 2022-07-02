@@ -173,6 +173,7 @@ private:
 class rvDeclPlaybackEdit
 {
 public:
+	virtual ~rvDeclPlaybackEdit() {}
 	virtual bool			Finish( rvDeclPlayback *edit, float desiredDuration ) = 0;
 	virtual void			SetOrigin( rvDeclPlayback *edit ) = 0;
 	virtual void			SetOrigin( rvDeclPlayback *edit, idVec3 &origin ) = 0;

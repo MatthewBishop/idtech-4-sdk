@@ -63,6 +63,7 @@ ID_INLINE const char *rvDeclLipSync::GetLipSyncData( int langIdx ) const
 class rvDeclLipSyncEdit
 {
 public:
+	virtual ~rvDeclLipSyncEdit() { }
 	virtual void			SetLipSyncDescription( rvDeclLipSync *edit, const char *desc ) = 0;
 	virtual void			SetLipSyncTranscribeText( rvDeclLipSync *edit, const char *text ) = 0;
 	virtual void			SetLipSyncData( rvDeclLipSync *edit, const char *lsd, const char *lang ) = 0;

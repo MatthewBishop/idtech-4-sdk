@@ -689,6 +689,43 @@ void rvStatManager::CheckAwardQueue() {
 
 }
 
+
+void rvStatManager::GivePlayerCashForAward( idPlayer* player, inGameAward_t award )
+{
+	if( !player )
+		return;
+	
+	if( !gameLocal.isMultiplayer )
+		return;
+	
+	if( !gameLocal.mpGame.IsBuyingAllowedInTheCurrentGameMode() )
+		return;
+
+	mpGameState_t mpGameState = gameLocal.mpGame.GetGameState()->GetMPGameState();
+	if( mpGameState != GAMEON && mpGameState != SUDDENDEATH )
+		return;
+
+	const char* awardCashValueName = NULL;
+	switch( award )
+	{
+		case IGA_CAPTURE:		awardCashValueName = "playerCashAward_mpAward_capture";			break;
+		case IGA_HUMILIATION:	awardCashValueName = "playerCashAward_mpAward_humiliation";		break;
+		case IGA_IMPRESSIVE:	awardCashValueName = "playerCashAward_mpAward_impressive";		break;
+		case IGA_EXCELLENT:		awardCashValueName = "playerCashAward_mpAward_excellent";		break;
+		case IGA_ASSIST:		awardCashValueName = "playerCashAward_mpAward_assist";			break;
+		case IGA_DEFENSE:		awardCashValueName = "playerCashAward_mpAward_defense";			break;
+		case IGA_COMBO_KILL:	awardCashValueName = "playerCashAward_mpAward_combo_kill";		break;
+		case IGA_RAMPAGE:		awardCashValueName = "playerCashAward_mpAward_rampage";			break;
+		case IGA_HOLY_SHIT:		awardCashValueName = "playerCashAward_mpAward_holy_shit";		break;
+	}
+
+	if( awardCashValueName )
+	{
+		player->GiveCash( (float) gameLocal.mpGame.mpBuyingManager.GetIntValueForKey( awardCashValueName, 0 ) );
+	}
+}
+
+
 void rvStatManager::GiveInGameAward( inGameAward_t award, int clientNum ) {
 	idPlayer* player = (idPlayer*)gameLocal.entities[ clientNum ];
 
@@ -697,6 +734,7 @@ void rvStatManager::GiveInGameAward( inGameAward_t award, int clientNum ) {
 		if( !player || (gameLocal.mpGame.GetGameState()->GetMPGameState() != WARMUP && 
 			(gameLocal.gameType != GAME_TOURNEY || ((rvTourneyGameState*)gameLocal.mpGame.GetGameState())->GetArena( player->GetArena() ).GetState() != AS_WARMUP )) ) {
 			playerStats[ clientNum ].inGameAwards[ award ]++;
+			GivePlayerCashForAward( player, award );
 		}
 		SendInGameAward( award, clientNum );	
 	}
@@ -728,20 +766,6 @@ void rvStatManager::UpdateInGameHud( idUserInterface* statHud, bool visible ) {
 	} else {
 		statHud->SetStateInt( "stat_visible", 1 );
 	}
-
-#ifdef _XENON
-	if ( !gameLocal.isListenServer && abs( lastFullUpdate - gameLocal.time ) > 5000 ) {
-		lastFullUpdate = gameLocal.time + 5000;
-
-		idBitMsg	outMsg;
-		byte		msgBuf[ MAX_GAME_MESSAGE_SIZE ];
-
-		outMsg.Init( msgBuf, sizeof( msgBuf ) );
-		outMsg.WriteByte( GAME_RELIABLE_MESSAGE_ALL_STATS );
-		
-		networkSystem->ClientSendReliableMessage( outMsg );
-	}
-#endif
 
 	if( player ) {
 		statWindow.SetupStatWindow( statHud, player->spectating );
@@ -824,10 +848,6 @@ void rvStatManager::SendAllStats( int clientNum, bool full ) {
 void rvStatManager::ReceiveAllStats( const idBitMsg& msg ) {
 	assert( gameLocal.isClient );
 
-#ifdef _XENON
-	lastFullUpdate = gameLocal.time + 5000;
-#endif
-
 	assert( MAX_CLIENTS <= 32 );
 
 	unsigned	sentClients = msg.ReadBits( MAX_CLIENTS );
@@ -842,14 +862,9 @@ void rvStatManager::ReceiveAllStats( const idBitMsg& msg ) {
 
 		playerStats[ i ].lastUpdateTime = gameLocal.time;
 	}
-	//common->Printf("RECV ALL STATS\n", Sys_Milliseconds());
-#ifndef _XENON
-	if(gameLocal.mpGame.GetGameState()->GetMPGameState() == GAMEREVIEW)
-	{
+	if ( gameLocal.mpGame.GetGameState()->GetMPGameState() == GAMEREVIEW ) {
 		gameLocal.mpGame.ShowStatSummary();
 	}
-#endif
-
 }
 
 
@@ -1069,14 +1084,6 @@ void rvStatManager::CalculateEndGameStats( void ) {
 		log->Flush();
 		fileSystem->CloseFile(log);
 	}
-
-//asalmon: send all stat on last time to all clients
-#ifdef _XENON
-	if(gameLocal.isServer)
-	{
-		SendAllStats();
-	}
-#endif
 }
 
 void rvStatManager::GetAccuracyLeaders( int accuracyLeaders[ MAX_WEAPONS ] ) {

@@ -265,6 +265,9 @@ idTrigger_Multi::idTrigger_Multi( void ) {
 	touchVehicle = false;
 	triggerFirst = false;
 	triggerWithSelf = false;
+	buyZoneTrigger = 0;
+	controlZoneTrigger = 0;
+	prevZoneController = TEAM_NONE;
 }
 
 /*
@@ -339,6 +342,15 @@ void idTrigger_Multi::Spawn( void ) {
 	spawnArgs.GetInt( "removeItem", "0", removeItem );
 	spawnArgs.GetBool( "triggerFirst", "0", triggerFirst );
 	spawnArgs.GetBool( "triggerWithSelf", "0", triggerWithSelf );
+	spawnArgs.GetInt( "buyZone", "0", buyZoneTrigger);
+	spawnArgs.GetInt( "controlZone", "0", controlZoneTrigger);
+
+	if ( buyZoneTrigger == -1 )
+		gameLocal.Warning( "trigger_buyzone '%s' at (%s) has no buyZone key set!", name.c_str(), GetPhysics()->GetOrigin().ToString(0) );
+
+	if ( controlZoneTrigger == -1 )
+		gameLocal.Warning( "trigger_controlzone '%s' at (%s) has no controlZone key set!", name.c_str(), GetPhysics()->GetOrigin().ToString(0) );
+
 
 	if ( spawnArgs.GetBool( "onlyVehicle" ) ) {
 		touchVehicle = true;
@@ -365,6 +377,8 @@ void idTrigger_Multi::Spawn( void ) {
 	} else {
 		GetPhysics()->SetContents( CONTENTS_TRIGGER );
 	}
+
+	BecomeActive( TH_THINK );
 }
 
 /*
@@ -488,6 +502,117 @@ void idTrigger_Multi::Event_Trigger( idEntity *activator ) {
 	}
 }
 
+
+void idTrigger_Multi::HandleControlZoneTrigger()
+{
+	// This only does something in multiplayer
+	if ( !gameLocal.isMultiplayer )
+		return;
+
+	const int TEAM_DEADLOCK = 2;
+
+	int pCount = 0;
+	int count = 0, controllingTeam = TEAM_NONE;
+	count = playersInTrigger.Num();
+
+	for ( int i = 0; i<count; i++ )
+	{
+		// No token? Ignore em!
+		if ( spawnArgs.GetBool("requiresDeadZonePowerup", "1") && !playersInTrigger[i]->PowerUpActive( POWERUP_DEADZONE ) )
+			continue;
+
+		if ( spawnArgs.GetBool("requiresDeadZonePowerup", "1") )
+		{
+			pCount++;
+		}
+
+		int team = playersInTrigger[i]->team;
+
+		if ( i == 0 )
+			controllingTeam = playersInTrigger[i]->team;
+
+		// Assign the controlling team based on the first player
+		// for zones that accept both.
+		if ( team != controllingTeam )
+		{
+			controllingTeam = TEAM_DEADLOCK;
+			pCount = 0;
+		}
+	}
+
+	if ( controllingTeam != controlZoneTrigger-1 && controlZoneTrigger != 3 )
+	{
+		controllingTeam = TEAM_NONE;
+		pCount = 0;
+	}
+
+	int situation = DZ_NONE;
+	if ( controllingTeam != prevZoneController )
+	{
+		if ( controllingTeam == TEAM_MARINE && prevZoneController == TEAM_NONE )
+			situation = DZ_MARINES_TAKEN;
+		else if ( controllingTeam == TEAM_STROGG && prevZoneController == TEAM_NONE )
+			situation = DZ_STROGG_TAKEN;
+		else if ( controllingTeam == TEAM_NONE && prevZoneController == TEAM_MARINE )
+			situation = DZ_MARINES_LOST;
+		else if ( controllingTeam == TEAM_NONE && prevZoneController == TEAM_STROGG )
+			situation = DZ_STROGG_LOST;
+		else if ( controllingTeam == TEAM_MARINE && prevZoneController == TEAM_STROGG )
+			situation = DZ_STROGG_TO_MARINE;
+		else if ( controllingTeam == TEAM_STROGG && prevZoneController == TEAM_MARINE )
+			situation = DZ_MARINE_TO_STROGG;
+
+		// DEADLOCK
+		else if ( controllingTeam == TEAM_DEADLOCK && prevZoneController == TEAM_MARINE )
+			situation = DZ_MARINE_DEADLOCK;
+		else if ( controllingTeam == TEAM_DEADLOCK && prevZoneController == TEAM_STROGG )
+			situation = DZ_STROGG_DEADLOCK;
+		else if ( controllingTeam == TEAM_DEADLOCK && prevZoneController == TEAM_NONE )
+			situation = DZ_MARINE_DEADLOCK; // Unlikely case, just use this.
+		else if ( controllingTeam == TEAM_MARINE && prevZoneController == TEAM_DEADLOCK )
+			situation = DZ_MARINE_REGAIN;
+		else if ( controllingTeam == TEAM_STROGG && prevZoneController == TEAM_DEADLOCK )
+			situation = DZ_STROGG_REGAIN;
+		else if ( controllingTeam == TEAM_NONE && prevZoneController == TEAM_DEADLOCK )
+			situation = DZ_MARINES_LOST; // Unlikely case, just use this.
+	}
+
+	/// Report individual credits
+	for( int i = 0; i < count; i++ )
+	{
+		idPlayer* player = playersInTrigger[i];
+
+		// No token? Ignore em!
+		if ( spawnArgs.GetBool("requiresDeadZonePowerup", "1") && !player->PowerUpActive( POWERUP_DEADZONE ) )
+			continue;
+
+		int team = player->team;
+		if( team == controllingTeam )
+		{
+			gameLocal.mpGame.ReportZoneControllingPlayer( player );
+		}
+	}
+
+	/// Report zone control to multiplayer game manager
+	gameLocal.mpGame.ReportZoneController(controllingTeam, pCount, situation, this);
+
+	playersInTrigger.Clear();
+	prevZoneController = controllingTeam;
+}
+
+
+/*
+================
+idTrigger_Multi::Think
+================
+*/
+void idTrigger_Multi::Think()
+{
+	// Control zone handling
+	if ( controlZoneTrigger > 0 ) 
+		HandleControlZoneTrigger();
+}
+
 /*
 ================
 idTrigger_Multi::Event_Touch
@@ -516,6 +641,24 @@ void idTrigger_Multi::Event_Touch( idEntity *other, trace_t *trace ) {
 			if ( static_cast< idPlayer * >( other )->spectating ) {
 				return;
 			}
+
+		    // Buy zone handling
+		    if ( buyZoneTrigger /*&& gameLocal.mpGame.mpGameState.gameState.currentState != 1*/ ) {
+			    idPlayer *p = static_cast< idPlayer * >( other );
+			    if ( buyZoneTrigger-1 == p->team || buyZoneTrigger == 3)
+			    {
+				    p->inBuyZone = true;
+				    p->inBuyZonePrev = true;
+			    }
+		    }
+    
+		    // Control zone handling
+		    if ( controlZoneTrigger > 0 ) {
+			    idPlayer *p = static_cast< idPlayer * >( other );
+				if ( p->PowerUpActive(POWERUP_DEADZONE) || !spawnArgs.GetBool("requiresDeadZonePowerup", "1") )
+					playersInTrigger.Append(p);
+		    }
+
 		} else if ( !touchOther ) {
 			return;
 		}

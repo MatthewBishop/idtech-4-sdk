@@ -372,6 +372,13 @@ extern idCVar	g_mapCycle;
 extern idCVar	si_autobalance;
 // RAVEN END
 
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+extern idCVar	si_isBuyingEnabled;
+extern idCVar	si_dropWeaponsInBuyingModes;
+extern idCVar	si_controlTime;
+// RITUAL END
+
 extern idCVar	si_timeLimit;
 extern idCVar	si_fragLimit;
 extern idCVar	si_gameType;
@@ -411,8 +418,8 @@ extern idCVar g_perfTest_noProjectiles;
 
 extern idCVar g_clientProjectileCollision;
 
-extern idCVar	net_clientLagOMeter;
+extern idCVar net_clientLagOMeter;
 
-extern idCVar	r_shadows;
+extern idCVar net_warnStale;
 
 #endif /* !__SYS_CVAR_H__ */

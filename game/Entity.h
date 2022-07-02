@@ -679,19 +679,19 @@ protected:
 
 // RAVEN BEGIN
 // bdube: added inlines
-ID_INLINE rvClientEffect* idEntity::PlayEffect ( const char* effectName, const idVec3& origin, const idMat3& axis, bool loop, const idVec3& endOrigin, 
+ID_INLINE rvClientEffect* idEntity::PlayEffect( const char* effectName, const idVec3& origin, const idMat3& axis, bool loop, const idVec3& endOrigin, 
 												 bool broadcast, effectCategory_t category, const idVec4& effectTint ) { 
-	return PlayEffect ( gameLocal.GetEffect( spawnArgs, effectName ), origin, axis, loop, endOrigin, broadcast, category, effectTint );
+	return PlayEffect( gameLocal.GetEffect( spawnArgs, effectName ), origin, axis, loop, endOrigin, broadcast, category, effectTint );
 }
 
-ID_INLINE rvClientEffect* idEntity::PlayEffect ( const char* effectName, jointHandle_t jointHandle, bool loop, const idVec3& endOrigin, 
+ID_INLINE rvClientEffect* idEntity::PlayEffect( const char* effectName, jointHandle_t jointHandle, bool loop, const idVec3& endOrigin, 
 												bool broadcast, effectCategory_t category, const idVec4& effectTint ) { 
-	return PlayEffect ( gameLocal.GetEffect( spawnArgs, effectName ), jointHandle, vec3_origin, mat3_identity, loop, endOrigin, broadcast, category, effectTint );
+	return PlayEffect( gameLocal.GetEffect( spawnArgs, effectName ), jointHandle, vec3_origin, mat3_identity, loop, endOrigin, broadcast, category, effectTint );
 }
 
-ID_INLINE rvClientEffect* idEntity::PlayEffect ( const char* effectName, jointHandle_t jointHandle, const idVec3& originOffset, const idMat3& axisOffset, bool loop, const idVec3& endOrigin, 
+ID_INLINE rvClientEffect* idEntity::PlayEffect( const char* effectName, jointHandle_t jointHandle, const idVec3& originOffset, const idMat3& axisOffset, bool loop, const idVec3& endOrigin, 
 												bool broadcast, effectCategory_t category, const idVec4& effectTint ) { 
-	return PlayEffect ( gameLocal.GetEffect( spawnArgs, effectName ), jointHandle, originOffset, axisOffset, loop, endOrigin, broadcast, category, effectTint );
+	return PlayEffect( gameLocal.GetEffect( spawnArgs, effectName ), jointHandle, originOffset, axisOffset, loop, endOrigin, broadcast, category, effectTint );
 }
 
 

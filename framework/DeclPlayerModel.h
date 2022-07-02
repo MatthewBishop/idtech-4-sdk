@@ -26,6 +26,7 @@ public:
 	idStr					team;
 	idStr					skin;
 	idStr					description;
+	idDict					sounds;
 
 	virtual size_t			Size( void ) const;
 	virtual const char *	DefaultDefinition() const;

@@ -206,6 +206,10 @@ public:
 	virtual	void		PushOriginInfo( const idVec3& origin, const idMat3& axis );
 	virtual void		PopOriginInfo( void );
 
+	// client side entities. make sure the networking doesn't fuck around with this
+	virtual bool		ClientStale( void ) { assert( false ); return false; }
+	virtual void		ClientUnstale( void ) { assert( false ); }
+
 	int					currentEntityNumber;
 private:
 	idEntity*			pushedBindMaster;

@@ -18,8 +18,8 @@ const int USERCMD_MSEC_SP		= 1000 / USERCMD_HZ_SP;
 //const int USERCMD_HZ_MP			= 30;			// 30 frames per second
 //const int USERCMD_MSEC_MP		= 1000 / USERCMD_HZ_MP;
 
-const int USERCMD_HZ_MP			= 60;			// 60 frames per second
-const int USERCMD_MSEC_MP		= 1000 / USERCMD_HZ_MP;
+//const int USERCMD_HZ_MP			= 60;			// 60 frames per second
+//const int USERCMD_MSEC_MP		= 1000 / USERCMD_HZ_MP;
 
 // usercmd_t->button bits
 const int BUTTON_ATTACK			= BIT(0);
@@ -90,6 +90,42 @@ const int IMPULSE_72			= 72;			//Weapon switch right
 const int IMPULSE_73			= 73;			//Weapon Switch left
 #endif
 //RAVEN END
+
+
+// RITUAL BEGIN
+// squirrel: Mode-agnostic buymenus
+const int IMPULSE_100			= 100;			// Buy weapon_shotgun
+const int IMPULSE_101			= 101;			// Buy weapon_machinegun
+const int IMPULSE_102			= 102;			// Buy weapon_hyperblaster
+const int IMPULSE_103			= 103;			// Buy weapon_grenadelauncher
+const int IMPULSE_104			= 104;			// Buy weapon_nailgun
+const int IMPULSE_105			= 105;			// Buy weapon_rocketlauncher
+const int IMPULSE_106			= 106;			// Buy weapon_railgun
+const int IMPULSE_107			= 107;			// Buy weapon_lightninggun
+const int IMPULSE_108			= 108;			// UNUSED
+const int IMPULSE_109			= 109;			// Buy weapon_napalmgun
+const int IMPULSE_110			= 110;			// Buy weapon_dmg
+const int IMPULSE_111			= 111;			// UNUSED
+const int IMPULSE_112			= 112;			// UNUSED
+const int IMPULSE_113			= 113;			// UNUSED
+const int IMPULSE_114			= 114;			// UNUSED
+const int IMPULSE_115			= 115;			// UNUSED
+const int IMPULSE_116			= 116;			// UNUSED
+const int IMPULSE_117			= 117;			// UNUSED
+const int IMPULSE_118			= 118;			// Buy item_armor_small
+const int IMPULSE_119			= 119;			// Buy item_armor_large
+const int IMPULSE_120			= 120;			// Buy ammorefill
+const int IMPULSE_121			= 121;			// UNUSED
+const int IMPULSE_122			= 122;			// UNUSED
+const int IMPULSE_123			= 123;			// Buy team powerup: ammo_regen
+const int IMPULSE_124			= 124;			// Buy team powerup: health_regen
+const int IMPULSE_125			= 125;			// Buy team powerup: damage_boost
+const int IMPULSE_126			= 126;			// UNUSED
+const int IMPULSE_127			= 127;			// UNUSED
+// RITUAL END
+
+
+const int KEY_MOVESPEED			= 127;
 
 // usercmd_t->flags
 const int UCF_IMPULSE_SEQUENCE	= 0x0001;		// toggled every time an impulse command is sent
@@ -174,7 +210,7 @@ public:
 	virtual int			KeyState( int key ) = 0;
 
 	// Directly sample a usercmd.
-	virtual usercmd_t	GetDirectUsercmd( void ) = 0;
+	virtual usercmd_t	GetUsercmd( void ) = 0;
 
 //RAVEN BEGIN
 //asalmon: slow down the joystick movement for aim assist on xenon

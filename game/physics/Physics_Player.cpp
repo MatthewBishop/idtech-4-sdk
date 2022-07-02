@@ -12,8 +12,10 @@ const float PM_SWIMSCALE		= 0.5f;
 const float PM_LADDERSPEED		= 100.0f;
 const float PM_STEPSCALE		= 1.0f;
 
-const float PM_ACCELERATE		= 10.0f;
-const float PM_AIRACCELERATE	= 1.0f;
+const float PM_ACCELERATE_SP	= 10.0f;
+const float PM_AIRACCELERATE_SP	= 1.0f;
+const float PM_ACCELERATE_MP	= 15.0f;
+const float PM_AIRACCELERATE_MP	= 1.18f;
 const float PM_WATERACCELERATE	= 4.0f;
 const float PM_FLYACCELERATE	= 8.0f;
 
@@ -42,6 +44,14 @@ const int PMF_TIME_WATERJUMP	= 128;		// movementTime is waterjump
 const int PMF_ALL_TIMES			= (PMF_TIME_WATERJUMP|PMF_TIME_LAND|PMF_TIME_KNOCKBACK);
 
 int c_pmove = 0;
+
+float idPhysics_Player::Pm_Accelerate( void ) {
+	return gameLocal.IsMultiplayer() ? PM_ACCELERATE_MP : PM_ACCELERATE_SP;
+}
+
+float idPhysics_Player::Pm_AirAccelerate( void ) {
+	return gameLocal.IsMultiplayer() ? PM_AIRACCELERATE_MP : PM_AIRACCELERATE_SP;
+}
 
 /*
 ============
@@ -655,7 +665,7 @@ void idPhysics_Player::AirMove( void ) {
 	wishspeed *= scale;
 
 	// not on ground, so little effect on velocity
-	idPhysics_Player::Accelerate( wishdir, wishspeed, PM_AIRACCELERATE );
+	idPhysics_Player::Accelerate( wishdir, wishspeed, Pm_AirAccelerate() );
 
 	// we may have a ground plane that is very steep, even
 	// though we don't have a groundentity
@@ -732,10 +742,10 @@ void idPhysics_Player::WalkMove( void ) {
 
 	// when a player gets hit, they temporarily lose full control, which allows them to be moved a bit
 	if ( ( groundMaterial && groundMaterial->GetSurfaceFlags() & SURF_SLICK ) || current.movementFlags & PMF_TIME_KNOCKBACK ) {
-		accelerate = PM_AIRACCELERATE;
+		accelerate = Pm_AirAccelerate();
 	}
 	else {
-		accelerate = PM_ACCELERATE;
+		accelerate = Pm_Accelerate();
 	}
 
 	idPhysics_Player::Accelerate( wishdir, wishspeed, accelerate );
@@ -848,7 +858,7 @@ void idPhysics_Player::NoclipMove( void ) {
 	wishspeed = wishdir.Normalize();
 	wishspeed *= scale;
 
-	idPhysics_Player::Accelerate( wishdir, wishspeed, PM_ACCELERATE );
+	idPhysics_Player::Accelerate( wishdir, wishspeed, Pm_Accelerate() );
 
 	// move
 	current.origin += frametime * current.velocity;
@@ -939,7 +949,7 @@ void idPhysics_Player::LadderMove( void ) {
 
 	// accelerate
 	wishspeed = wishvel.Normalize();
-	idPhysics_Player::Accelerate( wishvel, wishspeed, PM_ACCELERATE );
+	idPhysics_Player::Accelerate( wishvel, wishspeed, Pm_Accelerate() );
 
 	// cap the vertical velocity
 	upscale = current.velocity * -gravityNormal;

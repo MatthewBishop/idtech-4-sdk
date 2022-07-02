@@ -33,6 +33,7 @@ inline void operator delete[]( void *p ) { Memory::Free(p); }
 
 extern idRenderWorld *				gameRenderWorld;
 
+#include "../sys/AutoVersion.h"
 // the "gameversion" client command will print this plus compile date
 #define	GAME_VERSION		"baseQUAKE4-1"
 
@@ -328,6 +329,7 @@ public:
 	idEntity *				entities[MAX_GENTITIES];// index to entities
 	int						spawnIds[MAX_GENTITIES];// for use in idEntityPtr
 	int						firstFreeIndex;			// first free index in the entities array
+	int						minSpawnIndex;			// when spawning multiple instances, so nothing pollutes in between the instances
 	int						num_entities;			// current number <= MAX_GENTITIES
 	idHashIndex				entityHash;				// hash table to quickly find entities by name
 	idWorldspawn *			world;					// world entity
@@ -437,6 +439,9 @@ public:
 
 // RAVEN END
 
+	int filterMod;
+	idList<idStr> modList;
+
 	// ---------------------- Public idGame Interface -------------------
 
 							idGameLocal();
@@ -457,6 +462,8 @@ public:
 	virtual bool			IsClientActive( int clientNum );
 	virtual void			SetServerInfo( const idDict &serverInfo );
 
+	virtual const idDict *	RepeaterSetUserInfo( int clientNum, const idDict &userInfo ) { assert(false); return NULL; }
+
 	virtual const idDict &	GetPersistentPlayerInfo( int clientNum );
 	virtual void			SetPersistentPlayerInfo( int clientNum, const idDict &playerInfo );
 	virtual void			InitFromNewMap( const char *mapName, idRenderWorld *renderWorld, bool isServer, bool isClient, int randSeed );
@@ -469,26 +476,34 @@ public:
 	virtual void			CacheDictionaryMedia( const idDict *dict );
 	virtual void			SpawnPlayer( int clientNum );
 // RAVEN BEGIN
-	virtual gameReturn_t	RunFrame( const usercmd_t *clientCmds, int activeEditors, bool lastCatchupFrame );
+	virtual gameReturn_t	RunFrame( const usercmd_t *clientCmds, int activeEditors, bool lastCatchupFrame, int serverGameFrame );
 	virtual	void			MenuFrame( void );
 // RAVEN END
+	virtual void			RepeaterFrame( const userOrigin_t *clientOrigins, bool lastCatchupFrame, int spoolTime = 0 ) {};
 	virtual bool			Draw( int clientNum );
 	virtual escReply_t		HandleESC( idUserInterface **gui );
 	virtual idUserInterface	*StartMenu( void );
 	virtual const char *	HandleGuiCommands( const char *menuCommand );
 	virtual void			HandleMainMenuCommands( const char *menuCommand, idUserInterface *gui );
 	virtual allowReply_t	ServerAllowClient( int clientId, int numClients, const char *IP, const char *guid, const char *password, const char *privatePassword, char reason[MAX_STRING_CHARS] );
-	virtual void			ServerClientConnect( int clientNum );
+	virtual void			ServerClientConnect( int clientNum, const char *guid );
 	virtual void			ServerClientBegin( int clientNum );
 	virtual void			ServerClientDisconnect( int clientNum );
 	virtual void			ServerWriteInitialReliableMessages( int clientNum );
+	virtual allowReply_t	RepeaterAllowClient( int clientId, int numClients, const char *IP, const char *guid, bool repeater, const char *password, const char *privatePassword, char reason[MAX_STRING_CHARS] ) { idStr::Copynz( reason, "#str_107239" /* zinx - FIXME - not banned... */, sizeof(reason) ); return ALLOW_NO; };
+	virtual void			RepeaterClientConnect( int clientNum ) {assert(false);};
+	virtual void			RepeaterClientBegin( int clientNum ) {assert(false);};
+	virtual void			RepeaterClientDisconnect( int clientNum ) {assert(false);};
+	virtual void			RepeaterWriteInitialReliableMessages( int clientNum ) {assert(false);};
 // RAVEN BEGIN
 // jnewquist: Use dword array to match pvs array so we don't have endianness problems.
-	virtual void			ServerWriteSnapshot( int clientNum, int sequence, idBitMsg &msg, dword *clientInPVS, int numPVSClients );
+	virtual void			ServerWriteSnapshot( int clientNum, int sequence, idBitMsg &msg, dword *clientInPVS, int numPVSClients, int lastSnapshotFrame );
 // RAVEN END
 	virtual bool			ServerApplySnapshot( int clientNum, int sequence );
 	virtual void			ServerProcessReliableMessage( int clientNum, const idBitMsg &msg );
-	virtual void			ClientReadSnapshot( int clientNum, int sequence, const int gameFrame, const int gameTime, const int dupeUsercmds, const int aheadOfServer, const idBitMsg &msg );
+	virtual bool			RepeaterApplySnapshot( int clientNum, int sequence ) { assert(false); return false; }
+	virtual void			RepeaterProcessReliableMessage( int clientNum, const idBitMsg &msg ) { assert(false); }
+	virtual void			ClientReadSnapshot( int clientNum, int snapshotSequence, const int gameFrame, const int gameTime, const int dupeUsercmds, const int aheadOfServer, const idBitMsg &msg );
 	virtual bool			ClientApplySnapshot( int clientNum, int sequence );
 	virtual void			ClientProcessReliableMessage( int clientNum, const idBitMsg &msg );
 	virtual gameReturn_t	ClientPrediction( int clientNum, const usercmd_t *clientCmds, bool lastPredictFrame = true, ClientStats_t *cs = NULL );
@@ -506,6 +521,8 @@ public:
 	virtual void			SwitchTeam( int clientNum, int team );
 
 	virtual bool			DownloadRequest( const char *IP, const char *guid, const char *paks, char urls[ MAX_STRING_CHARS ] );
+
+	virtual bool			HTTPRequest( const char *IP, const char *file, bool isGamePak );
 
 // RAVEN BEGIN
 // bdube: client hitscan
@@ -557,14 +574,25 @@ public:
 	virtual void			ListEntityStats( const idCmdArgs &args );
 // RAVEN END
 
-	virtual void			SetDemoState( demoState_t state, bool serverDemo );
+	virtual void			SetDemoState( demoState_t state, bool serverDemo, bool timeDemo );
+	virtual void			SetRepeaterState( bool isRepeater, bool serverIsRepeater ) {if (isRepeater || serverIsRepeater) Warning("Repeater does not work for single player.");};
 	virtual void			WriteNetworkInfo( idFile* file, int clientNum );
 	virtual void			ReadNetworkInfo( int gameTime, idFile* file, int clientNum );
 	virtual bool			ValidateDemoProtocol( int minor_ref, int minor );
 
-	virtual void			ServerWriteDemoSnapshot( int sequence, idBitMsg &msg );
-	virtual void			ClientReadDemoSnapshot( int sequence, const int gameFrame, const int gameTime, const idBitMsg &msg );
+	virtual void			ServerWriteServerDemoSnapshot( int sequence, idBitMsg &msg, int lastSnapshotFrame );
+	virtual void			ClientReadServerDemoSnapshot( int sequence, const int gameFrame, const int gameTime, const idBitMsg &msg );
 
+	virtual void			RepeaterWriteSnapshot( int clientNum, int sequence, idBitMsg &msg, dword *clientInPVS, int numPVSClients, const userOrigin_t &pvs_origin, int lastSnapshotFrame ) {assert(false);};
+	virtual void			RepeaterEndSnapshots( void ) {};
+	virtual void			ClientReadRepeaterSnapshot( int sequence, const int gameFrame, const int gameTime, const int aheadOfServer, const idBitMsg &msg ) {assert(false);};
+
+	virtual int				GetDemoFollowClient( void ) { return serverDemo ? followPlayer : -1; }
+
+	virtual void			GetBotInput( int clientNum, usercmd_t &userCmd ) { Error( "Bot input requested\n" ); };
+
+	virtual const char *	GetLoadingGui( const char *mapDeclName ) { return NULL; }
+	virtual void			SetupLoadingGui( idUserInterface *gui ) {}
 
 	// ---------------------- Public idGameLocal Interface -------------------
 
@@ -622,8 +650,15 @@ public:
 
 	void					RegisterEntity( idEntity *ent );
 	void					UnregisterEntity( idEntity *ent );
+	// used to skip one when registering entities, leaving an empty entity in the array
+	void					SkipEntityIndex( void );
 
 	bool					RequirementMet( idEntity *activator, const idStr &requires, int removeItem );
+
+// RITUAL BEGIN
+// squirrel: accessor for si_weaponStay checks
+	bool					IsWeaponsStayOn( void );
+// RITUAL END
 
 // RAVEN BEGIN
 // bdube: client entities
@@ -745,7 +780,13 @@ public:
 
 	void					SetGibTime( int _time ) { nextGibTime = _time; }
 	int						GetGibTime() { return nextGibTime; }
-
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
+	void					SetUnFreezeTime( int _time ) { unFreezeTime = _time; };
+	int						GetUnFreezeTime() { return unFreezeTime; };
+	void					SetIsFrozen( bool _isFrozen ) { isFrozen = _isFrozen; };
+	bool					GetIsFrozen() { return isFrozen; };
+// RITUAL END
 	bool					NeedRestart();
 
 // RAVEN BEGIN
@@ -757,7 +798,7 @@ public:
 // twhitaker: added additionalIgnore parameter
 	idEntity*				HitScan				( const idDict& hitscanDef, const idVec3& origin, const idVec3& dir, const idVec3& fxOrigin, idEntity* owner = NULL, bool noFX = false, float damageScale = 1.0f, idEntity * additionalIgnore = NULL, int *areas = NULL );
 // bdube: added effect calls
-	virtual rvClientEffect*	PlayEffect			( const idDecl *effect, const idVec3& origin, const idMat3& axis, bool loop = false, const idVec3& endOrigin = vec3_origin, bool broadcast = false, effectCategory_t category = EC_IGNORE, const idVec4& effectTint = vec4_one );
+	virtual rvClientEffect*	PlayEffect			( const idDecl *effect, const idVec3& origin, const idMat3& axis, bool loop = false, const idVec3& endOrigin = vec3_origin, bool broadcast = false, bool predictBit = false, effectCategory_t category = EC_IGNORE, const idVec4& effectTint = vec4_one );
 	rvClientEffect*			PlayEffect			( const idDict& args, const char* effectName, const idVec3& origin, const idMat3& axis, bool loop = false, const idVec3& endOrigin = vec3_origin, bool broadcast = false, effectCategory_t category = EC_IGNORE, const idVec4& effectTint = vec4_one );
 	const idDecl			*GetEffect			( const idDict& args, const char* effectName, const rvDeclMatType* materialType = NULL );
 
@@ -807,11 +848,14 @@ public:
 	int						GetNumInstances( void );
 // ddynerman: multiple game instances
 	void					SpawnMapEntities( int instance = 0, unsigned short* entityNumIn = NULL, unsigned short* entityNumOut = NULL, int* startSpawnCount = NULL );
-	void					InstanceClear( int instance );
+	void					InstanceClear( void );
 // ddynerman: utility function
 	virtual const char*		GetLongGametypeName( const char* gametype );
 	virtual void			ReceiveRemoteConsoleOutput( const char* output );
-	bool					IsFlagGameType( void ) { return (gameType == GAME_CTF || gameType == GAME_1F_CTF || gameType == GAME_ARENA_CTF || gameType == GAME_ARENA_1F_CTF); }
+
+	bool					IsFlagGameType( void ) { return ( gameType == GAME_CTF || gameType == GAME_1F_CTF || gameType == GAME_ARENA_CTF || gameType == GAME_ARENA_1F_CTF ); }
+	bool					IsTeamGameType( void ) { return ( gameType == GAME_TDM || gameType == GAME_CTF || gameType == GAME_ARENA_CTF || gameType == GAME_DEADZONE ); }
+	bool					IsTeamPowerups( void );
 
 	// twhitaker: needed this for difficulty settings
 	float					GetDifficultyModifier( void ) { const static float difficulty[] = { -0.3f, 0.0f, 0.4f, 0.8f }; return difficulty[ idMath::ClampInt( 0, 3, g_skill.GetInteger() ) ]; }
@@ -841,6 +885,7 @@ public:
 
 	demoState_t				GetDemoState( void ) const { return demoState; }
 	bool					IsServerDemo( void ) const { return serverDemo; }
+	bool					IsTimeDemo( void ) const { return timeDemo; }
 	int						GetDemoFollowClient( void ) const { return serverDemo ? followPlayer : -1; }
 	idUserInterface			*GetDemoHud( void );
 	idUserInterface			*GetDemoMphud( void );
@@ -860,12 +905,22 @@ public:
 
 	idPlayerStart			*RandomSpawn( void );
 
+	int						GetStartingIndexForInstance( int instanceID );
+	void					ClientSetStartingIndex( int i ) { clientInstanceFirstFreeIndex = i; }
+	void					ServerSetMinSpawnIndex( void );
+	void					ServerSetEntityIndexWatermark( int instanceID );
+
 private:
 // RAVEN BEGIN
 // ddynerman: multiple instance for MP
 	idList<idClip*>			clip;					// collision detection
 	idList<rvInstance*>		instances;
 // RAVEN END
+
+	// keep watermarks on the high entity index
+	// server transmits this to clients so they use the right entity layout
+	idList<int>				instancesEntityIndexWatermarks;
+	int						clientInstanceFirstFreeIndex;
 
 	idStr					mapFileName;			// name of the map, empty string if no map loaded
 	idMapFile *				mapFile;				// will be NULL during the game unless in-game editing is used
@@ -914,6 +969,11 @@ private:
 	gameState_t				gamestate;				// keeps track of whether we're spawning, shutting down, or normal gameplay
 	bool					influenceActive;		// true when a phantasm is happening
 	int						nextGibTime;
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
+	int						unFreezeTime;			// time at which players unfreeze and the match begins
+	bool					isFrozen;				// true if the match is frozen (for buying, etc.)
+// RITUAL END
 
 	entityState_t *			clientEntityStates[MAX_CLIENTS+1][MAX_GENTITIES];	// MAX_CLIENTS slot is for server demo recordings
 	int						clientPVS[MAX_CLIENTS+1][ENTITY_PVS_SIZE];
@@ -943,6 +1003,7 @@ private:
 
 	demoState_t				demoState;
 	bool					serverDemo;
+	bool					timeDemo;
 
 	// demo interaction usercmds
 	usercmd_t				usercmd, oldUsercmd;
@@ -950,6 +1011,8 @@ private:
 	idUserInterface			*demo_hud;
 	idUserInterface			*demo_mphud;
 	idUserInterface			*demo_cursor;
+
+	int						demo_protocol;	// keep track of the protocol of the demo we're replaying
 
 private:
 
@@ -995,7 +1058,7 @@ private:
 
 	void					DumpOggSounds( void );
 	void					GetShakeSounds( const idDict *dict );
-	idStr					GetBestGameType( const char* map, const char* gametype );
+	bool					ValidateServerSettings( const char *map, const char *gametype );
 
 	void					Tokenize( idStrList &out, const char *in );
 
@@ -1012,6 +1075,8 @@ private:
 	void					UpdateClientsPVS( void );
 
 	bool					IsDemoReplayInAreas( int area1, int area2 );
+
+	void					BuildModList( void );
 
 public:
 	void					LoadBanList();
@@ -1033,6 +1098,8 @@ public:
 
 // jscott: made public
 	pvsHandle_t				GetClientPVS( idPlayer *player, pvsType_t type );
+
+	int						GetCurrentDemoProtocol( void ) { return demo_protocol; }
 
 private:
 	char					clientGuids[ MAX_CLIENTS ][ CLIENT_GUID_LENGTH ];
@@ -1102,37 +1169,6 @@ public:
 
 //============================================================================
 
-
-//
-// these defines work for all startsounds from all entity types
-// make sure to change script/doom_defs.script if you add any channels, or change their order
-//
-typedef enum {
-	SND_CHANNEL_ANY = SCHANNEL_ANY,
-	SND_CHANNEL_VOICE = SCHANNEL_ONE,
-	SND_CHANNEL_VOICE2,
-	SND_CHANNEL_BODY,
-	SND_CHANNEL_BODY2,
-	SND_CHANNEL_BODY3,
-	SND_CHANNEL_WEAPON,
-	SND_CHANNEL_ITEM,
-	SND_CHANNEL_HEART,
-	SND_CHANNEL_DEMONIC,
-	SND_CHANNEL_RADIO,
-
-	// internal use only.  not exposed to script or framecommands.
-	SND_CHANNEL_AMBIENT,
-	SND_CHANNEL_DAMAGE
-
-// RAVEN BEGIN
-// bdube: added custom to tell us where the end of the predefined list is
-	,
-	SND_CHANNEL_POWERUP,
-	SND_CHANNEL_POWERUP_IDLE,
-	SND_CHANNEL_MP_ANNOUNCER,
-	SND_CHANNEL_CUSTOM
-// RAVEN END
-} gameSoundChannel_t;
 
 // content masks
 #define	MASK_ALL					(-1)
@@ -1256,15 +1292,15 @@ const int	CINEMATIC_SKIP_DELAY	= SEC2MS( 2.0f );
 // RAVEN BEGIN
 // bdube: inlines
 ID_INLINE rvClientEffect* idGameLocal::PlayEffect( const idDict& args, const char* effectName, const idVec3& origin, const idMat3& axis, bool loop, const idVec3& endOrigin, bool broadcast, effectCategory_t category, const idVec4& effectTint ) {
-	return PlayEffect ( GetEffect ( args, effectName ), origin, axis, loop, endOrigin, broadcast, category, effectTint );
+	return PlayEffect ( GetEffect ( args, effectName ), origin, axis, loop, endOrigin, broadcast, false, category, effectTint );
 }
 
 ID_INLINE bool idGameLocal::IsTeamGame( void ) const {
-	return ( isMultiplayer && ( gameType == GAME_CTF || gameType == GAME_TDM || gameType == GAME_1F_CTF || gameType == GAME_ARENA_CTF ) );
+	return ( isMultiplayer && ( gameType == GAME_CTF || gameType == GAME_TDM || gameType == GAME_1F_CTF || gameType == GAME_ARENA_CTF || gameType == GAME_DEADZONE ) );
 }
 
 ID_INLINE int idGameLocal::GetNumMapEntities( void ) const {
-	if( mapFile == NULL ) {
+	if ( mapFile == NULL ) {
 		return -1;
 	} else {
 		return mapFile->GetNumEntities();

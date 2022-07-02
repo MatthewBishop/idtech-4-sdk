@@ -33,6 +33,10 @@ public :
 
 	virtual void			FreeLightDef( void );
 
+//RITUAL BEGIN
+	void					SetOwner(idEntity* ent)	{ owner = ent;	}
+// RITUAL END
+
 	idEntity *				GetOwner( void ) const;
 
 	virtual void			Think( void );
@@ -62,6 +66,8 @@ public :
 	virtual bool			ClientStale( void );
 	
 protected:
+	void					SpawnImpactEntities(const trace_t& collision, const idVec3 projectileDirection);
+
 
 	idEntityPtr<idEntity>	owner;
 
@@ -82,6 +88,8 @@ protected:
 	int						lightEndTime;
 	idVec3					lightColor;
 
+	idEntity*				impactedEntity;
+
 	rvPhysics_Particle		physicsObj;
 	idAngles				visualAngles;
 	idAngles				angularVelocity;
@@ -94,6 +102,14 @@ protected:
 	float					flyEffectAttenuateSpeed;
 
 	int						bounceCount;
+	bool					sticky;
+	
+	idStr					impactEntity;
+	int						numImpactEntities;
+	int						ieMinPitch;
+	int						ieMaxPitch;
+	float					ieSlicePercentage;
+
 // RAVEN BEGIN
 // ddynerman: hit count for stats
 	int						hitCount;

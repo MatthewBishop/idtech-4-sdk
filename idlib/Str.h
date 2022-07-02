@@ -351,6 +351,8 @@ public:
 
 	static void			Split( const char* source, idList<idStr>& list, const char delimiter = ',', const char groupDelimiter = '\''  );
 
+	idStr				GetLastColorCode( void ) const;
+
 protected:
 	int					len;
 	char *				data;

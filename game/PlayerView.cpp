@@ -774,7 +774,7 @@ void idPlayerView::RenderPlayerView( idUserInterface *hud ) {
 		ScreenFade();
 	}
 
-	if ( net_clientLagOMeter.GetBool() && lagoMaterial && gameLocal.isClient && !( gameLocal.GetDemoState() == DEMO_PLAYING && gameLocal.IsServerDemo() ) ) {
+	if ( net_clientLagOMeter.GetBool() && lagoMaterial && gameLocal.isClient && !( gameLocal.GetDemoState() == DEMO_PLAYING && ( gameLocal.IsServerDemo() || gameLocal.IsTimeDemo() ) ) ) {
 		renderSystem->SetColor4( 1.0f, 1.0f, 1.0f, 1.0f );
 		renderSystem->DrawStretchPic( 10.0f, 380.0f, 64.0f, 64.0f, 0.0f, 0.0f, 1.0f, 1.0f, lagoMaterial );
 	}

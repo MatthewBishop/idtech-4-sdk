@@ -162,6 +162,73 @@ void TestGameAPI( void ) {
 }
 
 /*
+================
+idGameLocal::BuildModList
+================
+*/
+void idGameLocal::BuildModList( ) {
+	int i;
+	idStr currentMod;
+
+	int numServers = networkSystem->GetNumScannedServers();
+
+	if ( filterMod >= 0 && filterMod < modList.Num() ) {
+		currentMod = modList[ filterMod ];
+	} else {
+		currentMod = "";
+	}
+
+	modList.Clear();
+	for (i = 0; i < numServers; i++) {
+		const scannedServer_t *server;
+		idStr modname;
+
+		server = networkSystem->GetScannedServerInfo( i );
+
+		server->serverInfo.GetString( "fs_game", "", modname );
+		modname.ToLower();
+		modList.AddUnique( modname );
+	}
+
+	modList.Sort();
+
+	if ( modList.Num() > 0 && (modList[ 0 ].Cmp( "" ) == 0) ) {
+		modList.RemoveIndex( 0 );
+	}
+
+	filterMod = modList.Num();
+	for (i = 0; i < modList.Num(); i++) {
+		if ( modList[ i ].Icmp( currentMod ) == 0 ) {
+			filterMod = i;
+		}
+	}
+}
+
+/*
+================
+FilterByMod
+================
+*/
+static int FilterByMod( const int* serverIndex ) {
+	const scannedServer_t *server;
+
+	if ( gameLocal.filterMod < 0 || gameLocal.filterMod >= gameLocal.modList.Num() ) {
+		return (int)false;
+	}
+
+	server = networkSystem->GetScannedServerInfo( *serverIndex );
+
+	return (int)(gameLocal.modList[ gameLocal.filterMod ].Icmp( server->serverInfo.GetString( "fs_game" ) ) != 0);
+}
+
+static sortInfo_t filterByMod = {
+	SC_ALL,
+	NULL,
+	FilterByMod,
+	"#str_123006"
+};
+
+/*
 ===========
 idGameLocal::idGameLocal
 ============
@@ -278,6 +345,11 @@ void idGameLocal::Clear( void ) {
 	entityDefBits = 0;
 
 	nextGibTime = 0;
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
+	unFreezeTime = 0;
+	isFrozen = false;
+// RITUAL END
 	globalMaterial = NULL;
 	newInfo.Clear();
 	lastGUIEnt = NULL;
@@ -288,24 +360,21 @@ void idGameLocal::Clear( void ) {
 	memset( clientSnapshots, 0, sizeof( clientSnapshots ) );
 
 	eventQueue.Init();
-//	savedEventQueue.Init();
 
-// RAVEN BEGIN
-// bdube: client entities
 	clientSpawnCount = INITIAL_SPAWN_COUNT;
 	clientSpawnedEntities.Clear();
 	memset( clientEntities, 0, sizeof( clientEntities ) );
 	memset( clientSpawnIds, -1, sizeof( clientSpawnIds ) );
 
-	gameDebug.Shutdown ( );
-	gameLogLocal.Shutdown ( );
+	gameDebug.Shutdown();
+	gameLogLocal.Shutdown();
 	currentThinkingEntity = NULL;
-// RAVEN END
 
 	memset( lagometer, 0, sizeof( lagometer ) );
 
 	demoState = DEMO_NONE;
 	serverDemo = false;
+	timeDemo = false;
 
 	memset( &usercmd, 0, sizeof( usercmd ) );
 	memset( &oldUsercmd, 0, sizeof( oldUsercmd ) );
@@ -313,6 +382,18 @@ void idGameLocal::Clear( void ) {
 	demo_hud = NULL;
 	demo_mphud = NULL;
 	demo_cursor = NULL;
+
+	demo_protocol = 0;
+
+	instancesEntityIndexWatermarks.Clear();
+	clientInstanceFirstFreeIndex = MAX_CLIENTS;
+	minSpawnIndex = MAX_CLIENTS;
+
+	modList.Clear();
+	filterMod = -1;
+	if ( networkSystem ) {
+		networkSystem->UseSortFunction( filterByMod, false );
+	}
 }
 
 /*
@@ -472,8 +553,8 @@ void idGameLocal::Init( void ) {
 	
 // RAVEN BEGIN
 // bdube: debug stuff
-	gameDebug.Init ( );
-	gameLogLocal.Init ( );
+	gameDebug.Init();
+	gameLogLocal.Init();
 
 // jscott: facial animation init
 	if( !FAS_Init( "annosoft" ) ) {
@@ -504,6 +585,8 @@ void idGameLocal::Init( void ) {
 	clip.SetAllocatorHeap(rvGetSysHeap(RV_HEAP_ID_LEVEL));
 #endif
 // RAVEN END
+
+	networkSystem->AddSortFunction( filterByMod );
 }
 
 /*
@@ -530,6 +613,8 @@ void idGameLocal::Shutdown( void ) {
 // RAVEN END
 
 	Printf( "--------------- Game Shutdown ---------------\n" );
+
+	networkSystem->RemoveSortFunction( filterByMod );
 
 	mpGame.Shutdown();
 
@@ -739,21 +824,33 @@ void idGameLocal::SaveGame( idFile *f, saveType_t saveType ) {
 		savegame.WriteObject( ent );
 	}
 
-// RAVEN BEGIN
-// abahr: saving scriptObject proxies
 	savegame.WriteInt( scriptObjectProxies.Num() );
 	for( i = 0; i < scriptObjectProxies.Num(); ++i ) {
 		scriptObjectProxies[i].Save( &savegame );
 	}
-// abahr: save out client stuff
-	savegame.WriteInt( clientSpawnedEntities.Num() );
-	for( clientEnt = clientSpawnedEntities.Next(); clientEnt != NULL; clientEnt = clientEnt->spawnNode.Next() ) {
+	// used to write clientSpawnedEntities.Num() then iterate through the spawn nodes
+	// this is fragile however, as some elsewhere get those out of sync (mantis #70)
+	int countClientSpawnedEntities = 0;
+	for ( clientEnt = clientSpawnedEntities.Next(); clientEnt != NULL; clientEnt = clientEnt->spawnNode.Next() ) {
+		countClientSpawnedEntities++;
+	}
+	if ( countClientSpawnedEntities != clientSpawnedEntities.Num() ) {
+		common->Warning( "countClientSpawnedEntities %d != clientSpawnedEntities.Num() %d\n", countClientSpawnedEntities, clientSpawnedEntities.Num() );
+	}
+	savegame.WriteInt( countClientSpawnedEntities );
+	for ( clientEnt = clientSpawnedEntities.Next(); clientEnt != NULL; clientEnt = clientEnt->spawnNode.Next() ) {
 		savegame.WriteObject( clientEnt );
 	}
-// RAVEN END
-
-	savegame.WriteInt( activeEntities.Num() );
-	for( ent = activeEntities.Next(); ent != NULL; ent = ent->activeNode.Next() ) {
+	// same as above. haven't seen a problem with that one but I can't trust it either
+	int countActiveEntities = 0;
+	for ( ent = activeEntities.Next(); ent != NULL; ent = ent->activeNode.Next() ) {
+		countActiveEntities++;
+	}
+	if ( countActiveEntities != activeEntities.Num() ) {
+		common->Warning( "countActiveEntities %d != activeEntities.Num() %d\n", countActiveEntities, activeEntities.Num() );
+	}
+	savegame.WriteInt( countActiveEntities );
+	for ( ent = activeEntities.Next(); ent != NULL; ent = ent->activeNode.Next() ) {
 		savegame.WriteObject( ent );
 	}
 
@@ -1169,7 +1266,7 @@ void idGameLocal::SetServerInfo( const idDict &_serverInfo ) {
 // mekberg: clear announcer and reschedule time announcements
 	if ( ( isClient || isListenServer ) && mpGame.GetGameState( ) && mpGame.GetGameState( )->GetMPGameState( ) == GAMEON &&
 		serverInfo.GetInt( "si_timelimit" ) != _serverInfo.GetInt( "si_timelimit" ) ) {
-			timeLimitChanged = true;
+		timeLimitChanged = true;
 	}
 
 	serverInfo = _serverInfo;
@@ -1181,8 +1278,6 @@ void idGameLocal::SetServerInfo( const idDict &_serverInfo ) {
 // RAVEN END
 
 	if ( isServer ) {
-		
-		//common->Printf( "Writing server info\n" );
 		
 		// Let our clients know the server info changed
 		outMsg.Init( msgBuf, sizeof( msgBuf ) );
@@ -1273,7 +1368,7 @@ void idGameLocal::LoadMap( const char *mapName, int randseed ) {
 // RAVEN BEGIN
 // bdube: client entities
 	clientSpawnCount = INITIAL_SPAWN_COUNT;
-	clientSpawnedEntities.Clear ( );
+	clientSpawnedEntities.Clear();
 	memset ( clientSpawnIds, -1, sizeof(clientSpawnIds ) );
 	memset ( clientEntities, 0, sizeof(clientEntities) );
 	firstFreeClientIndex = 0;
@@ -1313,6 +1408,11 @@ void idGameLocal::LoadMap( const char *mapName, int randseed ) {
 	framenum		= 0;
 	sessionCommand = "";
 	nextGibTime		= 0;
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
+	unFreezeTime	= 0;
+	isFrozen		= 0;
+// RITUAL END
 
 	vacuumAreaNum = -1;		// if an info_vacuum is spawned, it will set this
 
@@ -1326,7 +1426,7 @@ void idGameLocal::LoadMap( const char *mapName, int randseed ) {
 		editEntities = new idEditEntities;
 	}
 
-	if( gameLocal.isMultiplayer ) {
+	if ( gameLocal.isMultiplayer ) {
 		gravity.Set( 0, 0, -g_mp_gravity.GetFloat() );
 	} else {
 		gravity.Set( 0, 0, -g_gravity.GetFloat() );
@@ -1400,13 +1500,13 @@ void idGameLocal::LocalMapRestart( int instance ) {
 	Printf( "----------- Game Map Restart (%s) ------------\n", instance == -1 ? "all instances" : va( "instance %d", instance ) );
 
 	// client always respawns everything, so make sure it picks up the right map entities
-	if ( instance == -1 || isClient ) {
+	if( instance == -1 || isClient ) {
 		memset( isMapEntity, 0, sizeof(bool) * MAX_GENTITIES );
 	} else {
 		assert( instance >= 0 && instance < instances.Num() );
 
 		for( int i = 0; i < instances[ instance ]->GetNumMapEntities(); i++ ) {
-			if( instances[ instance ]->GetMapEntityNumber( i ) >= 0 && instances[ instance ]->GetMapEntityNumber( i ) < MAX_GENTITIES ) {
+			if ( instances[ instance ]->GetMapEntityNumber( i ) >= 0 && instances[ instance ]->GetMapEntityNumber( i ) < MAX_GENTITIES ) {
 				isMapEntity[ instances[ instance ]->GetMapEntityNumber( i ) ] = false;
 			}
 		}
@@ -1462,13 +1562,6 @@ void idGameLocal::LocalMapRestart( int instance ) {
 
 	gamestate = GAMESTATE_ACTIVE;
 
-// RAVEN BEGIN
-// shouchard:  profiling
-	if ( cvarSystem->GetCVarBool( "net_debugFrameTime" ) ) {
-		cvarSystem->SetCVarBool( "net_debugStartLevel", true );
-	}
-// RAVEN END
-
 	Printf( "--------------------------------------\n" );
 }
 
@@ -1491,6 +1584,12 @@ void idGameLocal::MapRestart( int instance ) {
 // RAVEN END
 		LocalMapRestart( instance );
 	} else {
+
+		if ( mpGame.PickMap( "", true ) ) {
+			common->Warning( "map %s and gametype %s are incompatible, aborting map change", si_map.GetString(), si_gameType.GetString() );
+			return;
+		}
+
 		newInfo = *cvarSystem->MoveCVarsToDict( CVAR_SERVERINFO );
 		// this has to be after the cvars are moved to the dict
 		for ( i = 0; i < newInfo.GetNumKeyVals(); i++ ) {
@@ -1515,13 +1614,12 @@ void idGameLocal::MapRestart( int instance ) {
 		}
 		cmdSystem->BufferCommandText( CMD_EXEC_NOW, "rescanSI" " " __FILE__ " " __LINESTR__ );
 
-// RAVEN BEGIN
-// ddynerman: check if gametype changed
 		SetGameType();
-// RAVEN END
+
+		mpGame.isBuyingAllowedRightNow = false;
 
 		if ( i != newInfo.GetNumKeyVals() ) {
-			cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "nextMap" );
+			gameLocal.sessionCommand = "nextMap";
 		} else {
 			outMsg.Init( msgBuf, sizeof( msgBuf ) );
 			outMsg.WriteByte( GAME_RELIABLE_MESSAGE_RESTART );
@@ -1582,14 +1680,6 @@ bool idGameLocal::NextMap( void ) {
 	const idKeyValue	*keyval, *keyval2;
 	int					i;
 	const char			*mapCycleList, *currentMap;
-
-//RAVEN BEGIN
-//asalmon: pick another map on Xenon
-#ifdef _XENON
-	//Live()->PickMap();
-	return true;
-#endif
-//RAVEN END
 
 // RAVEN BEGIN
 // rjohnson: traditional map cycle
@@ -1692,6 +1782,59 @@ void idGameLocal::NextMap_f( const idCmdArgs &args ) {
 }
 
 /*
+===============
+idGameLocal::GetStartingIndexForInstance
+===============
+*/
+int idGameLocal::GetStartingIndexForInstance( int instanceID ) {
+	if ( isServer ) {
+		assert( instancesEntityIndexWatermarks.Num() >= instanceID );
+		if ( instanceID == 0 ) {
+			return MAX_CLIENTS;
+		} else {
+			// the high watermark of the previous instance is the starting index of the next one
+			return instancesEntityIndexWatermarks[ instanceID - 1 ];
+		}
+	} else {
+		assert( instanceID == 0 );
+		return clientInstanceFirstFreeIndex;
+	}
+}
+
+/*
+===============
+idGameLocal::ServerSetEntityIndexWatermark
+keep track of the entity layout at the server - specially when there are multiple instances ( tourney )
+===============
+*/
+void idGameLocal::ServerSetEntityIndexWatermark( int instanceID ) {
+	if ( isClient ) {
+		return;
+	}
+	instancesEntityIndexWatermarks.AssureSize( instanceID + 1, MAX_CLIENTS );
+	// make sure there is no drift. if a value was already set it has to match
+	// otherwise that means the server is repopulating with different indexes, and that would likely lead to net corruption
+	assert( instancesEntityIndexWatermarks[ instanceID ] == MAX_CLIENTS || instancesEntityIndexWatermarks[ instanceID ] == firstFreeIndex );
+	instancesEntityIndexWatermarks[ instanceID ] = firstFreeIndex;
+}
+
+/*
+===============
+idGameLocal::ServerSetMinSpawnIndex
+===============
+*/
+void idGameLocal::ServerSetMinSpawnIndex( void ) {
+	if ( isClient ) {
+		return;
+	}
+	// setup minSpawnIndex with enough headroom so gameplay entities don't cause bad offsets
+	// only needed on server, clients are completely slaved up to server entity layout
+	if ( !idStr::Icmp( serverInfo.GetString( "si_gameType" ), "Tourney" ) ) {
+		minSpawnIndex = MAX_CLIENTS + GetNumMapEntities() * MAX_INSTANCES;
+	}
+}
+
+/*
 ===================
 idGameLocal::MapPopulate
 ===================
@@ -1706,14 +1849,21 @@ void idGameLocal::MapPopulate( int instance ) {
 	if ( isMultiplayer ) {
 		cvarSystem->SetCVarBool( "r_skipSpecular", false );
 	}
+
+	minSpawnIndex = MAX_CLIENTS;
+
 	// parse the key/value pairs and spawn entities
 // RAVEN BEGIN
 // ddynerman: instance code
 	// reload the instances
-	if( instance == -1 ) {
-		for( int i = 0; i < instances.Num(); i++ ) {
-			if( instances[ i ] ) {
+	if ( instance == -1 ) {
+		int i;
+		firstFreeIndex = MAX_CLIENTS;
+		for ( i = 0; i < instances.Num(); i++ ) {
+			if ( instances[ i ] ) {
 				instances[ i ]->Restart();
+
+				ServerSetEntityIndexWatermark( i );
 			}
 		}
 	} else {
@@ -1721,6 +1871,9 @@ void idGameLocal::MapPopulate( int instance ) {
 		instances[ instance ]->Restart();
 	}
 // RAVEN END
+
+	ServerSetMinSpawnIndex();
+
 	// mark location entities in all connected areas
 	SpreadLocations();
 
@@ -1753,11 +1906,14 @@ void idGameLocal::InitFromNewMap( const char *mapName, idRenderWorld *renderWorl
 // RAVEN END
 	this->isMultiplayer = isServer || isClient;
 
+	if ( this->isMultiplayer )
+		gameLocal.Error( "This mod is for singleplayer only" );
+
 	PACIFIER_UPDATE;
 
 //RAVEN BEGIN
 //asalmon: stats for single player
-	if(!this->isMultiplayer) {
+	if (!this->isMultiplayer) {
 #ifdef _MPBETA
 		return;
 #else
@@ -1910,7 +2066,7 @@ bool idGameLocal::InitFromSaveGame( const char *mapName, idRenderWorld *renderWo
 	// Precache the player
 // RAVEN BEGIN
 // bdube: changed so we actually cache stuff
-	FindEntityDef ( idPlayer::GetSpawnClassname ( ) );
+	FindEntityDef( idPlayer::GetSpawnClassname() );
 
 // abahr: saving clientEntities
 	for( i = 0; i < MAX_CENTITIES; i++ ) {
@@ -1953,7 +2109,7 @@ bool idGameLocal::InitFromSaveGame( const char *mapName, idRenderWorld *renderWo
 	for( i = 0; i < num; ++i ) {
 		savegame.ReadObject( reinterpret_cast<idClass *&>( clientEnt ) );
 		assert( clientEnt );
-		if ( clientEnt  ) {
+		if ( clientEnt ) {
 			clientEnt->spawnNode.AddToEnd( clientSpawnedEntities );
 		}
 	}
@@ -2077,6 +2233,7 @@ bool idGameLocal::InitFromSaveGame( const char *mapName, idRenderWorld *renderWo
 	// Read out pending events
 	idEvent::Restore( &savegame );
 
+	// call the restore functions to read out all the data from the entities
 	savegame.RestoreObjects();
 
 	mpGame.Reset();
@@ -2192,12 +2349,17 @@ void idGameLocal::MapClear( bool clearClients, int instance ) {
 		mpGame.ClearMap();
 	}
 	ambientLights.Clear();
-// RAVEN END	
+// RAVEN END
+
+	// set the free index back at MAX_CLIENTS for registering entities again
+	// the deletion of map entities causes the index to go down, but it may not have been left exactly at 32
+	// under such conditions, the map populate that will follow may be offset
+	firstFreeIndex = MAX_CLIENTS;
 }
 
 // RAVEN BEGIN
 // ddynerman: instance-specific clear
-void idGameLocal::InstanceClear( int instance ) {
+void idGameLocal::InstanceClear( void ) {
 	// note: clears all ents EXCEPT those in the instance
 	int i;
 
@@ -2270,6 +2432,8 @@ void idGameLocal::InstanceClear( int instance ) {
 		mpGame.ClearMap();
 	}
 	ambientLights.Clear();
+
+	
 }
 // RAVEN END
 
@@ -2283,7 +2447,9 @@ void idGameLocal::MapShutdown( void ) {
 	
 	gamestate = GAMESTATE_SHUTDOWN;
 
-	soundSystem->ResetListener();
+	if ( soundSystem ) {
+		soundSystem->ResetListener();
+	}
 
 // RAVEN BEGIN
 // rjohnson: new blur special effect
@@ -2302,6 +2468,9 @@ void idGameLocal::MapShutdown( void ) {
 // RAVEN END
 
 	MapClear( true );
+
+	instancesEntityIndexWatermarks.Clear();
+	clientInstanceFirstFreeIndex = MAX_CLIENTS;	
 
 // RAVEN BEGIN
 // jscott: make sure any spurious events are killed
@@ -3286,7 +3455,7 @@ idGameLocal::RunFrame
 ================
 */
 // RAVEN BEGIN
-gameReturn_t idGameLocal::RunFrame( const usercmd_t *clientCmds, int activeEditors, bool lastCatchupFrame ) {
+ gameReturn_t idGameLocal::RunFrame( const usercmd_t *clientCmds, int activeEditors, bool lastCatchupFrame, int serverGameFrame ) {
 	idEntity *	ent;
 	int			num;
 	float		ms;
@@ -3547,6 +3716,7 @@ TIME_THIS_SCOPE("idGameLocal::RunFrame - gameDebug.BeginFrame()");
 		// see if a target_sessionCommand has forced a changelevel
 		if ( sessionCommand.Length() ) {
 			strncpy( ret.sessionCommand, sessionCommand, sizeof( ret.sessionCommand ) );
+			sessionCommand = "";
 			break;
 		}
 
@@ -3864,10 +4034,10 @@ void idGameLocal::HandleMainMenuCommands( const char *menuCommand, idUserInterfa
 				guiValue = 0;
 				break;
 			case idMultiplayerGame::VOTE_GAMETYPE_TOURNEY:
-				guiValue = 2;
+				guiValue = 1;
 				break;
 			case idMultiplayerGame::VOTE_GAMETYPE_TDM:
-				guiValue = 1;
+				guiValue = 2;
 				break;
 			case idMultiplayerGame::VOTE_GAMETYPE_CTF:
 				guiValue = 3;
@@ -3875,10 +4045,59 @@ void idGameLocal::HandleMainMenuCommands( const char *menuCommand, idUserInterfa
 			case idMultiplayerGame::VOTE_GAMETYPE_ARENA_CTF:
 				guiValue = 4;
 				break;
+			case idMultiplayerGame::VOTE_GAMETYPE_DEADZONE:
+				guiValue = 5;
+				break;
 		}
 
 		gui->SetStateInt( "currentGametype", guiValue );
+	} else if ( !idStr::Icmp( menuCommand, "filterByNextMod" ) ) {
+		BuildModList();
+
+		if ( modList.Num() > 0 && (filterMod < 0 || filterMod >= modList.Num()) ) {
+			filterMod = 0;
+			networkSystem->UseSortFunction( filterByMod, true );
+			gui->SetStateString( "filterMod", modList[ filterMod ].c_str() );
+		} else {
+			++filterMod;
+			if ( filterMod < modList.Num() ) {
+				networkSystem->UseSortFunction( filterByMod, true );
+				gui->SetStateString( "filterMod", modList[ filterMod ].c_str() );
+			} else {
+				filterMod = -1;
+				networkSystem->UseSortFunction( filterByMod, false );
+				gui->SetStateString( "filterMod", common->GetLocalizedString( "#str_123008" ) );
+			}
+		}
+	} else if ( !idStr::Icmp( menuCommand, "filterByPrevMod" ) ) {
+		BuildModList();
+
+		if ( modList.Num() > 0 && (filterMod < 0 || filterMod >= modList.Num()) ) {
+			filterMod = modList.Num() - 1;
+			networkSystem->UseSortFunction( filterByMod, true );
+			gui->SetStateString( "filterMod", modList[ filterMod ].c_str() );
+		} else {
+			--filterMod;
+			if ( filterMod >= 0 ) {
+				networkSystem->UseSortFunction( filterByMod, true );
+				gui->SetStateString( "filterMod", modList[ filterMod ].c_str() );
+			} else {
+				filterMod = -1;
+				networkSystem->UseSortFunction( filterByMod, false );
+				gui->SetStateString( "filterMod", common->GetLocalizedString( "#str_123008" ) );
+			}
+		}
+	} else if ( !idStr::Icmp( menuCommand, "updateFilterByMod" ) ) {
+		if ( filterMod < 0 || filterMod >= modList.Num() ) {
+			gui->SetStateString( "filterMod", common->GetLocalizedString( "#str_123008" ) );
+		} else {
+			gui->SetStateString( "filterMod", modList[ filterMod ].c_str() );
+		}
+	} else if ( !idStr::Icmp( menuCommand, "server_clearSort" ) ) {
+		filterMod = -1;
+		gui->SetStateString( "filterMod", common->GetLocalizedString( "#str_123008" ) );
 	}
+
 	return;
 }
 
@@ -4388,14 +4607,18 @@ void idGameLocal::RegisterEntity( idEntity *ent ) {
 		Error( "idGameLocal::RegisterEntity: spawn count overflow" );
 	}
 
+	firstFreeIndex = Max( minSpawnIndex, firstFreeIndex );
+
 	if ( !spawnArgs.GetInt( "spawn_entnum", "0", spawn_entnum ) ) {
-		while( entities[firstFreeIndex] && firstFreeIndex < ENTITYNUM_MAX_NORMAL ) {
+		while ( entities[firstFreeIndex] && firstFreeIndex < ENTITYNUM_MAX_NORMAL ) {
 			firstFreeIndex++;
 		}
 		if ( firstFreeIndex >= ENTITYNUM_MAX_NORMAL ) {
 			Error( "no free entities" );
 		}
 		spawn_entnum = firstFreeIndex++;
+	} else {
+		assert( spawn_entnum < MAX_CLIENTS || spawn_entnum >= minSpawnIndex );
 	}
 
 	entities[ spawn_entnum ] = ent;
@@ -4440,6 +4663,19 @@ void idGameLocal::UnregisterEntity( idEntity *ent ) {
 // bdube: keep track of last time an entity was registered	
 	entityRegisterTime = time;
 // RAVEN END
+}
+
+/*
+===============
+idGameLocal::SkipEntityIndex
+===============
+*/
+void idGameLocal::SkipEntityIndex( void ) {
+	assert( entities[ firstFreeIndex ] == NULL );
+	firstFreeIndex++;
+	if ( firstFreeIndex >= ENTITYNUM_MAX_NORMAL ) {
+		Error( "no free entities" );
+	}
 }
 
 /*
@@ -4784,6 +5020,32 @@ bool idGameLocal::InhibitEntitySpawn( idDict &spawnArgs ) {
 	}
 // RAVEN END
 
+// RITUAL BEGIN
+// squirrel: suppress ents that aren't supported in Buying modes (if that's the mode we're in)
+	if ( mpGame.IsBuyingAllowedInTheCurrentGameMode() ) {
+		if ( spawnArgs.GetBool( "disableSpawnInBuying", "0" ) ) {
+			return true;
+		}
+
+		/// Don't spawn weapons or armor vests or ammo in Buying modes
+		idStr classname = spawnArgs.GetString( "classname" );
+		if( idStr::FindText( classname, "weapon_" ) == 0 || 
+			idStr::FindText( classname, "item_armor_small" ) == 0 ||
+			idStr::FindText( classname, "ammo_" ) == 0 ||
+			idStr::FindText( classname, "item_armor_large" ) == 0 )
+		{
+			return true;
+		}
+	}
+// RITUAL END
+
+	// suppress deadzone triggers if we're not running DZ
+	if ( idStr::Icmp( serverInfo.GetString( "si_gameType" ), "DeadZone" ) != 0 ) {
+		if ( idStr::Icmp( spawnArgs.GetString( "classname" ), "trigger_controlzone" ) == 0 ) {
+			return true;
+		}
+	}
+
 	return result;
 }
 
@@ -4837,6 +5099,8 @@ void idGameLocal::SpawnMapEntities( int instance, unsigned short* entityNumIn, u
 	idDict		args;
 	idDict		items;
 
+	bool		proto69 = ( GetCurrentDemoProtocol() == 69 );
+
 	Printf( "Spawning entities\n" );
 	
 	TIME_THIS_SCOPE( __FUNCLINE__);
@@ -4861,7 +5125,7 @@ void idGameLocal::SpawnMapEntities( int instance, unsigned short* entityNumIn, u
 
 	// the worldspawn is a special that performs any global setup
 	// needed by a level
-	if( ( gameLocal.isServer && instance == 0 && gamestate == GAMESTATE_STARTUP ) || (gameLocal.isClient && gamestate == GAMESTATE_STARTUP) || !gameLocal.isMultiplayer ) { 
+	if ( ( gameLocal.isServer && instance == 0 && gamestate == GAMESTATE_STARTUP ) || ( gameLocal.isClient && gamestate == GAMESTATE_STARTUP ) || !gameLocal.isMultiplayer ) { 
 		mapEnt = mapFile->GetEntity( 0 );
 		args = mapEnt->epairs;
 		args.SetInt( "spawn_entnum", ENTITYNUM_WORLD );
@@ -4882,7 +5146,7 @@ void idGameLocal::SpawnMapEntities( int instance, unsigned short* entityNumIn, u
 		num++;
 
 // bdube: dummy entity for client entities with physics
-		args.Clear ( );
+		args.Clear();
 		args.SetInt( "spawn_entnum", ENTITYNUM_CLIENT );
 // jnewquist: Use accessor for static class type 
 		if ( !SpawnEntityType( rvClientPhysics::GetClassType(), &args, true ) || !entities[ ENTITYNUM_CLIENT ] ) {	
@@ -4896,17 +5160,15 @@ void idGameLocal::SpawnMapEntities( int instance, unsigned short* entityNumIn, u
 		isMapEntity[ ENTITYNUM_CLIENT ] = true;
 		isMapEntity[ ENTITYNUM_WORLD ] = true;
 // RAVEN END
-	} 
+	}
 
 	// capture spawn count of start of map entities (after we've spawned in the physics ents)
-	if( startSpawnCount ) {
+	if ( startSpawnCount ) {
 		(*startSpawnCount) = spawnCount;
 	}
 
 	for ( i = 1 ; i < numEntities ; i++ ) {
-//		if ( (i % 100) == 0 ) {
-//			PACIFIER_UPDATE;
-//		}
+
 		mapEnt = mapFile->GetEntity( i );
 		args = mapEnt->epairs;
 
@@ -4923,7 +5185,6 @@ void idGameLocal::SpawnMapEntities( int instance, unsigned short* entityNumIn, u
 
 		if ( !InhibitEntitySpawn( args ) ) {
 
-#ifndef _XENON			
 			if( args.GetBool( "inv_item" ) ) {
 				if( !items.GetBool( args.GetString( "inv_icon" ) ) ) {
 					networkSystem->AddLoadingIcon( args.GetString( "inv_icon" ) );
@@ -4931,11 +5192,11 @@ void idGameLocal::SpawnMapEntities( int instance, unsigned short* entityNumIn, u
 					items.SetBool( args.GetString( "inv_icon" ), true );
 				}
 			}
-#endif
+
 			// precache any media specified in the map entity
 			CacheDictionaryMedia( &args );
 // RAVEN BEGIN
-			if( instance != 0 ) {
+			if ( instance != 0 ) {
 // ddynerman: allow this function to be called multiple-times to respawn map entities in other instances
 				args.SetInt( "instance", instance );
 				args.Set( "name", va( "%s_instance%d", args.GetString( "name" ), instance ) );
@@ -4966,30 +5227,31 @@ void idGameLocal::SpawnMapEntities( int instance, unsigned short* entityNumIn, u
 				}
 			}
 
-			if( entityNumIn ) {
-				if( entityNumIn[ i ] < 0 || entityNumIn[ i ] >= MAX_GENTITIES ) {
+			// backward compatible 1.2 playback: proto69 reads the entity mapping list from the server
+			// only 1.2 backward replays should get passed a != NULL entityNumIn
+			assert( entityNumIn == NULL || proto69 );
+			if ( proto69 && entityNumIn ) {
+				assert( gameLocal.isClient );
+				if ( entityNumIn[ i ] < 0 || entityNumIn[ i ] >= MAX_GENTITIES ) {
 					// this entity was not spawned in on the server, ignore it here
-					if( gameLocal.isClient ) {
-						inhibit++;
-						continue;
-					} else {
-						// on the server, this is an error
-						gameLocal.Error( "idGameLocal::SpawnMapEntities() - Trying to spawn a map entity with number -1 on the server\n" );
-						break;
-					}
-
+					// this is one of the symptoms of net corruption <= 1.2 - fix here acted as a band aid
+					// if you replay a 1.2 netdemo and hit this, it's likely other things will go wrong in the replay
+					common->Warning( "entity inhibited on server not properly inhibited on client - map ent %d ( %s )", i, args.GetString( "name" ) );
+					inhibit++;
+					continue;
 				}
 				args.SetInt( "spawn_entnum", entityNumIn[ i ] );
 			}
 
 			idEntity* ent = NULL;
 			SpawnEntityDef( args, &ent );
+			//common->Printf( "pop: spawn map ent %d at %d ( %s )\n", i, ent->entityNumber, args.GetString( "name" ) );
 	
-			if( ent && entityNumOut ) {
+			if ( ent && entityNumOut ) {
 				entityNumOut[ i ] = ent->entityNumber;
 			}
 
-			if( gameLocal.GetLocalPlayer() && ent && gameLocal.isServer && instance != gameLocal.GetLocalPlayer()->GetInstance() ) {
+			if ( gameLocal.GetLocalPlayer() && ent && gameLocal.isServer && instance != gameLocal.GetLocalPlayer()->GetInstance() ) {
 				// if we're spawning entities not in our instance, tell them not to draw
 				ent->BecomeInactive( TH_UPDATEVISUALS );
 			}
@@ -5000,13 +5262,22 @@ void idGameLocal::SpawnMapEntities( int instance, unsigned short* entityNumIn, u
 // RAVEN END
 			num++;
 		} else {
+			if ( !proto69 ) {
+				// keep counting and leave an empty slot in the entity list for inhibited entities
+				// this so we maintain the same layout as the server and don't change it across restarts with different inhibit schemes
+				//common->Printf( "pop: skip map ent %d at index %d ( %s )\n", i, firstFreeIndex, args.GetString( "name" ) );
+				SkipEntityIndex();
+			} else {
+				// backward 1.2 netdemo replay compatibility - no skipping
+				// they might net corrupt but there's no fix client side
+				assert( isClient );
+			}
 			inhibit++;
 		}
 	}
 
 	Printf( "...%i entities spawned, %i inhibited\n\n", num, inhibit );
 }
-
 
 /*
 ================
@@ -5309,6 +5580,22 @@ bool idGameLocal::RequirementMet( idEntity *activator, const idStr &requires, in
 
 	return true;
 }
+
+
+/*
+================
+idGameLocal::IsWeaponsStayOn
+================
+*/
+bool idGameLocal::IsWeaponsStayOn( void ) {
+	/// Override weapons stay when buying is active
+	if( isMultiplayer && mpGame.IsBuyingAllowedInTheCurrentGameMode() ) {
+		return false;
+	}
+
+	return serverInfo.GetBool( "si_weaponStay" );
+}
+
 
 /*
 ============
@@ -6855,30 +7142,41 @@ idEntity* idGameLocal::SelectSpawnPoint( idPlayer* player ) {
 	idList<idPlayerStart*>* spawnArray = NULL;
 
 	// Pick which spawns to use based on gametype
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
 	if( gameLocal.gameType == GAME_DM || gameLocal.gameType == GAME_TDM || gameLocal.gameType == GAME_TOURNEY ) {
 		spawnArray = &spawnSpots;
-	} else if( IsFlagGameType() ) {	
+	} 
+	else if( IsFlagGameType() || gameLocal.gameType == GAME_DEADZONE ) {	
 		if( teamForwardSpawnSpots[ player->team ].Num() ) {
 			spawnArray = &teamForwardSpawnSpots[ player->team ];
 		} else {
 			spawnArray = &teamSpawnSpots[ player->team ];
 		}
 	}
+// RITUAL END
 
 	if ( spawnArray == NULL ) {
 		Error( "SelectSpawnPoint() - invalid spawn list." );
 		return NULL;
 	}
 
-	for( int i = 0; i < spawnArray->Num(); i++ ) {
+	idVec3 refPos;
+	if ( player->lastKiller != NULL && !player->lastKiller->spectating && player->lastKiller->GetInstance() == player->GetInstance() ) {
+		refPos = player->lastKiller->GetPhysics()->GetOrigin();
+	} else {
+		refPos = player->GetPhysics()->GetOrigin();
+	}
+
+	for ( int i = 0; i < spawnArray->Num(); i++ ) {
 		idPlayerStart* spot = (*spawnArray)[i];
 
-		if( spot->GetInstance() != player->GetInstance() || SpotWouldTelefrag( player, spot ) ) {
+		if ( spot->GetInstance() != player->GetInstance() || SpotWouldTelefrag( player, spot ) ) {
 			continue;
 		}
 
 		idVec3	pos = spot->GetPhysics()->GetOrigin();
-		float	dist = ( pos - player->GetPhysics()->GetOrigin() ).LengthSqr();
+		float	dist = ( pos - refPos ).LengthSqr();
 
 		spawnSpot_t	newSpot;
 		
@@ -6887,7 +7185,7 @@ idEntity* idGameLocal::SelectSpawnPoint( idPlayer* player ) {
 		weightedSpawns.Append( newSpot );
 	}
 
- 	if( weightedSpawns.Num() == 0 ) {
+	if ( weightedSpawns.Num() == 0 ) {
 		// no spawns avaialable, spawn randomly
 		common->DPrintf("no spawns avaialable, spawn randomly\n");
 		return (*spawnArray)[ random.RandomInt( spawnArray->Num() ) ];
@@ -6952,11 +7250,18 @@ void idGameLocal::ThrottleUserInfo( void ) {
 
 /*
 ===========
-idGameLocal::GetBestGameType
+idGameLocal::ValidateServerSettings
 ============
 */
-idStr idGameLocal::GetBestGameType( const char* map, const char* gametype ) {
-	return gametype;
+bool idGameLocal::ValidateServerSettings( const char* map, const char* gametype ) {
+	// PickMap uses si_map directly
+	// PickMap returns wether we would have to change the maps, which means settings are invalid
+	assert( !idStr::Icmp( si_map.GetString(), map ) );
+	if ( mpGame.PickMap( gametype, true ) ) {
+		common->Printf( "map '%s' and gametype '%s' are not compatible\n", map, gametype );
+		return false;
+	}
+	return true;
 }
 
 /*
@@ -7077,6 +7382,7 @@ rvClientEffect* idGameLocal::PlayEffect(
 	bool					loop, 
 	const idVec3&			endOrigin, 
 	bool					broadcast,
+	bool					predictBit,
 	effectCategory_t		category,
 	const idVec4&			effectTint ) {
 
@@ -7361,7 +7667,7 @@ idEntity* idGameLocal::HitScan(
 						if ( ent->IsType( idMover::GetClassType( ) ) ) {
 							ent->PlayEffect( GetEffect( hitscanDict, "fx_impact", tr.c.materialType ), collisionPoint, tr.c.normal.ToMat3(), false, vec3_origin, false, EC_IMPACT, hitscanTint );
 						} else {
-							gameLocal.PlayEffect( GetEffect( hitscanDict, "fx_impact", tr.c.materialType ), collisionPoint, tr.c.normal.ToMat3(), false, vec3_origin, false, EC_IMPACT, hitscanTint );
+							gameLocal.PlayEffect( GetEffect( hitscanDict, "fx_impact", tr.c.materialType ), collisionPoint, tr.c.normal.ToMat3(), false, vec3_origin, false, false, EC_IMPACT, hitscanTint );
 						}
 					}
 				}
@@ -7499,7 +7805,7 @@ idEntity* idGameLocal::HitScan(
 					if ( ent->IsType( idMover::GetClassType( ) ) ) {
 						ent->PlayEffect( GetEffect( hitscanDict, "fx_impact", tr.c.materialType ), collisionPoint, axis, false, vec3_origin, false, EC_IMPACT, hitscanTint );					
 					} else {
-						gameLocal.PlayEffect( GetEffect( hitscanDict, "fx_impact", tr.c.materialType ), collisionPoint, axis, false, vec3_origin, false, EC_IMPACT, hitscanTint );
+						gameLocal.PlayEffect( GetEffect( hitscanDict, "fx_impact", tr.c.materialType ), collisionPoint, axis, false, vec3_origin, false, false, EC_IMPACT, hitscanTint );
 					}
 				}
 			}
@@ -7837,7 +8143,7 @@ idGameLocal::GetWorldBounds
 const idBounds& idGameLocal::GetWorldBounds( const idEntity* ent ) const {
 	const idClip* clipWorld = GetEntityClipWorld( ent );
 	
-	if( clipWorld ) {
+	if ( clipWorld ) {
 		return clipWorld->GetWorldBounds();
 	}
 
@@ -7941,29 +8247,37 @@ idGameLocal::AddInstance
 ===================
 */
 int idGameLocal::AddInstance( int id, bool deferPopulate ) {
-	if( id == -1 ) {
+	if ( id == -1 ) {
 		id = instances.Num();
 	}
 
-	if( id >= instances.Num() ) {
+	if ( id >= instances.Num() ) {
 		// if we want an index higher in the list, fill the intermediate indices with empties
 		for( int i = instances.Num(); i <= id; i++ ) {
 			instances.Append( NULL );
 		}
 	}
 
-	if( instances[ id ] == NULL ) {
+	if ( instances[ id ] == NULL ) {
 // RAVEN BEGIN
 // mwhitlock: Dynamic memory consolidation
 		RV_PUSH_SYS_HEAP_ID(RV_HEAP_ID_LEVEL);
 		instances[ id ] = new rvInstance( id, deferPopulate );
 		RV_POP_HEAP();
 // RAVEN END
+
+		if ( !deferPopulate ) {
+			// keep track of the high watermark
+			ServerSetEntityIndexWatermark( id );
+		}
+
 		common->DPrintf( "idGameLocal::AddInstance(): Adding instance %d\n", instances[ id ]->GetInstanceID() );
 	} else {
 		common->DPrintf( "idGameLocal::AddInstance(): Instance %d already exists\n", instances[ id ]->GetInstanceID() );
 	}
 	
+	// keep the min spawn index correctly set
+	ServerSetMinSpawnIndex();
 	
 	return instances[ id ]->GetInstanceID();
 }
@@ -8088,6 +8402,21 @@ idUserInterface *idGameLocal::GetDemoCursor( void ) {
 		assert( demo_cursor );
 	}
 	return demo_cursor;
+}
+
+/*
+===============
+idGameLocal::IsTeamPowerups
+===============
+*/
+bool idGameLocal::IsTeamPowerups( void ) {
+	if ( !serverInfo.GetBool( "si_isBuyingEnabled" ) ) {
+		return false;
+	}
+	if ( !IsTeamGameType() ) {
+		return false;
+	}
+	return ( gameType != GAME_ARENA_CTF );
 }
 
 // RAVEN BEGIN

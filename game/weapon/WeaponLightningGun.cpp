@@ -45,6 +45,8 @@ public:
 	void					Save		( idSaveGame* savefile ) const;
 	void					Restore		( idRestoreGame* savefile );
 
+	bool			NoFireWhileSwitching( void ) const { return true; }
+
 protected:
 
 	void					UpdateTubes	( void );
@@ -340,12 +342,13 @@ void rvWeaponLightningGun::Attack ( idEntity* ent, const idVec3& dir, float powe
 		return;
 	}
 
-	// Start a lightning crawl effect every so often	
-	if ( gameLocal.time > nextCrawlTime ) {
-		if ( ent->IsType ( idActor::GetClassType() ) ) {
+	// Start a lightning crawl effect every so often
+	// we don't synchronize it, so let's not show it in multiplayer for a listen host. also fixes seeing it on the host from other instances
+	if ( !gameLocal.isMultiplayer && gameLocal.time > nextCrawlTime ) {
+		if ( ent->IsType( idActor::GetClassType() ) ) {
 			rvClientCrawlEffect* effect;
-			effect = new rvClientCrawlEffect ( gameLocal.GetEffect( weaponDef->dict, "fx_crawl" ), ent, SEC2MS( spawnArgs.GetFloat ( "crawlTime", ".2" ) ) );
-			effect->Play ( gameLocal.time, false );
+			effect = new rvClientCrawlEffect( gameLocal.GetEffect( weaponDef->dict, "fx_crawl" ), ent, SEC2MS( spawnArgs.GetFloat ( "crawlTime", ".2" ) ) );
+			effect->Play( gameLocal.time, false );
 		}
 	}	
 
@@ -355,7 +358,7 @@ void rvWeaponLightningGun::Attack ( idEntity* ent, const idVec3& dir, float powe
 		statManager->WeaponHit( (idActor*)owner, ent, owner->GetCurrentWeapon() );
 	}
 // RAVEN END
-	ent->Damage ( owner, owner, dir, spawnArgs.GetString ( "def_damage" ), power * owner->PowerUpModifier( PMOD_PROJECTILE_DAMAGE ), 0 );
+	ent->Damage( owner, owner, dir, spawnArgs.GetString ( "def_damage" ), power * owner->PowerUpModifier( PMOD_PROJECTILE_DAMAGE ), 0 );
 }
 
 /*
@@ -489,7 +492,7 @@ void rvWeaponLightningGun::UpdateChainLightning ( void ) {
 rvWeaponLightningGun::UpdateEffects
 ================
 */
-void rvWeaponLightningGun::UpdateEffects ( const idVec3& origin ) {
+void rvWeaponLightningGun::UpdateEffects( const idVec3& origin ) {
 	int					i;
 	rvLightningPath*	parent;
 	idVec3				dir;
@@ -710,21 +713,21 @@ stateResult_t rvWeaponLightningGun::State_Raise( const stateParms_t& parms ) {
 	switch ( parms.stage ) {
 		// Start the weapon raising
 		case STAGE_INIT:
-			SetStatus ( WP_RISING );
-			viewModel->SetShaderParm ( 6, 1 );
-			PlayAnim ( ANIMCHANNEL_ALL, "raise", parms.blendFrames );
-			return SRESULT_STAGE(STAGE_WAIT);
+			SetStatus( WP_RISING );
+			viewModel->SetShaderParm( 6, 1 );
+			PlayAnim( ANIMCHANNEL_ALL, "raise", parms.blendFrames );
+			return SRESULT_STAGE( STAGE_WAIT );
 		
 		// Wait for the weapon to finish raising and allow it to be cancelled by
 		// lowering the weapon 
 		case STAGE_WAIT:
-			if ( AnimDone ( ANIMCHANNEL_ALL, 4 ) ) {
-				SetState ( "Idle", 4 );
+			if ( AnimDone( ANIMCHANNEL_ALL, 4 ) ) {
+				SetState( "Idle", 4 );
 				return SRESULT_DONE;
 			}
 			if ( wsfl.lowerWeapon ) {
 				StopSound( SND_CHANNEL_BODY3, false );
-				SetState ( "Lower", 4 );
+				SetState( "Lower", 4 );
 				return SRESULT_DONE;
 			}
 			return SRESULT_WAIT;
@@ -745,20 +748,20 @@ stateResult_t rvWeaponLightningGun::State_Lower( const stateParms_t& parms ) {
 	};	
 	switch ( parms.stage ) {
 		case STAGE_INIT:
-			SetStatus ( WP_LOWERING );
+			SetStatus( WP_LOWERING );
 			PlayAnim( ANIMCHANNEL_ALL, "putaway", parms.blendFrames );
 			return SRESULT_STAGE(STAGE_WAIT);
 		
 		case STAGE_WAIT:
-			if ( AnimDone ( ANIMCHANNEL_ALL, 0 ) ) {
-				SetStatus ( WP_HOLSTERED );
+			if ( AnimDone( ANIMCHANNEL_ALL, 0 ) ) {
+				SetStatus( WP_HOLSTERED );
 				return SRESULT_STAGE(STAGE_WAITRAISE);
 			}
 			return SRESULT_WAIT;
 		
 		case STAGE_WAITRAISE:
 			if ( wsfl.raiseWeapon ) {
-				SetState ( "Raise", 0 );
+				SetState( "Raise", 0 );
 				return SRESULT_DONE;
 			}
 			return SRESULT_WAIT;
@@ -778,21 +781,21 @@ stateResult_t rvWeaponLightningGun::State_Idle( const stateParms_t& parms ) {
 	};	
 	switch ( parms.stage ) {
 		case STAGE_INIT:
-			SetStatus ( WP_READY );
-			PlayCycle ( ANIMCHANNEL_ALL, "idle", parms.blendFrames );
+			SetStatus( WP_READY );
+			PlayCycle( ANIMCHANNEL_ALL, "idle", parms.blendFrames );
 			StopSound( SND_CHANNEL_BODY3, false );
 			StartSound( "snd_idle_hum", SND_CHANNEL_BODY3, 0, false, NULL );
 
-			return SRESULT_STAGE ( STAGE_WAIT );
+			return SRESULT_STAGE( STAGE_WAIT );
 		
 		case STAGE_WAIT:
 			if ( wsfl.lowerWeapon ) {
 				StopSound( SND_CHANNEL_BODY3, false );
-				SetState ( "Lower", 4 );
+				SetState( "Lower", 4 );
 				return SRESULT_DONE;
 			}
 			if ( wsfl.attack && gameLocal.time > nextAttackTime && AmmoAvailable ( ) ) {
-				SetState ( "Fire", 4 );
+				SetState( "Fire", 4 );
 				return SRESULT_DONE;
 			}
 			return SRESULT_WAIT;
@@ -857,8 +860,8 @@ stateResult_t rvWeaponLightningGun::State_Fire( const stateParms_t& parms ) {
 			return SRESULT_STAGE( STAGE_DONEWAIT );
 			
 		case STAGE_DONEWAIT:
-			if ( AnimDone ( ANIMCHANNEL_ALL, 4 ) ) {
-				SetState ( "Idle", 4 );
+			if ( AnimDone( ANIMCHANNEL_ALL, 4 ) ) {
+				SetState( "Idle", 4 );
 				return SRESULT_DONE;
 			}
 			if ( !wsfl.lowerWeapon && wsfl.attack && AmmoAvailable ( ) ) {

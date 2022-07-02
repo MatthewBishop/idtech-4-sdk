@@ -138,12 +138,9 @@ public:
 	virtual void				ListModels( void ) = 0;
 								// Prints model information, use -1 for accumulated model info.
 	virtual void				ModelInfo( int num ) = 0;
-// RAVEN BEGIN
-// jscott: added for memory profiling
 	virtual void				PrintMemInfo( MemInfo *mi ) = 0;
-// cdr: AASTactical
 	virtual bool				IsLoaded( void ) = 0;
-// RAVEN END
+
 								// Writes a collision model file for the given map entity.
 	virtual bool				WriteCollisionModelForMapEntity( const idMapEntity *mapEnt, const char *filename, const bool testTraceModel = true ) = 0;
 };

@@ -17,7 +17,11 @@ All game cvars should be defined here.
 
 // RAVEN BEGIN
 // ddynerman: our gameplay modes
-const char *si_gameTypeArgs[]		= { "singleplayer", "DM", "Tourney", "Team DM", "CTF", "Arena CTF", NULL };
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
+const char *si_gameTypeArgs[]		= { "singleplayer", "DM", "Tourney", "Team DM", "CTF", "Arena CTF", "DeadZone", NULL };
+const int si_numGameTypeArgs = sizeof( si_gameTypeArgs ) / sizeof( si_gameTypeArgs[0] );
+// RITUAL END
 // RAVEN END
 const char *si_readyArgs[]			= { "Not Ready", "Ready", NULL }; 
 const char *si_spectateArgs[]		= { "Play", "Spectate", NULL };
@@ -28,7 +32,7 @@ const char *ui_teamArgs[]			= { "Marine", "Strogg", NULL };
 // RAVEN END
 
 struct gameVersion_s {
-	gameVersion_s( void ) { sprintf( string, "%s %s 1.0.%d%s %s %s %s", GAME_NAME, GAME_BUILD_TYPE, BUILD_NUMBER, BUILD_DEBUG, BUILD_STRING, __DATE__, __TIME__ ); }
+	gameVersion_s( void ) { sprintf( string, "%s %s V%s %s %s", GAME_NAME, GAME_BUILD_TYPE, VERSION_STRING_DOTTED, BUILD_STRING, __DATE__ ); }
 	char	string[256];
 } gameVersion;
 
@@ -40,9 +44,18 @@ idCVar gamedate(					"gamedate",					__DATE__,		CVAR_GAME | CVAR_ROM, "" );
 
 // server info
 idCVar si_name(						"si_name",					"Quake 4 Server",	CVAR_GAME | CVAR_SERVERINFO | PC_CVAR_ARCHIVE | CVAR_CASE_SENSITIVE | CVAR_SPECIAL_CONCAT, "name of the server" );
+// RITUAL BEGIN
+// squirrel: added DeadZone multiplayer mode
+//idCVar sq_numRoundsPerMatch(		"dz_numRoundsPerMatch",		"5",			CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_INTEGER, "number of rounds per match in DeadZone", 1, 999999 );
+//idCVar sq_buyFreezeSeconds(			"dz_buyFreezeSeconds",		"3",			CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_INTEGER, "number of seconds players are frozen at the start of each round in DeadZone", 0, 30 );
+//idCVar sq_buyTimeSeconds(			"dz_buyTimeSeconds",		"20",			CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_INTEGER, "number of additional seconds after buy freeze that buy zones are active", 0, 999999 );
+// squirrel: Mode-agnostic buymenus
+idCVar si_isBuyingEnabled(			"si_isBuyingEnabled",			"0",		CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_BOOL, "enable buying in current mode" );
+idCVar si_dropWeaponsInBuyingModes(	"si_dropWeaponsInBuyingModes",	"0",		CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_BOOL, "dead players drop weapons, even in Buying game modes" );
+// RITUAL END
 // RAVEN BEGIN
 // ddynerman: new gametype strings
-idCVar si_gameType(					"si_gameType",				si_gameTypeArgs[ 0 ],	CVAR_GAME | CVAR_SERVERINFO | PC_CVAR_ARCHIVE, "game type - singleplayer, DM, Team DM, CTF, Arena CTF, or Tourney", si_gameTypeArgs, idCmdSystem::ArgCompletion_String<si_gameTypeArgs> );
+idCVar si_gameType(					"si_gameType",				si_gameTypeArgs[ 0 ],	CVAR_GAME | CVAR_SERVERINFO | PC_CVAR_ARCHIVE, "game type - singleplayer, DM, Tourney, Team DM, CTF, Arena CTF, or DeadZone", si_gameTypeArgs, idCmdSystem::ArgCompletion_String<si_gameTypeArgs> );
 idCVar si_map(						"si_map",					"mp/q4dm1",				CVAR_GAME | CVAR_SERVERINFO | PC_CVAR_ARCHIVE, "map to be played next on server", idCmdSystem::ArgCompletion_MapName );
 idCVar si_mapCycle(					"si_mapCycle",				"",						CVAR_GAME | CVAR_SERVERINFO | PC_CVAR_ARCHIVE, "map cycle list semicolon delimited" );
 // bdube: raise player limit
@@ -86,6 +99,16 @@ idCVar si_countDown(				"si_countDown",				"10",			CVAR_GAME | CVAR_SERVERINFO |
 // MCG: added "weapon stay" option
 idCVar si_weaponStay(				"si_weaponStay",			"0",			CVAR_GAME | CVAR_SERVERINFO | CVAR_BOOL, "cannot pick up weapons you already have (get no ammo from them)" );
 // RAVEN END
+
+// RITUAL BEGIN
+// DeadZone Mode and Buying related CVARS
+idCVar si_deadZonePowerupTime(		"si_deadZonePowerupTime",		"45",			CVAR_GAME | CVAR_SERVERINFO | CVAR_INTEGER, "Amount of time the dead zone powerup lasts" );
+idCVar si_buyModeStartingCredits(	"si_buyModeStartingCredits",	"1000",			CVAR_GAME | CVAR_SERVERINFO | CVAR_INTEGER, "Amount of credits players start with in buying enable games" );
+idCVar si_buyModeMaxCredits(		"si_buyModeMaxCredits",			"25000",		CVAR_GAME | CVAR_SERVERINFO | CVAR_INTEGER, "Maximum amount of credits in buying enable games" );
+idCVar si_buyModeMinCredits(		"si_buyModeMinCredits",			"0",			CVAR_GAME | CVAR_SERVERINFO | CVAR_INTEGER, "Minimum amount of credits in buying enable games" );
+idCVar si_controlTime(				"si_controlTime",				"120",			CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_INTEGER, "Time required to hold the dead zone", 1, 999 );
+// RITUAL END
+
 
 // user info
 idCVar ui_name(						"ui_name",					"Player",		CVAR_GAME | CVAR_USERINFO | PC_CVAR_ARCHIVE | CVAR_CASE_SENSITIVE | CVAR_SPECIAL_CONCAT, "player name" );
@@ -576,18 +599,14 @@ idCVar g_perfTest_noProjectiles(			"g_perfTest_noProjectiles",			"0",			CVAR_GAM
 
 idCVar g_clientProjectileCollision(			"g_clientProjectileCollision",		"1",			CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT, "allow the client to predict collisions" );
 
-// jnewquist: Not using DLLs on Xenon
-// TTimo: bad f*g aliasing for no good reason
-#ifdef GAME_DLL
-idCVar r_shadows( "r_shadows", "1", CVAR_RENDERER | CVAR_BOOL  | CVAR_ARCHIVE, "enable shadows" );
-#endif
-// RAVEN END
-
 idCVar net_serverDownload(			"net_serverDownload",		"0",			CVAR_GAME | CVAR_INTEGER | CVAR_ARCHIVE, "enable server download redirects. 0: off 1: client exits and opens si_serverURL in web browser 2: client downloads pak files from an URL and connects again. See net_serverDl* cvars for configuration" );
 idCVar net_serverDlBaseURL(			"net_serverDlBaseURL",		"",				CVAR_GAME | CVAR_ARCHIVE, "base URL for the download redirection" );
 idCVar net_serverDlTable(			"net_serverDlTable",		"",				CVAR_GAME | CVAR_ARCHIVE, "pak names for which download is provided, seperated by ; - use a * to mark all paks" );
 
 idCVar si_serverURL(				"si_serverURL",				"",				CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE, "server information page" );
+
+
+idCVar net_warnStale( "net_warnStale", "1", CVAR_INTEGER | CVAR_GAME | CVAR_NOCHEAT, "Warn stale entity occurences on network client - == 1: only on ClientStale call, > 1 all times" );
 
 // RAVEN BEGIN
 // bdube: cvar helps

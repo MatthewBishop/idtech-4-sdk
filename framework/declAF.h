@@ -256,6 +256,7 @@ private:
 class rvDeclAFEdit
 {
 public:
+	virtual ~rvDeclAFEdit() { }
 	virtual bool 			Save( idDeclAF *edit ) = 0;
 	virtual void 			NewBody( idDeclAF *edit, char const *name ) = 0;
 	virtual void 			RenameBody( idDeclAF *edit, char const *oldName, char const *newName ) = 0;

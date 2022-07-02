@@ -20,7 +20,7 @@ rvInstance::rvInstance( int id, bool deferPopulate ) {
 
 	initialSpawnCount = idGameLocal::INITIAL_SPAWN_COUNT;
 
-	if( !deferPopulate ) {
+	if ( !deferPopulate ) {
 		Populate();
 	}
 }
@@ -28,19 +28,23 @@ rvInstance::rvInstance( int id, bool deferPopulate ) {
 rvInstance::~rvInstance() {
 	if ( mapEntityNumbers ) {
 		delete[] mapEntityNumbers;
-		mapEntityNumbers = 0;
+		mapEntityNumbers = NULL;
 	}
 	gameLocal.RemoveClipWorld( instanceID );
 }
 
-void rvInstance::Populate( void ) {
+void rvInstance::Populate( int serverChecksum ) {
 	gameState_t currentState = gameLocal.GameState();
 	
-	if( currentState != GAMESTATE_STARTUP ) {
+	// disable the minSpawnIndex lock out
+	int latchMinSpawnIndex = gameLocal.minSpawnIndex;
+	gameLocal.minSpawnIndex = MAX_CLIENTS;
+
+	if ( currentState != GAMESTATE_STARTUP ) {
 		gameLocal.SetGameState( GAMESTATE_RESTART );
 	}
 
-	if( gameLocal.isServer ) {
+	if ( gameLocal.isServer ) {
 		// When populating on a server, record the entity numbers	
 		numMapEntities = gameLocal.GetNumMapEntities();
 
@@ -54,13 +58,15 @@ void rvInstance::Populate( void ) {
 
 		memset( mapEntityNumbers, -1, sizeof( unsigned short ) * numMapEntities );
 
-		// Spawn the map entities for this instance and capture their entity numbers
+		// read the index we should start populating at as transmitted by the server
+		gameLocal.firstFreeIndex = gameLocal.GetStartingIndexForInstance( instanceID );
+		//common->Printf( "pos: get starting index for instance %d sets firstFreeIndex to %d\n", instanceID, gameLocal.firstFreeIndex );
 
 		// remember the spawnCount ahead of time, so that the client can accurately reconstruct its spawnIds
 		gameLocal.SpawnMapEntities( spawnInstanceID, NULL, mapEntityNumbers, &initialSpawnCount );
 
 		// only build the message in MP
-		if( gameLocal.isMultiplayer ) {
+		if ( gameLocal.isMultiplayer ) {
 			BuildInstanceMessage();
 
 			// force joins of anyone in our instance so they get potentially new map entitynumbers
@@ -73,20 +79,46 @@ void rvInstance::Populate( void ) {
 			}
 		}
 	} else {
-		// When populating on a client, spawn the map using existing numbers
-		
+		bool proto69 = ( gameLocal.GetCurrentDemoProtocol() == 69 );
+
+		// When populating on a client, spawn the map using existing numbers		
 		// check for good state
 		// OK to spawn w/o specific entity numbers if we're in the startup process.  Otherwise, 
 		// we need entity numbers from the server.
-		assert( mapEntityNumbers || ( instanceID == 0 && gameLocal.GameState() == GAMESTATE_STARTUP ) );
+		// TTimo: only valid for backward 1.2 playback now
+		assert( !proto69 || ( mapEntityNumbers || ( instanceID == 0 && gameLocal.GameState() == GAMESTATE_STARTUP ) ) );
 		
-		gameLocal.SetSpawnCount( initialSpawnCount );
-		gameLocal.SpawnMapEntities( spawnInstanceID, mapEntityNumbers, NULL );
+		if ( !proto69 ) {
+			// have the client produce a log of the entity layout so we can match it with the server's
+			// this is also going to be used to issue the EV_FindTargets below
+			if ( mapEntityNumbers ) {
+				delete []mapEntityNumbers;
+			}
+			numMapEntities = gameLocal.GetNumMapEntities();
+			RV_PUSH_SYS_HEAP_ID(RV_HEAP_ID_LEVEL);
+			mapEntityNumbers = new unsigned short[ numMapEntities ];
+			RV_POP_HEAP();
+			memset( mapEntityNumbers, -1, sizeof( unsigned short ) * numMapEntities );
+		}
+
+		gameLocal.firstFreeIndex = gameLocal.GetStartingIndexForInstance( instanceID );
+
+		gameLocal.SetSpawnCount( initialSpawnCount ); // that was transmitted through the instance msg
+		if ( proto69 ) {
+			gameLocal.SpawnMapEntities( spawnInstanceID, mapEntityNumbers, NULL );
+		} else {
+			gameLocal.SpawnMapEntities( spawnInstanceID, NULL, mapEntityNumbers );
+			LittleRevBytes( mapEntityNumbers, sizeof(unsigned short ), numMapEntities ); //DAJ
+			int checksum = MD5_BlockChecksum( mapEntityNumbers, sizeof( unsigned short ) * numMapEntities );
+			if ( serverChecksum != 0 && checksum != serverChecksum ) {
+				common->Error( "client side map populate checksum ( 0x%x ) doesn't match server's ( 0x%x )", checksum, serverChecksum );
+			}
+		}
 	}
 
 
-	for( int i = 0; i < numMapEntities; i++ ) {
-		if( mapEntityNumbers[ i ] < 0 || mapEntityNumbers[ i ] >= MAX_GENTITIES ) {
+	for ( int i = 0; i < numMapEntities; i++ ) {
+		if ( mapEntityNumbers[ i ] < 0 || mapEntityNumbers[ i ] >= MAX_GENTITIES ) {
 			continue;
 		}
 
@@ -96,40 +128,53 @@ void rvInstance::Populate( void ) {
 
 		idEntity* ent = gameLocal.entities[ mapEntityNumbers[ i ] ];
 
-		if( ent ) {
+		if ( ent ) {
 			ent->PostEventMS( &EV_FindTargets, 0 );
 			ent->PostEventMS( &EV_PostSpawn, 0 );
 		}
 	}
 
-	if( currentState != GAMESTATE_STARTUP ) {
+	if ( currentState != GAMESTATE_STARTUP ) {
 		gameLocal.SetGameState( currentState );
 	}
+
+	// re-enable the min spawn index
+	assert( latchMinSpawnIndex == MAX_CLIENTS || gameLocal.firstFreeIndex <= latchMinSpawnIndex );
+	gameLocal.minSpawnIndex = latchMinSpawnIndex;
 }
 
 void rvInstance::PopulateFromMessage( const idBitMsg& msg ) {
-	numMapEntities = msg.ReadShort();
+	bool proto69 = ( gameLocal.GetCurrentDemoProtocol() == 69 );
+
+	if ( proto69 ) {
+		numMapEntities = msg.ReadShort();
+	}
 	initialSpawnCount = msg.ReadShort();
 
 	delete[] mapEntityNumbers;
+	mapEntityNumbers = NULL;
 
-// RAVEN BEGIN
-// mwhitlock: Dynamic memory consolidation
-	RV_PUSH_SYS_HEAP_ID(RV_HEAP_ID_LEVEL);
-	mapEntityNumbers = new unsigned short[ numMapEntities ];
-	RV_POP_HEAP();
-// RAVEN END
-	memset( mapEntityNumbers, -1, sizeof( unsigned short ) * numMapEntities );
+	if ( proto69 ) {
+		RV_PUSH_SYS_HEAP_ID(RV_HEAP_ID_LEVEL);
+		mapEntityNumbers = new unsigned short[ numMapEntities ];
+		RV_POP_HEAP();
+		memset( mapEntityNumbers, -1, sizeof( unsigned short ) * numMapEntities );
 
-	for( int i = 0; i < numMapEntities; i++ ) {
-		mapEntityNumbers[ i ] = msg.ReadShort();
+		for ( int i = 0; i < numMapEntities; i++ ) {
+			mapEntityNumbers[ i ] = msg.ReadShort();
+		}
+		Populate();
+	} else {
+		int populateIndex = msg.ReadLong();
+		gameLocal.ClientSetStartingIndex( populateIndex );
+		//common->Printf( "pos: set firstFreeIndex to %d\n", populateIndex );
+		int checksum = msg.ReadLong();
+		Populate( checksum );
 	}
-
-	Populate();
 }
 
 void rvInstance::Restart( void ) {
-	if( gameLocal.isMultiplayer ) {
+	if ( gameLocal.isMultiplayer ) {
 		Populate();
 	} else {
 		gameLocal.SpawnMapEntities();
@@ -143,12 +188,14 @@ void rvInstance::BuildInstanceMessage( void ) {
 	mapEntityMsg.WriteByte( GAME_RELIABLE_MESSAGE_SET_INSTANCE );
 
 	mapEntityMsg.WriteByte( instanceID );
-	mapEntityMsg.WriteShort( numMapEntities );
 	mapEntityMsg.WriteShort( initialSpawnCount );
+	// we need to send that down for tourney so the index will match
+	mapEntityMsg.WriteLong( gameLocal.GetStartingIndexForInstance( instanceID ) );
 
-	for( int i = 0; i < numMapEntities; i++ ) {
-		mapEntityMsg.WriteShort( mapEntityNumbers[ i ] );
-	}
+	LittleRevBytes( mapEntityNumbers, sizeof(unsigned short ), numMapEntities ); //DAJ
+	int checksum = MD5_BlockChecksum( mapEntityNumbers, sizeof( unsigned short ) * numMapEntities );
+	//common->Printf( "pop: server checksum: 0x%x\n", checksum );
+	mapEntityMsg.WriteLong( checksum );
 }
 
 void rvInstance::JoinInstance( idPlayer* player ) {

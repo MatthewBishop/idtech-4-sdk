@@ -1758,6 +1758,7 @@ idMover::WriteToSnapshot
 ================
 */
 void idMover::WriteToSnapshot( idBitMsgDelta &msg ) const {
+	msg.WriteBits( ( ( thinkFlags & TH_PHYSICS ) != 0 ), 1 );
 	physicsObj.WriteToSnapshot( msg );
 	msg.WriteBits( move.stage, 3 );
 	msg.WriteBits( rot.stage, 3 );
@@ -1773,6 +1774,18 @@ idMover::ReadFromSnapshot
 void idMover::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 	moveStage_t oldMoveStage = move.stage;
 	moveStage_t oldRotStage = rot.stage;
+
+	bool proto69 = ( gameLocal.GetCurrentDemoProtocol() == 69 );
+	if ( !proto69 ) {
+		// sync down the TH_PHYSICS flag for movers, now that we skip ClientPredictionThink when thinkFlags == 0 and no longer force TH_PHYSICS on
+		// movers still have prediction issues though, they predict a stop and clear TH_PHYSICS too early
+		bool physics_on = ( msg.ReadBits( 1 ) != 0 );
+		if ( physics_on ) {
+			thinkFlags |= TH_PHYSICS;
+		} else {
+			thinkFlags &= ~TH_PHYSICS;
+		}
+	}
 
 	physicsObj.ReadFromSnapshot( msg );
 	move.stage = (moveStage_t) msg.ReadBits( 3 );

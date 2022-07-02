@@ -11,7 +11,7 @@
 */
 
 class idSIMD_MMX : public idSIMD_Generic {
-#ifdef _WIN32
+#if defined( _WIN32 ) || defined( __linux__ )
 public:
 	virtual const char * VPCALL GetName( void ) const;
 

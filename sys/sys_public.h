@@ -41,6 +41,8 @@
 // Mac OSX
 #if defined(MACOS_X) || defined(__APPLE__)
 
+#include <sys/types.h>
+
 #if __GNUC__ < 4
 #include "osx/apple_bool.h"
 #endif
@@ -102,109 +104,6 @@
 #define ID_STATIC_TEMPLATE
 
 #define assertmem( x, y )
-
-#endif
-
-// Xenon
-#ifdef _XENON
-
-#define	BUILD_STRING					"Xenon-ppc"
-#define BUILD_OS_ID						3	//fixme if id ever addes in apple i386 or linux ppc defines
-#define CPUSTRING						"ppc"
-
-#define _alloca16( x )					((void *)((((int)_alloca( (x)+15 )) + 15) & ~15))
-
-#define ALIGN16( x )					x
-#define PACKED							
-
-#define __cdecl
-#define ASSERT							assert
-
-#define ID_INLINE						inline
-#define ID_STATIC_TEMPLATE
-
-#define assertmem( x, y )
-
-class idCmdArgs;
-extern void Com_DoNothing( const idCmdArgs &args );
-
-#ifndef _FINAL
-
-	// Memory tracking helpers
-	namespace MemTracker {
-		// Dummy func so the command system doesnt barf on startup
-		extern void Com_DumpAllocInfo( const idCmdArgs &args );
-		extern void OnAlloc( void *mem, size_t size );
-		extern void OnDelete( void *mem );
-		extern void Init();
-		extern void BeginFrame();
-		extern void EndFrame();
-		extern void Enable( bool enabled );
-		
-		// Tag tracking
-		extern int PushTag( int tag ); // Returns a safe int value that can be used to pop the tag
-		extern int PushTag( const char* tag );  // Returns a safe int value that can be used to pop the tag
-		extern void PopTag( int tag );
-		extern void PopTag( const char* tag );
-	
-		// Helper class for automagic tracking
-		class AutoPushPop 
-		{
-			int mPopVal;
-		public:
-			AutoPushPop( const char* name ) 
-			{
-				mPopVal = PushTag( name );
-			}
-			
-			AutoPushPop( int tag ) 
-			{
-				mPopVal = PushTag( tag );
-			}
-			
-			~AutoPushPop() 
-			{
-				PopTag( mPopVal );
-			}
-			
-			// You can force it to pop as well
-			void Pop() 
-			{
-				PopTag( mPopVal );
-				mPopVal = 0xffffffff;
-			}
-		};
-	
-	};
-
-	#define MEMTRACKER_INDIRECT(F, X) F(X)
-	#define MEMTRACKER_STRINGIZE(X) #X
-	#define MEMTRACKER_LINESTR MEMTRACKER_INDIRECT(MEMTRACKER_STRINGIZE, __LINE__)
-
-	#define MEM_TRACK(X) \
-		MemTracker::AutoPushPop __FILE__##MEMTRACKER_LINESTR##_autoPushPop(X);
-	/**/
-	
-	#define MEM_PUSH_TAG(X) \
-		MemTracker::PushTag(X);
-	/**/
-	
-	#define MEM_POP_TAG(X) \
-		MemTracker::PopTag(X);
-	/**/
-
-#else
-
-	#define MEM_TRACK(X) \
-	/**/
-	
-	#define MEM_PUSH_TAG(X) \
-	/**/
-	
-	#define MEM_POP_TAG(X) \
-	/**/
-
-#endif
 
 #endif
 
@@ -347,6 +246,17 @@ typedef unsigned long address_t;
 
 template<class type> class idList;		// for Sys_ListFiles
 
+struct sysTime_t {
+	int tm_sec;     /* seconds after the minute - [0,59] */
+	int tm_min;     /* minutes after the hour - [0,59] */
+	int tm_hour;    /* hours since midnight - [0,23] */
+	int tm_mday;    /* day of the month - [1,31] */
+	int tm_mon;     /* months since January - [0,11] */
+	int tm_year;    /* years since 1900 */
+	int tm_wday;    /* days since Sunday - [0,6] */
+	int tm_yday;    /* days since January 1 - [0,365] */
+	int tm_isdst;   /* daylight savings time flag */
+};
 
 void			Sys_Init( void );
 void			Sys_Shutdown( void );
@@ -501,6 +411,9 @@ const char *	Sys_DefaultBasePath( void );
 const char *	Sys_DefaultSavePath( void );
 const char *	Sys_EXEPath( void );
 
+// for getting current system (real world) time
+int				Sys_RealTime( sysTime_t* sysTime );
+
 // use fs_debug to verbose Sys_ListFiles
 // returns -1 if directory was not found (the list is cleared)
 int				Sys_ListFiles( const char *directory, const char *extension, idList<class idStr> &list );
@@ -525,8 +438,9 @@ typedef enum {
 	NA_IP,
 // RAVEN BEGIN
 // rjohnson: add fake clients
-	NA_FAKE
+	NA_FAKE,
 // RAVEN END
+	NA_GAME,				// bots, etc
 } netadrtype_t;
 
 typedef struct {
@@ -622,10 +536,70 @@ idPort::GetSilent
 */
 ID_INLINE bool idPort::GetSilent( void ) const { return silent; }
 
+class idTCP;
+class idTCPServer;
+
+const int IDPOLL_READ	= (1<<0);
+const int IDPOLL_WRITE	= (1<<1);
+const int IDPOLL_ERROR	= (1<<2);
+
+class idPoller {
+public:
+				idPoller();
+
+	void		Clear( void );
+
+	// will replace existing entries
+	void		Add( int fd, int which = IDPOLL_READ );
+	void		Add( const idTCP &tcp, int which = IDPOLL_READ );
+	void		Add( const idTCPServer &tcp, int which = IDPOLL_READ );
+
+	void		Remove( int fd ) { Add(fd, 0); }
+	void		Remove( const idTCP &tcp ) { Add(tcp, 0); }
+	void		Remove( const idTCPServer &serv ) { Add(serv, 0); }
+
+	// returns IDPOLL_ flags
+	int			Check( int fd );
+	int			Check( const idTCP &tcp );
+	int			Check( const idTCPServer &serv );
+
+	// returns the number of fds set, timeout is in ms, <0 is forever
+	int			Poll( int timeout = -1 );
+
+private:
+	int			max_fd;
+	fd_set		readfds, writefds, exceptfds;
+	fd_set		rreadfds, rwritefds, rexceptfds;
+};
+
+class idTCPServer {
+public:
+				idTCPServer();
+	virtual		~idTCPServer();
+
+	bool		Listen( const char *net_interface, short port );
+	bool		Accept( idTCP &client );
+	void		Close();
+
+	const netadr_t &GetAddress( void ) const { return address; }
+
+private:
+	netadr_t	address;		// local address
+	int fd;
+
+	friend void idPoller::Add( const idTCPServer &serv, int which );
+	friend void idPoller::Remove( const idTCPServer &serv );
+	friend int idPoller::Check( const idTCPServer &serv );
+};
+
 class idTCP {
 public:
 				idTCP();
+				idTCP( const netadr_t &address, int fd );
+				idTCP( const idTCP &tcp );
 	virtual		~idTCP();
+
+	idTCP &		operator = (const idTCP &tcp);
 
 	// if host is host:port, the value of port is ignored
 	bool		Init( const char *host, short port );
@@ -636,11 +610,17 @@ public:
 	// there is no buffering, you are not guaranteed to Read or Write everything in a single call
 	// (specially on win32, see recv and send documentation)
 	int			Read( void *data, int size );
-	int			Write( void *data, int size );
+	int			Write( const void *data, int size );
+
+	const netadr_t &GetAddress( void ) const { return address; }
 
 private:
 	netadr_t	address;		// remote address
 	int			fd;				// OS specific socket
+
+	friend void idPoller::Add( const idTCP &tcp, int which );
+	friend void idPoller::Remove( const idTCP &tcp );
+	friend int idPoller::Check( const idTCP &tcp );
 };
 
 				// parses the port number
@@ -748,6 +728,7 @@ void				Sys_TriggerEvent( int index = TRIGGER_EVENT_ZERO );
 
 class idSys {
 public:
+	virtual ~idSys() { }
 	virtual void			DebugPrintf( const char *fmt, ... )id_attribute((format(printf,2,3))) = 0;
 	virtual void			DebugVPrintf( const char *fmt, va_list arg ) = 0;
 
@@ -821,6 +802,8 @@ public:
 
 	virtual void			OpenURL( const char *url, bool quit ) = 0;
 	virtual void			StartProcess( const char *exePath, bool quit ) = 0;
+
+	virtual int				GetGUID( char *buf, int buflen ) = 0;
 };
 
 extern idSys *				sys;

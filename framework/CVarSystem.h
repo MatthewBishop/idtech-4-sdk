@@ -79,6 +79,8 @@ typedef enum {
 	CVAR_NORESET			= BIT(20),	// don't reset the contents on cvar system restart
 	CVAR_CASE_SENSITIVE		= BIT(21),	// a change in case of the string contents sets the modified flag
 	CVAR_SPECIAL_CONCAT		= BIT(22),	// special concatination of the incoming string to the cvar system, will remove space between ^ and the code that is produced by tokenzier
+	CVAR_STRIPTRAILING		= BIT(23),	// always strip trailing / on that cvar
+	CVAR_REPEATERINFO		= BIT(24),	// sent from repeaters, available to menu
 } cvarFlags_t;
 
 
@@ -128,6 +130,9 @@ public:
 	void					SetFloat( const float value ) { internalVar->InternalSetFloat( value ); }
 
 	void					SetInternalVar( idCVar *cvar ) { internalVar = cvar; }
+
+	void					SetFlag( const cvarFlags_t flag ) { internalVar->flags |= flag; }
+	void					RemoveFlag( const cvarFlags_t flag ) { internalVar->flags &= ~flag; }
 
 	static void				RegisterStaticVars( void );
 

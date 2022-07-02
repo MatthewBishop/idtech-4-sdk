@@ -78,9 +78,14 @@ public:
 						// Adds to the command buffer in tokenized form ( CMD_EXEC_NOW or CMD_EXEC_APPEND only )
 	virtual void		BufferCommandArgs( cmdExecution_t exec, const idCmdArgs &args ) = 0;
 
+						// Restore these cvars when the next reloadEngine is done
+	virtual void		SetupCVarsForReloadEngine( const idDict &dict ) = 0;
 						// Setup a reloadEngine to happen on next command run, and give a command to execute after reload
 	virtual void		SetupReloadEngine( const idCmdArgs &args ) = 0;
 	virtual bool		PostReloadEngine( void ) = 0;
+
+						// There is a cache of the last completion operation that may need to be cleared sometimes
+	virtual void		ClearCompletion( void ) = 0;
 
 						// Default argument completion functions.
 	static void			ArgCompletion_Boolean( const idCmdArgs &args, void(*callback)( const char *s ) );
@@ -190,8 +195,9 @@ ID_INLINE void idCmdSystem::ArgCompletion_StandaloneVideoName( const idCmdArgs &
 }
 
 // rjohnson: netdemo completion
+extern char netDemoExtension[16];
 ID_INLINE void idCmdSystem::ArgCompletion_NetDemoName( const idCmdArgs &args, void(*callback)( const char *s ) ) {
-	cmdSystem->ArgCompletion_FolderExtension( args, callback, "demos/", true, ".netdemo", NULL );
+	cmdSystem->ArgCompletion_FolderExtension( args, callback, "demos/", true, netDemoExtension, NULL );
 }
 // RAVEN END
 

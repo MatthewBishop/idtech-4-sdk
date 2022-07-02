@@ -65,6 +65,7 @@ public:
 
 	void				Save( idSaveGame *savefile ) const;
 	void				Restore( idRestoreGame *savefile );
+	virtual void		Think( void );
 
 private:
 	float				wait;
@@ -79,8 +80,14 @@ private:
 	bool				touchVehicle;
 	bool				triggerFirst;
 	bool				triggerWithSelf;
+	int					buyZoneTrigger;
+	int					controlZoneTrigger;
+	int					prevZoneController;
+
+	idList<idPlayer*>	playersInTrigger;
 
 	bool				CheckFacing( idEntity *activator );
+	void				HandleControlZoneTrigger();
 
 // RAVEN BEGIN
 // kfuller: want trigger_relays entities to be able to respond to earthquakes

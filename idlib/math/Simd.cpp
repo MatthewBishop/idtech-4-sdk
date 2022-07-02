@@ -13,6 +13,9 @@
 #ifdef MACOS_X
 #include "Simd_AltiVec.h"
 #endif
+#ifdef __linux__
+#include "Simd_MMX.h"
+#endif
 #ifdef _XENON
 // RAVEN BEGIN
 // jsinger: Adding Xenon processor support
@@ -89,6 +92,10 @@ void idSIMD::InitProcessor( const char *module, bool forceGeneric ) {
 			} else if ( ( cpuid & CPUID_MMX ) ) {
 				processor = new idSIMD_MMX;
 #endif // _WINDOWS
+#if defined( __linux__ ) && defined( ID_GCC_X86_ASM )
+			} else if ( ( cpuid & CPUID_MMX ) ) {
+				processor = new idSIMD_MMX;
+#endif
 			} else {
 				processor = generic;
 			}

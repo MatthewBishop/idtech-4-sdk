@@ -411,7 +411,7 @@ void rvAnimatedClientEntity::UpdateAnimation( void ) {
 	// get the latest frame bounds
 	animator.GetBounds( gameLocal.time, renderEntity.bounds );
 	if ( renderEntity.bounds.IsCleared() ) {
-		gameLocal.DPrintf( "%d: inside out bounds\n", gameLocal.time );
+		gameLocal.DPrintf( "rvAnimatedClientEntity %s %d: inside out bounds - %d\n", GetClassname(), entityNumber, gameLocal.time );
 	}
 
 	// update the renderEntity

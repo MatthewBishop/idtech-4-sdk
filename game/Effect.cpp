@@ -104,12 +104,12 @@ void rvEffect::Think( void ) {
 rvEffect::Save
 ================
 */
-void rvEffect::Save ( idSaveGame *savefile ) const {
-	savefile->WriteBool ( loop );
-	savefile->WriteBool ( lookAtTarget );
-	savefile->WriteString ( effect->GetName() );
-	savefile->WriteVec3 ( endOrigin );
-	clientEffect.Save ( savefile );
+void rvEffect::Save( idSaveGame *savefile ) const {
+	savefile->WriteBool( loop );
+	savefile->WriteBool( lookAtTarget );
+	savefile->WriteString( effect->GetName() );
+	savefile->WriteVec3( endOrigin );
+	clientEffect.Save( savefile );
 }
 
 /*
@@ -117,15 +117,15 @@ void rvEffect::Save ( idSaveGame *savefile ) const {
 rvEffect::Restore
 ================
 */
-void rvEffect::Restore ( idRestoreGame *savefile ) {
+void rvEffect::Restore( idRestoreGame *savefile ) {
 	idStr	name;
 
-	savefile->ReadBool ( loop );
-	savefile->ReadBool ( lookAtTarget );
-	savefile->ReadString ( name );
+	savefile->ReadBool( loop );
+	savefile->ReadBool( lookAtTarget );
+	savefile->ReadString( name );
 	effect = declManager->FindType( DECL_EFFECT, name );
-	savefile->ReadVec3 ( endOrigin );
-	clientEffect.Restore ( savefile );
+	savefile->ReadVec3( endOrigin );
+	clientEffect.Restore( savefile );
 }
 
 /*

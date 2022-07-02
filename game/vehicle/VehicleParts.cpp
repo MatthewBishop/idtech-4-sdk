@@ -701,7 +701,7 @@ void rvVehicleWeapon::Spawn ( void ) {
 		brassDict = gameLocal.FindEntityDefDict( name, false );
 
 		if ( !brassDict ) {
-			gameLocal.Warning( "Unknown brass def '%s' for weapon on vehicle '%s'", name, position->mParent->name );
+			gameLocal.Warning( "Unknown brass def '%s' for weapon on vehicle '%s'", name.c_str(), position->mParent->name.c_str() );
 		}
 	}
 

@@ -1146,8 +1146,8 @@ void rvWeapon::InitWorldModel( void ) {
 rvWeapon::SetState
 ================
 */
-void rvWeapon::SetState ( const char *statename, int blendFrames ) {
-	stateThread.SetState ( statename, blendFrames );
+void rvWeapon::SetState( const char *statename, int blendFrames ) {
+	stateThread.SetState( statename, blendFrames );
 }
 
 /*
@@ -1155,8 +1155,8 @@ void rvWeapon::SetState ( const char *statename, int blendFrames ) {
 rvWeapon::PostState
 ================
 */
-void rvWeapon::PostState ( const char* statename, int blendFrames ) {
-	stateThread.PostState ( statename, blendFrames );
+void rvWeapon::PostState( const char* statename, int blendFrames ) {
+	stateThread.PostState( statename, blendFrames );
 }
 
 /*
@@ -1882,11 +1882,11 @@ void rvWeapon::OwnerDied( void ) {
 
 	CleanupWeapon();
 
-	ExecuteState ( "OwnerDied" );
+	ExecuteState( "OwnerDied" );
 
-	if( viewModel ) {
+	if ( viewModel ) {
 		viewModel->StopSound( SCHANNEL_ANY, false );
-		viewModel->StopAllEffects ( );
+		viewModel->StopAllEffects( );
 		viewModel->Hide();
 	}
 	if ( worldModel ) {
@@ -2314,7 +2314,7 @@ int rvWeapon::GetAmmoIndexForName( const char *ammoname ) {
 rvWeapon::GetAmmoNameForNum
 ================
 */
-const char* rvWeapon::GetAmmoNameForIndex ( int index ) {
+const char* rvWeapon::GetAmmoNameForIndex( int index ) {
 	int i;
 	int num;
 	const idDict *ammoDict;
@@ -2368,7 +2368,7 @@ rvWeapon::AmmoInClip
 */
 int rvWeapon::AmmoInClip( void ) const {
 	if ( !clipSize ) {
-		return AmmoAvailable ( );
+		return AmmoAvailable();
 	}
 	return ammoClip;
 }
@@ -2556,84 +2556,6 @@ void rvWeapon::Attack( bool altAttack, int num_attacks, float spread, float fuse
 		muzzleOrigin += playerViewAxis[0] * muzzleOffset;
 	}
 
-//RAVEN BEGIN
-//asalmon: auto-aim for Xenon
-#ifdef _XENON
-	
-	if ( AllowAutoAim() ) {
-	
-		idPlayer *player = GetOwner();
-		
-		// If we have a enemy selected, handle aim correction
-		if ( player->bestEnemy ) {
-
-			// Get the start and end pos as coming from the eye
-			idVec3 start = player->GetEyePosition();
-			idVec3 playerFwd = player->viewAngles.ToForward();
-			
-			float aimDist = cvarSystem->GetCVarInteger("pm_AimAssistDistance");
-			
-			idVec3 end = start + playerFwd * aimDist;
-			
-			// I actually need to trace into the geometry to determine if I need to correct aim or not
-			// This is only once per frame...so it should be not too evil
-			trace_t trace;
-			gameLocal.TracePoint( player, trace, start, end, MASK_SHOT_RENDERMODEL, player );
-			idEntity *traceEnt = gameLocal.GetTraceEntity( trace );
-
-			// If we did not hit our selected enemy, we may need to correct the aim
-			if ( traceEnt != player->bestEnemy ) {
-			
-				bool hitSomething = false;
-				// See if we hit another valid target - this should handle the case where you're trying to snipe through the bbox of another entity
-				for ( idActor *actor = aiManager.GetEnemyTeam ((aiTeam_t)player->team ); actor; actor = actor->teamNode.Next() ) {
-					if ( traceEnt == actor ) {
-						hitSomething = true;
-						break;
-					}
-				}
-				
-				// If we didn't hit anything, then we need to try and snap to a joint on the selected enemy
-				if ( !hitSomething && player && player->bestEnemy ) {
-					
-					// Transform start and end into the enemy's body space
-					idVec3 localStart = player->bestEnemy->GetRenderEntity()->axis / (start - player->bestEnemy->GetRenderEntity()->origin);
-					idVec3 localEnd = player->bestEnemy->GetRenderEntity()->axis / (end - player->bestEnemy->GetRenderEntity()->origin);
-
-					// TODO: Test vs a reduced list of joints
-					int numJoints = player->bestEnemy->GetAnimator()->NumJoints();
-					jointHandle_t nearJoint = player->bestEnemy->GetAnimator()->GetNearestJoint( localStart, localEnd, gameLocal.time, 0, numJoints );
-					
-					// If we found a valid joint to snap to...
-					if ( nearJoint > 0 ) {
-						idMat3 dummy;
-						player->bestEnemy->GetJointWorldTransform( nearJoint, gameLocal.time, end, dummy );
-					} else {
-						end = player->bestEnemy->GetRenderEntity()->origin;
-						end[2]+=32.0f;
-					}
-				}
-				
-				// Convert the vector in world space to the muzzle orientation
-				// FOV alone controls aim assist, the threshold is just confusing.
-				idVec3 toTarget = end - muzzleOrigin;
-					muzzleAxis = toTarget.ToAngles().ToMat3();
-				}
-			}
-		}
-
-/* disabled per Eric's request
-	if ( !gameLocal.IsMultiplayer() || (gameLocal.localClientNum == owner->entityNumber) ) {
-		extern void IN_RumblePlayer( int player, int leftSpeed, int rightSpeed, int rumbleTime );
-		int leftSpeed, rightSpeed, rumbleTime;
-		GetRumbleParms( leftSpeed, rightSpeed, rumbleTime );
-		IN_RumblePlayer( 0, leftSpeed, rightSpeed, rumbleTime );
-	}
-*/
-
-#endif
-//RAVEN END
-
 	// add some to the kick time, incrementally moving repeat firing weapons back
 	if ( kick_endtime < gameLocal.realClientTime ) {
 		kick_endtime = gameLocal.realClientTime;
@@ -2648,7 +2570,7 @@ void rvWeapon::Attack( bool altAttack, int num_attacks, float spread, float fuse
 
 	// quad damage overlays a sound
 	if ( owner->PowerUpActive( POWERUP_QUADDAMAGE ) ) {
-		viewModel->StartSound ( "snd_quaddamage", SND_CHANNEL_VOICE, 0, false, NULL );
+		viewModel->StartSound( "snd_quaddamage", SND_CHANNEL_VOICE, 0, false, NULL );
 	}
 
 	// Muzzle flash effect

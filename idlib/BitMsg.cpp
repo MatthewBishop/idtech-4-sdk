@@ -23,7 +23,6 @@ idBitMsg::idBitMsg() {
 	writeBit = 0;
 	readCount = 0;
 	readBit = 0;
-	numValueOverflows = 0;
 	allowOverflow = false;
 	overflowed = false;
 }
@@ -37,7 +36,7 @@ bool idBitMsg::CheckOverflow( int numBits ) {
 	assert( numBits >= 0 );
 	if ( numBits > GetRemainingWriteBits() ) {
 		if ( !allowOverflow ) {
-			idLib::common->FatalError( "idBitMsg: overflow without allowOverflow set" );
+			idLib::common->FatalError( va( "idBitMsg: overflow without allowOverflow set: %d > %d*8", GetNumBitsWritten()+numBits, GetMaxSize() ) );
 		}
 		if ( numBits > ( maxSize << 3 ) ) {
 			idLib::common->FatalError( "idBitMsg: %i bits is > full message size", numBits );
@@ -85,28 +84,28 @@ void idBitMsg::WriteBits( int value, int numBits ) {
 	int		fraction;
 
 	if ( !writeData ) {
-		idLib::common->FatalError( "idBitMsg::WriteBits: cannot write to message" );
+		idLib::common->Error( "idBitMsg::WriteBits: cannot write to message" );
 	}
 
 	// check if the number of bits is valid
 	if ( numBits == 0 || numBits < -31 || numBits > 32 ) {
-		idLib::common->FatalError( "idBitMsg::WriteBits: bad numBits %i", numBits );
+		idLib::common->Error( "idBitMsg::WriteBits: bad numBits %i", numBits );
 	}
 
 	// check for value overflows
 	if ( numBits != 32 ) {
 		if ( numBits > 0 ) {
 			if ( value > ( 1 << numBits ) - 1 ) {
-				numValueOverflows++;
+				idLib::common->Warning( "idBitMsg::WriteBits: value overflow %d %d", value, numBits );
 			} else if ( value < 0 ) {
-				numValueOverflows++;
+				idLib::common->Warning( "idBitMsg::WriteBits: value overflow %d %d", value, numBits );
 			}
 		} else {
 			int r = 1 << ( - 1 - numBits );
 			if ( value > r - 1 ) {
-				numValueOverflows++;
+				idLib::common->Warning( "idBitMsg::WriteBits: value overflow %d %d", value, numBits );
 			} else if ( value < -r ) {
-				numValueOverflows++;
+				idLib::common->Warning( "idBitMsg::WriteBits: value overflow %d %d", value, numBits );
 			}
 		}
 	}
@@ -178,7 +177,7 @@ void idBitMsg::WriteNetadr( const netadr_t adr ) {
 	byte *dataPtr;
 	dataPtr = GetByteSpace( 4 );
 	memcpy( dataPtr, adr.ip, 4 );
-	WriteShort( adr.port );
+	WriteUShort( adr.port );
 }
 
 /*
@@ -212,7 +211,7 @@ void idBitMsg::WriteDeltaByteCounter( int oldValue, int newValue ) {
 	}
 	WriteBits( i, 3 );
 	if ( i ) {
-		WriteBits( newValue, i );
+		WriteBits( ( ( 1 << i ) - 1 ) & newValue, i );
 	}
 }
 
@@ -233,7 +232,7 @@ void idBitMsg::WriteDeltaShortCounter( int oldValue, int newValue ) {
 	}
 	WriteBits( i, 4 );
 	if ( i ) {
-		WriteBits( newValue, i );
+		WriteBits( ( ( 1 << i ) - 1 ) & newValue, i );
 	}
 }
 
@@ -254,7 +253,7 @@ void idBitMsg::WriteDeltaLongCounter( int oldValue, int newValue ) {
 	}
 	WriteBits( i, 5 );
 	if ( i ) {
-		WriteBits( newValue, i );
+		WriteBits( ( ( 1 << i ) - 1 ) & newValue, i );
 	}
 }
 
@@ -445,7 +444,7 @@ void idBitMsg::ReadNetadr( netadr_t *adr ) const {
 	for ( i = 0; i < 4; i++ ) {
 		adr->ip[ i ] = ReadByte();
 	}
-	adr->port = ReadShort();
+	adr->port = ReadUShort();
 }
 
 /*
@@ -1061,7 +1060,7 @@ bool idMsgQueue::Add( const byte *data, const int size, bool sequencing ) {
 
 	assert( size );
 
-	WriteShort( size );
+	WriteUShort( size );
 	if ( sequencing ) {
 		WriteLong( last );
 	}
@@ -1082,7 +1081,7 @@ bool idMsgQueue::AddConcat( const byte *data1, const int size1, const byte *data
 
 	assert( size1 && size2 );
 	
-	WriteShort( size1 + size2 );
+	WriteUShort( size1 + size2 );
 	if ( sequencing ) {
 		WriteLong( last );
 	}
@@ -1097,22 +1096,16 @@ bool idMsgQueue::AddConcat( const byte *data1, const int size1, const byte *data
 idMsgQueue::Get
 ===============
 */
-// RAVEN BEGIN
-// rjohnson: added check for data overflow
 bool idMsgQueue::Get( byte *data, int dataSize, int &size, bool sequencing ) {
-// RAVEN END
 	if ( sequencing ? ( first == last ) : ( startIndex == endIndex ) ) {
 		size = 0;
 		return false;
 	}
 	int sequence;
-	size = ReadShort();
-// RAVEN BEGIN
-// rjohnson: added check for data overflow
+	size = ReadUShort();
 	if ( data && size > dataSize ) {
 		common->Error( "idMsgQueue::Get  buffer size of %d < get size of %d", dataSize, size );
 	}
-// RAVEN END
 
 	if ( sequencing ) {
 		sequence = ReadLong();
@@ -1202,10 +1195,34 @@ void idMsgQueue::WriteShort( int s ) {
 
 /*
 ===============
+idMsgQueue::WriteUShort
+===============
+*/
+void idMsgQueue::WriteUShort( int s ) {
+	WriteByte( ( s >>  0 ) & 255 );
+	WriteByte( ( s >>  8 ) & 255 );
+}
+
+/*
+===============
 idMsgQueue::ReadShort
 ===============
 */
 int idMsgQueue::ReadShort( void ) {
+// RAVEN BEGIN
+// ddynerman: removed side-effecting bitwise or
+	byte l = ReadByte();
+	byte h = ReadByte();
+	return (short)(l | ( h << 8 )); // sign extend
+// RAVEN LOW
+}
+
+/*
+===============
+idMsgQueue::ReadUShort
+===============
+*/
+int idMsgQueue::ReadUShort( void ) {
 // RAVEN BEGIN
 // ddynerman: removed side-effecting bitwise or
 	byte l = ReadByte();
@@ -1272,13 +1289,22 @@ void idMsgQueue::ReadData( byte *data, const int size ) {
 
 /*
 ===============
+idMsgQueue::WriteTo
+===============
+*/
+void idMsgQueue::WriteTo( idBitMsg &msg ) {
+	msg.WriteUShort( GetTotalSize() );
+	assert( startIndex == 0 );
+	msg.WriteData( buffer + startIndex, endIndex - startIndex );
+}
+
+/*
+===============
 idMsgQueue::FlushTo
 ===============
 */
 void idMsgQueue::FlushTo( idBitMsg &msg ) {
-	msg.WriteShort( GetTotalSize() );
-	assert( startIndex == 0 );
-	msg.WriteData( buffer + startIndex, endIndex - startIndex );
+	WriteTo( msg );
 	Init( 0 );
 }
 
@@ -1289,7 +1315,7 @@ idMsgQueue::ReadFrom
 */
 void idMsgQueue::ReadFrom( const idBitMsg &msg ) {
 	Init( 0 );
-	endIndex = msg.ReadShort();
+	endIndex = msg.ReadUShort();
 	msg.ReadData( buffer, endIndex );
 }
 
@@ -1316,4 +1342,118 @@ void idMsgQueue::Restore( idFile *file ) {
 	file->ReadInt( startIndex );
 	file->ReadInt( endIndex );
 	file->Read( buffer + startIndex, endIndex - startIndex );
+}
+
+/*
+===============
+idBitMsgQueue::idBitMsgQueue
+===============
+*/
+idBitMsgQueue::idBitMsgQueue( void ) {
+	Init();
+}
+
+/*
+===============
+idBitMsgQueue::Init
+===============
+*/
+void idBitMsgQueue::Init( void ) {
+	readTimestamp = false;
+	writeList.Clear();
+	readList.Clear();
+}
+
+/*
+===============
+idBitMsgQueue::Add
+===============
+*/
+void idBitMsgQueue::Add( const idBitMsg &msg, const int timestamp ) {
+	while ( writeList.NextNode() && writeList.Next()->GetSpaceLeft() < ( msg.GetSize() + 8+4 ) ) {
+		writeList.NextNode()->AddToEnd( readList );
+	}
+
+	if ( !writeList.NextNode() ) {
+		idLinkList< idMsgQueue > *node = new idLinkList< idMsgQueue >;
+		node->SetOwner( new idMsgQueue );
+		node->AddToEnd( writeList );
+	}
+
+	writeList.Next()->WriteLong( timestamp );
+	if ( !writeList.Next()->Add( msg.GetData(), msg.GetSize(), false ) ) {
+		assert( false );
+	}
+}
+
+/*
+===============
+idBitMsgQueue::Get
+===============
+*/
+bool idBitMsgQueue::Get( idBitMsg &msg, int &timestamp ) {
+	while ( readList.NextNode() && !readList.Next()->GetTotalSize() ) {
+		readList.Next()->Init( 0 );
+		readList.NextNode()->AddToEnd( writeList );
+	}
+
+	if ( readList.NextNode() ) {
+		int size;
+
+		timestamp = readTimestamp ? nextTimestamp : readList.Next()->ReadLong();
+		readTimestamp = true;
+		if ( readList.Next()->Get( msg.GetData(), msg.GetMaxSize(), size, false ) ) {
+			msg.SetSize( size );
+			msg.BeginReading();
+			readTimestamp = false;
+			return true;
+		}
+
+		assert( false );
+	} else if ( writeList.NextNode() && writeList.Next()->GetTotalSize() ) {
+		int size;
+
+		timestamp = readTimestamp ? nextTimestamp : writeList.Next()->ReadLong();
+		readTimestamp = true;
+		if ( writeList.Next()->Get( msg.GetData(), msg.GetMaxSize(), size, false ) ) {
+			msg.SetSize( size );
+			msg.BeginReading();
+			readTimestamp = false;
+			return true;
+		}
+
+		assert( false );
+	}
+
+	msg.SetSize( 0 );
+	return false;
+}
+
+/*
+===============
+idBitMsgQueue::GetTimestamp
+===============
+*/
+bool idBitMsgQueue::GetTimestamp( int &timestamp ) {
+	if ( readTimestamp ) {
+		timestamp = nextTimestamp;
+		return true;
+	}
+
+	while ( readList.NextNode() && !readList.Next()->GetTotalSize() ) {
+		readList.Next()->Init( 0 );
+		readList.NextNode()->AddToEnd( writeList );
+	}
+
+	if ( readList.NextNode() ) {
+		timestamp = nextTimestamp = readList.Next()->ReadLong();
+		readTimestamp = true;
+		return true;
+	} else if ( writeList.NextNode() && writeList.Next()->GetTotalSize() ) {
+		timestamp = nextTimestamp = writeList.Next()->ReadLong();
+		readTimestamp = true;
+		return true;
+	}
+
+	return false;
 }
