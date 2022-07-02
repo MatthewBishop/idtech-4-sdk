@@ -83,6 +83,8 @@ public:
 
 	virtual void			UpdateClientFromServerInfo( const idDict& serverInfo, bool allowMedia );
 
+	virtual const char*		GetDemoNameInfo( void ) { return "campaign"; }
+
 protected:
 	void					SendMapStats( int index, const sdReliableMessageClientInfoBase& target );
 	void					ReadMapStats( const idBitMsg& msg );

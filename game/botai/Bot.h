@@ -29,6 +29,8 @@
 #define BOT_MOVE_LOOKUP_STEPS	720
 #define BOT_MOVE_LOOKUP_SCALE	( BOT_MOVE_LOOKUP_STEPS / 360.0f )
 
+#define NEXT_VEHICLE_CMD_TIME	1000
+
 enum projectileTypes_t {
 	PROJECTILE_TANK_ROUND,
 	PROJECTILE_ROCKET,
@@ -98,11 +100,14 @@ private:
 	int						hornTime;
 	int						decoyTime;
 	int						botNextWeapTime;
+	int						botNextVehicleCmdTime;
 	int						botNextSiegeCmdTime;
 	int						altAttackDelay;
+	int						nextAimUpdateTime;
 	botGoalTypes_t			oldBotGoalType;
 	idAngles				botViewAngles;
 	idAngles				botHackMoveAngles;
+	idVec3					lowSkillAimPoint;
 
 #ifdef BOT_MOVE_LOOKUP
 	// FeaRog: lookup tables to allow bots to easily evaluate moves

@@ -56,6 +56,8 @@ public:
 
 	virtual int							GetServerBrowserScore( const sdNetSession& session ) const;
 
+	virtual const char*		GetDemoNameInfo( void ) { return "objective"; }
+
 protected:
 	virtual void			GameState_Review( void );
 	virtual void			GameState_NextGame( void );

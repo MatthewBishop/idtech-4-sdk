@@ -6,6 +6,9 @@
 
 #include <wctype.h>
 
+#if defined( MACOS_X )
+#pragma GCC visibility push(hidden)
+#endif
 wideStringDataAllocator_t*	idWStr::stringDataAllocator;
 bool						idWStr::stringAllocatorIsShared;
 
@@ -14,9 +17,19 @@ struct ShutdownStringAllocator {
 		idWStr::ShutdownMemory();
 	}
 };
+#if defined( MACOS_X )
+#pragma GCC visibility pop
+#endif
 
 struct strColor_t;
+
+#if defined( MACOS_X )
+#pragma GCC visibility push(hidden)
+#endif
 static ShutdownStringAllocator shutdownStringAllocator;
+#if defined( MACOS_X )
+#pragma GCC visibility pop
+#endif
 idWStr::hmsFormat_t	idWStr::defaultHMSFormat;
 
 extern dword g_dword_color_table[COLOR_BITS+1];

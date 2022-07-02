@@ -1244,6 +1244,10 @@ void idDoor::OnTouch( idEntity *other, const trace_t& trace ) {
 		return;
 	}
 
+	if ( p != NULL && p->GetHealth() <= 0 ) {
+		return;
+	}
+
 	bool hasRequirements = true;
 
 	if ( checkOpenFunc && !Script_AllowOpen( other ) ) {

@@ -44,6 +44,8 @@ bool idBotAI::Bot_VehicleFindEnemy() {
 
 	numVisEnemies = 0;
 
+	vehicleEnemyWasInheritedFromFootCombat = false;
+
 	botSightDist = Square( ENEMY_VEHICLE_SIGHT_DIST ); //mal_FIXME: break this out into a script cmd!
 
 /*
@@ -55,16 +57,20 @@ bool idBotAI::Bot_VehicleFindEnemy() {
 */
 
 //mal: some debugging stuff....
-	if ( bot_ignoreEnemies.GetInteger() == 1 ) {
+	if ( botWorld->gameLocalInfo.botIgnoreEnemies == 1 ) {
+			return false;
+	} else if ( botWorld->gameLocalInfo.botIgnoreEnemies == 2 ) {
+			if ( botInfo->team == GDF ) {
+				return false;
+			}
+	} else if ( botWorld->gameLocalInfo.botIgnoreEnemies == 3 ) {
+			if ( botInfo->team == STROGG ) {
+				return false;
+			}
+		}
+
+	if ( botVehicleInfo->type != BUFFALO && Bot_VehicleIsUnderAVTAttack() != -1 && ( ( botVehicleInfo->flags & ARMOR ) || botVehicleInfo->type > ICARUS ) ) {
 		return false;
-	} else if ( bot_ignoreEnemies.GetInteger() == 2 ) {
-		if ( botInfo->team == GDF ) {
-			return false;
-		}
-	} else if ( bot_ignoreEnemies.GetInteger() == 3 ) {
-		if ( botInfo->team == STROGG ) {
-			return false;
-		}
 	}
 
 	if ( botVehicleInfo->type > ICARUS ) {
@@ -82,6 +88,16 @@ bool idBotAI::Bot_VehicleFindEnemy() {
 	if ( botVehicleInfo->type == HUSKY ) { //mal: we're no match for anybody!
 		return false;
 	}
+
+#ifdef _XENON
+	if ( botVehicleInfo->type == MCP && botVehicleInfo->driverEntNum == botNum ) {
+		return false;
+	}
+
+	if ( botVehicleInfo->type == PLATYPUS && botVehicleInfo->driverEntNum == botNum ) {
+		return false;
+	}
+#endif
 
 	if ( botVehicleInfo->type > ICARUS && Client_IsCriticalForCurrentObj( botNum, -1.0f ) ) {
 		return false;
@@ -132,6 +148,10 @@ bool idBotAI::Bot_VehicleFindEnemy() {
 			continue; //mal: ignore revived/just spawned in clients - get the ppl around them!
 		}
 
+		if ( playerInfo.isActor ) {
+			continue;
+		}
+
 		if ( playerInfo.health <= 0 ) {
 			continue;
 		}
@@ -165,8 +185,22 @@ bool idBotAI::Bot_VehicleFindEnemy() {
 			GetVehicleInfo( playerInfo.proxyInfo.entNum, enemyVehicleInfo );
 		}
 
-		if ( isAttackingDeployable && playerInfo.proxyInfo.entNum == CLIENT_HAS_NO_VEHICLE && !hasObj && playerInfo.weapInfo.weapon != ROCKET && ( !isCriticalEnemy || ( !isNearOurObj || botWorld->botGoalInfo.attackingTeam == botInfo->team ) ) && !isDefusingOurBomb ) {
+		if ( isAttackingDeployable ) {
+			if ( botInfo->team == botWorld->botGoalInfo.attackingTeam ) {
+				if ( playerInfo.proxyInfo.entNum == CLIENT_HAS_NO_VEHICLE ) {
+					if ( playerInfo.weapInfo.weapon != ROCKET && !isDefusingOurBomb ) {
+						continue;
+					}
+				} else {
+					if ( !( enemyVehicleInfo.flags & ARMOR ) && enemyVehicleInfo.type != ANANSI && enemyVehicleInfo.type != HORNET ) {
 			continue;
+		}
+				}
+			} else {
+				if ( !isDefusingOurBomb && playerInfo.proxyInfo.entNum == CLIENT_HAS_NO_VEHICLE && !hasObj && playerInfo.weapInfo.weapon != ROCKET && ( !isCriticalEnemy || !isNearOurObj ) ) {
+					continue;
+				}
+			}
 		}
 
 		if ( botIsBigShot && !isFacingUs && ( !botGotShotRecently || botInfo->lastAttacker != i ) && !isFiringWeapon && !hasObj && !isNearOurObj ) {
@@ -194,12 +228,20 @@ bool idBotAI::Bot_VehicleFindEnemy() {
 				continue;
 			}
 
+			if ( enemyVehicleInfo.type == BUFFALO && botVehicleInfo->flags & ARMOR && playerInfo.isBot ) {
+				continue;
+			}
+
+			if ( enemyVehicleInfo.type == MCP && enemyVehicleInfo.isImmobilized && enemyVehicleInfo.driverEntNum == i ) {
+				continue;
+			}
+
 			if ( botVehicleInfo->type == ANANSI && enemyVehicleInfo.type == ICARUS ) { //mal: this is funny to watch, but is a waste of time. :-)
 				continue;
 			}
 
 			if ( isAttackingDeployable ) {
-				if ( botVehicleInfo->isAirborneVehicle && enemyVehicleInfo.type <= ICARUS ) { //mal: if attacking from the air, only worry about air vehicles.
+				if ( botVehicleInfo->isAirborneVehicle && ( enemyVehicleInfo.type <= ICARUS || enemyVehicleInfo.type == BUFFALO ) ) { //mal: if attacking from the air, only worry about air vehicles.
 					continue;
 				}
 			}
@@ -235,7 +277,7 @@ bool idBotAI::Bot_VehicleFindEnemy() {
 
 		tempSightDist = botSightDist;
 
-		if ( !ClientHasObj( i ) && !enemyIsBigShot && playerInfo.proxyInfo.entNum == CLIENT_HAS_NO_VEHICLE && !playerInfo.isCamper && playerInfo.killsSinceSpawn < KILLING_SPREE && botVehicleInfo->driverEntNum == botNum ) { //mal: vehicles will prefer to fight other vehicles, not some guy on foot a mile away....
+		if ( !ClientHasObj( i ) && !enemyIsBigShot && playerInfo.proxyInfo.entNum == CLIENT_HAS_NO_VEHICLE && !playerInfo.isCamper && playerInfo.killsSinceSpawn < KILLING_SPREE && botVehicleInfo->driverEntNum == botNum && !isDefusingOurBomb ) { //mal: vehicles will prefer to fight other vehicles, not some guy on foot a mile away....
 			tempSightDist = Square( 3500.0f );
 		}
 
@@ -271,6 +313,10 @@ bool idBotAI::Bot_VehicleFindEnemy() {
 		}
 
 		if ( botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO || botWorld->botGoalInfo.gameIsOnFinalObjective || botWorld->botGoalInfo.attackingTeam == botInfo->team ) {
+			if ( isDefusingOurBomb ) {
+				dist = Square( 100.0f );
+			}
+
 			if ( hasAttackedCriticalMate && inFront && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) {
 				dist = Square( 600.0f ); //mal: will give higher priority to someone attacking a critical mate, if we can see it happening.
 			}
@@ -291,7 +337,7 @@ bool idBotAI::Bot_VehicleFindEnemy() {
 				dist = Square( 600.0f );
 			} //mal: target trouble making humans!
 		} else {
-			if ( !playerInfo.isBot ) {
+			if ( !playerInfo.isBot || playerInfo.isActor ) {
 				dist += Square( TRAINING_MODE_RANGE_ADDITION );
 			}
 		}
@@ -494,13 +540,13 @@ bool idBotAI::Bot_VehicleFindBetterEnemy() {
 		entDist = idMath::INFINITY;
 	}
 
-	if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO && !botWorld->botGoalInfo.gameIsOnFinalObjective && !enemyPlayerInfo.isBot ) { //mal: dont worry about keeping our human target in training mode, unless its the final obj...
+	if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO && !botWorld->botGoalInfo.gameIsOnFinalObjective && ( !enemyPlayerInfo.isBot || enemyPlayerInfo.isActor ) ) { //mal: dont worry about keeping our human target in training mode, unless its the final obj...
 		entDist += Square( TRAINING_MODE_RANGE_ADDITION );
 	}
 
 	bool curEnemyNotInVehicle = false;
 
-	if ( botWorld->clientInfo[ enemy ].proxyInfo.entNum == CLIENT_HAS_NO_VEHICLE ) { //mal: if our current enemy is on foot, more likely to pick a better target.
+	if ( botWorld->clientInfo[ enemy ].proxyInfo.entNum == CLIENT_HAS_NO_VEHICLE && !ClientIsDefusingOurTeamCharge( enemy ) && !vehicleEnemyWasInheritedFromFootCombat ) { //mal: if our current enemy is on foot, more likely to pick a better target. Unless they're defusing our charge, or an enemy we jumped in this vehicle for, then we artificially raise their importance.
 		curEnemyNotInVehicle = true;
 	}
 	
@@ -525,7 +571,7 @@ bool idBotAI::Bot_VehicleFindBetterEnemy() {
 		}
 
 //mal: if we're in the middle of a critical obj, dont go looking for trouble, unless they're shooting us!
-		if ( Client_IsCriticalForCurrentObj( botNum, -1.0f ) && ( botInfo->lastAttacker != i || botInfo->lastAttackerTime + 3000 < botWorld->gameLocalInfo.time ) ) {
+		if ( Client_IsCriticalForCurrentObj( botNum, -1.0f ) && ( botInfo->lastAttacker != i || botInfo->lastAttackerTime + 3000 < botWorld->gameLocalInfo.time ) && !ClientIsDefusingOurTeamCharge( i ) ) {
 			continue;
 		}
 
@@ -543,6 +589,10 @@ bool idBotAI::Bot_VehicleFindBetterEnemy() {
 			continue;
 		}
 
+		if ( playerInfo.isActor ) {
+			continue;
+		}
+
 		if ( playerInfo.invulnerableEndTime > botWorld->gameLocalInfo.time ) {
 			continue; //mal: ignore revived/just spawned in clients - get the ppl around them!
 		}
@@ -552,6 +602,10 @@ bool idBotAI::Bot_VehicleFindBetterEnemy() {
 		}
 
 		if ( playerInfo.team == botInfo->team ) {
+			continue;
+		}
+
+		if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO && !botWorld->botGoalInfo.gameIsOnFinalObjective && !playerInfo.isBot && enemyPlayerInfo.isBot ) { //mal: dont worry about human targets in training mode if we have a bot one, unless its the final obj...
 			continue;
 		}
 
@@ -623,6 +677,11 @@ bool idBotAI::Bot_VehicleFindBetterEnemy() {
 
 		if ( ClientHasObj( i ) && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) { //mal: if have docs, get HIGHER priority.
 			dist = Square( 500.0f );
+			ignoreNewEnemiesWhileInVehicleTime = botWorld->gameLocalInfo.time + IGNORE_NEW_ENEMIES_TIME;
+		}
+
+		if ( ClientIsDefusingOurTeamCharge( i ) && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) { //mal: if defusing our charge, get HIGHER priority.
+			dist = Square( 100.0f );
 			ignoreNewEnemiesWhileInVehicleTime = botWorld->gameLocalInfo.time + IGNORE_NEW_ENEMIES_TIME;
 		}
 
@@ -1102,7 +1161,7 @@ bool idBotAI::VehicleHasGunnerSeatOpen( int entNum ) {
 	}
 
 	if ( vehicleInfo.type == BUFFALO ) { //mal: buffalo actually has 2 gunner seats, where most vehicles only have 1.
-		numSeats = 2;
+		numSeats = 3;
 	}
 
 	if ( vehicleInfo.type == TROJAN ) {
@@ -1164,6 +1223,9 @@ bool idBotAI::Bot_VehicleCanAttackEnemy( int clientNum ) {
 			return false;
 		} //mal: dont have any ammo for the 3 weapons the bots can use while riding in a transport, so just sit there.
 	} else if ( botVehicleInfo->type == MCP && botVehicleInfo->driverEntNum == botNum ) {
+#ifdef _XENON
+		return false;
+#endif
 		if ( !InFrontOfVehicle( botInfo->proxyInfo.entNum, botWorld->clientInfo[ clientNum ].origin ) ) {
 			return false;
 		} //mal: dont fight ppl if we're driving the mcp, and they're not in front of us - just get the MCP to the outpost!

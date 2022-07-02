@@ -94,7 +94,7 @@ allowReply_t idGameLocal::RepeaterAllowClient( int numViewers, int maxViewers, c
 			break;
 	}
 
-	if ( serverInfo.GetInt( "si_pure" ) && !rules->IsPureReady() ) {
+	if ( serverInfo.GetInt( "si_pure" ) && ( rules == NULL || !rules->IsPureReady() ) ) {
 		reason = ALLOWFAIL_SERVERSPAWNING;
 		return ALLOW_NOTYET;
 	}

@@ -1396,7 +1396,7 @@ void sdUIEditHelper< UIEditClass, StrClass, CharType >::CursorChanged( bool adju
 			int i;
 			for ( i = clickedRow->GetStart(); i <= clickedRow->GetEnd(); i++ ) {
 				width = tdh.GetWidth( clickedRow->GetStart(), i - 1 );
-				float charWidth = tdh.ToVirtualScreenSize( tdh.GetAdvance( i ) );
+				float charWidth = tdh.ToVirtualScreenSizeFloat( tdh.GetAdvance( i ) );
 				float halfWidth = ( charWidth * 0.5f );
 				if ( ( offsetClick.x - halfWidth ) < ( width + parent->scrollAmount.GetValue().x + halfWidth ) ) {
 					clickedRow->SetCursorOnLine( i - clickedRow->GetStart() );

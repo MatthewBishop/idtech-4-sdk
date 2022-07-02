@@ -123,9 +123,16 @@ public:
 	void												Event_SetBotActionGroupVehicleType( int actionGroupNum, int actionVehicleFlags );
 	void												Event_DisableAASAreaInLocation( int aasType, const idVec3& location );
 	void												Event_GameIsOnFinalObjective();
+	void												Event_MapIsTrainingMap();
+	void												Event_SetPlayerIsOnFinalMission();
+	void												Event_SetActorPrimaryAction( const char* actionName, bool isDeployableMission, int goalPauseTime );
+	void												Event_SetBriefingPauseTime( int pauseTime );
 	void												Event_GetBotCriticalClass( const playerTeamTypes_t playerTeam );
 	void												Event_GetNumClassPlayers( const playerTeamTypes_t playerTeam, const playerClassTypes_t playerClass );
+	void												PlayerDeployableDeployed();
+	void												Event_SetTrainingBotsCanGrabForwardSpawns();
 
+	idEntity*											GetSpectateEntity( void );
 
 	void												Event_SendNetworkEvent( int clientIndex, bool isRepeater, const char* message );
 	void												OnNetworkEvent( const char* message );
@@ -147,6 +154,8 @@ private:
 	const sdProgram::sdFunction*						onCarryableItemReturnedFunc;
 	const sdProgram::sdFunction*						onSpawnCapturedFunc;
 	const sdProgram::sdFunction*						onSpawnLiberatedFunc;
+	const sdProgram::sdFunction*						getSpectateEntityFunc;
+	const sdProgram::sdFunction*						onDeployableDeployedFunc;
 };
 
 typedef sdSingleton< sdObjectiveManagerLocal > sdObjectiveManager;

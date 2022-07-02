@@ -1989,6 +1989,14 @@ void sdAirVehicleControl::SetupInput() {
 	float pitchInput = -angleDelta.pitch;
 	float rollInput = -angleDelta.yaw;
 	float yawInput = directions[ 1 ];
+	if ( driver != NULL ) {
+		if ( driver->GetUserInfo().swapFlightYawAndRoll ) {
+			Swap( rollInput, yawInput );
+			yawInput *= 2.0f;
+		}
+		yawInput = idMath::ClampFloat( -2.0f, 2.0f, yawInput );
+	}
+
 	if ( simpleControls ) {
 		// Newbie mode!
 		// Harvest data

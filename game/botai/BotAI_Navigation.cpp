@@ -639,3 +639,36 @@ void idBotNodeGraph::DrawNodes() {
 	}
 }
 
+/*
+====================
+idBotNodeGraph::ActiveVehicleNodeNearby
+====================
+*/
+bool idBotNodeGraph::ActiveVehicleNodeNearby( const idVec3& p, float range ) {
+	bool closeNodeNearby = false;
+
+	for( int i = 0; i < nodes.Num(); i++ ) {
+
+		idBotNode* node = nodes[ i ];
+
+		if ( node == NULL ) {
+			continue;
+		}
+
+		if ( !node->active ) {
+			continue;
+		}
+
+		float dist = ( node->origin - p ).ToVec2().LengthFast() - node->radius;
+
+		if ( dist >= range ) {
+			continue;
+		}
+
+		closeNodeNearby = true;
+		break;
+	}
+
+	return closeNodeNearby;
+}
+

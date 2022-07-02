@@ -32,7 +32,7 @@ private:
 	};
 
 	int						num;
-	int						flags; // 0 = NORMAL, 1 = WATER
+	int						flags; 
 	bool					active;
 	float					radius;
 	playerTeamTypes_t		team;
@@ -43,6 +43,7 @@ private:
 
 enum {
 	NODE_ALL_TYPES = 0,
+	NODE_HUSKY_ONLY = 1,
 	NODE_GROUND = 2,
 	NODE_WATER = 16,
 	NODE_GROUND_AND_WATER = 20
@@ -72,6 +73,8 @@ public:
 
 	// returns the node nearest to the origin
 	idBotNode *				GetNearestNode( const idMat3& axis, const idVec3& origin, const playerTeamTypes_t team, const moveDirections_t moveDir = NULL_DIR, bool reachableOnly = false, bool activeOnly = false, bool closeNodeOnly = false, idBotNode* ignoreNode = NULL, int vehicleFlags = NODE_ALL_TYPES );
+
+	bool					ActiveVehicleNodeNearby( const idVec3& p, float range );
 
 	// returns a list of nodes (in botPathList) to get from start to end
 	void					CreateNodePath( const struct clientInfo_t *botInfo, const idBotNode *start, const idBotNode *end, idList<idBotNode::botLink_t> & botPathList, int vehicleFlags = NODE_ALL_TYPES ) const;

@@ -203,15 +203,18 @@ void idItem::OnTouch( idEntity *other, const trace_t& trace ) {
 		return;
 	}
 
-	if ( gameLocal.time < pickUpTime && dropper == other ) {
-		return;
-	}
-
 	idPlayer* player = other->Cast< idPlayer >();
 	if ( player == NULL ) {
 		return;
 	}
 
+	if ( !player->IsSpectator() && player->GetHealth() <= 0 ) {
+		return;
+	}
+
+	if ( gameLocal.time < pickUpTime && dropper == other ) {
+		return;
+	}
 
 	botThreadData.GetGameWorldState()->clientInfo[ player->entityNumber ].touchingItemTime = gameLocal.GetTime();
 

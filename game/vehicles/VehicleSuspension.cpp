@@ -125,7 +125,7 @@ bool sdVehicleSuspension_Pivot::Init( sdVehicleSuspensionInterface* object, cons
 
 	_suspensionAngle = RAD2DEG( atan2( v, h ) );
 	_initialOffset = v * _suspensionRadius;
-	_lastOffset = _initialOffset;
+	_lastOffset = -idMath::INFINITY;
 
 	_reverse = info.GetBool( "reverse" );
 
@@ -148,8 +148,10 @@ sdVehicleSuspension_Pivot::UpdateIKJoints
 */
 bool sdVehicleSuspension_Pivot::UpdateIKJoints( idAnimator* animator ) {
 	float offset = _object->GetOffset();
-	if ( offset < _lastOffset ) { 
-		offset = Lerp( _lastOffset, offset, 0.5f );
+	if ( _lastOffset != -idMath::INFINITY ) {
+		if ( offset < _lastOffset ) { 
+			offset = Lerp( _lastOffset, offset, 0.5f );
+		}
 	}
 	_lastOffset = offset;
 
@@ -249,7 +251,7 @@ bool sdVehicleSuspension_DoubleWishbone::Init( sdVehicleSuspensionInterface* obj
 
 	_suspensionAngle = RAD2DEG( atan2( -dir[ 2 ], dir[ 1 ] ) );
 	_initialOffset = -dir[ 2 ] * _suspensionRadius;
-	_lastOffset = _initialOffset;
+	_lastOffset = -idMath::INFINITY;
 
 	return true;
 }
@@ -271,8 +273,10 @@ sdVehicleSuspension_DoubleWishbone::UpdateIKJoints
 */
 bool sdVehicleSuspension_DoubleWishbone::UpdateIKJoints( idAnimator* animator ) {
 	float offset = _object->GetOffset();
-	if ( offset < _lastOffset ) { 
-		offset = Lerp( _lastOffset, offset, _lerpScale );
+	if ( _lastOffset != -idMath::INFINITY ) {
+		if ( offset < _lastOffset ) { 
+			offset = Lerp( _lastOffset, offset, _lerpScale );
+		}
 	}
 	_lastOffset = offset;
 
@@ -313,8 +317,8 @@ sdVehicleSuspension_Vertical::sdVehicleSuspension_Vertical
 ================
 */
 sdVehicleSuspension_Vertical::sdVehicleSuspension_Vertical( void ) {
-	_oldOffset = 0.f;
-	_offset = 0.f;
+	_oldOffset = 0.0f;
+	_offset = -idMath::INFINITY;
 }
 
 /*
@@ -369,7 +373,7 @@ sdVehicleSuspension_Vertical::UpdateIKJoints
 */
 bool sdVehicleSuspension_Vertical::UpdateIKJoints( idAnimator* animator ) {
 	float offset = _object->GetOffset();
-	if ( offset < _offset ) { 
+	if ( _offset != -idMath::INFINITY && offset < _offset ) { 
 		_offset = Lerp( _offset, offset, 0.3f );
 	} else {
 		_offset = offset;
@@ -404,7 +408,7 @@ sdVehicleSuspension_2JointLeg::sdVehicleSuspension_2JointLeg
 ================
 */
 sdVehicleSuspension_2JointLeg::sdVehicleSuspension_2JointLeg( void ) {
-	_lastOffset = 0.f;
+	_lastOffset = -idMath::INFINITY;
 }
 
 
@@ -480,8 +484,10 @@ sdVehicleSuspension_2JointLeg::UpdateIKJoints
 */
 bool sdVehicleSuspension_2JointLeg::UpdateIKJoints( idAnimator* animator ) {
 	float offset = _object->GetOffset();
-	if ( offset < _lastOffset ) { 
-		offset = Lerp( _lastOffset, offset, _lerpScale );
+	if ( _lastOffset != idMath::INFINITY ) {
+		if ( offset < _lastOffset ) { 
+			offset = Lerp( _lastOffset, offset, _lerpScale );
+		}
 	}
 
 	if ( idMath::Fabs( _lastOffset - offset ) < 0.1f ) {

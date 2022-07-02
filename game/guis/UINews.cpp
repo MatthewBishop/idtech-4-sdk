@@ -149,7 +149,7 @@ void sdUINews::CalcOffsets() {
 		return;
 	}
 
-	if ( itemState == IS_SCROLLIN ) {
+	if ( static_cast< eItemState >( (int)itemState.GetValue() ) == IS_SCROLLIN ) {
 		const int now = GetUI()->GetCurrentTime();
 		if ( scrollStartTime <= 0 ) {
 			scrollStartTime = now;
@@ -172,7 +172,7 @@ void sdUINews::CalcOffsets() {
 			scrollOffset.y = cachedClientRect.w - percent * dist;
 		}
 
-	} else if ( itemState == IS_FIXED ) {
+	} else if ( static_cast< eItemState >( (int)itemState.GetValue() ) == IS_FIXED ) {
 		if ( type == FT_VSCROLL ) {
 			scrollOffset.y = ( cachedClientRect.w / 2.0f ) - ( textHeight / 2.0f );
 		}
@@ -181,7 +181,7 @@ void sdUINews::CalcOffsets() {
 			itemState = IS_SCROLLOUT;
 			scrollStartTime = 0;
 		}
-	} else if ( itemState == IS_SCROLLOUT ) {
+	} else if ( static_cast< eItemState >( (int)itemState.GetValue() ) == IS_SCROLLOUT ) {
 		const int now = GetUI()->GetCurrentTime();
 		if ( scrollStartTime <= 0 ) {
 			scrollStartTime = now;
@@ -205,7 +205,7 @@ void sdUINews::CalcOffsets() {
 			scrollOffset.y = ( cachedClientRect.w / 2.0f ) - ( textHeight / 2.0f ) - ( percent * dist );
 		}
 	} else {
-		gameLocal.Warning( "sdUINews::CalcVScrollOffsets: Unknown itemState %i", itemState );
+		gameLocal.Warning( "sdUINews::CalcVScrollOffsets: Unknown itemState %i", itemState.GetValue() );
 	}
 }
 

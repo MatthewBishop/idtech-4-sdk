@@ -87,6 +87,8 @@ public:
 	virtual void						SetDefender( sdTeamInfo* team );
 	virtual void						OnObjectiveCompletion( int objectiveIndex );
 
+	virtual const char*					GetDemoNameInfo( void );
+
 protected:
 	virtual void						GameState_Review( void );
 	virtual void						GameState_NextGame( void );
@@ -111,7 +113,6 @@ private:
 
 	void								ResetTiebreakInfo( void );
 
-	static const int maxObjectives		= 16;
 	idList< int >						objectiveCompletionTimes[ GP_MAX ];
 	sdTeamInfo*							attackingTeams[ GP_MAX ];
 	sdTeamInfo*							defendingTeams[ GP_MAX ];

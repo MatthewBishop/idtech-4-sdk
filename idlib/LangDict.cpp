@@ -13,8 +13,7 @@ idLangDict::idLangDict
 idLangDict::idLangDict( void ) {
 	args.SetGranularity( 256 );
 	hash.SetGranularity( 256 );
-	hash.Clear( 4096, 8192 );
-	baseID = 0;
+	hash.Clear( 4096, 8192 );	
 }
 
 /*
@@ -170,34 +169,6 @@ const wchar_t* idLangDict::GetString( const char *str ) const {
 
 /*
 ============
-idLangDict::AddString
-============
-*/
-const char* idLangDict::AddString( const wchar_t *str ) {
-	
-	if ( ExcludeString( str ) ) {
-		return "###Excluded String###";
-	}
-
-	int c = args.Num();
-	for ( int j = 0; j < c; j++ ) {
-		if ( args[j].value.Cmp( str ) == 0 ) {
-			return args[j].key;
-		}
-	}
-
-	int id = GetNextId();
-	idLangKeyValue kv;
-	kv.key = va( "#str_%05i", id );
-	kv.value = str;
-	c = args.Append( kv );
-	assert( kv.key.Cmpn( STRTABLE_ID, STRTABLE_ID_LENGTH ) == 0 );
-	hash.Add( GetHashKey( kv.key ), c );
-	return args[c].key;
-}
-
-/*
-============
 idLangDict::GetNumKeyVals
 ============
 */
@@ -229,81 +200,14 @@ void idLangDict::AddKeyVal( const char *key, const wchar_t *val ) {
 
 /*
 ============
-idLangDict::ExcludeString
-============
-*/
-bool idLangDict::ExcludeString( const wchar_t *str ) const {
-	if ( str == NULL ) {
-		return true;
-	}
-
-	int c = idWStr::Length( str );
-	if ( c <= 1 ) {
-		return true;
-	}
-
-	if ( idWStr::Cmpn( str, LSTRTABLE_ID, STRTABLE_ID_LENGTH ) == 0 ) {
-		return true;
-	}
-
-	if ( idWStr::Icmpn( str, L"gui::", idWStr::Length( L"gui::" ) ) == 0 ) {
-		return true;
-	}
-
-	if ( str[0] == L'$' ) {
-		return true;
-	}
-
-	int i;
-	for ( i = 0; i < c; i++ ) {
-		if ( isalpha( str[i] ) ) {
-			break;
-		}
-	}
-	if ( i == c ) {
-		return true;
-	}
-	
-	return false;
-}
-
-/*
-============
-idLangDict::GetNextId
-============
-*/
-int idLangDict::GetNextId( void ) const {
-	int c = args.Num();
-
-	// Let an external user supply the base id for this dictionary
-	int id = baseID;
-
-	if ( c == 0 ) {
-		return id;
-	}
-
-	idStr work;
-	for ( int j = 0; j < c; j++ ) {
-		work = args[j].key;
-		work.StripLeading( STRTABLE_ID );
-		int test = atoi( work );
-		if ( test > id ) {
-			id = test;
-		}
-	}
-	return id + 1;
-}
-
-/*
-============
 idLangDict::GetHashKey
 ============
 */
 int idLangDict::GetHashKey( const char *str ) const {
-	int hashKey = 0;
-	for ( str += STRTABLE_ID_LENGTH; str[0] != '\0'; str++ ) {
-		assert( str[0] >= '0' && str[0] <= '9' );
-		hashKey = hashKey * 10 + str[0] - '0';
+	if( idStr::Icmpn( STRTABLE_ID, str, STRTABLE_ID_LENGTH ) != 0 )	 {
+		assert( false );
+		return 0;
 	}
-	return hashKey;
+
+	return idStr::Hash( str + STRTABLE_ID_LENGTH );
 }

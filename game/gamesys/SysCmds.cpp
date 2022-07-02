@@ -2638,18 +2638,18 @@ static void Cmd_PrintUserGUID_f( const idCmdArgs &args ) {
 
 /*
 ===============
-Cmd_SetSpectateClient_f
+SetSpectateClient
 ===============
 */
-static void Cmd_SetSpectateClient_f( const idCmdArgs &args ) {
-	if ( args.Argc() != 2 ) {
+static void SetSpectateClient( const idCmdArgs &args, int argOffset ) {
+	if ( args.Argc() != 2 + argOffset ) {
 		gameLocal.Printf( "Invalid number of arguments, specify the client name or index\n" );
 		return;
 	}
 
 	int spectateeNum = -1;
 
-	const char* name = args.Argv( 1 );
+	const char* name = args.Argv( 1 + argOffset );
 	if ( idStr::IsNumeric( name ) ) {
 		spectateeNum = atoi( name );
 		if ( spectateeNum < 0 || spectateeNum >= MAX_CLIENTS ) {
@@ -2671,7 +2671,350 @@ static void Cmd_SetSpectateClient_f( const idCmdArgs &args ) {
 		return;
 	}
 
+	// don't spectate spectators unless you're on a repeater
+	if ( !gameLocal.serverIsRepeater ) {
+		idPlayer* other = gameLocal.GetClient( spectateeNum );
+		if ( other->IsSpectator() ) {
+			gameLocal.Printf( "Client %s is a spectator.\n", name );
+			return;
+		}
+	}
+
 	gameLocal.ChangeLocalSpectateClient( spectateeNum );
+}
+
+/*
+===============
+Cmd_SetSpectateClient_f
+===============
+*/
+static void Cmd_SetSpectateClient_f( const idCmdArgs &args ) {
+	SetSpectateClient( args, 0 );
+}
+
+/*
+============
+Cmd_Spectate_Completion
+============
+*/
+static void Cmd_Spectate_Completion( const idCmdArgs& args, argCompletionCallback_t callback ) {
+	if ( args.Argc() > 1 ) {
+		return;
+	}
+
+	callback( va( "%s next", args.Argv( 0 ) ) );
+	callback( va( "%s prev", args.Argv( 0 ) ) );
+	callback( va( "%s objective", args.Argv( 0 ) ) );
+	callback( va( "%s client", args.Argv( 0 ) ) );
+	callback( va( "%s position", args.Argv( 0 ) ) );
+}
+
+/*
+===============
+Cmd_Spectate_f
+===============
+*/
+static void Cmd_Spectate_f( const idCmdArgs &args ) {
+	if ( args.Argc() < 2 ) {
+		gameLocal.Printf( "usage: spectate <command> [parameter]\n" );
+		gameLocal.Printf( "commands: next      - cycle to the next player\n" );
+		gameLocal.Printf( "commands: prev      - cycle to the previous player\n" );
+		gameLocal.Printf( "commands: objective - change to the player currently completing the objective/the 'main' planted charge\n" );
+		gameLocal.Printf( "commands: client	   - spectate a specific client - parameter can be client name or index\n" );
+		gameLocal.Printf( "commands: position  - spectate a specific position & angle - x y z yaw pitch roll\n" );
+		return;
+	}
+
+	idPlayer* player = gameLocal.GetLocalPlayer();
+	if ( !gameLocal.serverIsRepeater ) {
+		if ( player == NULL ) {
+			gameLocal.Printf( "No local player\n" );
+			return;
+		}
+		if ( !player->IsSpectator() ) {
+			gameLocal.Printf( "Not a spectator\n" );
+			return;
+		}
+	}
+
+	const char* commandString = args.Argv( 1 );
+	idPlayer::spectateCommand_t command = idPlayer::SPECTATE_INVALID;
+	idVec3 origin = vec3_origin;
+	idAngles angles = ang_zero;
+
+	if ( !idStr::Icmp( "next", commandString ) ) {
+		command = idPlayer::SPECTATE_NEXT;
+	} else if ( !idStr::Icmp( "prev", commandString ) ) {
+		command = idPlayer::SPECTATE_PREV;
+	} else if ( !idStr::Icmp( "objective", commandString ) ) {
+		command = idPlayer::SPECTATE_OBJECTIVE;
+	} else if ( !idStr::Icmp( "client", commandString ) ) {
+		// client does magic stuff
+		SetSpectateClient( args, 1 );
+		return;
+	} else if ( !idStr::Icmp( "position", commandString ) ) {
+		command = idPlayer::SPECTATE_POSITION;
+
+		if ( args.Argc() < 5 || args.Argc() > 8 ) {
+			gameLocal.Printf( "usage: spectate position <x> <y> <z> <yaw> <pitch> <roll>\n" );
+			return;
+		}
+
+		for ( int i = 0 ; i < 3 ; i++ ) {
+			origin[ i ] = static_cast< float >( atof( args.Argv( i + 2 ) ) );
+		}
+		origin.z -= pm_normalviewheight.GetFloat() - 0.25f;
+
+		angles.Zero();
+		if ( args.Argc() > 5 ) {
+			angles.yaw = static_cast< float >( atof( args.Argv( 5 ) ) );
+		}
+		if ( args.Argc() > 6 ) {
+			angles.pitch = static_cast< float >( atof( args.Argv( 6 ) ) );
+		}
+		if ( args.Argc() > 7 ) {
+			angles.roll = static_cast< float >( atof( args.Argv( 7 ) ) );
+		}
+	}
+
+
+	if ( command == idPlayer::SPECTATE_INVALID ) {
+		gameLocal.Printf( "unknown command '%s'\n", commandString );
+		return;
+	}
+
+	if ( gameLocal.serverIsRepeater ) {
+		// client on a repeater has to do everything locally
+		if ( command == idPlayer::SPECTATE_OBJECTIVE ) {
+			gameLocal.Printf( "cannot do spectate objective while connected to a repeater.\n" );
+		} else if ( command == idPlayer::SPECTATE_POSITION ) {
+			gameLocal.ChangeLocalSpectateClient( -1 );
+			gameLocal.playerView.SetRepeaterViewPosition( origin, angles );
+		} else if ( command == idPlayer::SPECTATE_NEXT || command == idPlayer::SPECTATE_PREV ) {
+			// go through and find a new client to spectate
+			int delta = 1;
+			if ( command == idPlayer::SPECTATE_PREV ) {
+				delta = -1;
+			}
+			int upto = gameLocal.repeaterClientFollowIndex;
+			for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+				upto = ( upto + delta + MAX_CLIENTS ) % MAX_CLIENTS;
+				if ( gameLocal.GetClient( upto ) != NULL ) {
+					gameLocal.ChangeLocalSpectateClient( upto );
+					break;
+				}
+			}
+		}
+
+	} else if ( !gameLocal.isClient ) {
+
+		// server acts on the command
+		player->SpectateCommand( command, origin, angles );
+	} else {
+
+		// clients ask server to do it
+		sdReliableClientMessage outMsg( GAME_RELIABLE_CMESSAGE_SPECTATECOMMAND );
+		outMsg.WriteBits( command, idMath::BitsForInteger( idPlayer::SPECTATE_MAX ) );
+		if ( command == idPlayer::SPECTATE_POSITION ) {
+			outMsg.WriteVector( origin );
+			outMsg.WriteFloat( angles.pitch );
+			outMsg.WriteFloat( angles.yaw );
+			outMsg.WriteFloat( angles.roll );
+		}
+		outMsg.Send();
+	}
+}
+
+/*
+============
+Cmd_SetSpawnPoint_Completion
+============
+*/
+static void Cmd_SetSpawnPoint_Completion( const idCmdArgs& args, argCompletionCallback_t callback ) {
+	if ( args.Argc() > 1 ) {
+		return;
+	}
+
+	callback( va( "%s next", args.Argv( 0 ) ) );
+	callback( va( "%s prev", args.Argv( 0 ) ) );
+	callback( va( "%s default", args.Argv( 0 ) ) );
+	callback( va( "%s base", args.Argv( 0 ) ) );
+}
+
+/*
+===============
+Cmd_SetSpawnPoint_f
+===============
+*/
+static void Cmd_SetSpawnPoint_f( const idCmdArgs &args ) {
+	if ( args.Argc() < 2 ) {
+		gameLocal.Printf( "usage: setSpawnPoint <command>\n" );
+		gameLocal.Printf( "commands: next      - cycle to the next spawn point\n" );
+		gameLocal.Printf( "commands: prev      - cycle to the previous spawn point\n" );
+		gameLocal.Printf( "commands: default   - select the default spawn point\n" );
+		gameLocal.Printf( "commands: base      - select the lowest priority spawn point (normally the main base)\n" );
+		return;
+	}
+
+	idPlayer* player = gameLocal.GetLocalPlayer();
+	if ( player == NULL ) {
+		gameLocal.Printf( "No local player\n" );
+		return;
+	}
+
+	sdTeamInfo* team = player->GetGameTeam();
+	if ( team == NULL ) {
+		return;
+	}
+	
+	idEntity* desiredSpawn = NULL;
+	idEntity* defaultSpawn = team->GetDefaultSpawn();
+	
+	const char* commandString = args.Argv( 1 );
+	bool next = !idStr::Icmp( "next", commandString );
+	bool prev = !idStr::Icmp( "prev", commandString );
+	if ( next || prev ) {
+		const idEntity* playerSpawnLoc = player->GetSpawnPoint();
+		if ( playerSpawnLoc == NULL ) {
+			playerSpawnLoc = defaultSpawn;
+		}
+
+		int numSpawns = team->GetNumSpawnLocations();
+		// find the player's current spawn
+		int currentSpawnIndex = 0;
+		for ( int i = 0; i < numSpawns; i++ ) {
+			if ( team->GetSpawnLocation( i ) == playerSpawnLoc ) {
+				currentSpawnIndex = i;
+				break;
+			}
+		}
+
+		// find the previous/next one
+		int indexUpto = currentSpawnIndex;
+		for ( int i = 0; i < numSpawns; i++ ) {
+			if ( prev ) {
+				indexUpto = ( indexUpto + 1 ) % numSpawns;
+			} else {
+				indexUpto = ( indexUpto + numSpawns - 1 ) % numSpawns;
+			}
+
+			idEntity* next = team->GetSpawnLocation( indexUpto );
+			if ( next != NULL ) {
+				desiredSpawn = next;
+				break;
+			}
+		}
+	} else if ( !idStr::Icmp( "default", commandString ) ) {
+		desiredSpawn = defaultSpawn;
+
+	} else if ( !idStr::Icmp( "base", commandString ) ) {
+		desiredSpawn = team->GetSpawnLocation( team->GetNumSpawnLocations() - 1 );
+	}
+
+	if ( desiredSpawn != NULL ) {
+		if( !gameLocal.isClient ) {
+			player->SetSpawnPoint( desiredSpawn );
+		} else {
+			sdReliableClientMessage msg( GAME_RELIABLE_CMESSAGE_SETSPAWNPOINT );
+			msg.WriteLong( gameLocal.GetSpawnId( desiredSpawn ) );
+			msg.Send();
+		}
+	}
+}
+
+/*
+===============
+Cmd_SetIPAutoAuth_f
+===============
+*/
+static void Cmd_SetIPAutoAuth_f( const idCmdArgs& args ) {
+	if ( args.Argc() < 3 ) {
+		gameLocal.Warning( "You must specify the ip and user group to auth to" );
+		return;
+	}
+
+	clientGUIDLookup_t lookup;
+	lookup.ip = 0;
+	lookup.pbid = 0;
+
+	const char* iptext = args.Argv( 1 );
+	if ( !sdGUIDFile::IPForString( iptext, lookup.ip ) ) {
+		gameLocal.Warning( "Failed to parse IP '%s'", iptext );
+		return;
+	}
+
+	const char* authGroup = args.Argv( 2 );
+
+	gameLocal.guidFile.SetAutoAuth( lookup, authGroup );
+}
+
+/*
+===============
+Cmd_SetPBAutoAuth_f
+===============
+*/
+static void Cmd_SetPBAutoAuth_f( const idCmdArgs& args ) {
+	if ( args.Argc() < 3 ) {
+		gameLocal.Warning( "You must specify the pb guid and user group to auth to" );
+		return;
+	}
+
+	clientGUIDLookup_t lookup;
+	lookup.ip = 0;
+	lookup.pbid = 0;
+
+	const char* pbtext = args.Argv( 1 );
+
+	if ( !sdGUIDFile::PBGUIDForString( pbtext, lookup.pbid ) ) {
+		gameLocal.Warning( "Failed to parse PB GUID '%s'", pbtext );
+		return;
+	}
+
+	const char* authGroup = args.Argv( 2 );
+
+	gameLocal.guidFile.SetAutoAuth( lookup, authGroup );
+}
+
+/*
+===============
+Cmd_SetGUIDAutoAuth_f
+===============
+*/
+static void Cmd_SetGUIDAutoAuth_f( const idCmdArgs& args ) {
+	if ( args.Argc() < 3 ) {
+		gameLocal.Warning( "You must specify the game guid and user group to auth to" );
+		return;
+	}
+
+	clientGUIDLookup_t lookup;
+	lookup.ip = 0;
+	lookup.pbid = 0;
+
+	const char* guidtext = args.Argv( 1 );
+
+	if ( !sdGUIDFile::GUIDForString( guidtext, lookup.clientId ) ) {
+		gameLocal.Warning( "Failed to parse GUID '%s'", guidtext );
+		return;
+	}
+
+	const char* authGroup = args.Argv( 2 );
+
+	gameLocal.guidFile.SetAutoAuth( lookup, authGroup );
+}
+
+/*
+===============
+Cmd_GetRepeaterStatus_f
+===============
+*/
+static void Cmd_GetRepeaterStatus_f( const idCmdArgs& args ) {
+	if ( !gameLocal.isClient ) {
+		gameLocal.Printf( "Client is not connected to a server\n" );
+		return;
+	}
+
+	sdReliableClientMessage msg( GAME_RELIABLE_CMESSAGE_REPEATERSTATUS );
+	msg.Send();
 }
 
 /*
@@ -2862,6 +3205,14 @@ void idGameLocal::InitConsoleCommands( void ) {
 #endif /* !SD_DEMO_BUILD */
 
 	cmdSystem->AddCommand( "setSpectateClient",			Cmd_SetSpectateClient_f,		CMD_FL_GAME,		"switches to spectating the client specified, either by name or index" );
+	cmdSystem->AddCommand( "spectate",					Cmd_Spectate_f,					CMD_FL_GAME,		"commands to shift spectator positions", Cmd_Spectate_Completion );
+	cmdSystem->AddCommand( "setSpawnPoint",				Cmd_SetSpawnPoint_f,			CMD_FL_GAME,		"commands to change which spawn point you have selected", Cmd_SetSpawnPoint_Completion );
+
+	cmdSystem->AddCommand( "setIPAutoAuth",				Cmd_SetIPAutoAuth_f,			CMD_FL_GAME,		"sets auto auth for the given IP" );
+	cmdSystem->AddCommand( "setPBAutoAuth",				Cmd_SetPBAutoAuth_f,			CMD_FL_GAME,		"sets auto auth for the given punkbuster guid" );
+	cmdSystem->AddCommand( "setGUIDAutoAuth",			Cmd_SetGUIDAutoAuth_f,			CMD_FL_GAME,		"sets auto auth for the given game guid" );
+
+	cmdSystem->AddCommand( "getRepeaterStatus",			Cmd_GetRepeaterStatus_f,		CMD_FL_GAME,		"displays whether there the repeater server is running on the server the client is currently connected to" );
 }
 
 /*

@@ -8,7 +8,9 @@
 #include <assert.h>
 #include <stdio.h>
 #include <math.h>
+#ifndef MACOS_X
 #include <malloc.h>
+#endif
 #include <string.h>
 #include <wchar.h>
 #include <stdarg.h>

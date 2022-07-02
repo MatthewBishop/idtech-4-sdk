@@ -713,10 +713,13 @@ void idGameLocal::ServerClientBegin( int clientNum, bool isBot ) {
 		rules->WriteInitialReliableMessages( sdReliableMessageClientInfo( clientNum ) );
 	}
 
-	// spawn the player
-	SpawnPlayer( clientNum, isBot );
+	idPlayer* player = GetClient( clientNum );
+	if ( player == NULL ) {
+		// spawn the player
+		SpawnPlayer( clientNum, isBot );
+		player = GetClient( clientNum );
+	}
 
-	idPlayer* player = gameLocal.GetClient( clientNum );
 	if ( player != NULL ) {
 		sdProficiencyManager::GetInstance().RestoreProficiency( player );
 	}
@@ -777,7 +780,7 @@ void idGameLocal::ServerClientDisconnect( int clientNum ) {
 			player->SetSpectateClient( player );
 		}
 
-		if ( disconnectClient->userInfo.isBot ) {
+		if ( !disconnectClient->userInfo.isBot ) {
 			sdProficiencyManager::GetInstance().CacheProficiency( disconnectClient );
 		}
 		disconnectClient->PostEventMS( &EV_Remove, 0 );
@@ -1798,11 +1801,36 @@ void idGameLocal::ServerProcessReliableMessage( int clientNum, const idBitMsg &m
 			break;
 		}
 		case GAME_RELIABLE_CMESSAGE_TEAMSWITCH: {
-			int index = msg.ReadLong();
+			int index = msg.ReadLong(	);
 			char buffer[ 256 ];
+			char buffer2[ 256 ];
 			msg.ReadString( buffer, sizeof( buffer ) );
 
-			rules->SetClientTeam( client, index, false, buffer );
+			bool useBuffer2 = false;
+			if ( index == sdTeamManager::GetInstance().GetNumTeams() + 1 ) {
+				msg.ReadString( buffer2, sizeof( buffer2 ) );
+
+				// auto join team with the least number of players
+				int lowest = -1;
+				int clientTeamIndex = client->GetTeam() != NULL ? client->GetTeam()->GetIndex() : -1;
+				for ( int i = 0; i < sdTeamManager::GetInstance().GetNumTeams(); i++ ) {
+					int num = sdTeamManager::GetInstance().GetTeamByIndex( i ).GetNumPlayers();
+					if ( clientTeamIndex == i ) {
+						num--;
+					}
+					if ( num < lowest || lowest == -1 ) {
+						lowest = num;
+						index = i + 1;
+					}
+				}
+
+				if ( index == 2 ) {
+					// use password for team 2
+					useBuffer2 = true;
+				}
+			}
+
+			rules->SetClientTeam( client, index, false, useBuffer2 == false ? buffer : buffer2 );
 			break;
 		}
 		case GAME_RELIABLE_CMESSAGE_CLASSSWITCH: {
@@ -1950,6 +1978,29 @@ void idGameLocal::ServerProcessReliableMessage( int clientNum, const idBitMsg &m
 		case GAME_RELIABLE_CMESSAGE_ACKNOWLEDGEBANLIST: {
 			if ( clientLastBanIndexReceived[ clientNum ] != -1 ) {
 				SendBanList( client );
+			}
+			break;
+		}
+		case GAME_RELIABLE_CMESSAGE_REPEATERSTATUS: {
+			sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_REPEATERSTATUS );
+			msg.WriteBool( gameLocal.isRepeater );
+			msg.Send( sdReliableMessageClientInfo( clientNum ) );
+			break;
+		}
+		case GAME_RELIABLE_CMESSAGE_SPECTATECOMMAND: {
+			int command = msg.ReadBits( idMath::BitsForInteger( idPlayer::SPECTATE_MAX ) );
+
+			idVec3 origin = vec3_origin;
+			idAngles angles = ang_zero;
+			if ( command == idPlayer::SPECTATE_POSITION ) {
+				origin = msg.ReadVector();
+				angles.pitch = msg.ReadFloat();
+				angles.yaw = msg.ReadFloat();
+				angles.roll = msg.ReadFloat();
+			}
+
+			if ( client->IsSpectator() ) {
+				client->SpectateCommand( ( idPlayer::spectateCommand_t )command, origin, angles );
 			}
 			break;
 		}
@@ -2449,6 +2500,9 @@ void idGameLocal::WriteClientNetworkInfo( idFile* file ) {
 
 	clientNetworkInfo_t& nwInfo = GetNetworkInfo( localClientNum );
 
+	SetSnapShotClient( GetLocalPlayer() );
+	SetSnapShotPlayer( GetLocalPlayer() );
+
 	for ( idEntity* ent = networkedEntities.Next(); ent; ent = ent->networkNode.Next() ) {
 		file->WriteInt( ent->entityNumber );
 
@@ -2465,6 +2519,33 @@ void idGameLocal::WriteClientNetworkInfo( idFile* file ) {
 			ASYNC_SECURITY_WRITE_FILE( file )
 		}
 		ASYNC_SECURITY_WRITE_FILE( file )
+
+		for ( int j = 0; j < NSM_NUM_MODES; j++ ) {
+			networkStateMode_t mode = ( networkStateMode_t )j;
+
+			sdEntityState* state = AllocEntityState( mode, ent );
+			if ( state->data != NULL ) {
+				file->WriteBool( true );
+
+				idBitMsg temp;
+				byte buffer[ 2048 ];
+				temp.InitWrite( buffer, sizeof( buffer ) );
+				
+				sdEntityState* defaultState = AllocEntityState( mode, ent );
+				defaultState->data->MakeDefault();
+
+				ent->WriteNetworkState( mode, *defaultState->data, *state->data, temp );
+
+				FreeNetworkState( defaultState );
+
+				state->data->Write( file );
+			} else {
+				file->WriteBool( false );
+			}
+
+			FreeNetworkState( state );
+		}
+		ASYNC_SECURITY_WRITE_FILE( file )
 	}
 	file->WriteInt( MAX_GENTITIES );
 
@@ -2477,6 +2558,37 @@ void idGameLocal::WriteClientNetworkInfo( idFile* file ) {
 		file->WriteBool( true );
 		nwInfo.gameStates[ i ]->data->Write( file );
 	}
+
+	ASYNC_SECURITY_WRITE_FILE( file )
+
+	for ( int i = 0; i < ENSM_NUM_MODES; i++ ) {
+		extNetworkStateMode_t mode = ( extNetworkStateMode_t )i;
+
+		sdNetworkStateObject& obj = GetGameStateObject( mode );
+		sdGameState* state = AllocGameState( obj );
+		if ( state->data != NULL ) {
+			file->WriteBool( true );
+
+			idBitMsg temp;
+			byte buffer[ 2048 ];
+			temp.InitWrite( buffer, sizeof( buffer ) );
+			
+			sdGameState* defaultState = AllocGameState( obj );
+			defaultState->data->MakeDefault();
+
+			obj.WriteNetworkState( *defaultState->data, *state->data, temp );
+
+			FreeGameState( defaultState );
+
+			state->data->Write( file );
+		} else {
+			file->WriteBool( false );
+		}
+
+		FreeGameState( state );
+	}
+
+	ASYNC_SECURITY_WRITE_FILE( file )
 
 	// write number of snapshots so on readback we know how many to allocate
 	int snapCount = 0;
@@ -2511,6 +2623,9 @@ void idGameLocal::WriteClientNetworkInfo( idFile* file ) {
 			snapshot->gameStates[ i ]->data->Write( file );
 		}
 	}
+
+	SetSnapShotClient( NULL );
+	SetSnapShotPlayer( NULL );
 }
 
 /*
@@ -2541,7 +2656,8 @@ void idGameLocal::ReadClientNetworkInfo( idFile* file ) {
 			Error( "idGameLocal::ReadClientNetworkInfo Tried to read out of bounds entity" );
 		}
 
-		if ( !entities[ num ] ) {
+		idEntity* ent = entities[ num ];
+		if ( ent == NULL ) {
 			Error( "idGameLocal::ReadClientNetworkInfo Tried to Read State For Missing Entity" );
 		}
 
@@ -2554,7 +2670,9 @@ void idGameLocal::ReadClientNetworkInfo( idFile* file ) {
 
 			FreeNetworkState( nwInfo.states[ num ][ j ] );
 
-			sdEntityState& newState = *AllocEntityState( ( networkStateMode_t )j, entities[ num ] );
+			networkStateMode_t mode = ( networkStateMode_t )j;
+
+			sdEntityState& newState = *AllocEntityState( mode, ent );
 			if ( newState.data == NULL ) {
 				Error( "idGameLocal::ReadClientNetworkInfo Failed to Alloc Network State" );
 			}
@@ -2562,9 +2680,27 @@ void idGameLocal::ReadClientNetworkInfo( idFile* file ) {
 			newState.data->Read( file );
 			
 			ASYNC_SECURITY_READ_FILE( file )
-			entities[ num ]->ApplyNetworkState( ( networkStateMode_t )j, *newState.data );
-
 			nwInfo.states[ num ][ j ] = &newState;
+		}
+
+		ASYNC_SECURITY_READ_FILE( file )
+
+		for ( int j = 0; j < NSM_NUM_MODES; j++ ) {
+			bool temp;
+			file->ReadBool( temp );
+			if ( !temp ) {
+				continue;
+			}
+
+			networkStateMode_t mode = ( networkStateMode_t )j;
+
+			sdEntityState* state = AllocEntityState( mode, ent );
+			assert( state->data != NULL );
+			state->data->Read( file );
+
+			ent->ApplyNetworkState( mode, *state->data );
+
+			FreeNetworkState( state );
 		}
 
 		ASYNC_SECURITY_READ_FILE( file )
@@ -2573,7 +2709,8 @@ void idGameLocal::ReadClientNetworkInfo( idFile* file ) {
 	for ( int i = 0; i < ENSM_NUM_MODES; i++ ) {
 		FreeGameState( nwInfo.gameStates[ i ] );
 
-		sdNetworkStateObject& stateObject = GetGameStateObject( ( extNetworkStateMode_t )i );
+		extNetworkStateMode_t mode = ( extNetworkStateMode_t )i;
+		sdNetworkStateObject& stateObject = GetGameStateObject( mode );
 
 		bool temp;
 		file->ReadBool( temp );
@@ -2583,9 +2720,30 @@ void idGameLocal::ReadClientNetworkInfo( idFile* file ) {
 
 		nwInfo.gameStates[ i ] = AllocGameState( stateObject );
 		nwInfo.gameStates[ i ]->data->Read( file );
-
-		stateObject.ApplyNetworkState( *nwInfo.gameStates[ i ]->data );
 	}
+
+	ASYNC_SECURITY_READ_FILE( file )
+
+	for ( int i = 0; i < ENSM_NUM_MODES; i++ ) {
+		extNetworkStateMode_t mode = ( extNetworkStateMode_t )i;
+		sdNetworkStateObject& stateObject = GetGameStateObject( mode );
+
+		bool temp;
+		file->ReadBool( temp );
+		if ( !temp ) {
+			continue;
+		}
+
+		sdGameState* state = AllocGameState( stateObject );
+		assert( state->data != NULL );
+		state->data->Read( file );
+
+		stateObject.ApplyNetworkState( *state->data );
+
+		FreeGameState( state );
+	}
+
+	ASYNC_SECURITY_READ_FILE( file )
 
 	FreeSnapshotsOlderThanSequence( nwInfo, 0x7FFFFFFF );
 	
@@ -2649,6 +2807,7 @@ userInfo_t::ToDict
 ================
 */
 void userInfo_t::ToDict( idDict& info ) const {
+	info.Set( "ui_name", baseName.c_str() );
 	info.Set( "ui_realname", rawName.c_str() );
 	info.SetBool( "ui_showGun", showGun );
 	info.SetBool( "ui_ignoreExplosiveWeapons", ignoreExplosiveWeapons );
@@ -2658,6 +2817,7 @@ void userInfo_t::ToDict( idDict& info ) const {
 	info.SetBool( "ui_rememberCameraMode", rememberCameraMode );
 	info.SetBool( "ui_drivingCameraFreelook", drivingCameraFreelook );
 	info.SetBool( "ui_bot", isBot );
+	info.SetBool( "ui_swapFlightYawAndRoll", swapFlightYawAndRoll );
 }
 
 /*
@@ -2684,6 +2844,7 @@ void userInfo_t::FromDict( const idDict& info ) {
 	voipReceiveTeam			= info.GetBool( "ui_voipReceiveTeam" );
 	voipReceiveFireTeam		= info.GetBool( "ui_voipReceiveFireTeam" );
 	showComplaints			= info.GetBool( "ui_showComplaints" );
+	swapFlightYawAndRoll	= info.GetBool( "ui_swapFlightYawAndRoll" );
 }
 
 /*
@@ -2695,6 +2856,7 @@ void idGameLocal::WriteUserInfo( idBitMsg& msg, const idDict& info ) {
 	userInfo_t userInfo;
 	userInfo.FromDict( info );
 
+	msg.WriteString( userInfo.baseName.c_str() );
 	msg.WriteString( userInfo.rawName.c_str() );
 	msg.WriteBool( userInfo.showGun );
 	msg.WriteBool( userInfo.ignoreExplosiveWeapons );
@@ -2704,6 +2866,7 @@ void idGameLocal::WriteUserInfo( idBitMsg& msg, const idDict& info ) {
 	msg.WriteBool( userInfo.rememberCameraMode );
 	msg.WriteBool( userInfo.drivingCameraFreelook );
 	msg.WriteBool( userInfo.isBot );
+	msg.WriteBool( userInfo.swapFlightYawAndRoll );
 }
 
 /*
@@ -2713,10 +2876,13 @@ idGameLocal::ReadUserInfo
 */
 void idGameLocal::ReadUserInfo( const idBitMsg& msg, idDict& info ) {
 	char buffer[ 256 ];
-	msg.ReadString( buffer, sizeof( buffer ) );
+		userInfo_t userInfo;
 
-	userInfo_t userInfo;
+	msg.ReadString( buffer, sizeof( buffer ) );
+	userInfo.baseName = buffer;
+	msg.ReadString( buffer, sizeof( buffer ) );
 	userInfo.rawName = buffer;
+
 	userInfo.showGun = msg.ReadBool();
 	userInfo.ignoreExplosiveWeapons = msg.ReadBool();
 	userInfo.autoSwitchEmptyWeapons = msg.ReadBool();
@@ -2725,6 +2891,7 @@ void idGameLocal::ReadUserInfo( const idBitMsg& msg, idDict& info ) {
 	userInfo.rememberCameraMode = msg.ReadBool();
 	userInfo.drivingCameraFreelook = msg.ReadBool();
 	userInfo.isBot = msg.ReadBool();
+	userInfo.swapFlightYawAndRoll = msg.ReadBool();
 
 	userInfo.ToDict( info );
 }
@@ -3404,6 +3571,15 @@ void idGameLocal::ClientProcessReliableMessage( const idBitMsg &msg ) {
 			break;
 		}
 		case GAME_RELIABLE_SMESSAGE_BANLISTFINISHED: {
+			break;
+		}
+		case GAME_RELIABLE_SMESSAGE_REPEATERSTATUS: {
+			bool repeaterActive = msg.ReadBool();
+			if ( repeaterActive ) {
+				gameLocal.Printf( "Repeater is running on this server\n" );
+			} else {
+				gameLocal.Printf( "Repeater is not running on this server\n" );
+			}
 			break;
 		}
 		default: {

@@ -836,6 +836,8 @@ public:
 
 	void					UpdatePausedObjectiveView();
 
+	void					UpdateBriefingView();
+
 	bool					CanGetClass( const sdDeclPlayerClass* pc );
 
 	bool					Give( const char *statname, const char *value );
@@ -958,6 +960,7 @@ public:
 	bool					IsDead( void ) const { return health <= 0 && !IsInLimbo() && !GetWantSpectate() && !IsSpectator(); }
 	bool					IsInPlayZone( void ) const { return playerFlags.inPlayZone; }
 	bool					IsInvulernable( void ) const { return playerFlags.noclip || playerFlags.godmode || invulnerableEndTime > gameLocal.time; }
+	bool					IsBeingBriefed() const;
 
 	void					SetInvulnerableEndTime( int time );
 
@@ -1173,8 +1176,22 @@ public:
 	void					UpdateWeapon( void );
 	void					UpdateSpectating( const usercmd_t& oldCmd );
 	void					SpectateFreeFly( bool force );	// ignore the timeout to force when followed spec is no longer valid
-	void					SpectateCycle( bool force = false );
-	idPlayer*				GetNextSpectateClient( void ) const;
+	void					SpectateCycle( bool force = false, bool reverse = false );
+	void					SpectateCrosshair( bool force = false );
+	idPlayer*				GetNextSpectateClient( bool reverse = false ) const;
+	idPlayer*				GetPrevSpectateClient( void ) const;
+
+	typedef enum {
+		SPECTATE_INVALID = -1,
+		SPECTATE_NEXT = 0,
+		SPECTATE_PREV,
+		SPECTATE_OBJECTIVE,
+		SPECTATE_POSITION,
+		SPECTATE_MAX
+	} spectateCommand_t;
+
+	void					SpectateObjective( void );
+	void					SpectateCommand( spectateCommand_t command, const idVec3& origin, const idAngles& angles );
 
 	void					BobCycle( const idVec3 &pushVelocity );
 	void					UpdateViewAngles( void );

@@ -61,6 +61,7 @@ public:
 	const usercmd_t&			GetRepeaterUserCmd( void ) const { return repeaterUserCmd; }
 	const repeaterViewInfo_t	GetRepeaterViewInfo( void ) const { return repeaterViewInfo; }
 	const sdCrosshairInfo&		CalcRepeaterCrosshairInfo( void );
+	void						SetRepeaterViewPosition( const idVec3& origin, const idAngles& angles );
 
 	bool				RenderPlayerView( idPlayer* player );
 	bool				RenderPlayerView2D( idPlayer* player );

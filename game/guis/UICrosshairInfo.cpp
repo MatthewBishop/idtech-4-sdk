@@ -506,6 +506,10 @@ void sdUICrosshairInfo::DrawPlayerIcons2D( void ) {
 		return;
 	}
 
+	if ( viewPlayer->IsBeingBriefed() ) {
+		return;
+	}
+
 	if ( !TestCrosshairInfoFlag( CF_PLAYER_ICONS ) ) {
 		return;
 	}
@@ -618,6 +622,10 @@ void sdUICrosshairInfo::DrawWayPoints( idEntity* exclude ) {
 
 	idPlayer* viewPlayer = gameLocal.GetLocalViewPlayer();
 	if ( viewPlayer == NULL ) {
+		return;
+	}
+
+	if ( viewPlayer->IsBeingBriefed() ) {
 		return;
 	}
 

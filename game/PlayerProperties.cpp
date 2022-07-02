@@ -292,6 +292,7 @@ void sdPlayerProperties::Init( void ) {
 
 	properties.RegisterProperty( "serverIsRepeater",		serverIsRepeater );
 	properties.RegisterProperty( "isServer",				isServer );
+	properties.RegisterProperty( "inLetterBox",				inLetterBox );
 
 	killedPlayerMessage			= declHolder.declLocStrType.LocalFind( "game/obit/local/killed" );
 	killedByPlayerMessage		= declHolder.declLocStrType.LocalFind( "game/obit/local/killedby" );
@@ -403,6 +404,10 @@ sdPlayerProperties::UpdateTeam
 */
 void sdPlayerProperties::UpdateTeam( sdTeamInfo* team ) {
 	teamName = team ? team->GetLookupName() : "spectating";
+	
+	if ( teamNameView.GetValue().Length() <= 0 ) {
+		teamNameView = teamName;
+	}
 }
 
 /*
@@ -698,11 +703,18 @@ void sdPlayerProperties::Update( idPlayer* player ) {
 		hideDecoyInfo = iface->GetHideDecoyInfo( player ) ? 1.f : 0.f;
 		showTargetingInfo = iface->GetShowTargetingInfo( player ) ? 1.f : 0.f;
 		vehicleYaw = proxy->GetRenderEntity() != NULL ? proxy->GetRenderEntity()->axis.ToAngles().yaw : 0.0f;
+		inLetterBox = 0.0f;
 	} else {
 		vehicleDestructTime = 0.0f;
 		vehicleWrongDirection = 0.0f;
 		vehicleKickDistance = -1;
-		showCrosshair = 1.0f;
+		if ( player != NULL ) {
+			showCrosshair = player->IsBeingBriefed() ? 0.0f : 1.0f;
+			inLetterBox = ( player->IsBeingBriefed() ) ? 1.0f : 0.0f;
+		} else {
+			showCrosshair = 1.0f;
+			inLetterBox = 0.0f;
+		}
 		hideDecoyInfo = 0.0f;
 		showTargetingInfo = 0.0f;
 	}

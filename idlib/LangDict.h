@@ -27,7 +27,6 @@ public:
 	bool					Load( const char *fileName, bool clear = true );
 	void					Save( const char *fileName );
 
-	const char*				AddString( const wchar_t *str );
 	const wchar_t*			GetString( const char *str ) const;
 	
 	const idLangKeyValue*	FindKeyValue( const char* str ) const;
@@ -38,17 +37,11 @@ public:
 	int						GetNumKeyVals() const;
 	const idLangKeyValue*	GetKeyVal( int i ) const;
 
-	void					SetBaseID( int id ) { baseID = id; };
-
 private:
 	idList<idLangKeyValue>	args;
 	idHashIndex				hash;
 
-	bool					ExcludeString( const wchar_t *str ) const;
-	int						GetNextId( void ) const;
 	int						GetHashKey( const char *str ) const;
-
-	int						baseID;
 };
 
 #endif /* !__LANGDICT_H__ */

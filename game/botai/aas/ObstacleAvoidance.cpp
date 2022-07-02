@@ -906,7 +906,7 @@ void idObstacleAvoidance::FindOptimalPath( const pathNode_t * root, const float 
 
 		if ( node->dist <= bestNode->dist ) {
 
-			if ( idMath::Fabs( node->dist - bestNode->dist ) < 1.0f ) {
+			if ( idMath::Fabs( node->dist - bestNode->dist ) < 1.0f && bestNode != root) {
 
 				if ( !optimizedPathCalculated ) {
 					bestNumPathPoints = OptimizePath( root, bestNode, optimizedPath );

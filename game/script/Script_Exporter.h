@@ -104,6 +104,7 @@ public:
 	void			WriteClassFunctionWrappers( void );
 	void			WriteSysCalls( void );
 	void			WriteBuildVersion( void );
+    void            WriteXCodeProjectFile( void );
 	void			WriteProjectFile( void );
 	void			WriteEventCalls( void );
 

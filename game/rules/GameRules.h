@@ -164,6 +164,7 @@ public:
 	virtual void				GetBrowserStatusString( idWStr& str, const sdNetSession& netSession ) const;
 
 	virtual void				OnNewScriptLoad( void );
+	virtual void				OnLocalMapRestart( void );
 
 	virtual sdTeamInfo*			GetWinningTeam( void ) const { return NULL; }
 	virtual const sdDeclLocStr*	GetWinningReason( void ) const { return NULL; }
@@ -289,6 +290,8 @@ public:
 	virtual bool				ParseNetworkMessage( int msgType, const idBitMsg& msg );
 
 	sdTeamInfo*					FindNeedyTeam( idPlayer* ignore = NULL );
+
+	virtual const char*			GetDemoNameInfo( void ) = 0;
 
 protected:
 	void						NextStateDelayed( gameState_t state, int delay );

@@ -348,6 +348,10 @@ void idTrigger_Multi::OnTouch( idEntity *other, const trace_t& trace ) {
 	}
 
 	idPlayer* player = other->Cast< idPlayer >();
+	if ( player != NULL && player->GetHealth() <= 0 ) {
+		return;
+	}
+
 	if ( player ) {
 		if ( !touchClient ) {
 			return;
@@ -518,6 +522,10 @@ void idTrigger_Hurt::OnTouch( idEntity *other, const trace_t& trace ) {
 	UpdateTriggerEntities( other );
 
 	idPlayer* player = other->Cast< idPlayer >();
+	if ( player != NULL && player->IsInLimbo() ) {
+		return;
+	}
+
 	if ( player != NULL ) {
 		if ( player->IsSpectator() ) {
 			return;

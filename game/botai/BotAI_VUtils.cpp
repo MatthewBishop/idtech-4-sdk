@@ -80,6 +80,10 @@ bool idBotAI::VehicleIsValid( int entNum, bool skipSpeedCheck, bool addDriverChe
 		return false;
 	}
 
+	if ( vehicleInfo.isBoobyTrapped && vehicleInfo.type != MCP ) {
+		return false;
+	}
+
 	if ( !vehicleInfo.inPlayZone ) {
 		return false;
 	}
@@ -180,6 +184,10 @@ int idBotAI::FindClosestVehicle( float range, const idVec3& org, const playerVeh
 		}
 
 		if ( vehicle.isFlipped ) { //mal: its on its back.
+			continue;
+		}
+
+		if ( vehicle.isBoobyTrapped && vehicle.type != MCP ) {
 			continue;
 		}
 
@@ -317,6 +325,26 @@ void idBotAI::Bot_ExitVehicle( bool ignoreMCP ) {
 	}
 
 	if ( botVehicleInfo != NULL ) {
+		if ( ( botInfo->classType != ENGINEER || vLTGType != V_STOP_VEHICLE ) && botVehicleInfo->driverEntNum != botNum && ClientIsValid( botVehicleInfo->driverEntNum, -1 ) && botInfo->proxyInfo.weapon != NULL_VEHICLE_WEAPON ) { //mal: if we're riding along with a human, never leave the vehicle - its frustrating for the human, unless we have no weapon to use.
+			const clientInfo_t& player = botWorld->clientInfo[ botVehicleInfo->driverEntNum ];
+	
+			if ( !player.isBot ) {
+				if ( Bot_WithObjShouldLeaveVehicle() ) { //mal: if the bot has the obj - they should leave if the player stops the vehicle.
+					goto leaveThisVehicle;
+				}
+				vLTGTarget = botVehicleInfo->driverEntNum;
+				vLTGTargetSpawnID = player.spawnID;
+				vLTGTime = ( ClientHasObj( botNum ) ) ? botWorld->gameLocalInfo.time + 10000 : botWorld->gameLocalInfo.time + BOT_INFINITY; //mal: if have obj, do constant checks as to whether or not we should leave.
+				V_ROOT_AI_NODE = &idBotAI::Run_VLTG_Node;
+				V_LTG_AI_SUB_NODE = &idBotAI::Enter_VLTG_RideWithMate;
+				return;
+			}
+		}
+	}
+
+leaveThisVehicle:
+
+	if ( botVehicleInfo != NULL ) {
 		lastVehicleSpawnID = botVehicleInfo->spawnID;
 		lastVehicleTime = botWorld->gameLocalInfo.time;
 
@@ -410,7 +438,7 @@ bool idBotAI::InAirVehicleGunSights( int vehicleNum, const idVec3 &org ) {
 idBotAI::InFrontOfVehicle
 ==================
 */
-bool idBotAI::InFrontOfVehicle( int vehicleNum, const idVec3 &org, bool precise ) {
+bool idBotAI::InFrontOfVehicle( int vehicleNum, const idVec3 &org, bool precise, float preciseValue ) {
 	proxyInfo_t vehicleInfo;
 
 	GetVehicleInfo( vehicleNum, vehicleInfo );
@@ -423,8 +451,8 @@ bool idBotAI::InFrontOfVehicle( int vehicleNum, const idVec3 &org, bool precise 
 	float dotCheck = 0.0f;
 
 	if ( precise ) {
-		dir.NormalizeFast();  //mal: if we're only calculating for 90 degrees, we don't need to normalize the dir.
-		dotCheck = 0.60f;
+		dir.NormalizeFast(); 
+		dotCheck = preciseValue;
 	}
 
 	if ( dir * vehicleInfo.axis[ 0 ] > dotCheck ) {
@@ -578,6 +606,16 @@ void idBotAI::Bot_SetupVehicleMove( const idVec3 &org, int clientNum, int action
 		for( i = 0; i < traceHeight.numPoints; i++ ) {
 			if ( traceHeight.points[ i ].z > height ) {
 				height = traceHeight.points[ i ].z;
+
+				if ( botThreadData.AllowDebugData() ) {
+					if ( bot_showPath.GetInteger() == botNum ) {
+						gameRenderWorld->DebugLine( colorGreen, traceHeight.points[ i ], traceHeight.points[ i ] + idVec3( 0.0f, 0.0f, 128.0f ) );
+						if ( i > 0 ) {
+							gameRenderWorld->DebugLine( colorLtBlue, traceHeight.points[ i - 1 ], traceHeight.points[ i ] );
+						}
+					}
+				}
+
 				if ( height >= botWorld->gameLocalInfo.maxVehicleHeight - 128.0f ) {
 					botAAS.hasPath = false;
 				}
@@ -646,6 +684,7 @@ void idBotAI::Bot_SetupVehicleMove( const idVec3 &org, int clientNum, int action
 
 		if ( resetGoal ) {
 			badMoveTime = 500;
+			botUcmd->specialMoveType = SKIP_MOVE;
 			return;
 		}
 
@@ -779,6 +818,14 @@ void idBotAI::Bot_SetupVehicleMove( const idVec3 &org, int clientNum, int action
 			}
 		}
 
+/*
+		if ( path.firstObstacle != -1 ) {
+			botAAS.blockedByObstacleCounterInVehicle++;
+		} else {
+			botAAS.blockedByObstacleCounterInVehicle = 0;
+		}
+*/
+
 		if ( !botWorld->gameLocalInfo.inWarmup && botThreadData.random.RandomInt( 100 ) > 98 ) {
 			if ( path.firstObstacle > -1 && path.firstObstacle < MAX_CLIENTS ) {
 				const clientInfo_t& blockingClient = botWorld->clientInfo[ path.firstObstacle ];
@@ -807,7 +854,7 @@ void idBotAI::Bot_SetupVehicleMove( const idVec3 &org, int clientNum, int action
 
 /*
 ================
-idBotAI::Bot_SetupQuickMove
+idBotAI::Bot_SetupVehicleQuickMove
 
 A fast version of SetupMove, that just has the bot blindly move towards its goal pos, only doing dynamic obstacle avoidance checks.
 ================
@@ -1151,7 +1198,7 @@ bool idBotAI::Bot_CheckVehicleNodePath( const idVec3& goalOrigin, idVec3& pathPo
 			if ( nodeTimeOut < botWorld->gameLocalInfo.time ) {
 				Bot_ExitVehicleAINode( true );
 				pathPoint = botVehicleInfo->origin;
-				vehicleReverseTime = botWorld->gameLocalInfo.time + 700; //mal: just in case we got stuck, backup up a bit.
+				vehicleReverseTime = botWorld->gameLocalInfo.time + 700; //mal: just in case we got stuck, back up a bit.
 				return false;
 			}
 		}
@@ -1665,22 +1712,26 @@ bool idBotAI::Bot_VehicleLTGIsAvailable( int clientNum, int actionNumber, const 
 			continue;
 		}
 
-		if ( botThreadData.bots[ i ]->aiState != VLTG ) {
+		if ( botThreadData.bots[ i ] == NULL ) {
 			continue;
 		}
 
-		if ( botThreadData.bots[ i ]->vLTGType != goalType ) {
+		if ( botThreadData.bots[ i ]->GetAIState() != VLTG ) {
+			continue;
+		}
+
+		if ( botThreadData.bots[ i ]->GetVehicleLTGType() != goalType ) {
 			continue;
 		}
 
 		if ( clientNum != -1 ) {
-			if ( botThreadData.bots[ i ]->vLTGTarget != clientNum ) {
+			if ( botThreadData.bots[ i ]->GetVehicleLTGTarget() != clientNum ) {
 				continue;
 			}
 		}
 
 		if ( actionNumber != ACTION_NULL ) {
-			if ( botThreadData.bots[ i ]->actionNum != actionNumber ) {
+			if ( botThreadData.bots[ i ]->GetActionNum() != actionNumber ) {
                 continue;
 			}
 		}
@@ -1864,11 +1915,11 @@ bool idBotAI::Bot_CheckIfClientHasRideWaiting( int clientNum ) {
 			continue;
 		}
 
-		if ( botThreadData.bots[ i ]->vehicleSurrenderTime < botWorld->gameLocalInfo.time ) {
+		if ( botThreadData.bots[ i ]->GetVehicleSurrenderTime() < botWorld->gameLocalInfo.time ) {
 			continue;
 		}
 
-		if ( botThreadData.bots[ i ]->vehicleSurrenderClient != clientNum ) {
+		if ( botThreadData.bots[ i ]->GetVehicleSurrenderClient() != clientNum ) {
 			continue;
 		}
 
@@ -2067,15 +2118,421 @@ bool idBotAI::HumanVehicleOwnerNearby( const playerTeamTypes_t playerTeam, const
 	return humanOwner;
 }
 
+/*
+================
+idBotAI::Bot_CheckFriendlyEngineerIsNearbyOurVehicle
+================
+*/
+bool idBotAI::Bot_CheckFriendlyEngineerIsNearbyOurVehicle() {
+	bool friendNearby = false;
+
+	if ( botVehicleInfo == false ) {
+		return false;
+	}
+
+	if ( botVehicleInfo->health == botVehicleInfo->maxHealth ) {
+		return false;
+	}
+
+	if ( enemy != -1 ) {
+		return false;
+	}
+
+	for( int i = 0; i < MAX_CLIENTS; i++ ) {
+
+		if ( i == botNum ) { 
+			continue;
+		}
+
+		if ( !ClientIsValid( i, -1 ) ) {
+			continue;
+		}
+
+		const clientInfo_t& player = botWorld->clientInfo[ i ];
+
+		if ( player.team != botInfo->team ) {
+			continue;
+		}
+
+		if ( player.health <= 0 ) {
+			continue;
+		}
+
+		if ( player.classType != ENGINEER ) {
+			continue;
+		}
+
+		if ( player.isBot ) {
+
+			if ( botThreadData.bots[ i ] == NULL ) {
+				continue;
+			}
 
 
-					
+			if ( botThreadData.bots[ i ]->GetNBGType() != FIX_VEHICLE || botThreadData.bots[ i ]->GetAIState() != NBG ) {
+				continue;
+			}
+
+			if ( botThreadData.bots[ i ]->GetNBGTarget() != botVehicleInfo->entNum ) {
+				continue;
+			}
+
+			friendNearby = true;
+			break;
+		} else {
+
+			if ( player.weapInfo.weapon != PLIERS ) {
+				continue;
+			}
+
+			if ( !InFrontOfClient( i, botVehicleInfo->origin ) ) {
+				continue;
+			}
+
+			idVec3 vec = botVehicleInfo->origin - player.origin;
+
+			if ( vec.LengthSqr() > Square( MAX_REPAIR_DIST ) ) {
+				continue;
+			}
+
+			friendNearby = true;
+			break;
+		}
+	}
+
+	return friendNearby;
+}
+
+/*
+================
+idBotAI::Bot_CheckForHumanNearByWhoMayWantRide
+================
+*/
+bool idBotAI::Bot_CheckForHumanNearByWhoMayWantRide() {
+	bool friendNearby = false;
+
+	if ( enemy != -1 ) {
+		return false;
+	}
+
+	if ( botVehicleInfo == NULL ) {
+		return false;
+	}
+
+	if ( botVehicleInfo->type == ICARUS && !botVehicleInfo->hasGroundContact ) {
+		return false;
+	}
+
+	for( int i = 0; i < MAX_CLIENTS; i++ ) {
+
+		if ( i == botNum ) { 
+			continue;
+		}
+
+		if ( !ClientIsValid( i, -1 ) ) {
+			continue;
+		}
+
+		const clientInfo_t& player = botWorld->clientInfo[ i ];
+
+		if ( player.team != botInfo->team ) {
+			continue;
+		}
+
+		if ( player.health <= 0 ) {
+			continue;
+		}
+
+		if ( player.isBot ) {
+			continue;
+		}
+
+		if ( player.proxyInfo.entNum != CLIENT_HAS_NO_VEHICLE ) {
+			continue;
+		}
+
+		if ( player.xySpeed < RUNNING_SPEED ) {
+			continue;
+		}
+
+		if ( !InFrontOfClient( i, botVehicleInfo->origin, true, 0.95f ) ) {
+			continue;
+		}
+
+		idVec3 vec = botVehicleInfo->origin - player.origin;
+
+		if ( vec.LengthSqr() > Square( MAX_CONSIDER_HUMAN_FOR_RIDE_DIST ) ) {
+			continue;
+		}
+
+		friendNearby = true;
+		break;
+	}
+
+	return friendNearby;
+}
+
+/*
+================
+idBotAI::Bot_GetVehicleGunnerClientNum
+================
+*/
+int idBotAI::Bot_GetVehicleGunnerClientNum( int vehicleEntNum ) {
+	int clientNum = -1;
+	proxyInfo_t vehicleInfo;
+	botVehicleWeaponInfo_t weaponType = MINIGUN;
+	GetVehicleInfo( vehicleEntNum, vehicleInfo );
 	
+	if ( vehicleInfo.type == TROJAN ) {
+		weaponType = LAW;
+	}
 
+	for( int i = 0; i < MAX_CLIENTS; i++ ) {
 
+		if ( i == botNum ) {
+			continue;
+		}
 
+		if ( !ClientIsValid( i, -1 ) ) {
+			continue;
+		}
 
+		const clientInfo_t &playerInfo = botWorld->clientInfo[ i ];
 	
+		if ( playerInfo.proxyInfo.entNum != vehicleEntNum ) {
+			continue;
+		}
+
+		if ( playerInfo.proxyInfo.weapon != weaponType ) {
+			continue;
+		}
+
+		clientNum = i;
+		break;
+	}
+
+	return clientNum;
+}
+
+/*
+================
+idBotAI::VehicleGoalsExistForVehicle
+================
+*/
+bool idBotAI::VehicleGoalsExistForVehicle( const proxyInfo_t& vehicleInfo ) {
+	bool goalExists = false;
+
+	for( int i = 0; i < botThreadData.botActions.Num(); i++ ) {
+
+		if ( !botThreadData.botActions[ i ]->ActionIsActive() ) {
+			continue;
+		}
+
+		if ( !botThreadData.botActions[ i ]->ActionIsValid() ) {
+			continue;
+		}
+
+		if ( botThreadData.botActions[ i ]->GetObjForTeam( vehicleInfo.team ) != ACTION_VEHICLE_ROAM && botThreadData.botActions[ i ]->GetObjForTeam( vehicleInfo.team ) != ACTION_VEHICLE_CAMP ) {
+			continue;
+		}
+
+		if ( !( botThreadData.botActions[ i ]->GetActionVehicleFlags( vehicleInfo.team ) & vehicleInfo.flags ) && botThreadData.botActions[ i ]->GetActionVehicleFlags( vehicleInfo.team ) != 0  ) {
+			continue;
+		}
+
+		goalExists = true;
+		break;
+	}
+
+	return goalExists;
+}
+
+/*
+================
+idBotAI::Bot_WithObjShouldLeaveVehicle
+================
+*/
+bool idBotAI::Bot_WithObjShouldLeaveVehicle() {
+	float vehicleExitSpeed = ( botVehicleInfo->isAirborneVehicle ) ? 1024.0f : WALKING_SPEED;
+
+	if ( botVehicleInfo->type == BUFFALO ) {
+		vehicleExitSpeed = BASE_VEHICLE_SPEED;
+	}
+
+	if ( ClientHasObj( botNum ) && botVehicleInfo->xyspeed < vehicleExitSpeed && ClientIsCloseToDeliverObj( botNum, 3000.0f ) ) { //mal: if the bot has the obj - they should leave if the player stops the vehicle near the obj.
+		return true;
+	}
+
+	return false;
+}
+
+/*
+================
+idBotAI::Bot_CheckForDeployableTargetsWhileVehicleGunner
+================
+*/
+int idBotAI::Bot_CheckForDeployableTargetsWhileVehicleGunner() {
+	if ( botInfo->proxyInfo.weapon != MINIGUN && botInfo->proxyInfo.weapon != LAW ) {
+		return -1;
+	}
+
+	if ( botVehicleInfo == NULL ) {
+		return -1;
+	}
+
+	bool hasMCP = ( botWorld->botGoalInfo.botGoal_MCP_VehicleNum != -1 && botWorld->botGoalInfo.mapHasMCPGoal ) ? true : false;
+
+	int targetNum = -1;
+	float closest = idMath::INFINITY;
+
+	bool botActionValid = false;
+	int botActionNum;
+	idVec3 botActionOrg;
+
+	if ( botInfo->team == GDF ) {
+		botActionNum = botWorld->botGoalInfo.team_GDF_PrimaryAction;
+	} else {
+		botActionNum = botWorld->botGoalInfo.team_STROGG_PrimaryAction;
+	}
+
+	if ( botActionNum > -1 && botActionNum < botThreadData.botActions.Num() ) {
+		botActionValid = true;
+		botActionOrg = botThreadData.botActions[ botActionNum ]->GetActionOrigin();
+	}
+
+	for( int i = 0; i < MAX_DEPLOYABLES; i++ ) {
+		const deployableInfo_t& deployable = botWorld->deployableInfo[ i ];
+
+		if ( deployable.entNum == 0 ) {
+			continue;
+		}
+
+		if ( deployable.team == botInfo->team ) {
+			continue;
+		}
+
+		if ( DeployableIsIgnored( deployable.entNum ) ) {
+			continue;
+		}
+
+		if ( deployable.health <= 0 ) {
+			continue;
+		}
+
+		if ( deployable.ownerClientNum == -1 ) { //mal: dont attack static, map based deployables.
+			continue;
+		}
+
+		if ( deployable.health < ( deployable.maxHealth / DEPLOYABLE_DISABLED_PERCENT ) ) {
+			continue;
+		}
+
+		if ( !deployable.inPlace ) {
+			continue;
+		}
+
+		if ( botWorld->gameLocalInfo.gameMap == SLIPGATE ) { //mal: need some special love for this unique map.
+			if ( !Bot_CheckLocationIsOnSameSideOfSlipGate( deployable.origin ) ) {
+				continue;
+			}
+		}
+
+		bool isTargetingUs = ( deployable.enemyEntNum == botNum || ( botVehicleInfo != NULL && deployable.enemyEntNum == botVehicleInfo->entNum ) ) ? true : false;
+
+		idVec3 vec = deployable.origin - botInfo->origin;
+		float distSqr = vec.LengthSqr();
+
+		if ( distSqr > Square( GUNNER_ATTACK_DEPLOYABLE_DIST ) ) {
+			continue;
+		}
+
+//mal: set some kind of priority depending on the deployable type.
+		if ( deployable.type == AVT ) {
+			if ( isTargetingUs ) {
+				distSqr = 1.0f;
+			} else if ( hasMCP ) {
+				if ( deployable.enemyEntNum == botWorld->botGoalInfo.botGoal_MCP_VehicleNum ) {
+					distSqr = 5.0f;
+				}
+			} else if ( botActionValid ) { 
+				vec = botActionOrg - deployable.origin;
+				if ( vec.LengthSqr() < Square( BOT_ATTACK_DEPLOYABLE_RANGE ) ) {
+					distSqr -= Square( 1000.0f );
+				}
+			}
+		} else if ( deployable.type == APT ) { //mal: focus more on APTs that are guarding the obj we're trying to attack.
+			if ( botActionValid ) { 
+				vec = botActionOrg - deployable.origin;
+				if ( vec.LengthSqr() < Square( BOT_ATTACK_DEPLOYABLE_RANGE ) ) {
+					distSqr -= Square( 1000.0f );
+				}
+			}
+		}
+
+		if ( distSqr < closest ) {
+			vec = deployable.origin;
+			vec.z += ( deployable.bbox[ 1 ][ 2 ] - deployable.bbox[ 0 ][ 2 ] ) * Bot_GetDeployableOffSet( deployable.type );
+
+			if ( !Bot_CheckLocationIsVisible( vec, deployable.entNum, botVehicleInfo->entNum ) ) {
+				continue;
+			}
+			targetNum = deployable.entNum;
+			closest = distSqr;
+		}
+	}
+
+	return targetNum;
+}
+
+/*
+================
+idBotAI::Bot_AttackDeployableTargetsWhileVehicleGunner
+================
+*/
+void idBotAI::Bot_AttackDeployableTargetsWhileVehicleGunner( int deployableTargetToKill ) {
+	if ( deployableTargetToKill != vLTGDeployableTarget ) {
+		vLTGDeployableTargetAttackTime = botWorld->gameLocalInfo.time;
+		vLTGDeployableTarget = deployableTargetToKill;
+	}
+
+	deployableInfo_t deployable;
+
+	if ( GetDeployableInfo( false, deployableTargetToKill, deployable ) ) {
+		if ( vLTGDeployableTargetAttackTime + 5000 < botWorld->gameLocalInfo.time && ( botInfo->lastAttackedEntity != deployable.entNum || botInfo->lastAttackedEntityTime + 5000 < botWorld->gameLocalInfo.time ) ) {
+			Bot_IgnoreDeployable( deployableTargetToKill, 1000 ); //mal: update often, incase player moves into a better position.
+			return;
+		}
+
+		idVec3 deployableTargetOrg = deployable.origin;
+		deployableTargetOrg.z += ( deployable.bbox[ 1 ][ 2 ] - deployable.bbox[ 0 ][ 2 ] ) * Bot_GetDeployableOffSet( deployable.type );
+
+		Bot_LookAtLocation( deployableTargetOrg, SMOOTH_TURN, true );
+
+		if ( InFrontOfClient( botNum, deployableTargetOrg, true, 0.95f ) ) {
+			botUcmd->botCmds.attack = true;
+		}
+	}
+}
+
+/*
+================
+idBotAI::Bot_WhoIsCriticalForCurrentObjShouldLeaveVehicle
+================
+*/
+bool idBotAI::Bot_WhoIsCriticalForCurrentObjShouldLeaveVehicle() {
+	float vehicleExitSpeed = ( botVehicleInfo->isAirborneVehicle ) ? 1024.0f : WALKING_SPEED;
+
+	if ( botVehicleInfo->type == BUFFALO ) {
+		vehicleExitSpeed = BASE_VEHICLE_SPEED;
+	}
+
+	if ( Client_IsCriticalForCurrentObj( botNum, 3000.0f ) && botVehicleInfo->xyspeed < vehicleExitSpeed ) { //mal: if the bot is critical for the obj - they should leave if the player stops the vehicle near the obj.
+		return true;
+	}
+
+	return false;
+}
+
 
 
 

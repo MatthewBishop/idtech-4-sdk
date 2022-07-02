@@ -1616,6 +1616,11 @@ void sdJumpPad::OnTouch( idEntity *other, const trace_t& trace ) {
 		return;
 	}
 
+	idPlayer* player = other->Cast< idPlayer >();
+	if ( player != NULL && !player->IsSpectator() && player->GetHealth() <= 0 ) {
+		return;
+	}
+
 	nextTriggerTime = gameLocal.time + triggerWait;
 	forceField.Evaluate( gameLocal.time );
 

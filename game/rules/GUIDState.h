@@ -30,8 +30,10 @@ public:
 	int							GetBanEndTime( void ) const { return banTime; }
 	const char*					GetAuthGroup( void ) const { return authGroup.c_str(); }
 	const char*					GetUserName( void ) const { return userName.c_str(); }
-	const char*					GetPrintableName( void ) const;
+	void						GetPrintableName( idStr& name ) const;
 	bool						IsBanned( void );
+
+	bool						IsFinished( void );
 
 	void						SetGUID( sdNetClientId guid ) { matchType = MT_GUID; id.clientId = guid; }
 	void						SetIP( int ip ) { matchType = MT_IP; id.ip = ip; }
@@ -70,20 +72,23 @@ public:
 		BS_PERM_BAN,
 	};
 
-	void						CheckForUpdates( void );
+	void						CheckForUpdates( bool removeOldEntries = true );
 	bool						ParseEntry( idLexer& src );
 	void						AuthUser( int clientNum, const clientGUIDLookup_t& lookup );
+	void						SetAutoAuth( const clientGUIDLookup_t& lookup, const char* group );
 	void						BanUser( const clientGUIDLookup_t& lookup, int length );
 	banState_t					CheckForBan( const clientGUIDLookup_t& lookup );
 	void						WriteGUIDFile( void );
+	void						RemoveOldEntries( void );
 
 	void						ListBans( void );
 	static void					ListBans( const idBitMsg& msg );
 	bool						WriteBans( int& startIndex, idBitMsg& msg );
 	void						UnBan( int index );
 
-	static int					IPForString( const char* text );
-	static sdNetClientId		GUIDForString( const char* text );
+	static bool					IPForString( const char* text, int& ip );
+	static bool					GUIDForString( const char* text, sdNetClientId& id );
+	static bool					PBGUIDForString( const char* text, int& pbguid );
 
 private:
 	void						ClearGUIDStates( void );

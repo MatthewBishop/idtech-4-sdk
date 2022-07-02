@@ -328,6 +328,7 @@ extern idCVar	bot_useSuicideWhenStuck;
 extern idCVar   bot_useSpawnHosts;
 extern idCVar	bot_useUniforms;
 extern idCVar	bot_useDeployables;
+extern idCVar	bot_useMines;
 extern idCVar	bot_testPathToBotAction;
 extern idCVar	bot_sillyWarmup;
 extern idCVar	bot_noChat;
@@ -367,6 +368,7 @@ extern idCVar	bot_allowClassChanges;
 extern idCVar	bot_pauseInVehicleTime;
 extern idCVar	bot_doObjsInTrainingMode;
 extern idCVar	bot_doObjsDelayTimeInMins;
+extern idCVar	bot_useAirVehicles;
 
 extern idCVar	g_showCrosshairInfo;
 extern idCVar	g_bannerDelay;

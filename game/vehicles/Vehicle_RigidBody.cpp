@@ -20,6 +20,8 @@ static char THIS_FILE[] = __FILE__;
 #include "../script/Script_Helper.h"
 #include "../script/Script_ScriptObject.h"
 #include "../../decllib/DeclSurfaceType.h"
+#include "../botai/BotThreadData.h"
+#include "../botai/Bot.h"
 
 /*
 ===============================================================================
@@ -237,6 +239,11 @@ bool sdVehicle_RigidBody::Collide( const trace_t &collision, const idVec3 &veloc
 						idPlayer* otherPlayer = other->Cast< idPlayer >();
 						if ( otherPlayer != NULL && driver->GetEntityAllegiance( otherPlayer ) == TA_ENEMY ) {
 							IncRoadKillStats( driver );
+
+							if ( driver->IsType( idBot::Type ) && !other->IsType( idBot::Type ) ) { //mal: smartass bot!
+								clientInfo_t& driverInfo = botThreadData.GetGameWorldState()->clientInfo[ driver->entityNumber ];
+								driverInfo.lastRoadKillTime = gameLocal.time + 3000;
+							}
 						}
 					}
 				}

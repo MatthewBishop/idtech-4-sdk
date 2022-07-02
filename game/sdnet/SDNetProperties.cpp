@@ -286,8 +286,11 @@ void sdNetProperties::Init() {
 	SD_UI_ENUM_TAG( SF_PING, "Server ping filter." )
 	SDNET_DEFINE( SF_PING,				sdNetManager::SF_PING )
 	
-	SD_UI_ENUM_TAG( SF_BOTS, "Server has bots filter." )
-	SDNET_DEFINE( SF_BOTS,				sdNetManager::SF_BOTS )
+//	SD_UI_ENUM_TAG( SF_BOTS, "Server has bots filter." )
+//	SDNET_DEFINE( SF_BOTS,				sdNetManager::SF_BOTS )
+
+	SD_UI_ENUM_TAG( SF_MAXBOTS, "Maximum bot count filter." )
+	SDNET_DEFINE( SF_MAXBOTS,				sdNetManager::SF_MAXBOTS )
 
 	SD_UI_ENUM_TAG( SF_MODS, "Server has mods filter." )
 	SDNET_DEFINE( SF_MODS,				sdNetManager::SF_MODS )
@@ -726,7 +729,7 @@ void sdNetProperties::UpdateProperties() {
 #endif /* !SD_DEMO_BUILD */
 
 	serverRefreshComplete = 0.0f;
-	hotServersRefreshComplete = 0.0f;
+//	hotServersRefreshComplete = 0.0f;
 
 	systemNotifications = gameLocal.GetSystemNotifications();
 

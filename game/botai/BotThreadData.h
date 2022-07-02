@@ -31,6 +31,8 @@
 #define MAX_TEAMS		 2
 #define MAX_SHIELDS		 4
 
+#define BOT_GUIDE_NAME_SLOT 0
+
 #define MAX_BOT_SPECTATE_TIMER 300
 
 #define MAX_CLIENT_CHARGES MAX_CLIENTS * MAX_CHARGES
@@ -75,6 +77,22 @@ struct teamUsesSpawn_t {
 	int						percentage;
 };
 
+struct actorMissionInfo_t {
+	bool					hasBriefedPlayer;
+	bool					forwardSpawnIsAllowed;
+	bool					setup;
+	bool					deployableStageIsActive;
+	bool					playerNeedsFinalBriefing;
+	bool					playerIsOnFinalMission;
+	bool					setupBotNames;
+	bool					hasEnteredActorNode;
+	int						chatPauseTime;
+	int						actionNumber;
+	int						targetClientNum;
+	int						actorClientNum;
+	int						goalPauseTime;
+};
+
 struct teamMineInfo_t {
 	bool					isPriority;
 };
@@ -86,12 +104,14 @@ struct gameLocalInfo_t {
 	bool					botsUseTKRevive;
 	bool					botsCanStrafeJump;
 	bool					botsUseVehicles;
+	bool					botsUseAirVehicles;
 	bool					botsStayInVehicles;
 	bool					botsSillyWarmup;
 	bool					botsIgnoreGoals;
 	bool					botsUseSpawnHosts;
 	bool					botsUseUniforms;
 	bool					botsUseDeployables;
+	bool					botsUseMines;
 	bool					debugBots;
 	bool					debugObstacleAvoidance;
 	bool					friendlyFireOn;
@@ -107,6 +127,8 @@ struct gameLocalInfo_t {
 	bool					teamGDFHasHuman;
 	bool					gameIsBotMatch;
 	bool					botsDoObjsInTrainingMode;
+	int						botFollowPlayer;
+	int						botIgnoreEnemies;
 	int						time;
 	int						botSkill;
 	int						botAimSkill;
@@ -126,6 +148,8 @@ struct gameLocalInfo_t {
 
 //mal: constants
 	int						chargeExplodeTime;		// how long until a HE/Plasma charge explodes
+
+	int						gameTimeInMinutes;
 
 	float					maxVehicleHeight;
 	float					crouchViewHeight;
@@ -251,6 +275,7 @@ struct weaponInfo_t { //mal_TODO: keep adding more info for weapons, as its need
 	bool					isFiringWeap;						//mal: is this client firing their weapon?
 	bool					primaryWeapNeedsReload;				//mal: does our main gun need a reload?
 	bool					hasAmmoForReload;
+	bool					hasNadeLauncher;
 	int						grenadeFuseStart;					//mal: the timer on the bots nade. -1 if bot has no active nade
 	plantedMineInfo_t		landMines[ MAX_MINES ];
 	grenadeInfo_t			grenades[ MAX_GRENADES ];
@@ -300,6 +325,7 @@ struct botGoalInfo_t { //mal_TODO: keep adding more info for goals, as its neede
 	bool					team_GDF_AttackDeployables;
 	bool					team_STROGG_AttackDeployables;
 	bool					gameIsOnFinalObjective;
+	bool					isTrainingMap;
 	int						deliverActionNumber;
 	int						mapHasMCPGoalTime;
 	int						team_GDF_PrimaryAction;
@@ -345,6 +371,10 @@ struct clientInfo_t {
 	bool					isDisguised;						//mal: set in idPlayer::Think
 	bool					inEnemyTerritory;					//mal: set in idPlayer::Think
 	bool					hasTeleporterInWorld;
+	
+	bool					isActor;							//mal: this client is an actor, presenting info to the player.
+	int						briefingTime;
+	
 	int						resetState;							//mal: should the bot reset its AI, and how much of a priority is it to reset?	
 	int						touchingItemTime;					//mal: set in idItem::OnTouch - is this client touching an item? Useful for finding spies!
 	int						friendsInArea;						//mal: set in idBotAI::RunFrame
@@ -367,6 +397,8 @@ struct clientInfo_t {
 
 	int						escortSpawnID;
 	int						escortRequestTime;
+
+	int						lastRoadKillTime;
 
 	int						spawnID;
 
@@ -415,11 +447,14 @@ struct clientInfo_t {
 	int						lastChatTime[ MAX_CHATS ];			//mal: when did this client last chat 
 	int						lastThanksTime;
 	int						lastClassChangeTime;
+	int						lastWeapChangedTime;
 	int						myHero;								//mal: client who gave this bot health/ammo recently.
 	int						mySavior;							//mal: client who revived us recently
 	int						killsSinceSpawn;					//mal: how many ppl have I killed since being spawned?
 	int						backPedalTime;
 	int						missionEntNum;						//mal: entity number of the entity we have a mission for
+	int						supplyCrateRequestTime;				//mal: when this client last requested a supply crate.
+	int						lastShieldDroppedTime;
 	float					xySpeed;							//mal: set in idPlayer::Think
 	clientProxyInfo_t		proxyInfo;
 	weaponInfo_t			weapInfo;							//mal: the state of this clients weapon
@@ -458,6 +493,8 @@ struct botCommands_t {
 
 	bool					shoveClient;
 
+	bool					droppingSupplyCrate;
+
 	bool					attack;				// mal: normal cmds 
 	bool					zoom; 
 	bool					activate;
@@ -465,9 +502,13 @@ struct botCommands_t {
 	bool					altAttackOn;
 	bool					altAttackOff;
 
+	bool					destroySupplyCrate;
+
 	bool					altFire;
 
 	bool					launchPacks;		// specific to health/ammo packs
+
+	bool					switchAwayFromSniperRifle;
 
 	bool					topHat;
 
@@ -502,6 +543,11 @@ struct botCommands_t {
 	bool					godMode;
 
 	bool					switchVehicleWeap;
+
+	bool					actorBriefedPlayer;
+	bool					actorSurrenderStatus;
+	bool					actorIsBriefingPlayer;
+	bool					actorHasEnteredActorNode;
 };
 
 struct botDeployInfo_t {
@@ -611,8 +657,14 @@ public:							// the following routines are called from the game thread
 	void						DebugOutput();
 
 	void						LoadBotNames();
+	void						LoadTrainingBotNames();
+
+	void						TrainingThink();
 
 	void						CheckCurrentChatRequests();
+
+	void						FindBotToBeActor();
+	bool						MapHasAnActor();
 
 	bool						DestroyClientDeployable( int clientNum );
 
@@ -669,6 +721,8 @@ public:							// the following routines are called from the game thread
 
 	void						CheckBotSpawnLocation( idPlayer* player );
 
+	void						DeactivateBadMapActions();
+
 	int							FindHeavyVehicleNearLocation( idPlayer* player, const idVec3& org, float range );
 
 	int							FindDeliverActionNumber();
@@ -678,6 +732,7 @@ public:							// the following routines are called from the game thread
 	int							GetThreadMaxFrameDelay() const { return threadMaxFrameDelay; }
 
 	bool						AllowDebugData() const { return !threadingEnabled && bot_debug.GetBool(); }
+	bool						PlayerIsBeingBriefed();
 
 	int							FindActionByTypeForLocation( const idVec3& loc, const botActionGoals_t& obj, const playerTeamTypes_t& team );
 
@@ -705,6 +760,9 @@ public:							// the following routines are called from the game thread
 	botDebugInfo_t				GetBotDebugInfo( int clientNum );
 
 	void						RemoveBot( int entityNumber );
+
+	bool						CheckIfClientsInGameYet();
+
 	void						EnableArea( const idBounds &bounds, int areaFlags, int team, bool enable );
 	void						EnableReachability( const char *name, int team, bool enable );
 
@@ -741,6 +799,8 @@ public:							// the following routines are called from the bot thread
 
 	bool						RemapLocation( idVec3 &origin ) const;
 
+	bool						EntityIsExplosiveCharge( int entNum, bool armedOnly, const playerTeamTypes_t& ignoreTeam );
+
 public:
 	idList< idAAS* >			aasList;					// area system
 	idStrList					aasNames;
@@ -761,9 +821,16 @@ public:
 
 	idStrList					botNames;
 
+	idStrList					trainingGDFBotNames;
+	idStrList					trainingSTROGGBotNames;
+
 	idList< int >				mcpRoutes;
 
+	actorMissionInfo_t			actorMissionInfo;
+
 	bool						teamsSwapedRecently;
+
+	int							ignoreActionNumber;
 
 private:
 	bool						threadingEnabled;
@@ -802,6 +869,8 @@ private:
 	int							lastCmdDeclinedChatTime;
 	int							nextChatUpdateTime;
 	int							lastWeapChangedTime;
+
+	bool						checkedLastMapStageCovertWeapons;
 
 private:
 	void						AddActionToHash( const char *actionName, int actionNum );

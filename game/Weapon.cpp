@@ -1879,7 +1879,9 @@ void idWeapon::UpdateVisibility( void ) {
 		entityNumber	= owner->entityNumber;
 		shadowState		= owner->HasShadow();
 
-		if ( owner->IsSpectating() ) {
+		if ( owner->IsBeingBriefed() ) {
+			worldViewState = VS_NONE;
+		} else if ( owner->IsSpectating() ) {
 			worldViewState	= VS_NONE;
 		} else if ( idEntity* proxy = owner->GetProxyEntity() ) {
 			if ( !proxy->GetUsableInterface()->GetAllowPlayerWeapon( owner ) ) {

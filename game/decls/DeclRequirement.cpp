@@ -413,7 +413,7 @@ bool sdRequirementCheck_Property::Check( idEntity* main, idEntity* other ) const
 			if ( !player ) {
 				return false;
 			}
-			checkValue = player->IsSpectating() ? 1.f : 0.f;
+			checkValue = player->IsSpectator() ? 1.f : 0.f;
 			break;
 		}
 		case PT_PRONE: {

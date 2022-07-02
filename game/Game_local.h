@@ -165,6 +165,7 @@ struct userInfo_t {
 	bool					voipReceiveTeam;
 	bool					voipReceiveFireTeam;
 	bool					showComplaints;
+	bool					swapFlightYawAndRoll;
 };
 
 /*
@@ -943,6 +944,7 @@ public:
 	void					ClearTargetTimers();
 
 	void					StartRecordingDemo( void );
+	void					GetDemoName( idStr& output );
 
 	sdDeployRequest*		GetDeploymentRequest( idPlayer* player );
 	bool					RequestDeployment( idPlayer* player, const sdDeclDeployableObject* object, const idVec3& position, float rotation, int delayMS );
@@ -1014,6 +1016,11 @@ public:
 	bool							NextMap( void );
 	virtual void					BeginLevelLoad();
 	virtual	void					EndLevelLoad();
+
+	void							StartAutorecording();
+	void							StopAutorecording();
+	void							GetScoreboardShotName( idStr& output );
+	void							OnEndGameScoreboardActive();
 
 	virtual void					DrawLCD( sdLogitechLCDSystem* lcd );
 
@@ -1527,6 +1534,9 @@ private:
 
 	typedef sdHashMapGeneric< idStr, sdGameRules*, sdHashCompareStrCmp > rulesMap_t;
 	rulesMap_t rulesCache;
+
+	bool					isAutorecording;
+	bool					hasTakenScoreShot;
 
 public:
 	void					Clear( void );

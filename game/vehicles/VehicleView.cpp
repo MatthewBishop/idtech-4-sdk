@@ -77,6 +77,8 @@ void sdVehicleView::Init( sdVehiclePosition* _position, const positionViewMode_t
 
 	sensitivityYaw		= cvarSystem->Find( viewMode.sensitivityYaw );
 	sensitivityPitch	= cvarSystem->Find( viewMode.sensitivityPitch );
+	sensitivityYawScale		= cvarSystem->Find( viewMode.sensitivityYawScale );
+	sensitivityPitchScale	= cvarSystem->Find( viewMode.sensitivityPitchScale );
 
 	thirdPersonViewOrigin.Zero();
 	thirdPersonViewAxes.Identity();
@@ -88,14 +90,26 @@ sdVehicleView::GetSensitivity
 ================
 */
 bool sdVehicleView::GetSensitivity( float& x, float& y ) {
-	if ( !sensitivityPitch || !sensitivityYaw ) {
-		return false;
+	bool changed = false;
+	if ( sensitivityPitch != NULL ) {
+		y = sensitivityPitch->GetFloat();
+		changed = true;
+	}
+	if ( sensitivityYaw != NULL ) {
+		x = sensitivityYaw->GetFloat();
+		changed = true;
 	}
 
-	x = sensitivityYaw->GetFloat();
-	y = sensitivityPitch->GetFloat();
+	if ( sensitivityPitchScale != NULL ) {
+		y *= sensitivityPitchScale->GetFloat();
+		changed = true;
+	}
+	if ( sensitivityYawScale != NULL ) {
+		x *= sensitivityYawScale->GetFloat();
+		changed = true;
+	}
 
-	return true;
+	return changed;
 }
 
 /*
@@ -808,6 +822,8 @@ void sdDampedVehicleView_Player::Init( sdVehiclePosition* _position, const posit
 
 	sensitivityYaw		= NULL;
 	sensitivityPitch	= NULL;
+	sensitivityYawScale		= NULL;
+	sensitivityPitchScale	= NULL;
 }
 
 /*

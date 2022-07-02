@@ -80,6 +80,9 @@ public:
 								// only a set with the exact name.  Only used during startup.
 	virtual bool				StartupVariable( const char *match ) = 0;
 
+								// Removes a set commandline arg for the specified variable
+	virtual void				ClearStartupVariable( const char* match ) = 0;
+
 								// Writes the user's configuration to a file
 	virtual void				WriteConfigToFile( const char *filename, bool writeBindings = true, bool writeCVars = true ) = 0;
 

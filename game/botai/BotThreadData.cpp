@@ -125,9 +125,13 @@ void idBotThreadData::InitClientInfo( int clientNum, bool resetAll, bool leaving
 	botUcmd.desiredChat = NULL_CHAT;
 
 	client.inGame = true;
+	client.isActor = false;
+	client.briefingTime = 0;
 
 	client.escortSpawnID = -1;
 	client.escortRequestTime = 0;
+
+	client.lastRoadKillTime = 0;
 
 	client.gpmgOrigin = vec3_zero;
 
@@ -138,6 +142,8 @@ void idBotThreadData::InitClientInfo( int clientNum, bool resetAll, bool leaving
 	client.hasRepairDroneInWorld = false;
 
 	client.resetState = 0;
+
+	client.lastShieldDroppedTime = 0;
 
 	client.backPedalTime = 0;
 
@@ -156,10 +162,13 @@ void idBotThreadData::InitClientInfo( int clientNum, bool resetAll, bool leaving
 	client.mySavior = -1;
 	client.missionEntNum = -1;
 
+	client.supplyCrateRequestTime = 0;
+
 	memset( client.lastChatTime, 0, sizeof ( client.lastChatTime ) );
 	client.lastThanksTime = 0;
 	client.chatDelay = 0;
 	client.lastClassChangeTime = 0;
+	client.lastWeapChangedTime = 0;
 
 	memset( &client.weapInfo, 0, sizeof( client.weapInfo ) );
 	memset( client.packs, 0, sizeof( client.packs ) );
@@ -789,6 +798,14 @@ void idBotThreadData::UpdateState() {
 		}
 	}
 
+	if ( GetGameWorldState()->botGoalInfo.isTrainingMap ) {
+		if ( !MapHasAnActor() ) {
+			FindBotToBeActor();
+		}
+
+		TrainingThink();
+	}
+	
 	CheckCurrentChatRequests();
 
 	DynamicEntity_Think(); //mal: check all dynamic entities out there.
@@ -854,6 +871,7 @@ void idBotThreadData::UpdateState() {
 //mal: update some info for the bot's thread.
 	gameLocalInfo_t &gameLocalInfo = GetGameWorldState()->gameLocalInfo;
 	gameLocalInfo.time = gameLocal.time;
+	gameLocalInfo.gameTimeInMinutes = ( int ) ( ( gameLocal.rules->GetGameTime() / 1000 ) / 60 );
 	gameLocalInfo.inEndGame = gameLocal.rules->IsEndGame();
 
 	if ( gameLocalInfo.inEndGame ) {
@@ -879,20 +897,30 @@ void idBotThreadData::UpdateState() {
 	gameLocalInfo.botsUseUniforms = bot_useUniforms.GetBool();
 	gameLocalInfo.botSkill = bot_skill.GetInteger();
 
+	if ( AllowDebugData() ) {
+		gameLocalInfo.botFollowPlayer = bot_followMe.GetInteger();
+		gameLocalInfo.botIgnoreEnemies = bot_ignoreEnemies.GetInteger();
+	} else {
+		gameLocalInfo.botFollowPlayer = 0;
+		gameLocalInfo.botIgnoreEnemies = 0;
+	}
+
 	if ( gameLocalInfo.botSkill == BOT_SKILL_DEMO && !gameLocalInfo.gameIsBotMatch ) { //mal_HACK: another 11th hour fix. ugh.
 		gameLocalInfo.botSkill = 2;
 	}
 
 	gameLocalInfo.botAimSkill = bot_aimSkill.GetInteger();
 	gameLocalInfo.friendlyFireOn = si_teamDamage.GetBool();
-	gameLocalInfo.botsPaused = bot_pause.GetBool();
+	gameLocalInfo.botsPaused = bot_pause.GetBool() || gameLocal.IsPaused();
 	gameLocalInfo.botKnifeOnly = bot_knifeOnly.GetBool();
 	gameLocalInfo.debugBotWeapons = bot_debugWeapons.GetBool();
 	gameLocalInfo.debugBots = bot_debug.GetBool();
 	gameLocalInfo.debugObstacleAvoidance = bot_debugObstacleAvoidance.GetBool();
 	gameLocalInfo.botsUseVehicles = bot_useVehicles.GetBool();
+	gameLocalInfo.botsUseAirVehicles = bot_useAirVehicles.GetBool();
 	gameLocalInfo.botsStayInVehicles = bot_stayInVehicles.GetBool();
 	gameLocalInfo.botsUseDeployables = bot_useDeployables.GetBool();
+	gameLocalInfo.botsUseMines = bot_useMines.GetBool();
 	gameLocalInfo.debugPersonalVehicles = bot_debugPersonalVehicles.GetBool();
 	gameLocalInfo.debugAltRoutes = bot_useAltRoutes.GetBool();
 	gameLocalInfo.botsCanSuicide = bot_useSuicideWhenStuck.GetBool();
@@ -949,6 +977,7 @@ void idBotThreadData::UpdateState() {
 
 		// wait if the bot thread is falling too far behind
 		while ( botThread->GetLastGameFrameNum() < gameLocal.GetFrameNum() - threadMaxFrameDelay && !botThread->IsWaiting() ) {
+			common->Warning( "Waiting on BotThread\n" );
 			botThread->WaitForBotThread();
 		}
 
@@ -1161,6 +1190,7 @@ void idBotThreadData::Init() {
 	GetGameWorldState()->botGoalInfo.mapHasMCPGoal = false;
 	GetGameWorldState()->botGoalInfo.mapHasMCPGoalTime = 0;
 	GetGameWorldState()->botGoalInfo.gameIsOnFinalObjective = false;
+	GetGameWorldState()->botGoalInfo.isTrainingMap = false;
 	GetGameWorldState()->gameLocalInfo.winningTeam = NOTEAM;
 	GetGameWorldState()->botGoalInfo.teamNeededClassInfo[ GDF ].criticalClass = NOCLASS;
 	GetGameWorldState()->botGoalInfo.teamNeededClassInfo[ GDF ].numCriticalClass = 0;
@@ -1178,6 +1208,8 @@ void idBotThreadData::Init() {
 	GetGameWorldState()->gameLocalInfo.teamMineInfo[ STROGG ].isPriority = true;
 	GetGameWorldState()->botGoalInfo.deliverActionNumber = FindDeliverActionNumber();
 
+        checkedLastMapStageCovertWeapons = false;
+
 	lastCmdDeclinedChatTime = 0;
 	lastWeapChangedTime = 0;
 	nextBotClassUpdateTime = 0;
@@ -1185,6 +1217,21 @@ void idBotThreadData::Init() {
 	nextChatUpdateTime = 0;
 	packUpdateTime = 0;
 	teamsSwapedRecently = false;
+	ignoreActionNumber = ACTION_NULL;
+
+	actorMissionInfo.actionNumber = ACTION_NULL;
+	actorMissionInfo.hasBriefedPlayer = false;
+	actorMissionInfo.deployableStageIsActive = false;
+	actorMissionInfo.targetClientNum = -1;
+	actorMissionInfo.actorClientNum = -1;
+	actorMissionInfo.setup = false;
+	actorMissionInfo.chatPauseTime = 0;
+	actorMissionInfo.playerNeedsFinalBriefing = false;
+	actorMissionInfo.playerIsOnFinalMission = false;
+	actorMissionInfo.goalPauseTime = 0;
+	actorMissionInfo.setupBotNames = true;
+	actorMissionInfo.forwardSpawnIsAllowed = false;
+	actorMissionInfo.hasEnteredActorNode = false;
 }
 
 /*
@@ -1317,6 +1364,27 @@ void idBotThreadData::DebugOutput() {
 	gameLocal.Printf("Trace Entity: %i\n", tr.c.entityNum );
 */
 
+/*
+	bool isClear = true;
+
+	for( int i = 0; i < botThreadData.botObstacles.Num(); i++ ) {
+		
+		idBotObstacle *obstacle = botThreadData.botObstacles[ i ];
+		idVec3 vec = obstacle->bbox.GetCenter() - player->GetPhysics()->GetOrigin();
+
+		float distSqr = vec.LengthSqr();
+		distSqr -= obstacle->bbox.GetExtents().LengthSqr();
+
+		if ( distSqr > Square( 100.0f ) ) {
+			continue;
+		}
+
+		isClear = false;
+		break;
+	}
+
+	common->Printf("IsClear = %i\n", isClear );
+*/
 }
 
 /*
@@ -1539,27 +1607,27 @@ idBotThreadData::DisableAASAreaInLocation
 */
 void idBotThreadData::DisableAASAreaInLocation( int aasType, const idVec3& location ) {
 	if ( aasType < AAS_PLAYER || aasType > AAS_VEHICLE ) {
-		gameLocal.DWarning("Invalid AAS type passed to \"disableAASAreaInLocation\"\nValid values are 0 = player aas, 1 = vehicle aas" );
+		gameLocal.DWarning( "Invalid AAS type passed to \"disableAASAreaInLocation\"\nValid values are 0 = player aas, 1 = vehicle aas" );
 		return;
 	}
 
 	idAAS * aas = botThreadData.GetAAS( aasType );
 	
 	if ( aas == NULL ) {
-		gameLocal.DWarning("AAS type %i can't be found in call to \"disableAASAreaInLocation\"", aasType );
+		gameLocal.DWarning( "AAS type %i can't be found in call to \"disableAASAreaInLocation\"", aasType );
 		return;
 	}
 
-	int areaNum = aas->PointAreaNum( location );
+	int areaNum = aas->PointReachableAreaNum( location, aas->GetSettings()->boundingBox, AAS_AREA_REACHABLE_WALK, 0 );
 
 	if ( areaNum == 0 ) {
-		gameLocal.DWarning("No aas area found at location X: %.0f Y: %.0f Z: %.0f in call to \"disableAASAreaInLocation\"", location.x, location.y, location.z );
+		gameLocal.DWarning( "No aas area found at location X: %.0f Y: %.0f Z: %.0f in call to \"disableAASAreaInLocation\"", location.x, location.y, location.z );
 		return;
 	}
 
 	aas->SetAreaTravelFlags( areaNum, TFL_INVALID );
 
-	gameLocal.DPrintf("Disabled areaNum %i at location X: %.0f Y: %.0f Z: %.0f\n", areaNum, location.x, location.y, location.z );
+	gameLocal.DPrintf( "Disabled areaNum %i at location X: %.0f Y: %.0f Z: %.0f\n", areaNum, location.x, location.y, location.z );
 }
 
 /*
@@ -2003,12 +2071,17 @@ void idBotThreadData::DynamicEntity_Think() {
 				const aasReachability_t *reach;
 
 				int actionNumber = FindActionByTypeForLocation( charge->GetPhysics()->GetOrigin(), ACTION_HE_CHARGE, playerTeam );
+
 				if ( actionNumber != ACTION_NULL ) {
 					actionAreaNum = botActions[ actionNumber ]->areaNum;
 					travelFlags = ( playerTeam == GDF ) ? TFL_VALID_GDF : TFL_VALID_STROGG;
 					travelTime;
 					actionOrigin = botActions[ actionNumber ]->GetActionOrigin();
 					canReach = aas->RouteToGoalArea( actionAreaNum, actionOrigin, areaNum, travelFlags, travelTime, &reach );
+
+					if ( botActions[ actionNumber ]->ActionIsPriority() ) {
+						GetGameWorldState()->chargeInfo[ j ].isOnObjective = true;
+					}
 				}
 
 				if ( areaNum == 0 || !canReach ) {
@@ -2400,6 +2473,7 @@ void idBotThreadData::DynamicEntity_Think() {
 				vehicleInfo.maxHealth = transport->GetMaxHealth();
 				vehicleInfo.axis = transport->GetRenderEntity()->axis;
 				vehicleInfo.isAirborneVehicle = ( vehicleInfo.type >= ICARUS ) ? true : false;
+				vehicleInfo.isAirborneAttackVehicle = ( vehicleInfo.type == ANANSI || vehicleInfo.type == HORNET ) ? true : false;
 				vehicleInfo.inPlayZone = transport->IsInPlayzone();
 				vehicleInfo.hasFreeSeat = transport->GetPositionManager().HasFreePosition();
 				vehicleInfo.inSiegeMode =  ( transport->GetVehicleControl() && transport->GetVehicleControl()->InSiegeMode() ) ? 1 : 0;
@@ -2410,6 +2484,26 @@ void idBotThreadData::DynamicEntity_Think() {
 				vehicleInfo.wheelsAreOnGround = transport->AreWheelsOnGround();
 				vehicleInfo.canRotateInPlace = false;
 				vehicleInfo.actionRouteNumber = transport->GetRouteActionNumber();
+				vehicleInfo.isBoobyTrapped = false;
+				
+				idEntity* next = NULL;
+				playerTeamTypes_t ignoreTeam = transport->GetVehicleTeam();
+				
+				if ( si_teamDamage.GetBool() ) {
+					ignoreTeam = NOTEAM;
+				}
+
+				for ( idEntity* other = transport->GetNextTeamEntity(); other; other = next ) {
+					next = other->GetNextTeamEntity();
+
+					if ( other == transport ) {
+						continue;
+					}
+
+					if ( EntityIsExplosiveCharge( other->entityNumber, true, ignoreTeam ) ) {
+						vehicleInfo.isBoobyTrapped = true;
+					}
+				}
 
 				if ( vehicleInfo.type == GOLIATH || vehicleInfo.type == MCP || vehicleInfo.type == TITAN || vehicleInfo.type == DESECRATOR ) {
 					vehicleInfo.canRotateInPlace = true;
@@ -2486,9 +2580,7 @@ void idBotThreadData::DynamicEntity_Think() {
 				}
 				
 				if ( vehicleInfo.type == MCP ) {
-					if ( GetGameWorldState()->botGoalInfo.mapHasMCPGoal ) { //mal: entNum may change with destruction of MCP, so always update.
-						GetGameWorldState()->botGoalInfo.botGoal_MCP_VehicleNum = vehicleInfo.entNum;
-					}
+					GetGameWorldState()->botGoalInfo.botGoal_MCP_VehicleNum = vehicleInfo.entNum;
 				}
 
 				i++;
@@ -2803,6 +2895,8 @@ void idBotThreadData::LoadActions( const idMapFile *mapFile ) {
 	if ( botActions.Num() > 0 ) {
 		actionsLoaded = true;
 	}
+
+	DeactivateBadMapActions();
 }
 
 /*
@@ -2921,6 +3015,12 @@ void idBotThreadData::VOChat( const botChatTypes_t chatType, int clientNum, bool
 		return;
 	}
 
+#ifdef _XENON
+	if ( gameLocal.rules->IsWarmup() ) {
+		return;
+	}
+#endif
+
 	const sdDeclQuickChat* quickChat;
 	idPlayer* player;
 	const char* quickChatName;
@@ -2965,7 +3065,11 @@ void idBotThreadData::VOChat( const botChatTypes_t chatType, int clientNum, bool
 		}
 	} else if ( chatType == HEAL_ME ) {
 		if ( playerInfo.lastChatTime[ HEAL_ME ] < gameLocal.time || forceChat ) {
-            quickChatName = pc->BuildQuickChatDeclName( "quickchat/context/health" );
+			if ( playerInfo.team == GDF ) {
+				quickChatName = pc->BuildQuickChatDeclName( "quickchat/context/health" );
+			} else {
+				quickChatName = pc->BuildQuickChatDeclName( "quickchat/context/stroyent" );
+			}
 			quickChat = gameLocal.declQuickChatType.LocalFind( quickChatName, false );
 			playerInfo.lastChatTime[ HEAL_ME ] = gameLocal.time + 15000;
 		}
@@ -2992,6 +3096,12 @@ void idBotThreadData::VOChat( const botChatTypes_t chatType, int clientNum, bool
 			quickChat = gameLocal.declQuickChatType.LocalFind( quickChatName, false );
 			playerInfo.lastChatTime[ MOVE ] = gameLocal.time + 30000;
 		}
+	} else if ( chatType == FOLLOW_ME ) {
+        if ( playerInfo.lastChatTime[ FOLLOW_ME ] < gameLocal.time || forceChat ) {
+            quickChatName = pc->BuildQuickChatDeclName( "quickchat/commands/followme" );
+			quickChat = gameLocal.declQuickChatType.LocalFind( quickChatName, false );
+			playerInfo.lastChatTime[ FOLLOW_ME ] = gameLocal.time + 5000;
+		}
 	} else if ( chatType == NEED_LIFT ) {
         if ( playerInfo.lastChatTime[ NEED_LIFT ] < gameLocal.time || forceChat ) {
 
@@ -3017,7 +3127,7 @@ void idBotThreadData::VOChat( const botChatTypes_t chatType, int clientNum, bool
 			}
 			quickChat = gameLocal.declQuickChatType.LocalFind( quickChatName, false );
 			playerInfo.lastChatTime[ CMD_DECLINED ] = gameLocal.time + REQUEST_CONSIDER_TIME; //mal: dont do for a while
-			lastCmdDeclinedChatTime = gameLocal.time + REQUEST_CONSIDER_TIME;
+			lastCmdDeclinedChatTime = gameLocal.time + 20000; //REQUEST_CONSIDER_TIME;
 		}
 	} else if ( chatType == MY_CLASS ) {
         if ( playerInfo.lastChatTime[ MY_CLASS ] < gameLocal.time || forceChat ) {
@@ -3058,7 +3168,11 @@ void idBotThreadData::VOChat( const botChatTypes_t chatType, int clientNum, bool
 		}
 	} else if ( chatType == REARM_ME ) {
         if ( playerInfo.lastChatTime[ REARM_ME ] < gameLocal.time || forceChat ) {
-            quickChatName = pc->BuildQuickChatDeclName( "quickchat/need/ammo" );
+			if ( playerInfo.team == GDF ) {
+				quickChatName = pc->BuildQuickChatDeclName( "quickchat/need/ammo" );
+			} else {
+				quickChatName = pc->BuildQuickChatDeclName( "quickchat/context/stroyent" );
+			}
 			quickChat = gameLocal.declQuickChatType.LocalFind( quickChatName, false );
 			playerInfo.lastChatTime[ REARM_ME ] = gameLocal.time + 15000;
 		}
@@ -3206,7 +3320,7 @@ void idBotThreadData::VOChat( const botChatTypes_t chatType, int clientNum, bool
 			}
 
 			quickChat = gameLocal.declQuickChatType.LocalFind( quickChatName, false );
-			playerInfo.lastChatTime[ GENERAL_TAUNT ] = gameLocal.time + 20000;
+			playerInfo.lastChatTime[ GENERAL_TAUNT ] = gameLocal.time + 10000;
 		}
 	} else if ( chatType == WILL_FIX_RIDE ) {
         if ( playerInfo.lastChatTime[ WILL_FIX_RIDE ] < gameLocal.time || forceChat ) {
@@ -3290,6 +3404,18 @@ void idBotThreadData::VOChat( const botChatTypes_t chatType, int clientNum, bool
             quickChatName = pc->BuildQuickChatDeclName( "quickchat/global/hi" );
 			quickChat = gameLocal.declQuickChatType.LocalFind( quickChatName, false );
 			playerInfo.lastChatTime[ HELLO ] = gameLocal.time + 60000; //mal: dont go again for a while.
+		}
+	} else if ( chatType == GOT_YOUR_BACK ) {
+        if ( playerInfo.lastChatTime[ GOT_YOUR_BACK ] < gameLocal.time || forceChat ) {
+            quickChatName = pc->BuildQuickChatDeclName( "botchat/generic/gotyourback" );
+			quickChat = gameLocal.declQuickChatType.LocalFind( quickChatName, false );
+			playerInfo.lastChatTime[ GOT_YOUR_BACK ] = gameLocal.time + 5000; //mal: dont go again for a while.
+		}
+	} else if ( chatType == MOVE_OUT ) {
+        if ( playerInfo.lastChatTime[ MOVE_OUT ] < gameLocal.time || forceChat ) {
+            quickChatName = pc->BuildQuickChatDeclName( "quickchat/commands/letsgo" );
+			quickChat = gameLocal.declQuickChatType.LocalFind( quickChatName, false );
+			playerInfo.lastChatTime[ MOVE_OUT ] = gameLocal.time + 5000; //mal: dont go again for a while.
 		}
 	} else if ( chatType == LETS_GO ) {
         if ( playerInfo.lastChatTime[ LETS_GO ] < gameLocal.time || forceChat ) {
@@ -3497,6 +3623,12 @@ void idBotThreadData::VOChat( const botChatTypes_t chatType, int clientNum, bool
 			quickChat = gameLocal.declQuickChatType.LocalFind( quickChatName, false );
 			playerInfo.lastChatTime[ SORRY ] = gameLocal.time + 15000;
 		}
+	} else if ( chatType == GLOBAL_SORRY ) {
+        if ( playerInfo.lastChatTime[ GLOBAL_SORRY ] < gameLocal.time || forceChat ) {
+			quickChatName = pc->BuildQuickChatDeclName( "quickchat/global/sorry" );
+			quickChat = gameLocal.declQuickChatType.LocalFind( quickChatName, false );
+			playerInfo.lastChatTime[ GLOBAL_SORRY ] = gameLocal.time + 5000;
+		}
 	}
 
 	if ( quickChat == NULL ) {
@@ -3517,6 +3649,10 @@ Looks for all clients that are of class "classType" on team "playerTeam" and ret
 int idBotThreadData::GetNumClassOnTeam( const playerTeamTypes_t playerTeam, const playerClassTypes_t classType ) {
 
 	int n = 0;
+
+	if( !GetBotWorldState() ) {
+		return 0;
+	}
 
 	for( int i = 0; i < MAX_CLIENTS; i++ ) {
 
@@ -4015,6 +4151,59 @@ void idBotThreadData::LoadBotNames() {
 }
 
 /*
+===============
+idBotThreadData::LoadTrainingBotNames
+===============
+*/
+void idBotThreadData::LoadTrainingBotNames() {
+
+	bool inGDF = true;
+
+	trainingGDFBotNames.Clear();
+	trainingSTROGGBotNames.Clear();
+
+	idLexer src( LEXFL_NOSTRINGESCAPECHARS | LEXFL_NOFATALERRORS | LEXFL_NOSTRINGCONCAT );
+
+	idStr botFileName = "bots/";
+	botFileName += "training_botnames";
+
+	botFileName.SetFileExtension( "dat" );
+
+	src.LoadFile( botFileName );
+
+	if ( !src.IsLoaded() ) {
+		return;
+	}
+
+	idToken token;
+
+	while( true ) {
+		if ( !src.ReadToken( &token ) ) {
+			break;
+		}
+
+		if ( token.Icmp( "[GDF]" ) == 0 ) {
+			inGDF = true;
+			continue;
+		} else if ( token.Icmp( "[STROGG]" ) == 0 ) {
+			inGDF = false;
+			continue;
+		}
+
+		if ( token.Length() > sdNetSession::MAX_NICKLEN ) {
+			gameLocal.Warning("Skipping invalid name found in training_botnames.dat! The name ^7\"%s^7\" ^1is too long! Max name length is %i characters!", token.c_str(), sdNetSession::MAX_NICKLEN );
+			continue;
+		}
+
+		if ( inGDF ) {
+			trainingGDFBotNames.Append( token.c_str() );
+		} else {
+			trainingSTROGGBotNames.Append( token.c_str() );
+		}
+	}
+}
+
+/*
 ================
 idBotThreadData::FindDeclIndexForDeployable
 ================
@@ -4201,6 +4390,11 @@ Looks for all clients that are on team "playerTeam" and returns the number of cl
 */
 int idBotThreadData::GetNumClientsOnTeam( const playerTeamTypes_t playerTeam ) {
 	int n = 0;
+
+	if( !GetBotWorldState() ) {
+		return 0;
+	}
+
 	for( int i = 0; i < MAX_CLIENTS; i++ ) {
 
 		if ( !GetBotWorldState()->clientInfo[ i ].inGame ) {
@@ -4290,6 +4484,11 @@ Looks for all bots that are on team "playerTeam" and returns the number of bots.
 */
 int idBotThreadData::GetNumBotsOnTeam( const playerTeamTypes_t playerTeam ) {
 	int n = 0;
+
+	if( !GetBotWorldState() ) {
+		return 0;
+	}
+
 	for( int i = 0; i < MAX_CLIENTS; i++ ) {
 
 		if ( !GetBotWorldState()->clientInfo[ i ].isBot ) {
@@ -4376,6 +4575,11 @@ Randomize the name selection.
 bool idBotThreadData::FindRandomBotName( int clientNum, idStr& botName ) {
 	if ( botThreadData.botNames.Num() == 0 ) {
 		return false;
+	}
+
+	if ( botThreadData.GetGameWorldState()->botGoalInfo.isTrainingMap ) {
+		botName = "";//"Player";
+		return true;
 	}
 
 	bool foundName = false;
@@ -4772,6 +4976,14 @@ void idBotThreadData::ClearClientBoundEntities( int clientNum ) {
 			covertTool->Damage( NULL, NULL, idVec3( 0.0f, 0.0f, 1.0f ), DAMAGE_FOR_NAME( "damage_generic" ), 999.0f, NULL );
 		}
 	}
+
+	if ( client.supplyCrate.entNum != 0 ) {
+		idEntity *supplyCrate = gameLocal.entities[ client.supplyCrate.entNum ];
+
+		if ( supplyCrate != NULL ) {
+			supplyCrate->Damage( NULL, NULL, idVec3( 0.0f, 0.0f, 1.0f ), DAMAGE_FOR_NAME( "damage_grenade_frag_splash" ), 999.0f, NULL );
+		}
+	}
 }
 
 /*
@@ -4796,7 +5008,15 @@ void idBotThreadData::CheckBotClassSpread() {
 		return;
 	}
 
-	if ( nextBotClassUpdateTime > gameLocal.time ) {
+	if( !GetBotWorldState() ) {
+		return;
+	}
+
+	if ( !CheckIfClientsInGameYet() ) {
+		return;
+	}
+
+	if ( GetGameWorldState()->botGoalInfo.isTrainingMap ) {
 		return;
 	}
 
@@ -4808,383 +5028,72 @@ void idBotThreadData::CheckBotClassSpread() {
 		return;
 	}
 
-	if ( 1 /*GetNumBotsInServer( GDF ) <= 6 || GetNumBotsInServer( STROGG ) <= 6 */ ) {
-		ManageBotClassesOnSmallServer();
-		nextBotClassUpdateTime = gameLocal.time + 30000; //mal: this isn't super critical.
+	//mal: disabling for now, if have time - will come back to later....
+/*
+	for( int i = 0; i < MAX_CLIENTS; i++ ) { //mal: make sure any engs that have the nade launcher upgrade, switch to it.
+		clientInfo_t& playerInfo = GetGameWorldState()->clientInfo[ i ];
+
+		if ( !playerInfo.inGame ) {
+			continue;
+		}
+
+		if ( playerInfo.classType != ENGINEER ) {
+			continue;
+		}
+
+		if ( !playerInfo.isBot ) {
+			continue;
+		}
+
+		if ( playerInfo.health > 0 ) {
+			continue;
+		}
+
+		if ( playerInfo.weapInfo.primaryWeapon == SHOTGUN ) {
+			continue;
+		}
+
+		if ( !playerInfo.abilities.grenadeLauncher ) {
+			continue;
+		}
+
+		if ( ( playerInfo.lastWeapChangedTime + MIN_WEAPON_CHANGE_DELAY ) > gameLocal.time ) {
+			continue;
+		}
+
+		idPlayer* player = gameLocal.GetClient( i );
+
+		if ( player == NULL ) {
+			continue;
+		}
+
+		const sdDeclPlayerClass* pc;
+
+		if ( playerInfo.team == GDF ) {
+			pc = gameLocal.declPlayerClassType[ "engineer" ];
+		} else {
+			pc = gameLocal.declPlayerClassType[ "constructor" ];
+		}
+
+		player->ChangeClass( pc, 2 ); //mal: switch to the nade launcher.
+		playerInfo.lastWeapChangedTime = gameLocal.time;
+		playerInfo.weapInfo.hasNadeLauncher = true;
+	}
+*/
+
+	if ( nextBotClassUpdateTime > gameLocal.time ) {
 		return;
 	}
 
-	int numConverted = 0;
-
-	nextBotClassUpdateTime = gameLocal.time + ( ( teamsSwapedRecently != false ) ? 5000 : 30000 ); //mal: this isn't super critical.
-
-	for( int t = 0; t < MAX_TEAMS; t++ ) {
-		int minNeeded;
-		int weaponLoadOut = 0;
-		playerTeamTypes_t botTeam;
-		playerClassTypes_t neededClass;
-		playerClassTypes_t sampleClass;
-		playerClassTypes_t criticalClass;
-		const sdDeclPlayerClass* pc;
-		const sdDeclPlayerClass* playerClass;
-		
-		if ( t == GDF ) {
-			botTeam = GDF;
-			neededClass = GetGameWorldState()->botGoalInfo.teamNeededClassInfo[ GDF ].criticalClass;
-			sampleClass = GetGameWorldState()->botGoalInfo.teamNeededClassInfo[ GDF ].donatingClass;
-			minNeeded = GetGameWorldState()->botGoalInfo.teamNeededClassInfo[ GDF ].numCriticalClass;
-			criticalClass = GetGameWorldState()->botGoalInfo.team_GDF_criticalClass;
-			if ( neededClass == MEDIC ) {
-				pc = gameLocal.declPlayerClassType[ "medic" ];
-			} else if ( neededClass == SOLDIER ) {
-				pc = gameLocal.declPlayerClassType[ "soldier" ];
-				weaponLoadOut = gameLocal.random.RandomInt( 4 );
-			} else if ( neededClass == ENGINEER ) {
-				pc = gameLocal.declPlayerClassType[ "engineer" ];
-			} else if ( neededClass == FIELDOPS ) {
-				pc = gameLocal.declPlayerClassType[ "fieldops" ];
-			} else if ( neededClass == COVERTOPS ) {
-				pc = gameLocal.declPlayerClassType[ "covertops" ];
-			} else {
-				continue;
-			}
-		} else if ( t == STROGG ) {
-			botTeam = STROGG;
-			neededClass = GetGameWorldState()->botGoalInfo.teamNeededClassInfo[ STROGG ].criticalClass;
-			sampleClass = GetGameWorldState()->botGoalInfo.teamNeededClassInfo[ STROGG ].donatingClass;
-			minNeeded = GetGameWorldState()->botGoalInfo.teamNeededClassInfo[ STROGG ].numCriticalClass;
-			criticalClass = GetGameWorldState()->botGoalInfo.team_STROGG_criticalClass;
-			if ( neededClass == MEDIC ) {
-				pc = gameLocal.declPlayerClassType[ "technician" ];
-			} else if ( neededClass == SOLDIER ) {
-				pc = gameLocal.declPlayerClassType[ "aggressor" ];
-				weaponLoadOut = gameLocal.random.RandomInt( 4 );
-			} else if ( neededClass == ENGINEER ) {
-				pc = gameLocal.declPlayerClassType[ "constructor" ];
-			} else if ( neededClass == FIELDOPS ) {
-				pc = gameLocal.declPlayerClassType[ "oppressor" ];
-			} else if ( neededClass == COVERTOPS ) {
-				pc = gameLocal.declPlayerClassType[ "infiltrator" ];
-			} else {
-				continue;
-			}
-		}
-
-		int numClassOnTeam = botThreadData.GetNumClassOnTeam( botTeam, neededClass );
-
-		if ( numClassOnTeam >= minNeeded ) { //mal: enough clients playing that class already, so check the general class layout if a swap was done recently.
-			if ( !teamsSwapedRecently && GetNumClientsOnTeam( botTeam ) >= 8 && !networkSystem->IsDedicated() ) {
-				continue;
-			}
-
-			bool gdfNeedsSwap = true;
-			if ( botTeam == GDF ) {
-				bool botSwitched = false;
-				weaponLoadOut = 0;
-				int numMedic = botThreadData.GetNumClassOnTeam( GDF, MEDIC );
-				int numEng = botThreadData.GetNumClassOnTeam( GDF, ENGINEER );
-				int numFOps = botThreadData.GetNumClassOnTeam( GDF, FIELDOPS );
-				int numCovert = botThreadData.GetNumClassOnTeam( GDF, COVERTOPS );
-				int numSoldier = botThreadData.GetNumClassOnTeam( GDF, SOLDIER );
-				playerClassTypes_t botClass = NOCLASS;
-
-				if ( numMedic == 0 ) {
-					botClass = MEDIC;
-				} else if ( numSoldier == 0 ) {
-					botClass = SOLDIER;
-				} else if ( numEng == 0 ) {
-					botClass = ENGINEER;
-				} else if ( numCovert == 0 ) {
-					botClass = COVERTOPS;
-				} else if ( numFOps == 0 ) {
-					botClass = FIELDOPS;
-				}
-
-				if ( botClass == NOCLASS ) {
-					gdfNeedsSwap = false;
-					continue;
-				}
-
-				sampleClass = NOCLASS;
-
-				if ( numMedic > 1 && ( criticalClass != MEDIC || numMedic > 2 ) ) {
-					sampleClass = MEDIC;
-				} else if ( numSoldier > 1 && ( criticalClass != SOLDIER || numSoldier > 2 ) ) {
-					sampleClass = SOLDIER;
-				} else if ( numEng > 1 && ( criticalClass != ENGINEER || numEng > 2 ) ) {
-					sampleClass = ENGINEER;
-				} else if ( numCovert > 1 && ( criticalClass != COVERTOPS || numCovert > 2 ) ) {
-					sampleClass = COVERTOPS;
-				} else if ( numFOps > 1 && ( criticalClass != FIELDOPS || numFOps > 2 ) ) {
-					sampleClass = FIELDOPS;
-				}
-
-				if ( sampleClass == NOCLASS ) { //mal: dont have anyone to spare.
-					continue;
-				}
-
-				if ( botClass == MEDIC ) {
-					playerClass = gameLocal.declPlayerClassType[ "medic" ];
-				} else if ( botClass == SOLDIER ) {
-					playerClass = gameLocal.declPlayerClassType[ "soldier" ];
-					weaponLoadOut = gameLocal.random.RandomInt( 4 );
-				} else if ( botClass == ENGINEER ) {
-					playerClass = gameLocal.declPlayerClassType[ "engineer" ];
-				} else if ( botClass == FIELDOPS ) {
-					playerClass = gameLocal.declPlayerClassType[ "fieldops" ];
-				} else if ( botClass == COVERTOPS ) {
-					playerClass = gameLocal.declPlayerClassType[ "covertops" ];
-				} else {
-					continue;
-				}
-			} else {
-				bool botSwitched = false;
-				weaponLoadOut = 0;
-				int numMedic = GetNumClassOnTeam( STROGG, MEDIC );
-				int numEng = GetNumClassOnTeam( STROGG, ENGINEER );
-				int numFOps = GetNumClassOnTeam( STROGG, FIELDOPS );
-				int numCovert = GetNumClassOnTeam( STROGG, COVERTOPS );
-				int numSoldier = GetNumClassOnTeam( STROGG, SOLDIER );
-				playerClassTypes_t botClass = NOCLASS;
-
-				if ( numMedic == 0 ) {
-					botClass = MEDIC;
-				} else if ( numSoldier == 0 ) {
-					botClass = SOLDIER;
-				} else if ( numEng == 0 ) {
-					botClass = ENGINEER;
-				} else if ( numCovert == 0 ) {
-					botClass = COVERTOPS;
-				} else if ( numFOps == 0 ) {
-					botClass = FIELDOPS;
-				}
-
-				if ( botClass == NOCLASS ) {
-					if ( !gdfNeedsSwap ) {
-						teamsSwapedRecently = false; //mal: both teams have been checked at this point, so go ahead and disable this now.
-					}
-					continue;
-				}
-
-				sampleClass = NOCLASS;
-
-				if ( numMedic > 1 && ( criticalClass != MEDIC || numMedic > 2 ) ) {
-					sampleClass = MEDIC;
-				} else if ( numSoldier > 1 && ( criticalClass != SOLDIER || numSoldier > 2 ) ) {
-					sampleClass = SOLDIER;
-				} else if ( numEng > 1 && ( criticalClass != ENGINEER || numEng > 2 ) ) {
-					sampleClass = ENGINEER;
-				} else if ( numCovert > 1 && ( criticalClass != COVERTOPS || numCovert > 2 ) ) {
-					sampleClass = COVERTOPS;
-				} else if ( numFOps > 1 && ( criticalClass != FIELDOPS || numFOps > 2 ) ) {
-					sampleClass = FIELDOPS;
-				}
-
-				if ( sampleClass == NOCLASS ) { //mal: dont have anyone to spare.
-					continue;
-				}
-
-				if ( botClass == MEDIC ) {
-					playerClass = gameLocal.declPlayerClassType[ "technician" ];
-				} else if ( botClass == SOLDIER ) {
-					playerClass = gameLocal.declPlayerClassType[ "aggressor" ];
-					weaponLoadOut = gameLocal.random.RandomInt( 4 );
-				} else if ( botClass == ENGINEER ) {
-					playerClass = gameLocal.declPlayerClassType[ "constructor" ];
-				} else if ( botClass == FIELDOPS ) {
-					playerClass = gameLocal.declPlayerClassType[ "oppressor" ];
-				} else if ( botClass == COVERTOPS ) {
-					playerClass = gameLocal.declPlayerClassType[ "infiltrator" ];
-				} else {
-					continue;
-				}
-			}
-
-			for( int i = 0; i < MAX_CLIENTS; i++ ) {
-				clientInfo_t& playerInfo = this->GetGameWorldState()->clientInfo[ i ];
-
-				if ( !playerInfo.inGame ) {
-					continue;
-				}
-
-				if ( playerInfo.team != botTeam ) {
-					continue;
-				}
-
-				if ( playerInfo.classType != sampleClass ) {
-					continue;
-				}
-
-				if ( !playerInfo.isBot ) {
-					continue;
-				}
-
-				if ( ( playerInfo.lastClassChangeTime + MIN_CLASS_CHANGE_DELAY ) > gameLocal.time ) {
-					continue;
-				}
-
-				idPlayer* player = gameLocal.GetClient( i );
-
-				if ( player == NULL ) {
-					continue;
-				}
-
-				player->ChangeClass( playerClass, weaponLoadOut ); //mal: default loadout.
-					
-				player->Kill( NULL ); //mal: hurry up and suicide, and get back into the game as our new class!
-				playerInfo.lastClassChangeTime = gameLocal.time;
-				break;
-			}
-			continue;
-		}
-
-		for( int i = 0; i < MAX_CLIENTS; i++ ) {
-			if ( !GetGameWorldState()->clientInfo[ i ].inGame ) {
-				continue;
-			}
-
-			if ( GetGameWorldState()->clientInfo[ i ].team != botTeam ) {
-				continue;
-			}
-
-			if ( GetGameWorldState()->clientInfo[ i ].classType == neededClass ) {
-				continue;
-			}
-
-			if ( GetGameWorldState()->clientInfo[ i ].classType != sampleClass && sampleClass != NOCLASS ) {
-				continue;
-			}
-
-			if ( !GetGameWorldState()->clientInfo[ i ].isBot ) {
-				continue;
-			}
-
-			if ( GetGameWorldState()->clientInfo[ i ].classType == criticalClass ) {
-				continue;
-			}
-
-			idPlayer* player = gameLocal.GetClient( i );
-
-			if ( player == NULL ) {
-				continue;
-			}
-
-			if ( bots[ i ]->GetAIState() != LTG || bots[ i ]->GetLTGType() != ROAM_GOAL ) { //mal: now, make sure the bot isn't doing something important.
-				continue;
-			}
-
-			numConverted++;
-
-			player->ChangeClass( pc, weaponLoadOut ); //mal: default loadout.
-
-			player->Kill( NULL ); //mal: hurry up and suicide, and get back into the game as our new class!
-
-			if ( numClassOnTeam + numConverted >= minNeeded ) { //mal: found enough to switch over.
-				break;
-			} //mal: else, go around for another pass.
-		}
-
-
-		if ( numClassOnTeam + numConverted >= minNeeded ) { //mal: found enough to switch over.
-			continue;
-		}	
-
-//mal: didn't find enough bots of class sampleClass, so now we'll start looking at other classes, avoiding medics
-		for( int i = 0; i < MAX_CLIENTS; i++ ) {
-
-			if ( !GetGameWorldState()->clientInfo[ i ].inGame ) {
-				continue;
-			}
-
-			if ( GetGameWorldState()->clientInfo[ i ].team != botTeam ) {
-				continue;
-			}
-
-			if ( GetGameWorldState()->clientInfo[ i ].classType == neededClass ) {
-				continue;
-			}
-
-			if ( GetGameWorldState()->clientInfo[ i ].classType == MEDIC ) {
-				continue;
-			}
-
-			if ( !GetGameWorldState()->clientInfo[ i ].isBot ) {
-				continue;
-			}
-
-			if ( GetGameWorldState()->clientInfo[ i ].classType == criticalClass ) {
-				continue;
-			}
-
-			idPlayer* player = gameLocal.GetClient( i );
-
-			if ( player == NULL ) {
-				continue;
-			}
-
-			if ( bots[ i ]->GetAIState() != LTG || bots[ i ]->GetLTGType() != ROAM_GOAL ) { //mal: now, make sure the bot isn't doing something important.
-				continue;
-			}
-
-			numConverted++;
-
-			player->ChangeClass( pc, weaponLoadOut ); //mal: default loadout.
-
-			player->Kill( NULL ); //mal: hurry up and suicide, and get back into the game as our new class!
-
-			if ( numClassOnTeam + numConverted >= minNeeded ) { //mal: found enough to switch over.
-				break;
-			} //mal: else, go around for another pass.
-		}
-
-		if ( numClassOnTeam + numConverted >= minNeeded ) { //mal: found enough to switch over.
-			continue;
-		}
-
-//mal: this shouldn't ever really happen on a normal map, but just in case someone added 20 medics on one team, or theres only 1 or 2 bots on the server....
-		for( int i = 0; i < MAX_CLIENTS; i++ ) {
-
-			if ( !GetGameWorldState()->clientInfo[ i ].inGame ) {
-				continue;
-			}	
-
-			if ( GetGameWorldState()->clientInfo[ i ].team != botTeam ) {
-				continue;
-			}
-
-			if ( GetGameWorldState()->clientInfo[ i ].classType == neededClass ) {
-				continue;
-			}
-
-			if ( !GetGameWorldState()->clientInfo[ i ].isBot ) {
-				continue;
-			}
-
-			if ( GetGameWorldState()->clientInfo[ i ].classType == criticalClass ) {
-				continue;
-			}
-
-			idPlayer* player = gameLocal.GetClient( i );
-
-			if ( player == NULL ) {
-				continue;
-			}
-
-			if ( bots[ i ]->GetAIState() != LTG || bots[ i ]->GetLTGType() != ROAM_GOAL ) { //mal: now, make sure the bot isn't doing something important.
-				continue;
-			}
-
-			numConverted++;
-
-			player->ChangeClass( pc, weaponLoadOut ); //mal: default loadout.
-
-			player->Kill( NULL ); //mal: hurry up and suicide, and get back into the game as our new class!
-
-			if ( numClassOnTeam + numConverted >= minNeeded ) { //mal: found enough to switch over.
-				break;
-			} //mal: else, go around for another pass.
-		}
-	}	
+	ManageBotClassesOnSmallServer();
+
+	if ( !gameLocal.rules->IsWarmup() ) {
+		nextBotClassUpdateTime = gameLocal.time + 5000; //mal: this isn't super critical.
+	} else {
+		nextBotClassUpdateTime = gameLocal.time + 1000;
+	}
+
+	return;
 }
 
 /*
@@ -5810,18 +5719,26 @@ void idBotThreadData::ManageBotClassesOnSmallServer() {
 
 	for( int t = 0; t < MAX_TEAMS; t++ ) {
 		int weaponLoadOut = gameLocal.random.RandomInt( 2 );
+		int numDesiredCriticalClass;
+		int	numDesiredMedicClass;
 		playerTeamTypes_t botTeam;
 		playerClassTypes_t criticalClass = NOCLASS;
-		playerClassTypes_t botClass = NOCLASS;
+		playerClassTypes_t desiredBotClass = NOCLASS;
 		const sdDeclPlayerClass* pc;
 		
 		if ( t == GDF ) {
 			botTeam = GDF;
 			criticalClass = GetGameWorldState()->botGoalInfo.team_GDF_criticalClass;
+			numDesiredCriticalClass = ( GetNumClientsOnTeam( GDF ) >= 7 ) ? 3 : 2;
+			numDesiredMedicClass = ( GetNumClientsOnTeam( GDF ) >= 7 ) ? 2 : 1;
 		} else if ( t == STROGG ) {
 			botTeam = STROGG;
 			criticalClass = GetGameWorldState()->botGoalInfo.team_STROGG_criticalClass;
+			numDesiredCriticalClass = ( GetNumClientsOnTeam( STROGG ) >= 7 ) ? 3 : 2;
+			numDesiredMedicClass = ( GetNumClientsOnTeam( STROGG ) >= 7 ) ? 2 : 1;
 		}
+
+		int numDesiredSoldierClass = ( criticalClass == MEDIC ) ? 2 : 1; //mal: if have lots of medics, then need more soldiers.
 
 		int numMedic = GetNumClassOnTeam( botTeam, MEDIC );
 		int numEng = GetNumClassOnTeam( botTeam, ENGINEER );
@@ -5829,6 +5746,7 @@ void idBotThreadData::ManageBotClassesOnSmallServer() {
 		int numCovert = GetNumClassOnTeam( botTeam, COVERTOPS );
 		int numSoldier = GetNumClassOnTeam( botTeam, SOLDIER );
 		int numRLOnTeam = GetNumWeaponsOnTeam( botTeam, ROCKET );
+		int	numHeavyOnTeam = GetNumWeaponsOnTeam( botTeam, HEAVY_MG ); 
 		int numCritical;
 
 		if ( criticalClass != NOCLASS && bot_doObjectives.GetBool() ) {
@@ -5838,35 +5756,35 @@ void idBotThreadData::ManageBotClassesOnSmallServer() {
 		}
 
 		//mal: make sure we always have a couple bots of the critical class first, unless the human wants to do the obj.
-		if ( numCritical < 2 && numCritical != -1 ) {
-			botClass = criticalClass;
-		} else if ( numMedic == 0 ) {
-			botClass = MEDIC;
-		} else if ( numSoldier == 0 ) {
-			botClass = SOLDIER;
+		if ( numCritical < numDesiredCriticalClass && numCritical != -1 ) {
+			desiredBotClass = criticalClass;
+		} else if ( numMedic < numDesiredMedicClass ) { //mal: medics are incredibly useful. On a full server - have more.
+			desiredBotClass = MEDIC;
+		} else if ( numSoldier < numDesiredSoldierClass ) {
+			desiredBotClass = SOLDIER;
 		} else if ( numEng == 0 ) {
-			botClass = ENGINEER;
+			desiredBotClass = ENGINEER;
 		} else if ( numCovert == 0 ) {
-			botClass = COVERTOPS;
+			desiredBotClass = COVERTOPS;
 		} else if ( numFOps == 0 ) {
-			botClass = FIELDOPS;
+			desiredBotClass = FIELDOPS;
 		}
 
-		if ( botClass == NOCLASS ) {
+		if ( desiredBotClass == NOCLASS ) {
 			continue;
 		}
 
 		playerClassTypes_t sampleClass = NOCLASS;
 
-		if ( numMedic > 1 && ( criticalClass != MEDIC || numMedic > 2 ) ) {
+		if ( numMedic > numDesiredMedicClass && ( criticalClass != MEDIC || numMedic > numDesiredCriticalClass ) ) {
 			sampleClass = MEDIC;
-		} else if ( numSoldier > 1 && ( criticalClass != SOLDIER || numSoldier > 2 ) ) {
+		} else if ( numSoldier > numDesiredSoldierClass && ( criticalClass != SOLDIER || numSoldier > numDesiredCriticalClass ) ) {
 			sampleClass = SOLDIER;
-		} else if ( numEng > 1 && ( criticalClass != ENGINEER || numEng > 2 ) ) {
+		} else if ( numEng > 1 && ( criticalClass != ENGINEER || numEng > numDesiredCriticalClass ) ) {
 			sampleClass = ENGINEER;
-		} else if ( numCovert > 1 && ( criticalClass != COVERTOPS || numCovert > 2 ) ) {
+		} else if ( numCovert > 1 && ( criticalClass != COVERTOPS || numCovert > numDesiredCriticalClass ) ) {
 			sampleClass = COVERTOPS;
-		} else if ( numFOps > 1 && ( criticalClass != FIELDOPS || numFOps > 2 ) ) {
+		} else if ( numFOps > 1 && ( criticalClass != FIELDOPS || numFOps > numDesiredCriticalClass ) ) {
 			sampleClass = FIELDOPS;
 		}
 
@@ -5875,42 +5793,47 @@ void idBotThreadData::ManageBotClassesOnSmallServer() {
 		}
 
 		if ( t == GDF ) {
-			if ( botClass == MEDIC ) {
+			if ( desiredBotClass == MEDIC ) {
 				pc = gameLocal.declPlayerClassType[ "medic" ];
-			} else if ( botClass == SOLDIER ) {
+			} else if ( desiredBotClass == SOLDIER ) {
 				pc = gameLocal.declPlayerClassType[ "soldier" ];
 
 				if ( numRLOnTeam == 0 ) {
 					weaponLoadOut = 1;
+				} else if ( numHeavyOnTeam == 0 ) {
+					weaponLoadOut = 2;
 				} else {
 					weaponLoadOut = gameLocal.random.RandomInt( 4 );
 				}
-			} else if ( botClass == ENGINEER ) {
+			} else if ( desiredBotClass == ENGINEER ) {
 				pc = gameLocal.declPlayerClassType[ "engineer" ];
-			} else if ( botClass == FIELDOPS ) {
+			} else if ( desiredBotClass == FIELDOPS ) {
 				pc = gameLocal.declPlayerClassType[ "fieldops" ];
 				weaponLoadOut = 0;
-			} else if ( botClass == COVERTOPS ) {
+			} else if ( desiredBotClass == COVERTOPS ) {
 				pc = gameLocal.declPlayerClassType[ "covertops" ];
 			} else {
 				continue;
 			}
 		} else if ( t == STROGG ) {
-			if ( botClass == MEDIC ) {
+			if ( desiredBotClass == MEDIC ) {
 				pc = gameLocal.declPlayerClassType[ "technician" ];
-			} else if ( botClass == SOLDIER ) {
+			} else if ( desiredBotClass == SOLDIER ) {
 				pc = gameLocal.declPlayerClassType[ "aggressor" ];
+
 				if ( numRLOnTeam == 0 ) {
 					weaponLoadOut = 1;
+				} else if ( numHeavyOnTeam == 0 ) {
+					weaponLoadOut = 2;
 				} else {
 					weaponLoadOut = gameLocal.random.RandomInt( 4 );
 				}
-			} else if ( botClass == ENGINEER ) {
+			} else if ( desiredBotClass == ENGINEER ) {
 				pc = gameLocal.declPlayerClassType[ "constructor" ];
-			} else if ( botClass == FIELDOPS ) {
+			} else if ( desiredBotClass == FIELDOPS ) {
 				pc = gameLocal.declPlayerClassType[ "oppressor" ];
 				weaponLoadOut = 0;
-			} else if ( botClass == COVERTOPS ) {
+			} else if ( desiredBotClass == COVERTOPS ) {
 				pc = gameLocal.declPlayerClassType[ "infiltrator" ];
 			} else {
 				continue;
@@ -5936,16 +5859,28 @@ void idBotThreadData::ManageBotClassesOnSmallServer() {
 				continue;
 			}
 
+			if ( playerInfo.isActor ) {
+				continue;
+			}
+
+			if ( !gameLocal.rules->IsWarmup() && playerInfo.health > 0 ) {
+				if ( ( playerInfo.lastClassChangeTime + MIN_CLASS_CHANGE_DELAY ) > gameLocal.time ) {
+					continue;
+				}
+
 			if ( bots[ i ]->GetAIState() != LTG ) { //mal: now, make sure the bot isn't doing something important.
 				continue;
 			}
 
-			if ( bots[ i ]->GetLTGType() != ROAM_GOAL && bots[ i ]->GetLTGType() != CAMP_GOAL ) {
-				continue;
+			if ( playerInfo.classType != criticalClass ) {
+				if ( bots[ i ]->GetLTGType() != ROAM_GOAL && bots[ i ]->GetLTGType() != CAMP_GOAL ) {
+					if ( bots[ i ]->GetLTGType() == DEFENSE_CAMP_GOAL && random.RandomInt( 100 ) > 50 ) { //mal: if defense camping, a random chance we might do the switch.
+						continue;
+					} else {
+						continue;
+					}
+				}
 			}
-
-			if ( ( playerInfo.lastClassChangeTime + MIN_CLASS_CHANGE_DELAY ) > gameLocal.time ) {
-				continue;
 			}
 
 			idPlayer* player = gameLocal.GetClient( i );
@@ -5956,18 +5891,22 @@ void idBotThreadData::ManageBotClassesOnSmallServer() {
 
 			player->ChangeClass( pc, weaponLoadOut );
 					
+			if ( player->GetHealth() > 0 ) {
 			player->Kill( NULL ); //mal: hurry up and suicide, and get back into the game as our new class!
+			}
 			playerInfo.lastClassChangeTime = gameLocal.time;
 			changedClass = true;
 			break;
 		}
 	}
 
+	if ( !gameLocal.rules->IsWarmup() ) {
 	if ( ( lastWeapChangedTime + MIN_WEAPON_CHANGE_DELAY ) > gameLocal.time ) {
 		return;
 	}
+	}
 
-	if ( changedClass == false ) { //mal: make sure there is at least 1 RL soldier on each team.
+	if ( changedClass == false || gameLocal.rules->IsWarmup() ) { //mal: make sure there is at least 1 RL soldier on each team.
 		for( int t = 0; t < MAX_TEAMS; t++ ) {
 			playerTeamTypes_t botTeam;
 			const sdDeclPlayerClass* pc;
@@ -5986,8 +5925,24 @@ void idBotThreadData::ManageBotClassesOnSmallServer() {
 
 			int numRLOnTeam = GetNumWeaponsOnTeam( botTeam, ROCKET );
 
+			bool skipRLSoldiers = true;
+			int switchWeaponNumber = 1;
+
 			if ( numRLOnTeam > 0 ) {
+				if ( numSoldier > 1 ) { //mal: with 1 or more soldiers, make sure have at least one heavy weapon.
+					int numHeavyOnTeam = GetNumWeaponsOnTeam( botTeam, HEAVY_MG );
+
+					if ( numHeavyOnTeam > 0 ) {
+						continue;
+					}
+
+					if ( numRLOnTeam > 1 ) {
+						skipRLSoldiers = false; //mal: have enough RLs on the map to borrow from them.
+					}
+					switchWeaponNumber = 2;
+				} else {
 				continue;
+			}
 			}
 	
 			if ( t == GDF ) {
@@ -6015,16 +5970,448 @@ void idBotThreadData::ManageBotClassesOnSmallServer() {
 					continue;
 				}
 
+				if ( skipRLSoldiers ) {
+					if ( playerInfo.weapInfo.primaryWeapon == ROCKET ) {
+						continue;
+					}
+				}
+
 				idPlayer* player = gameLocal.GetClient( i );
 
 				if ( player == NULL ) {
 					continue;
 				}
 
-				player->ChangeClass( pc, 1 );
+				player->ChangeClass( pc, switchWeaponNumber );
 				lastWeapChangedTime = gameLocal.time;
+				
+				if ( gameLocal.rules->IsWarmup() ) {
+					player->Kill( NULL ); //mal: hurry up and suicide, and get back into the game with our new weapon!
+				}
+
 				break;
 			}
 		}
 	}
+
+	if ( !checkedLastMapStageCovertWeapons && GetGameWorldState()->botGoalInfo.gameIsOnFinalObjective ) { //mal: on the last map obj, if theres no spots for snipers, turn in our sniper rifles.
+		bool gdfSnipersExist = false;
+		bool stroggSnipersExist = false;
+		checkedLastMapStageCovertWeapons = true;
+
+		for( int i = 0; i < botActions.Num(); i++ ) {
+			if ( !botActions[ i ]->ActionIsActive() ) {
+				continue;
+			}
+
+			if ( !botActions[ i ]->ActionIsValid() ) {
+				continue;
+			}
+
+			if ( botActions[ i ]->GetHumanObj() == ACTION_SNIPE ) {
+				gdfSnipersExist = true;
+			}
+
+			if ( botActions[ i ]->GetStroggObj() == ACTION_SNIPE ) {
+				stroggSnipersExist = true;
+			}
+
+			if ( gdfSnipersExist && stroggSnipersExist ) {
+				break;
+			}
+		}
+
+		for( int t = 0; t < MAX_TEAMS; t++ ) {
+			playerTeamTypes_t botTeam;
+
+			if ( t == GDF ) {
+				if ( gdfSnipersExist ) {
+					continue;
+				}
+
+				botTeam = GDF;
+			} else if ( t == STROGG ) {
+				if ( stroggSnipersExist ) {
+					continue;
+				}
+
+				botTeam = STROGG;
+			}
+
+			int numCoverts = GetNumClassOnTeam( botTeam, COVERTOPS );
+
+			if ( numCoverts == 0 ) {
+				continue;
+			}
+
+			int numSnipersOnTeam = GetNumWeaponsOnTeam( botTeam, SNIPERRIFLE );
+
+			if ( numSnipersOnTeam == 0 ) {
+				continue;
+			}
+
+			const sdDeclPlayerClass* pc;
+	
+			if ( t == GDF ) {
+				pc = gameLocal.declPlayerClassType[ "covertops" ];
+			} else if ( t == STROGG ) {
+				pc = gameLocal.declPlayerClassType[ "infiltrator" ];
+			}
+
+			for( int i = 0; i < MAX_CLIENTS; i++ ) {
+				clientInfo_t& playerInfo = GetGameWorldState()->clientInfo[ i ];
+
+				if ( !playerInfo.inGame ) {
+					continue;
+				}
+
+				if ( playerInfo.team != botTeam ) {
+					continue;
+				}
+
+				if ( playerInfo.classType != COVERTOPS ) {
+					continue;
+				}
+
+				if ( !playerInfo.isBot ) {
+					continue;
+				}
+
+				idPlayer* player = gameLocal.GetClient( i );
+
+				if ( player == NULL ) {
+					continue;
+				}
+
+				player->ChangeClass( pc, 0 );
+			}
+		}
+	}
 }
+
+/*
+==================
+idBotThreadData::EntityIsExplosiveCharge
+==================
+*/
+bool idBotThreadData::EntityIsExplosiveCharge( int entNum, bool armedOnly, const playerTeamTypes_t& ignoreTeam ) {
+	bool isCharge = false;
+
+	for( int i = 0; i < MAX_CHARGES; i++ ) {
+		if ( GetGameWorldState()->chargeInfo[ i ].entNum != entNum ) {
+			continue;
+		}
+
+		if ( armedOnly ) {
+			if ( GetGameWorldState()->chargeInfo[ i ].state != BOMB_ARMED ) {
+				continue;
+			}
+		}
+
+		if ( ignoreTeam != NOTEAM ) {
+			if ( GetGameWorldState()->chargeInfo[ i ].team == ignoreTeam ) {
+				continue;
+			}
+		}
+
+		isCharge = true;
+		break;
+	}
+
+	return isCharge;
+}
+
+/*
+============
+idBotThreadData::MapHasAnActor
+============
+*/
+bool idBotThreadData::MapHasAnActor() {
+	bool hasActor = false;
+
+	for( int i = 0; i < MAX_CLIENTS; i++ ) {
+		if ( !ClientIsValid( i ) ) {
+			continue;
+		}
+
+		const clientInfo_t& playerInfo = GetGameWorldState()->clientInfo[ i ];
+
+		if ( !playerInfo.inGame ) {
+			continue;
+		}
+
+		if ( !playerInfo.isActor ) {
+			continue;
+		}
+
+		hasActor = true;
+		break;
+	}
+
+	return hasActor;
+}
+
+/*
+============
+idBotThreadData::FindBotToBeActor
+============
+*/
+void idBotThreadData::FindBotToBeActor() {
+	if ( !GetGameWorldState()->gameLocalInfo.teamGDFHasHuman ) {
+		return;
+	}
+
+	if ( actorMissionInfo.playerIsOnFinalMission && !actorMissionInfo.playerNeedsFinalBriefing ) {
+		return;
+	}
+
+	for( int i = 0; i < MAX_CLIENTS; i++ ) {
+		if ( !ClientIsValid( i ) ) {
+			continue;
+		}
+				
+		clientInfo_t& playerInfo = GetGameWorldState()->clientInfo[ i ];
+
+		if ( !playerInfo.inGame ) {
+			continue;
+		}
+
+		if ( !playerInfo.isBot ) {
+			continue;
+		}
+
+		if ( playerInfo.team != GDF ) {
+			continue;
+		}
+
+		if ( playerInfo.classType != MEDIC ) {
+			continue;
+		}
+
+		playerInfo.isActor = true;
+		actorMissionInfo.actorClientNum = i;
+
+		idPlayer* player = gameLocal.GetClient( i );
+
+		if ( player != NULL ) {
+			player->SetGodMode( true );
+			networkSystem->ServerSetBotUserName( i, trainingGDFBotNames[ BOT_GUIDE_NAME_SLOT ] );
+		}
+
+		break;
+	}
+}
+
+/*
+============
+idBotThreadData::TrainingThink
+
+Quick and dirty func to track the progress of the training
+============
+*/
+void idBotThreadData::TrainingThink() {
+	if ( !actorMissionInfo.setup ) {
+		for( int i = 0; i < MAX_CLIENTS; i++ ) {
+			if ( !ClientIsValid( i ) ) {
+				continue;
+			}
+
+			const clientInfo_t& playerInfo = GetGameWorldState()->clientInfo[ i ];
+
+			if ( !playerInfo.inGame ) {
+				continue;
+			}
+
+			if ( playerInfo.isBot ) {
+				continue;
+			}
+
+			if ( playerInfo.team != GDF ) {
+				continue;
+			}
+
+			actorMissionInfo.setup = true;
+			actorMissionInfo.targetClientNum = i;
+			break;
+		}
+
+		int actionNum = botThreadData.FindActionByName( "hut_avt_deploy" );
+
+		if ( actionNum != -1 ) {
+			botThreadData.ignoreActionNumber = actionNum;
+		}
+	}
+
+	if ( actorMissionInfo.deployableStageIsActive ) {
+		for( int i = 0; i < MAX_DEPLOYABLES; i++ ) {
+			if ( GetGameWorldState()->deployableInfo[ i ].entNum == 0 ) {
+				continue;
+			}
+
+			if ( GetGameWorldState()->deployableInfo[ i ].ownerClientNum != actorMissionInfo.targetClientNum ) {
+				continue;
+			}
+
+			sdObjectiveManager::GetInstance().PlayerDeployableDeployed();
+			actorMissionInfo.deployableStageIsActive = false;
+			break;
+		}
+	}
+
+	if ( actorMissionInfo.targetClientNum > -1 && actorMissionInfo.targetClientNum < MAX_CLIENTS ) {
+		idPlayer* player = gameLocal.GetClient( actorMissionInfo.targetClientNum );
+
+		idWeapon* gun = player->weapon.GetEntity(); //mal: get some info on our gun
+
+		if ( gun ) {
+			gun->UpdateVisibility();
+		}
+	}
+
+	if ( actorMissionInfo.actorClientNum > -1 && actorMissionInfo.actorClientNum < MAX_CLIENTS ) {
+		idPlayer* player = gameLocal.GetClient( actorMissionInfo.actorClientNum );
+
+		if ( player != NULL ) {
+			player->SetGodMode( true );
+
+			sdInventory& inventory = player->GetInventory();
+
+			for( int i = 0; i < gameLocal.declAmmoTypeType.Num(); i++ ) {
+				inventory.SetAmmo( i, inventory.GetMaxAmmo( i ) );
+			}
+		}		
+	}
+
+	if ( gameLocal.numClients == bot_minClients.GetInteger() && actorMissionInfo.setupBotNames ) {
+		int gdfCounter = BOT_GUIDE_NAME_SLOT + 1;
+		int stroggCounter = 0;
+
+		for( int i = 0; i < MAX_CLIENTS; i++ ) {
+			if ( !ClientIsValid( i ) ) {
+				continue;
+			}
+
+			const clientInfo_t& playerInfo = GetGameWorldState()->clientInfo[ i ];
+
+			if ( !playerInfo.inGame ) {
+				continue;
+			}
+
+			if ( !playerInfo.isBot ) {
+				continue;
+			}
+
+			if ( playerInfo.isActor ) { //mal: this is setup when we first set the actor.
+				continue;
+			}
+
+			if ( playerInfo.team == GDF && gdfCounter < trainingGDFBotNames.Num() ) {
+				networkSystem->ServerSetBotUserName( i, trainingGDFBotNames[ gdfCounter ] );
+				gdfCounter++;
+			} else if ( playerInfo.team == STROGG && stroggCounter < trainingSTROGGBotNames.Num() ) {
+				networkSystem->ServerSetBotUserName( i, trainingSTROGGBotNames[ stroggCounter ] );
+				stroggCounter++;
+			}
+
+			actorMissionInfo.setupBotNames = false;
+		}
+	}
+
+	bot_doObjsInTrainingMode.SetBool( false );
+}
+
+/*
+============
+idBotThreadData::PlayerIsBeingBriefed
+============
+*/
+bool idBotThreadData::PlayerIsBeingBriefed() {
+	if ( GetGameWorldState()->botGoalInfo.isTrainingMap == false ) {
+		return false;
+	}
+
+	if ( actorMissionInfo.targetClientNum > -1 && actorMissionInfo.targetClientNum < MAX_CLIENTS ) {
+		idPlayer* player = gameLocal.GetClient( actorMissionInfo.targetClientNum );
+
+		if ( player != NULL ) {
+			if ( player->IsBeingBriefed() ) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+/*
+============
+idBotThreadData::DeactivateBadMapActions
+
+This is a nasty, 11th hour, 59th minute, 59th second hack! No time to remove these actions ingame, so just disable them.
+============
+*/
+void idBotThreadData::DeactivateBadMapActions() { 
+	if ( GetGameWorldState()->gameLocalInfo.gameMap == QUARRY ) { //mal: these actions face the GDF spawn, and their APTs - leading to MANY Strogg deaths.
+		int actionNumber = botThreadData.FindActionByName( "strogg_jammer_3" );
+
+		if ( actionNumber != -1 ) {
+			botActions[ actionNumber ]->SetActive( false );
+			botActions[ actionNumber ]->SetHumanObj( ACTION_NULL );
+			botActions[ actionNumber ]->SetStroggObj( ACTION_NULL );
+			botActions[ actionNumber ]->SetActionGroupNum( -1 );
+		} else {
+			Warning( "No valid bot action found by the name strogg_jammer_3!" );
+		}
+
+		actionNumber = botThreadData.FindActionByName( "strogg_jammer_4" );
+
+		if ( actionNumber != -1 ) {
+			botActions[ actionNumber ]->SetActive( false );
+			botActions[ actionNumber ]->SetHumanObj( ACTION_NULL );
+			botActions[ actionNumber ]->SetStroggObj( ACTION_NULL );
+			botActions[ actionNumber ]->SetActionGroupNum( -1 );
+		} else {
+			Warning( "No valid bot action found by the name strogg_jammer_4!" );
+		}
+	}
+}
+
+/*
+============
+idBotThreadData::CheckIfClientsInGameYet
+============
+*/
+bool idBotThreadData::CheckIfClientsInGameYet() {
+	bool hasPlayers = false;
+	
+	for( int i = 0; i < MAX_CLIENTS; i++ ) {
+		
+		if ( !GetBotWorldState()->clientInfo[ i ].inGame ) {
+			continue;
+		}
+
+		if ( GetBotWorldState()->clientInfo[ i ].classType == NOCLASS ) {
+			continue;
+		}
+
+		idPlayer* player = gameLocal.GetClient( i );
+		
+		if ( player == NULL ) {
+			continue;
+		}
+
+		if ( !player->CanPlay() ) {
+			continue;
+		}
+
+		hasPlayers = true;
+		break;
+	}
+
+	return hasPlayers;
+}
+
+
+
+
+

@@ -191,7 +191,9 @@ bool idBotAI::Run_Combat_Node() {
 		proxyInfo_t vehicleInfo;
 		GetVehicleInfo( vehicleNum, vehicleInfo );
 
-		if ( ( vehicleInfo.type == GOLIATH || vehicleInfo.type == TITAN || vehicleInfo.type == DESECRATOR ) && vehicleInfo.health > ( vehicleInfo.maxHealth / 3 ) ) {
+		if ( vehicleInfo.type == MCP && vehicleInfo.isImmobilized && vehicleInfo.driverEntNum == enemy ) {
+			needNewEnemy = true;
+		} else if ( ( vehicleInfo.type == GOLIATH || vehicleInfo.type == TITAN || vehicleInfo.type == DESECRATOR ) && vehicleInfo.health > ( vehicleInfo.maxHealth / 3 ) ) {
 			
 			bool canNadeAttack = ( !botInfo->weapInfo.hasNadeAmmo || enemyInfo.enemyDist > GRENADE_ATTACK_DIST ) ? false : true;
 
@@ -239,11 +241,16 @@ bool idBotAI::Run_Combat_Node() {
 		return false;
 	}
 
+	Bot_CheckForDangers( true );
+
+	if ( turretDangerExists && turretDangerEntNum != -1 && combatNBGType != COMBAT_ATTACK_TURRET && enemyInfo.enemyDist > 500.0f && Bot_HasExplosives( true, true ) && !Client_IsCriticalForCurrentObj( botNum, BOT_WILL_ATTACK_TURRETS_IN_COMBAT_DIST ) ) {
+		combatNBGTarget = turretDangerEntNum;
+		COMBAT_AI_SUB_NODE = &idBotAI::Enter_COMBAT_Foot_AttackTurret; 
+	}
+
 	if ( COMBAT_AI_SUB_NODE == NULL ) {
         Bot_CheckCurrentStateForCombat();
 	}
-
-	Bot_CheckForDangers( true );
 
 	CallFuncPtr( COMBAT_AI_SUB_NODE ); //mal: run the bot's current combat think node
 

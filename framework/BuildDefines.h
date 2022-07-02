@@ -93,8 +93,15 @@
 
 // support gamecode pak checksum remapping
 // we will likely enable this for OSX as well
-#ifdef __linux__
+#if defined( __linux__ ) || defined( MACOS_X )
 	#define ID_PURE_REMAP 1
+#endif
+
+// (initially from Aspyr) - TTimo
+// not required on Linux, we only use it for better compatibility when running the Linux binary on BSD < 7.0
+// OSX has problems with TLS. Apparently Apple's gcc supports it but the binary format doesn't (mach-o)
+#if defined( __linux__ ) || defined( MACOS_X )
+	#define USE_PTHREAD_TLS
 #endif
 
 // verify checksums in clientinfo traffic

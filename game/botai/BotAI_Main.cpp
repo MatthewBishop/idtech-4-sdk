@@ -78,6 +78,12 @@ void idBotAI::Think() {
         ROOT_AI_NODE = &idBotAI::Run_LTG_Node;
 	}
 
+	if ( botAAS.blockedByObstacleCounterOnFoot > MAX_FRAMES_BLOCKED_BY_OBSTACLE_ON_FOOT ) {
+		Bot_ResetState( true, true );
+		botAAS.blockedByObstacleCounterOnFoot = 0;
+		ROOT_AI_NODE = &idBotAI::Run_LTG_Node;
+	}
+
     CallFuncPtr( ROOT_AI_NODE ); //mal: run the bot's current think node
 
 	Bot_Input();
@@ -126,6 +132,8 @@ void idBotAI::BotAI_ResetUcmd () {
 	botUcmd->botCmds.switchVehicleWeap = false;
 	botUcmd->botCmds.dropDisguise = false;
 	botUcmd->botCmds.shoveClient = false;
+	botUcmd->botCmds.droppingSupplyCrate = false;
+	botUcmd->botCmds.destroySupplyCrate = false;
 	botUcmd->botCmds.hasMedicInFOV = false;
 	botUcmd->botCmds.becomeDriver = false;
 	botUcmd->botCmds.becomeGunner = false;
@@ -142,11 +150,17 @@ void idBotAI::BotAI_ResetUcmd () {
 	botUcmd->ackRepairForClient = -1;
 	isStrafeJumping = false;
 	ignoreWeapChange = false;
+	botAAS.triedToMoveThisFrame = false;
 	weaponLocked = false;
 	botUcmd->botCmds.launchPacks = false;
+	botUcmd->botCmds.switchAwayFromSniperRifle = false;
 	botUcmd->botCmds.topHat = false;
 	botUcmd->tkReviveTime = 0;
 	botUcmd->decayObstacleSpawnID = -1;
+	botUcmd->botCmds.actorBriefedPlayer = false;
+	botUcmd->botCmds.actorSurrenderStatus = false;
+	botUcmd->botCmds.actorIsBriefingPlayer = false;
+	botUcmd->botCmds.actorHasEnteredActorNode = false;
 
 	botUcmd->specialMoveType = NULLMOVETYPE;
 }
@@ -233,6 +247,8 @@ void idBotAI::Bot_ResetState( bool resetEnemy, bool resetStack ) {
 
 	shotIsBlockedCounter = 0;
 
+	vehicleEnemyWasInheritedFromFootCombat = false;
+
 	nodeTimeOut = 0;
 	newPathTime = 0;
 
@@ -287,6 +303,8 @@ void idBotAI::Bot_ResetState( bool resetEnemy, bool resetStack ) {
 	NBG_AI_SUB_NODE = NULL;
 	LTG_AI_SUB_NODE = NULL;
     COMBAT_AI_SUB_NODE = NULL;
+
+	combatNBGType = NO_COMBAT_TYPE;
 
 	botVehiclePathList.Clear();
 }
@@ -452,7 +470,7 @@ void idBotAI::UpdateBotsInformation( const playerClassTypes_t playerClass, const
 		NBG_CHECK_FOR_CLASS_NBG = &idBotAI::Bot_MedicCheckNBGState_InNBG;
 	}
 
-	if ( playerClass == FIELDOPS && playerTeam == GDF ) { //mal: strogg medics will do the same job as Fops.
+	if ( playerClass == FIELDOPS ) { //mal: strogg medics will do the same job as Fops.
 		LTG_CHECK_FOR_CLASS_NBG = &idBotAI::Bot_FopsCheckNBGState;
 		NBG_CHECK_FOR_CLASS_NBG = &idBotAI::Bot_FopsCheckNBGState;
 	}
@@ -531,19 +549,35 @@ void idBotAI::CheckBotStuckState() {
 		return;
 	}
 
-	if ( botInfo->areaNum == 0 ) {
-		framesStuck++;
+	if ( !botAAS.triedToMoveThisFrame ) {
+		botAAS.blockedByObstacleCounterOnFoot = 0;
+	}
 
-		if ( framesStuck >= 300 ) {
+	if ( botInfo->areaNum == 0 ) {
+		noAASCounter++;
+
+		if ( noAASCounter >= 100 ) {
 			if ( botVehicleInfo == NULL ) {
                 botUcmd->botCmds.suicide = true;
-				framesStuck = 0;
+				noAASCounter = 0;
 			} else {
                 Bot_ExitVehicle();
 			}
 		}
 
 		return;
+	} else {
+		noAASCounter = 0;
+	}
+
+	if ( moveErrorCounter.moveErrorTime < botWorld->gameLocalInfo.time ) {
+		moveErrorCounter.moveErrorTime = botWorld->gameLocalInfo.time + 5000;
+		if ( moveErrorCounter.moveErrorCount >= MAX_MOVE_ERRORS ) {
+			moveErrorCounter.moveErrorCount = 0;
+			botUcmd->botCmds.suicide = true;
+		} else {
+			moveErrorCounter.moveErrorCount = 0;
+		}
 	}
 
 	if ( botVehicleInfo == NULL ) {
@@ -552,13 +586,20 @@ void idBotAI::CheckBotStuckState() {
 		if ( vec.LengthSqr() < Square( 10.0f ) && botInfo->isTryingToMove ) {
 			framesStuck++;
 
+//			if ( framesStuck > MAX_FRAMES_BLOCKED_BY_OBSTACLE_ON_FOOT ) {
+//				botAAS.blockedByObstacleCounterOnFoot = MAX_FRAMES_BLOCKED_BY_OBSTACLE_ON_FOOT + 1;
+//				framesStuck = 0;
+//				stuckRandomMoveTime = botWorld->gameLocalInfo.time + 500;
+//				overallFramesStuck++;
+//			}
+
 			if ( framesStuck >= 300 ) {
 				stuckRandomMoveTime = botWorld->gameLocalInfo.time + 500;
 				framesStuck = 0;
 				overallFramesStuck++;
 			}
 
-			if ( overallFramesStuck > 2 && botWorld->gameLocalInfo.botsCanSuicide ) {
+			if ( overallFramesStuck > 6 && botWorld->gameLocalInfo.botsCanSuicide ) {
 				botUcmd->botCmds.suicide = true;
 			}
 
@@ -785,22 +826,8 @@ void idBotAI::UpdateAAS() {
 		}
 	}
 
-/*
-	if ( botVehicleInfo != NULL && botVehicleInfo->type != ICARUS ) {
-		if ( botAAS.aasType != AAS_VEHICLE ) {
-			botAAS.aas = botThreadData.GetAAS( AAS_VEHICLE );
-			if ( botAAS.aas == NULL ) {
-				botAAS.aas = botThreadData.GetAAS( AAS_PLAYER );
-			}
-			botAAS.aasType = AAS_VEHICLE;
-		}
-	} else {
-		if ( botAAS.aasType != AAS_PLAYER ) {
-			botAAS.aas = botThreadData.GetAAS( AAS_PLAYER );
-			botAAS.aasType = AAS_PLAYER;
-		}
-	}
-*/
+	botAAS.blockedByObstacleCounterOnFoot = 0;
+	botAAS.blockedByObstacleCounterInVehicle = 0;
 }
 
 /*
@@ -884,6 +911,8 @@ idBotAI::ClearBotState
 void idBotAI::ClearBotState() {
 	nextRemoved = NULL;
 
+	crateGoodTime = 0;
+
 	LTG_CHECK_FOR_CLASS_NBG = NULL;
 	NBG_CHECK_FOR_CLASS_NBG = NULL;
 	COMBAT_MOVEMENT_STATE = NULL;
@@ -895,6 +924,9 @@ void idBotAI::ClearBotState() {
 	COMBAT_AI_SUB_NODE = NULL;
 	VEHICLE_COMBAT_MOVEMENT_STATE = NULL;
 	VEHICLE_COMBAT_AI_SUB_NODE = NULL;
+
+	noAASCounter = 0;
+	vehicleEnemyWasInheritedFromFootCombat = false;
 
 	wantsVehicle = false;
 
@@ -920,6 +952,11 @@ void idBotAI::ClearBotState() {
 
 	hopMoveGoal = vec3_zero;
 
+	ignoreMCPRouteAction = false;
+
+	turretDangerExists = false;
+	turretDangerEntNum = -1;
+
 	warmupActionMoveGoal = ACTION_NULL;
 	warmupUseActionMoveGoalTime = 0;
 
@@ -935,10 +972,14 @@ void idBotAI::ClearBotState() {
 
 	hasGreetedServer = false;
 
+	reachedPatrolPointTime = 0;
+
 	strafeToAvoidDangerTime = 0;
 	strafeToAvoidDangerDir = NULL_DIR;
 
 	timeOnTarget = 0;
+
+	nextObjChargeCheckTime = 0;
 
 	routeNode = NULL;
 
@@ -950,6 +991,8 @@ void idBotAI::ClearBotState() {
 	vehicleSurrenderClient = -1;
 	vehicleSurrenderChatSent = false;
 
+	vehicleCheckForPossibleHumanPassengerChatTime = 0;
+
 	weapSwitchTime = 0;
 
 	randomLookDelay = 0;
@@ -957,6 +1000,8 @@ void idBotAI::ClearBotState() {
 	resetEnemy = false;
 
 	botWantsVehicleBackTime = 0;
+
+	checkRoadKillTime = 0;
 
 	ignoreIcarusTime = 0;
 
@@ -975,6 +1020,8 @@ void idBotAI::ClearBotState() {
 	memset( ignoreEnemies, 0, sizeof( ignoreEnemies ) );
 	memset( ignoreBodies, 0, sizeof( ignoreBodies ) );
 	memset( currentDangers, 0, sizeof( currentDangers ) );
+	memset( ignoreActions, 0, sizeof( ignoreActions ) );
+	memset( ignoreItems, 0, sizeof( ignoreItems ) );
 
 	memset( &currentArtyDanger, 0, sizeof( currentArtyDanger ) );
 
@@ -1037,9 +1084,6 @@ void idBotAI::ClearBotState() {
 
 	botNum					= -1;
 
-	ignoreAction.num		= 0;
-	ignoreAction.time		= 0;
-	
 	aiState					= LTG;
 
 	botCanMoveGoal.Zero();
@@ -1110,7 +1154,12 @@ void idBotAI::ClearBotState() {
 	badMoveTime = 0;
 	testFireShot = false;
 
+	vehicleAINodeSwitch.nodeSwitchCount = 0;
+	vehicleAINodeSwitch.nodeSwitchTime = 0;
 
+	moveErrorCounter.moveErrorTime = 0;
+	moveErrorCounter.moveErrorCount = 0;
+	
 	// FIXME: initialize all variables
 
 	lastAINode = "NO NODE";
@@ -1124,6 +1173,11 @@ void idBotAI::ClearBotState() {
 #endif
 }
 
+/*
+===============
+idBotAI::ClearBotUcmd
+===============
+*/
 void idBotAI::ClearBotUcmd( int clientNum ) {
 	botAIOutput_t &output = botThreadData.GetBotOutputState()->botOutput[ clientNum ];
 

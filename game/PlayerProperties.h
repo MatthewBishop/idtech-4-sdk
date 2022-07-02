@@ -1057,6 +1057,13 @@ private:
 	datatype			= "float";
 	)
 	sdFloatProperty		isServer;
+
+	SD_UI_PROPERTY_TAG(
+	title				= "PlayerProperties/InLetterBox";
+	desc				= "Local view player letterbox state.";
+	datatype			= "float";
+	)
+	sdFloatProperty		inLetterBox;
 };
 
 class sdGlobalPropertiesNameSpace : public sdUIWritablePropertyHolder {

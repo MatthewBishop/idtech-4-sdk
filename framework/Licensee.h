@@ -16,7 +16,7 @@
 #define GAME_ICON						"etqw.bmp"
 
 #define ENGINE_VERSION_MAJOR			1
-#define ENGINE_VERSION_MINOR			4
+#define ENGINE_VERSION_MINOR			5
 
 // paths
 #define	CD_BASEDIR						"etqw"

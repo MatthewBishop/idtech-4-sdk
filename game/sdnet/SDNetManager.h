@@ -86,6 +86,7 @@ public:
 #endif /* !SD_DEMO_BUILD && !SD_DEMO_BUILD_CONSTRUCTION */
 		SF_PLAYERCOUNT,
 		SF_MODS,
+		SF_MAXBOTS,
 		SF_MAX
 	};
 
@@ -339,6 +340,8 @@ private:
 	void							Script_GetFriendServerIP( sdUIFunctionStack& stack );
 #endif /* !SD_DEMO_BUILD */
 	void							Script_IsSelfOnServer( sdUIFunctionStack& stack );
+	void							Script_JoinBestServer( sdUIFunctionStack& stack );
+	void							Script_GetNumHotServers( sdUIFunctionStack& stack );
 
 	void							Script_FormatSessionInfo( sdUIFunctionStack& stack );
 

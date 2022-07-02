@@ -689,19 +689,17 @@ void idGameLocal::CreateFireTeamList_Invite( sdUIList* list ) {
 			if ( p != NULL && p->GetTeam() == localPlayer->GetTeam() ) {
 				if ( gameLocal.rules->GetPlayerFireTeam( i ) == NULL ) {
 					numFound++;
-					if ( numFound > FIRETEAMLIST_PAGE_NUM_PLAYERS * page ) {
+					if ( numFound > FIRETEAMLIST_PAGE_NUM_PLAYERS * page && numAdded < FIRETEAMLIST_PAGE_NUM_PLAYERS ) {
 						sdUIList::InsertItem( list, va( L" %i. %hs\t%hs", numAdded+1, p->userInfo.cleanName.c_str(), p->userInfo.cleanName.c_str() ), numAdded, 0 );
 						numAdded++;
-						if ( numAdded >= FIRETEAMLIST_PAGE_NUM_PLAYERS ) {
-							break;
-						}
 					}
 				}
 			}
 		}
 	}
-	if ( numAdded >= FIRETEAMLIST_PAGE_NUM_PLAYERS || numFound != numAdded ) {
-		if ( numFound != numAdded ) {
+
+	if ( numFound != numAdded ) {
+		if ( page == 1 ) {
 			sdUIList::InsertItem( list, va( L" %i. %ls\tprevpage", numAdded+1, common->LocalizeText( "guis/hud/fireteam/menu/prevpage" ).c_str() ), numAdded, 0 );
 		} else {
 			sdUIList::InsertItem( list, va( L" %i. %ls\tnextpage", numAdded+1, common->LocalizeText( "guis/hud/fireteam/menu/nextpage" ).c_str() ), numAdded, 0 );

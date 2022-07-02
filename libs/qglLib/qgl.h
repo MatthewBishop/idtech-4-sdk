@@ -64,6 +64,38 @@ extern PFNGLUNMAPBUFFERARBPROC qglUnmapBufferARB;
 extern PFNGLGETBUFFERPARAMETERIVARBPROC qglGetBufferParameterivARB;
 extern PFNGLGETBUFFERPOINTERVARBPROC qglGetBufferPointervARB;
 
+#if defined( MACOS_X )
+// APPLE_vertex_array_range
+extern PFNGLVERTEXARRAYRANGEAPPLEPROC           qglVertexArrayRangeAPPLE;
+extern PFNGLFLUSHVERTEXARRAYRANGEAPPLEPROC      qglFlushVertexArrayRangeAPPLE;
+extern PFNGLVERTEXARRAYPARAMETERIAPPLEPROC      qglVertexArrayParameteriAPPLE;
+
+// APPLE_vertex_array_object
+extern PFNGLGENVERTEXARRAYSAPPLEPROC            qglGenVertexArraysAPPLE;
+extern PFNGLBINDVERTEXARRAYAPPLEPROC            qglBindVertexArrayAPPLE;
+extern PFNGLDELETEVERTEXARRAYSAPPLEPROC         qglDeleteVertexArraysAPPLE;
+extern PFNGLISVERTEXARRAYAPPLEPROC              qglIsVertexArrayAPPLE;
+
+// APPLE_flush_buffer_range
+extern PFNGLBUFFERPARAMETERIAPPLEPROC           qglBufferParameteriAPPLE;
+extern PFNGLFLUSHMAPPEDBUFFERRANGEAPPLEPROC     qglFlushMappedBufferRangeAPPLE;
+
+// APPLE_fence
+extern PFNGLGENFENCESAPPLEPROC                  qglGenFencesAPPLE;
+extern PFNGLDELETEFENCESAPPLEPROC               qglDeleteFencesAPPLE;
+extern PFNGLSETFENCEAPPLEPROC                   qglSetFenceAPPLE;
+extern PFNGLISFENCEAPPLEPROC                    qglIsFenceAPPLE;
+extern PFNGLTESTFENCEAPPLEPROC                  qglTestFenceAPPLE;
+extern PFNGLFINISHFENCEAPPLEPROC                qglFinishFenceAPPLE;
+extern PFNGLTESTOBJECTAPPLEPROC                 qglTestObjectAPPLE;
+extern PFNGLFINISHOBJECTAPPLEPROC               qglFinishObjectAPPLE;
+
+// APPLE_texture_range
+extern PFNGLTEXTURERANGEAPPLEPROC              qglTextureRangeAPPLE;
+extern PFNGLGETTEXPARAMETERPOINTERVAPPLEPROC   qglGetTexParameterPointervAPPLE;
+
+#endif // MACOS_X 
+
 // NV_register_combiners
 extern	void ( APIENTRY *qglCombinerParameterfvNV )( GLenum pname, const GLfloat *params );
 extern	void ( APIENTRY *qglCombinerParameterivNV )( GLenum pname, const GLint *params );

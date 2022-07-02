@@ -647,6 +647,7 @@ bool idBotAI::Enter_Vehicle_Air_Movement() {
 				lastMoveNode = "Buffalo Air To Ground Combat";
 				combatMoveTime = botWorld->gameLocalInfo.time + 500;
 			} else {
+				combatKeepMovingTime = 0;
 				VEHICLE_COMBAT_MOVEMENT_STATE = &idBotAI::Vehicle_Air_To_Ground_Movement;
 				lastMoveNode = "Vehicle Air To Ground Combat";
 			}
@@ -657,6 +658,7 @@ bool idBotAI::Enter_Vehicle_Air_Movement() {
 			lastMoveNode = "Buffalo Air To Ground Combat";
 			combatMoveTime = botWorld->gameLocalInfo.time + 500;
 		} else {
+			combatKeepMovingTime = 0;
 			VEHICLE_COMBAT_MOVEMENT_STATE = &idBotAI::Vehicle_Air_To_Ground_Movement;
 			lastMoveNode = "Vehicle Air To Ground Combat";
 		}
@@ -713,7 +715,7 @@ bool idBotAI::Vehicle_Air_To_Air_Movement() {
 		tooCloseDist = 2500.0f;
 
 		if ( Bot_CheckEnemyHasLockOn( enemy ) && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) { //mal: they need a bit of an edge
-			botUcmd->botCmds.launchDecoys = true;
+			botUcmd->botCmds.launchDecoysNow = true;
 		}
 
 		if ( dist < Square( tooCloseDist ) && combatMoveTime < botWorld->gameLocalInfo.time && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) {
@@ -907,10 +909,6 @@ bool idBotAI::Vehicle_Air_To_Ground_Movement() {
 			combatMoveTime = botWorld->gameLocalInfo.time + 5000;
 			combatMoveTooCloseRange = tooCloseRange;
 		}
-
-		if ( botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && botThreadData.random.RandomInt( 100 ) > 90 && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) {
-			botUcmd->botCmds.launchDecoys = true; //mal: we're exposing our flank, so fire some decoys to cover our move.
-		}
 	}
 
 	if ( combatMoveTime > botWorld->gameLocalInfo.time ) {
@@ -980,7 +978,17 @@ bool idBotAI::Vehicle_Air_To_Ground_Movement() {
 			return false;
 		}
 
-		Bot_MoveToGoal( botAAS.path.moveGoal, vec3_zero, RUN, ( botAAS.obstacleNum == -1 ) ? AIR_BRAKE : NULLMOVETYPE );
+		botMoveTypes_t defaultMoveType = AIR_BRAKE;
+
+		if ( botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && Bot_VehicleIsUnderAVTAttack() != -1 || Bot_CheckIfEnemyHasUsInTheirSightsWhenInAirVehicle() || Bot_CheckEnemyHasLockOn( -1, true ) || combatKeepMovingTime > botWorld->gameLocalInfo.time ) { //mal: do a bombing run if someone is shooting at us!
+			defaultMoveType = NULLMOVETYPE;
+
+			if ( combatKeepMovingTime < botWorld->gameLocalInfo.time ) {
+				combatKeepMovingTime = botWorld->gameLocalInfo.time + FLYER_AVOID_DANGER_TIME;
+			}
+		}
+
+		Bot_MoveToGoal( botAAS.path.moveGoal, vec3_zero, RUN, ( botAAS.obstacleNum == -1 ) ? defaultMoveType : NULLMOVETYPE );
 		Bot_LookAtEntity( enemy, SMOOTH_TURN );
 	}
 

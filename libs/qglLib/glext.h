@@ -2781,6 +2781,11 @@ extern "C" {
 #define GL_UNPACK_CLIENT_STORAGE_APPLE    0x85B2
 #endif
 
+#ifndef GL_APPLE_flush_buffer_range
+#define GL_BUFFER_SERIALIZED_MODIFY_APPLE 0x8A12
+#define GL_BUFFER_FLUSHING_UNMAP_APPLE    0x8A13
+#endif
+    
 #ifndef GL_APPLE_element_array
 #define GL_ELEMENT_ARRAY_APPLE            0x8768
 #define GL_ELEMENT_ARRAY_TYPE_APPLE       0x8769
@@ -2803,6 +2808,16 @@ extern "C" {
 #define GL_VERTEX_ARRAY_RANGE_POINTER_APPLE 0x8521
 #define GL_STORAGE_CACHED_APPLE           0x85BE
 #define GL_STORAGE_SHARED_APPLE           0x85BF
+#endif
+
+#ifndef GL_APPLE_texture_range
+#define GL_TEXTURE_RANGE_LENGTH_APPLE      0x85B7
+#define GL_TEXTURE_RANGE_POINTER_APPLE     0x85B8
+#define GL_TEXTURE_STORAGE_HINT_APPLE      0x85BC
+#define GL_TEXTURE_MINIMIZE_STORAGE_APPLE  0x85B6
+#define GL_STORAGE_PRIVATE_APPLE           0x85BD
+#define GL_STORAGE_CACHED_APPLE            0x85BE
+#define GL_STORAGE_SHARED_APPLE            0x85BF
 #endif
 
 #ifndef GL_APPLE_ycbcr_422
@@ -6069,6 +6084,26 @@ typedef void (APIENTRYP PFNGLDRAWELEMENTARRAYATIPROC) (GLenum mode, GLsizei coun
 typedef void (APIENTRYP PFNGLDRAWRANGEELEMENTARRAYATIPROC) (GLenum mode, GLuint start, GLuint end, GLsizei count);
 #endif
 
+#ifndef GL_APPLE_flush_buffer_range
+#define GL_APPLE_flush_buffer_range 1
+#ifdef GL_GLEXT_PROTOTYPES
+GLAPI void glBufferParameteriAPPLE(GLenum target, GLenum pname, GLint param);
+GLAPI void glFlushMappedBufferRangeAPPLE(GLenum target, GLintptr offset, GLsizeiptr size);
+#endif /* GL_GLEXT_PROTOTYPES */
+typedef void (APIENTRYP PFNGLBUFFERPARAMETERIAPPLEPROC) (GLenum target, GLenum pname, GLint param);
+typedef void (APIENTRYP PFNGLFLUSHMAPPEDBUFFERRANGEAPPLEPROC) (GLenum target, GLintptr offset, GLsizeiptr size);
+#endif
+    
+#ifndef GL_APPLE_texture_range
+#define GL_APPLE_texture_range 1
+#ifdef GL_GLEXT_PROTOTYPES
+GLAPI void glTextureRangeAPPLE(GLenum target, GLsizei length, GLvoid* pointer);
+GLAPI void glGetTexParameterPointervAPPLE(GLenum target, GLenum pname, GLvoid* params);
+#endif /* GL_GLEXT_PROTOTYPES */
+typedef void (APIENTRYP PFNGLTEXTURERANGEAPPLEPROC) (GLenum target, GLsizei length, GLvoid* pointer);
+typedef void (APIENTRYP PFNGLGETTEXPARAMETERPOINTERVAPPLEPROC) (GLenum target, GLenum pname, GLvoid** params);
+#endif
+    
 #ifndef GL_SUN_mesh_array
 #define GL_SUN_mesh_array 1
 #ifdef GL_GLEXT_PROTOTYPES

@@ -113,7 +113,8 @@ enum playerClassTypes_t { //mal: we dont care about the strogg, since the classe
 	SOLDIER,
 	ENGINEER, 
 	FIELDOPS,
-	COVERTOPS
+	COVERTOPS,
+	MAX_BOT_TEAMS
 };
 
 enum botGoalTypes_t {
@@ -242,7 +243,10 @@ enum botChatTypes_t {
 	CONTEXT_DO_OBJECTIVE,
 	TK_REVIVE_CHAT,
 	WILL_FIX_RIDE,
-	STOP_WILL_FIX_RIDE
+	STOP_WILL_FIX_RIDE,
+	MOVE_OUT,
+	GOT_YOUR_BACK,
+	GLOBAL_SORRY
 };
 
 #endif /* !__BOT_COMMON_H__ */

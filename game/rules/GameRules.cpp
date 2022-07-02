@@ -414,7 +414,15 @@ void sdGameRules::SetTeam_f( const idCmdArgs &args ) {
 	}
 
 	const char* teamName = args.Argv( 1 );
-	int index = TeamIndexForName( teamName );
+
+	int index;
+
+	if ( !idStr::Icmp( teamName, "auto" ) ) {
+		// set to the end of the array
+		index = sdTeamManager::GetInstance().GetNumTeams() + 1;
+	} else {
+		index = TeamIndexForName( teamName );
+	}
 
 	if ( index == -1 ) {
 		gameLocal.Warning( "Invalid Team '%s'", teamName );
@@ -426,6 +434,13 @@ void sdGameRules::SetTeam_f( const idCmdArgs &args ) {
 		msg.WriteLong( index );
 		if ( index == 0 ) {
 			msg.WriteString( "" );
+		} else if ( index == sdTeamManager::GetInstance().GetNumTeams() + 1 ) {
+			sdTeamInfo& team1 = sdTeamManager::GetInstance().GetTeamByIndex( 0 );
+			idCVar* passwordCVar = team1.GetPasswordCVar();
+			msg.WriteString( passwordCVar ? passwordCVar->GetString() : "" );
+			sdTeamInfo& team2 = sdTeamManager::GetInstance().GetTeamByIndex( 1 );
+			passwordCVar = team2.GetPasswordCVar();
+			msg.WriteString( passwordCVar ? passwordCVar->GetString() : "" );
 		} else {
 			sdTeamInfo& teamInfo = sdTeamManager::GetInstance().GetTeamByIndex( index - 1 );
 			idCVar* passwordCVar = teamInfo.GetPasswordCVar();
@@ -435,6 +450,22 @@ void sdGameRules::SetTeam_f( const idCmdArgs &args ) {
 	} else {
 		idPlayer* player = gameLocal.GetLocalPlayer();
 		if ( player ) {
+			if ( index == sdTeamManager::GetInstance().GetNumTeams() + 1 ) {
+				// auto join team with the least number of players
+				int lowest = -1;
+				int clientTeamIndex = player->GetTeam() != NULL ? player->GetTeam()->GetIndex() : -1;
+				for ( int i = 0; i < sdTeamManager::GetInstance().GetNumTeams(); i++ ) {
+					int num = sdTeamManager::GetInstance().GetTeamByIndex( i ).GetNumPlayers();
+					if ( clientTeamIndex == i ) {
+						num--;
+					}
+					if ( num < lowest || lowest == -1 ) {
+						lowest = num;
+						index = i + 1;
+					}
+				}
+			}
+
 			gameLocal.rules->SetClientTeam( player, index, false, "" );
 		}
 	}
@@ -1054,6 +1085,8 @@ void sdGameRules::NewState( gameState_t news ) {
 	switch( news ) {
 		case GS_GAMEON: {
 			sdGlobalStatsTracker::GetInstance().Clear();
+			gameLocal.StartAutorecording();
+
 			for ( int i = 0; i < MAX_CLIENTS; i++ ) {
 				// Gordon: For local play, grab the latest local stats for life stats baseline
 				if ( gameLocal.isServer && gameLocal.GetLocalPlayer() != NULL ) {
@@ -1140,6 +1173,7 @@ void sdGameRules::NewState( gameState_t news ) {
 		}
 		case GS_COUNTDOWN: {
 			gameLocal.ClearEndGameStats();
+			gameLocal.StartAutorecording();
 
 			OnGameState_Countdown();
 			if( gameLocal.DoClientSideStuff() ) {
@@ -1156,6 +1190,18 @@ void sdGameRules::NewState( gameState_t news ) {
 	}
 
 	sdObjectiveManager::GetInstance().OnGameStateChange( gameState );
+}
+
+/*
+================
+sdGameRules::OnLocalMapRestart
+================
+*/
+void sdGameRules::OnLocalMapRestart( void ) {
+	if ( gameState == GS_GAMEREVIEW || gameState == GS_GAMEON || gameState == GS_NEXTMAP ) {
+		// only stop autorecording if the restart is for the end of the round
+		gameLocal.StopAutorecording();
+	}
 }
 
 /*
@@ -2462,26 +2508,37 @@ bool sdGameRules::CanStartMatch( void ) const {
 		return false;
 	}
 
-	if ( g_autoReadyPercent.GetFloat() != 0.f ) {
-		int totalPlaying = NumActualClients( false );
-		int playersRequired = si_maxPlayers.GetInteger() * g_autoReadyPercent.GetFloat() / 100.f;
+	switch ( ArePlayersReady( false, true ) ) {
+	case RS_READY:
+		return true;
+	case RS_NOT_ENOUGH_CLIENTS:
+		return false;
+	case RS_NOT_ENOUGH_READY:
+		if ( g_autoReadyPercent.GetFloat() != 0.f ) {
+			int totalPlaying = NumActualClients( false );
+			int playersRequired = si_maxPlayers.GetInteger() * g_autoReadyPercent.GetFloat() / 100.f;
 
-		if ( autoReadyStartTime == -1 ) {
-			if ( totalPlaying >= playersRequired ) {
-				autoReadyStartTime = gameLocal.time;
-			}
-		} else {
-			if ( totalPlaying < playersRequired ) {
-				autoReadyStartTime = -1;
+			if ( autoReadyStartTime == -1 ) {
+				if ( totalPlaying >= playersRequired ) {
+					autoReadyStartTime = gameLocal.time;
+				}
 			} else {
-				if ( ( gameLocal.time - autoReadyStartTime ) > MINS2MS( g_autoReadyWait.GetFloat() ) ) {
-					return true;
+				if ( totalPlaying < playersRequired ) {
+					autoReadyStartTime = -1;
+				} else {
+					if ( ( gameLocal.time - autoReadyStartTime ) > MINS2MS( g_autoReadyWait.GetFloat() ) ) {
+						return true;
+					}
 				}
 			}
 		}
+		return false;
+	default:
+		gameLocal.Warning( "CanStartMatch: Unknown ready state" );
+		break;
 	}
 
-	return ArePlayersReady( false, true ) == RS_READY;
+	return false;
 }
 
 /*

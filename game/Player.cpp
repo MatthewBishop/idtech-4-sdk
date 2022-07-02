@@ -843,6 +843,7 @@ idPlayer::idPlayer( void ) {
 	ownsVehicle						= false;
 	aasPullPlayer					= false;
 	lastOwnedVehicleSpawnID			= -1;
+	lastOwnedVehicleTime			= 0;
 
 	rating							= NULL;
 
@@ -1265,7 +1266,6 @@ void idPlayer::Init( bool setWeapon ) {
 
 	// make sure the end of tooltip events are run
 	if ( currentToolTip != NULL ) {
-		gameLocal.DPrintf( "idPlayer::Init: Cancel tooltip timeline '%s'\n", currentToolTip->GetName() );
 		CancelToolTipTimeline();
 	}
 
@@ -2185,6 +2185,9 @@ void idPlayer::UsercommandCallback( usercmd_t& cmd ) {
 idPlayer::GetSensitivity
 ==============
 */
+extern idCVar m_playerPitchScale;
+extern idCVar m_playerYawScale;
+
 bool idPlayer::GetSensitivity( float& scaleX, float& scaleY ) {
 	if ( InhibitUserCommands() ) {
 		scaleX = 0.f;
@@ -2200,8 +2203,22 @@ bool idPlayer::GetSensitivity( float& scaleX, float& scaleY ) {
 	idEntity* proxy = GetProxyEntity();
 	if ( proxy != NULL ) {
 		if ( !proxy->GetUsableInterface()->GetAllowPlayerWeapon( this ) ) {
-			return proxy->GetUsableInterface()->GetSensitivity( this, scaleX, scaleY );
+			if ( proxy->GetUsableInterface()->GetSensitivity( this, scaleX, scaleY ) ) {
+				return true;
+			}
 		}
+	}
+
+	bool changed = false;
+
+	// scale the default with the player settings
+	if ( m_playerPitchScale.GetFloat() != 1.0f ) {
+		scaleY *= m_playerPitchScale.GetFloat();
+		changed = true;
+	}
+	if ( m_playerYawScale.GetFloat() != 1.0f ) {
+		scaleX *= m_playerYawScale.GetFloat();
+		changed = true;
 	}
 
 	idWeapon* weapon = GetWeapon();
@@ -2215,7 +2232,7 @@ bool idPlayer::GetSensitivity( float& scaleX, float& scaleY ) {
 		}
 	}
 
-	return false;
+	return changed;
 }
 
 /*
@@ -3036,7 +3053,9 @@ const sdCrosshairInfo& idPlayer::GetCrosshairInfo( bool doTrace ) {
 	float range = targetIdRangeNormal;
 	float radius;
 
-	if ( g_showCrosshairInfo.GetInteger() == 0 ) {
+	if ( IsBeingBriefed() ) {
+		return crosshairInfo;
+	} else if ( g_showCrosshairInfo.GetInteger() == 0 ) {
 		return crosshairInfo;
 	} else if ( g_showCrosshairInfo.GetInteger() > 1 ) {
 		doTrace = true;
@@ -3069,7 +3088,7 @@ const sdCrosshairInfo& idPlayer::GetCrosshairInfo( bool doTrace ) {
 		}
 
 		if ( retVal ) {
-			if ( trace.c.entityNum != ENTITYNUM_NONE && trace.c.entityNum != ENTITYNUM_WORLD ) {
+			if ( trace.c.entityNum != ENTITYNUM_NONE ) {
 
 				idEntity* traceEnt = gameLocal.entities[ trace.c.entityNum ];
 
@@ -3078,7 +3097,7 @@ const sdCrosshairInfo& idPlayer::GetCrosshairInfo( bool doTrace ) {
 					crosshairInfo.SetStartTime( gameLocal.time );
 				}
 
-				if ( traceEnt != NULL ) {
+				if ( traceEnt != NULL && trace.c.entityNum != ENTITYNUM_WORLD ) {
 					if ( g_showCrosshairInfo.GetInteger() == 2 && gameLocal.CheatsOk( true ) ) {
 						if ( gameLocal.IsLocalPlayer( this ) ) {
 							const char* entScript = "";
@@ -3686,10 +3705,8 @@ modified to have low skilled bots, on the opposite team of the local player, be 
 void idPlayer::SetHealth( int count ) {
 	int oldHealth = health;
 
-	// Gordon: FIXME: This is entirely the wrong place to handle this...
-
 	if ( userInfo.isBot ) {
-		if ( botThreadData.GetBotSkill() == BOT_SKILL_DEMO || ( botThreadData.GetBotSkill() == BOT_SKILL_EASY && botThreadData.GetGameWorldState()->gameLocalInfo.gameIsBotMatch ) ) {
+		if ( ( botThreadData.GetBotSkill() == BOT_SKILL_DEMO || botThreadData.GetBotSkill() == BOT_SKILL_EASY ) && botThreadData.GetGameWorldState()->gameLocalInfo.gameIsBotMatch ) {
 			idPlayer* localPlayer = gameLocal.GetLocalPlayer();
 			bool lowerHealth = false;
 			if ( team != NULL && localPlayer != NULL && localPlayer->team != NULL ) {
@@ -4327,6 +4344,10 @@ bool idPlayer::InhibitWeapon( void ) const {
 		return true;
 	}
 
+	if ( IsBeingBriefed() ) {
+		return true;
+	}
+
 	if ( teleportEntity.IsValid() ) {
 		return true;
 	}
@@ -4345,6 +4366,10 @@ idPlayer::InhibitWeaponSwitch
 */
 bool idPlayer::InhibitWeaponSwitch( bool allowPause ) const {
 	if ( IsSpectating() ) {
+		return true;
+	}
+
+	if ( IsBeingBriefed() ) {
 		return true;
 	}
 
@@ -4713,7 +4738,7 @@ idCVar g_noBotSpectate( "g_noBotSpectate", "0", CVAR_GAME | CVAR_BOOL | CVAR_ARC
 idGameLocal::GetNextSpectateClient
 ================
 */
-idPlayer* idPlayer::GetNextSpectateClient( void ) const {
+idPlayer* idPlayer::GetNextSpectateClient( bool reverse ) const {
 	if ( IsSpectator() ) {
 		sdTeamInfo* currentTeam = NULL;
 		idPlayer* player = gameLocal.GetClient( spectateClient );
@@ -4721,9 +4746,24 @@ idPlayer* idPlayer::GetNextSpectateClient( void ) const {
 			currentTeam = player->GetGameTeam();
 		}
 
+		// go through twice
 		for ( int pass = 0; pass < 2; pass++ ) {
-			for ( int i = spectateClient + 1; i < MAX_CLIENTS; i++ ) {
-				idPlayer* player = gameLocal.GetClient( i );
+			// attempt to cycle through everyone from the current team
+			int temp = spectateClient;
+			for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+				if ( !reverse ) {
+					temp++;
+					if ( temp >= MAX_CLIENTS ) {
+						break;
+					}
+				} else {
+					temp--;
+					if ( temp < 0 ) {
+						break;
+					}
+				}
+
+				idPlayer* player = gameLocal.GetClient( temp );
 				if ( player == NULL ) {
 					continue;
 				}
@@ -4747,8 +4787,24 @@ idPlayer* idPlayer::GetNextSpectateClient( void ) const {
 				return player;
 			}
 
-			for ( int i = 0; i < spectateClient; i++ ) {
-				idPlayer* player = gameLocal.GetClient( i );
+			// attempt to find the first person 
+			temp = -1;
+			if ( reverse ) {
+				temp = MAX_CLIENTS;
+			}
+			for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+				if ( !reverse ) {
+					temp++;
+				} else {
+					temp--;
+				}
+
+				if ( temp == spectateClient ) {
+					break;
+				}
+
+
+				idPlayer* player = gameLocal.GetClient( temp );
 				if ( player == NULL ) {
 					continue;
 				}
@@ -4771,7 +4827,11 @@ idPlayer* idPlayer::GetNextSpectateClient( void ) const {
 	} else {
 		int temp = spectateClient;
 		for ( int i = 0; i < MAX_CLIENTS; i++ ) {
-			temp = ( temp + 1 ) % MAX_CLIENTS;
+			if ( !reverse ) {
+				temp = ( temp + 1 ) % MAX_CLIENTS;
+			} else {
+				temp = ( temp - 1 ) % MAX_CLIENTS;
+			}
 
 			idPlayer* player = gameLocal.GetClient( temp );
 			if ( player == NULL ) {
@@ -4799,20 +4859,210 @@ idPlayer* idPlayer::GetNextSpectateClient( void ) const {
 
 /*
 ===============
+idPlayer::GetPrevSpectateClient
+===============
+*/
+idPlayer* idPlayer::GetPrevSpectateClient( void ) const {
+	return GetNextSpectateClient( true );
+}
+
+/*
+===============
 idPlayer::SpectateCycle
 ===============
 */
-void idPlayer::SpectateCycle( bool force ) {
+void idPlayer::SpectateCycle( bool force, bool reverse ) {
 	if ( ( gameLocal.time <= nextSpectateChange || gameLocal.IsPaused() ) && !force ) {
 		return;
 	}
 	nextSpectateChange	= gameLocal.time + SEC2MS( 0.5f );
 
-	idPlayer* player = GetNextSpectateClient();
+	idPlayer* player = GetNextSpectateClient( reverse );
 	if ( player == NULL ) {
 		return;
 	}
 	SetSpectateClient( player );
+}
+
+/*
+===============
+idPlayer::SpectateCrosshair
+===============
+*/
+void idPlayer::SpectateCrosshair( bool force ) {
+	if ( ( gameLocal.time <= nextSpectateChange ) && !force ) {
+		return;
+	}
+
+	if ( !crosshairInfo.IsValid() ) {
+		return;
+	}
+
+	idEntity* crosshairEntity = crosshairInfo.GetEntity();
+	if ( crosshairEntity == NULL ) {
+		return;
+	}
+
+	idPlayer* foundPlayer = NULL;
+
+	// get passengers of vehicles
+	sdUsableInterface* usable = crosshairEntity->GetUsableInterface();
+	if ( usable != NULL && usable->GetNumPositions() > 0 ) {
+		for ( int i = 0; i < usable->GetNumPositions(); i++ ) {
+			idPlayer* player = usable->GetPlayerAtPosition( i );
+			if ( player != NULL ) {
+				foundPlayer = player;
+				break;
+			}
+		}
+	}
+
+	// check if its a player
+	if ( foundPlayer == NULL ) {
+		foundPlayer = crosshairEntity->Cast< idPlayer >();
+	}
+
+	// still didn't find a player
+	if ( foundPlayer == NULL ) {
+		return;
+	}
+
+	SetSpectateClient( foundPlayer );
+	nextSpectateChange	= gameLocal.time + SEC2MS( 0.5f );
+}
+
+/*
+===============
+idPlayer::SpectateObjective
+===============
+*/
+void idPlayer::SpectateObjective( void ) {
+	idEntity* spectateEntity = sdObjectiveManager::GetInstance().GetSpectateEntity();
+	if ( spectateEntity == NULL ) {
+		return;
+	}
+
+	idPlayer* spectatePlayer = spectateEntity->Cast< idPlayer >();
+	if ( spectatePlayer != NULL ) {
+		SetSpectateClient( spectatePlayer );
+		return;
+	}
+
+	// its not a player - instead its an entity to be observed
+	// will need to find a place to observe from
+	idVec3 lookAtOrigin = spectateEntity->GetPhysics()->GetAbsBounds().GetCenter();
+	float idealDistance = 48.0f;
+
+	idClipModel* playerModel = GetPhysics()->GetClipModel( 0 );
+
+	const idMat3& axis = spectateEntity->GetPhysics()->GetAxis();
+	idVec3 startDirection = -axis[ 0 ];
+	idAngles startAngles = startDirection.ToAngles();
+	startAngles.Normalize180();
+
+	int clipMask = MASK_DEADSOLID;
+
+	// test a bunch of angles to find one that works
+	// note this could be rather expensive, but it shouldn't take long to find a suitable result
+	idVec3 cameraOrigin = lookAtOrigin;
+	idVec3 lookDirection = viewAxis[ 0 ];
+	for ( float pitch = 0.0f; pitch <= 90.0f; pitch += 30.0f ) {
+		for ( float yaw = 0.0f; yaw <= 180.0f; yaw += 30.0f ) {
+			idAngles	testAngles;
+			idVec3		testDirection;
+			trace_t		trace;
+
+			float testSigns[][ 2 ] = {	{ -1.0f, -1.0f },
+										{ -1.0f, 1.0f },
+										{ 1.0f, -1.0f },
+										{ 1.0f, 1.0f } };
+
+			int numTests = sizeof( testSigns ) / ( sizeof( float ) * 2 );
+			if ( ( yaw == 0.0f && pitch == 0.0f ) || yaw == 180.0f ) {
+				numTests = 1;
+			}
+
+			for ( int i = 0; i < numTests; i++ ) {
+				testAngles.Set( 20.0f + testSigns[ i ][ 1 ]*pitch, startAngles.yaw - 30.0f + testSigns[ i ][ 0 ]*yaw, 0.0f );
+				testDirection = testAngles.ToForward();
+
+				idVec3 testFromOrigin = lookAtOrigin - testDirection * idealDistance;
+				idVec3 testToOrigin = lookAtOrigin;
+
+				gameLocal.clip.Translation( trace, testToOrigin, testFromOrigin, playerModel, mat3_identity, clipMask, NULL );
+				if ( trace.fraction > 0.5f ) {
+					testFromOrigin = trace.endpos;
+					if ( !gameLocal.clip.Contents( testFromOrigin, playerModel, mat3_identity, clipMask, NULL ) ) {
+						gameLocal.clip.TracePoint( trace, testFromOrigin, testToOrigin, clipMask, NULL );
+						float distLeft = ( 1.0f - trace.fraction ) * ( testFromOrigin - testToOrigin ).Length();
+						if ( distLeft < 2.0f ) {
+							// got a valid result, drop out of the tests
+							testToOrigin = trace.endpos;
+							cameraOrigin = testFromOrigin;
+							lookDirection = testDirection;
+							pitch = 10000.0f;
+							yaw = 10000.0f;
+							break;
+						}
+					}
+				}
+			}
+		}
+	}
+
+
+	SetSpectateClient( NULL );
+	SetViewAngles( lookDirection.ToAngles() );
+	GetPhysics()->SetLinearVelocity( vec3_origin );
+	SetOrigin( cameraOrigin );
+}
+
+/*
+===============
+idPlayer::SpectateCommand
+===============
+*/
+void idPlayer::SpectateCommand( spectateCommand_t command, const idVec3& inOrigin, const idAngles& inAngles ) {
+	assert( IsSpectator() );
+	assert( !gameLocal.isClient );
+
+	idPlayer* spectatePlayer = GetSpectateClient();
+	bool forceCycle = !spectatePlayer || ( spectatePlayer->IsSpectating() && spectatePlayer != this );
+
+	// sanity check the origin & angle values - n0 h4xx0rz h3r3, kthxbai!!1!one!
+	idVec3 origin = inOrigin;
+	idAngles angles = inAngles;
+	for ( int i = 0; i < 3; i++ ) {
+		if ( FLOAT_IS_NAN( origin[ i ] ) || FLOAT_IS_INF( origin[ i ] ) ||
+			FLOAT_IS_IND( origin[ i ] ) || FLOAT_IS_DENORMAL( origin[ i ] ) ) {
+			origin[ i ] = 0.0f;
+		}
+		if ( FLOAT_IS_NAN( angles[ i ] ) || FLOAT_IS_INF( angles[ i ] ) ||
+			FLOAT_IS_IND( angles[ i ] ) || FLOAT_IS_DENORMAL( angles[ i ] ) ) {
+			angles[ i ] = 0.0f;
+		}
+	}
+
+
+	if ( command == SPECTATE_NEXT ) {
+		SpectateCycle( forceCycle, false );
+	} else if ( command == SPECTATE_PREV ) {
+		SpectateCycle( forceCycle, true );
+	} else if ( command == SPECTATE_OBJECTIVE ) {
+		SpectateObjective();
+	} else if ( command == SPECTATE_POSITION ) {
+		// check the position is valid
+		const idBounds& worldBounds = gameLocal.clip.GetWorldBounds();
+		origin.Clamp( worldBounds.GetMins(), worldBounds.GetMaxs() );
+
+		idClipModel* playerModel = GetPhysics()->GetClipModel( 0 );
+		if ( !gameLocal.clip.Contents( origin, playerModel, mat3_identity, MASK_DEADSOLID, NULL ) ) {
+			SetSpectateClient( NULL );
+			SetViewAngles( angles );
+			GetPhysics()->SetLinearVelocity( vec3_origin );
+			SetOrigin( origin );
+		}
+	}
 }
 
 /*
@@ -4924,20 +5174,22 @@ bool idPlayer::Collide( const trace_t &collision, const idVec3& velocity, int bo
 		}
 
 		const sdDeclPlayerClass* cls = GetInventory().GetClass();
-		if ( cls != NULL && ( gameLocal.time - lastGroundContactTime ) > SEC2MS( 0.5f ) ) {
-			const char *soundStr = NULL;
-			const idSoundShader *shader = NULL;
+		if ( gameLocal.isNewFrame ) {
+			if ( cls != NULL && ( gameLocal.time - lastGroundContactTime ) > SEC2MS( 0.5f ) ) {
+				const char *soundStr = NULL;
+				const idSoundShader *shader = NULL;
 
-			if ( delta > VELOCITY_LAND_MEDIUM ) {
-				soundStr = cls->GetClassData().GetString( "snd_land_hard" );
-				shader = gameLocal.declSoundShaderType[ soundStr ];
-			} else if ( delta > VELOCITY_LAND_MEDIUM / 2.0f ) {
-				soundStr = cls->GetClassData().GetString( "snd_land_soft" );
-				shader = gameLocal.declSoundShaderType[ soundStr ];
-			}
+				if ( delta > VELOCITY_LAND_MEDIUM ) {
+					soundStr = cls->GetClassData().GetString( "snd_land_hard" );
+					shader = gameLocal.declSoundShaderType[ soundStr ];
+				} else if ( delta > VELOCITY_LAND_MEDIUM / 2.0f ) {
+					soundStr = cls->GetClassData().GetString( "snd_land_soft" );
+					shader = gameLocal.declSoundShaderType[ soundStr ];
+				}
 
-			if ( shader != NULL ) {
-				StartSoundShader( shader, SND_PLAYER_LAND, 0, NULL );
+				if ( shader != NULL ) {
+					StartSoundShader( shader, SND_PLAYER_LAND, 0, NULL );
+				}
 			}
 		}
 	}
@@ -6060,6 +6312,10 @@ idPlayer::Move
 idCVar ai_fallTime( "ai_fallTime", "0.25", CVAR_FLOAT, "Number of seconds before the player plays the falling animation" );
 
 void idPlayer::Move( const usercmd_t &usercmd, const idAngles &viewAngles ) {
+	if ( IsBeingBriefed() ) {
+		return;
+	}
+
 	// save old origin and velocity for crashlanding
 	idVec3 oldOrigin	= physicsObj.GetOrigin();
 	idVec3 oldVelocity	= physicsObj.GetLinearVelocity();
@@ -6484,10 +6740,8 @@ void idPlayer::Think( void ) {
 
 		if ( gameLocal.isNewFrame ) {
 			if ( !playerFlags.noclip ) {
-				if ( IsSpectator() || ( health > 0 ) ) {
-					if ( !gameLocal.isClient || gameLocal.IsLocalViewPlayer( this ) ) {
-						TouchTriggers();
-					}
+				if ( !gameLocal.isClient || gameLocal.IsLocalViewPlayer( this ) ) {
+					TouchTriggers();
 				}
 			}
 		}
@@ -7807,12 +8061,22 @@ void idPlayer::Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &di
 	if ( !attacker ) {
 		attacker = gameLocal.world;
 	}
-
+	
 	bool headshot = false;
 	CalcDamagePoints( inflictor, attacker, damageDecl, damageScale, collision, damage, dir, headshot );
 
 	if ( forceKill ) {
 		damage = health;
+	}
+
+	if ( botThreadData.GetGameWorldState()->gameLocalInfo.gameIsBotMatch ) {
+		sdTransport* vehicle = inflictor->Cast< sdTransport >();
+
+		if ( vehicle != NULL ) {
+			if ( GetEntityAllegiance( inflictor ) != TA_ENEMY ) {
+				damage = 0.0f;
+			}
+		}
 	}
 
 	if ( damage > 0 ) {
@@ -7821,7 +8085,7 @@ void idPlayer::Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &di
 		}
 
         if ( attacker )	{ //mal: lets check who attacked us, and if its a client whos not on our team, save that info for later - unless its warmup, then get ANYONE who attacks us.
-			if ( attacker != this && ( attacker->entityNumber >= 0 && attacker->entityNumber < MAX_CLIENTS )) {
+			if ( attacker != this && ( attacker->entityNumber >= 0 && attacker->entityNumber < MAX_CLIENTS ) ) {
 				if ( GetEntityAllegiance( inflictor ) != TA_FRIEND || gameLocal.rules->IsWarmup() )  {
 					botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].lastAttacker = attacker->entityNumber; //mal: save off who attacked us last, so we can do some tactical planning
 	                botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].lastAttackerTime = gameLocal.time;
@@ -8364,6 +8628,10 @@ void idPlayer::UpdatePausedObjectiveView() {
 
 	idBounds lookAtBounds = task->GetEntity()->GetPhysics()->GetAbsBounds();
 	idVec3 lookAtOrigin = lookAtBounds.GetCenter();
+	if ( gameLocal.GetWorldPlayZoneIndex( lookAtOrigin ) != gameLocal.GetWorldPlayZoneIndex( firstPersonViewOrigin ) ) {
+		return;
+	}
+
 	idVec3 lookAtDelta = lookAtOrigin - firstPersonViewOrigin;
 	if ( lookAtDelta.LengthSqr() > idMath::FLT_EPSILON ) {
 		idQuat fromQuat = firstPersonViewAxis.ToQuat();
@@ -8403,6 +8671,10 @@ void idPlayer::CalculateFirstPersonView( bool fullUpdate ) {
 
 		if ( gameLocal.IsPaused() && currentToolTip != NULL && ( sdTaskManager::GetInstance().TaskForHandle( lookAtTask ) != NULL || currentToolTip->GetLookAtObjective() )  ) {
 			UpdatePausedObjectiveView();
+		}
+
+		if ( IsBeingBriefed() ) {
+			UpdateBriefingView();
 		}
 
 		if ( gameLocal.isNewFrame && gameLocal.isClient ) {
@@ -8681,7 +8953,7 @@ void idPlayer::CalculateRenderView( void ) {
 			viewPlayer->OffsetThirdPersonView( pm_deathThirdPersonAngle.GetFloat(), pm_deathThirdPersonRange.GetFloat(), pm_deathThirdPersonHeight.GetFloat(), pm_thirdPersonClip.GetBool(), renderView );
 			gameLocal.CalcFov( CalcFov(), renderView.fov_x, renderView.fov_y );
 			return;
-		}
+		} 
 	}
 
 	// Standard view
@@ -8727,11 +8999,17 @@ void idPlayer::SetLastDamageDealtTime( int time ) {
 		// level start and inits
 		return;
 	}
+
+	// avoid hit beep because of view switch
+	if ( nextSndHitTime < gameLocal.localViewChangedTime ) {
+		nextSndHitTime = gameLocal.realClientTime + 100;
+	}
+
 	if ( g_hitBeep.GetInteger() > 0 && g_hitBeep.GetInteger() < 3 && time > nextSndHitTime ) {
 		idEntity* ent = lastHitEntity.GetEntity();
 		if ( ent != NULL ) {
 			int duration = ent->PlayHitBeep( this, lastHitHeadshot );
-			nextSndHitTime = gameLocal.time + duration;
+			nextSndHitTime = gameLocal.realClientTime + duration;
 		}
 	}
 
@@ -9869,6 +10147,10 @@ idPlayer::Event_GetProficiencyLevel
 ===============
 */
 void idPlayer::Event_GetProficiencyLevel( int index ) {
+	if ( index == -1 ) {
+		sdProgram::ReturnInteger( 0 );
+		return;
+	}
 	sdProgram::ReturnInteger( GetProficiencyTable().GetLevel( index ) );
 }
 
@@ -10322,7 +10604,10 @@ bool idPlayer::GetPlayerIcon( idPlayer* viewer, sdPlayerDisplayIcon& icon, const
 #if !defined( SD_DEMO_BUILD )
 	if ( networkService->GetActiveUser() != NULL ) {
 		sdNetFriendsManager& friendsManager = networkService->GetFriendsManager();
-		if ( friendsManager.FindFriend( friendsManager.GetFriendsList(), userInfo.cleanName ) != NULL ) {
+		idPlayer* disguiseEntity = GetDisguiseEntity()->Cast< idPlayer >();
+		idStr name = disguiseEntity->GetUserInfo().baseName;
+		name.RemoveColors();
+		if ( friendsManager.FindFriend( friendsManager.GetFriendsList(), name.c_str() ) != NULL ) {
 			isBuddy = true;
 		}
 	}
@@ -10519,10 +10804,8 @@ modified to have low skilled bots, on the opposite team of the local player, be 
 ==============
 */
 void idPlayer::SetMaxHealth( int count ) {
-	// Gordon: FIXME: This is entirely the wrong place to handle this...
-
 	if ( userInfo.isBot ) {
-		if ( botThreadData.GetBotSkill() == BOT_SKILL_DEMO || ( botThreadData.GetBotSkill() == BOT_SKILL_EASY && botThreadData.GetGameWorldState()->gameLocalInfo.gameIsBotMatch ) ) {
+		if ( ( botThreadData.GetBotSkill() == BOT_SKILL_DEMO || botThreadData.GetBotSkill() == BOT_SKILL_EASY ) && botThreadData.GetGameWorldState()->gameLocalInfo.gameIsBotMatch ) {
 			idPlayer* localPlayer = gameLocal.GetLocalPlayer();
 			if ( localPlayer != NULL && localPlayer->team != NULL && team != NULL ) {
 				if ( team->GetBotTeam() != localPlayer->team->GetBotTeam() ) {
@@ -10752,14 +11035,14 @@ void idPlayer::CreateBody( void ) {
 	if ( cls && cls->GetClass() && team ) {
 		const idDeclEntityDef* bodyDef = cls->GetClass()->GetBodyDef();
 		if ( bodyDef == NULL ) {
-			gameLocal.Warning( "idPlayer::CreateBody No Body on Class '%s'", cls->GetClass()->GetTitle() );
+			gameLocal.Warning( "idPlayer::CreateBody No Body on Class '%s'", cls->GetClass()->GetName() );
 			return;
 		}
 		idEntity* bodyEnt;
 		gameLocal.SpawnEntityDef( bodyDef->dict, true, &bodyEnt );
 		sdPlayerBody* body = bodyEnt->Cast< sdPlayerBody >();
 		if ( body == NULL ) {
-			gameLocal.Warning( "idPlayer::CreateBody Failed to Spawn Body for Class '%s'", cls->GetClass()->GetTitle() );
+			gameLocal.Warning( "idPlayer::CreateBody Failed to Spawn Body for Class '%s'", cls->GetClass()->GetName() );
 			return;
 		}
 		body->Init( this, cls, team );
@@ -12678,6 +12961,7 @@ void idPlayer::Event_SetForceShieldState( bool destroy, idEntity* self ) {
 			botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].forceShields[ i ].entNum = self->entityNumber;
 			botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].forceShields[ i ].spawnID = gameLocal.GetSpawnId( self );
 			botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].forceShields[ i ].origin = self->GetPhysics()->GetOrigin();
+			botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].lastShieldDroppedTime = gameLocal.time;
 			break;
 		}
 	} else {
@@ -12726,6 +13010,7 @@ void idPlayer::Event_SetPlayerChargeArmed( bool chargeArmed, idEntity* self ) {
 			botThreadData.GetGameWorldState()->chargeInfo[ i ].ownerEntNum = -1;
 			botThreadData.GetGameWorldState()->chargeInfo[ i ].checkedAreaNum = false;
 			botThreadData.GetGameWorldState()->chargeInfo[ i ].areaNum = 0;
+			botThreadData.GetGameWorldState()->chargeInfo[ i ].isOnObjective = false;
 			break;
 		}
 	} else {
@@ -13443,6 +13728,13 @@ idPlayer::Event_SetBotEscort
 */
 void idPlayer::Event_SetBotEscort( idEntity* botEscort ) {
 	if ( botEscort != NULL ) {
+		clientInfo_t& botPlayer = botThreadData.GetGameWorldState()->clientInfo[ botEscort->entityNumber ];
+
+		if ( botPlayer.classType == COVERTOPS && botPlayer.isDisguised ) {
+			botThreadData.bots[ botEscort->entityNumber ]->Bot_AddDelayedChat( botEscort->entityNumber, IM_DISGUISED, 3, true );
+			return;
+		} 
+
 		botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].escortSpawnID = gameLocal.GetSpawnId( botEscort );
 		botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].escortRequestTime = gameLocal.time;
 		botThreadData.GetGameWorldState()->clientInfo[ botEscort->entityNumber ].resetState = MAJOR_RESET_EVENT; //mal: give it total priority!
@@ -14071,7 +14363,7 @@ void idPlayer::UpdatePlayerInformation( void ) {
 	clientInfo.origin = GetPhysics()->GetOrigin();
 	clientInfo.isNoTarget = fl.notarget;
 	clientInfo.viewAxis = firstPersonViewAxis;
-	clientInfo.inEnemyTerritory = gameLocal.TerritoryForPoint( GetPhysics()->GetOrigin(), GetGameTeam(), false ) != NULL;
+	clientInfo.inEnemyTerritory = gameLocal.TerritoryForPoint( GetPhysics()->GetOrigin(), GetGameTeam(), true, true ) == NULL;
 	clientInfo.isDisguised = IsDisguised();
 	clientInfo.lastKilledTime = killedTime;
 	clientInfo.altitude = InchesToMetres( GetPhysics()->GetOrigin() );
@@ -14913,4 +15205,50 @@ idPlayer::Event_IsInLimbo
 */
 void idPlayer::Event_IsInLimbo( void ) {
 	sdProgram::ReturnBoolean( IsInLimbo() );
+}
+
+/*
+================
+idPlayer::IsBeingBriefed
+================
+*/
+bool idPlayer::IsBeingBriefed() const {
+	if ( botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].briefingTime < gameLocal.time ) {
+		return false;
+	}
+
+	return true;
+}
+
+/*
+================
+idPlayer::UpdateBriefingView
+================
+*/
+void idPlayer::UpdateBriefingView() {
+	if ( botThreadData.actorMissionInfo.actorClientNum > -1 && botThreadData.actorMissionInfo.actorClientNum < MAX_CLIENTS ) {
+		idPlayer* actor = gameLocal.GetClient( botThreadData.actorMissionInfo.actorClientNum );
+
+		if ( actor != NULL ) {
+			idVec3 lookAtOrigin = actor->firstPersonViewOrigin;
+			lookAtOrigin.z -= 16.0f;
+			idVec3 lookAtDelta = lookAtOrigin - firstPersonViewOrigin;
+
+			if ( lookAtDelta.LengthSqr() > idMath::FLT_EPSILON ) {
+				idQuat fromQuat = firstPersonViewAxis.ToQuat();
+				idQuat toQuat = lookAtDelta.ToAngles().ToQuat();
+				float t = ( gameLocal.ToGuiTime( gameLocal.time ) - gameLocal.pauseStartGuiTime ) / 1000.0f;
+				idQuat nowQuat;
+				nowQuat.Slerp( fromQuat, toQuat, idMath::ClampFloat( 0.0f, 1.0f, t ) );
+
+				idAngles nowAngles = nowQuat.ToAngles();
+				nowAngles.roll = 0.0f;
+		
+				SetViewAngles( nowAngles );
+				firstPersonViewAxis = nowAngles.ToMat3();
+			}
+
+			actor->GetWeapon()->UpdateWeaponVisibility();
+		}
+	}
 }

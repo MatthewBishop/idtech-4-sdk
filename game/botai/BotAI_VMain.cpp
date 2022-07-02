@@ -23,6 +23,12 @@ void idBotAI::VThink() {
         V_ROOT_AI_NODE = &idBotAI::Run_VLTG_Node;
 	}
 
+	if ( botAAS.blockedByObstacleCounterInVehicle > MAX_FRAMES_BLOCKED_BY_OBSTACLE_IN_VEHICLE ) {
+		Bot_ResetState( true, true );
+		botAAS.blockedByObstacleCounterInVehicle = 0;
+		ROOT_AI_NODE = &idBotAI::Run_VLTG_Node;
+	}
+
     CallFuncPtr( V_ROOT_AI_NODE ); //mal: run the bot's current think node
 
 	CheckBotStuckState();
@@ -48,8 +54,24 @@ void idBotAI::VThink() {
 		botUcmd->specialMoveType = REVERSEMOVE;
 	}
 
-	if ( HumanVehicleOwnerNearby( botInfo->team, botVehicleInfo->origin, HUMAN_OWN_VEHICLE_DIST, botVehicleInfo->spawnID ) ) {
+	if ( botVehicleInfo->type != MCP && HumanVehicleOwnerNearby( botInfo->team, botVehicleInfo->origin, HUMAN_OWN_VEHICLE_DIST, botVehicleInfo->spawnID ) ) {
 		botUcmd->specialMoveType = FULL_STOP; //mal: don't move if the human who own(ed) this vehicle is nearby, but still look and shoot.
+	}
+
+	if ( botVehicleInfo->type != MCP && botVehicleInfo->isBoobyTrapped ) {
+		botUcmd->botCmds.exitVehicle = true;
+	}
+
+	if ( botVehicleInfo->type != MCP && Bot_CheckFriendlyEngineerIsNearbyOurVehicle() == true ) {
+		botUcmd->specialMoveType = FULL_STOP; //mal: don't move if there is someone out there ( bot or human ) who is trying to fix our ride
+	}
+
+	if ( botInfo->lastRoadKillTime > botWorld->gameLocalInfo.time ) {
+		if ( checkRoadKillTime < botWorld->gameLocalInfo.time ) {
+			Bot_AddDelayedChat( botNum, GLOBAL_SORRY, 1 ); //mal: say a nice sorry to the poor enemy sap you ran over
+			checkRoadKillTime = botWorld->gameLocalInfo.time + 10000;
+		}
+		botUcmd->botCmds.honkHorn = true;
 	}
 }
 

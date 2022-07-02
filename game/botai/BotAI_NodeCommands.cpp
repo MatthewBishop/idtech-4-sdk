@@ -215,6 +215,8 @@ void idBotNodeGraph::Cmd_NodeFlags_f( const idCmdArgs &args ) {
 		node->flags = NODE_GROUND;
 	} else if ( idStr::Icmp( args.Argv( 1 ), "water" ) == 0 ) {
 		node->flags = NODE_WATER;
+	} else if ( idStr::Icmp( args.Argv( 1 ), "husky" ) == 0 ) {
+		node->flags = NODE_HUSKY_ONLY;
 	} else if ( idStr::Icmp( args.Argv( 1 ), "custom" ) == 0 ) {
 		int flags = atoi( args.Argv( 2 ) );
 		node->flags = flags;

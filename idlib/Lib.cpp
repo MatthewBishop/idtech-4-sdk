@@ -5,7 +5,7 @@
 #pragma hdrstop
 
 #if defined( MACOS_X )
-#include </usr/include/signal.h> //DAJ full path needed to keep Xcode happy
+#include <signal.h>
 #include <sys/types.h>
 #include <unistd.h>
 #endif
@@ -523,6 +523,8 @@ void AssertFailed( const char *file, int line, const char *expression ) {
 #elif defined( __linux__ )
 	__asm__ __volatile__ ("int $0x03");
 #elif defined( MACOS_X )
+#if 0
 	kill( getpid(), SIGINT );
+#endif
 #endif
 }

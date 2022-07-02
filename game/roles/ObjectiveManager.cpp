@@ -187,6 +187,11 @@ const idEventDef EV_ObjManager_SetNodeTeam( "setNodeTeam", "sd" );
 const idEventDef EV_ObjManager_SetTeamMinePlantIsPriority( "setTeamMinePlantIsPriority", "db" );
 const idEventDef EV_ObjManager_DisableAASAreaInLocation( "disableAASAreaInLocation", "fv" );
 const idEventDef EV_ObjManager_GameIsOnFinalObjective( "gameIsOnFinalObjective" );
+const idEventDef EV_ObjManager_MapIsTraingingMap( "mapIsTraingingMap" );
+const idEventDef EV_ObjManager_SetActorPrimaryAction( "setActorPrimaryAction", "sbd" );
+const idEventDef EV_ObjManager_SetBriefingPauseTime( "setBriefingPauseTime", "d" );
+const idEventDef EV_ObjManager_SetPlayerIsOnFinalMission( "setPlayerIsOnFinalMission" );
+const idEventDef EV_ObjManager_SetTrainingBotsCanGrabForwardSpawns( "setTrainingBotsCanGrabForwardSpawns" );
 
 const idEventDef EV_ObjManager_GetBotCriticalClass( "getBotCriticalClass", "d", 'd' );
 const idEventDef EV_ObjManager_GetNumClassPlayers( "getNumClassPlayers", "dd", 'd' );
@@ -245,6 +250,11 @@ CLASS_DECLARATION( idClass, sdObjectiveManagerLocal )
 	EVENT( EV_ObjManager_SetBotActionGroupVehicleType,	sdObjectiveManagerLocal::Event_SetBotActionGroupVehicleType )
 	EVENT( EV_ObjManager_DisableAASAreaInLocation,		sdObjectiveManagerLocal::Event_DisableAASAreaInLocation )
 	EVENT( EV_ObjManager_GameIsOnFinalObjective,		sdObjectiveManagerLocal::Event_GameIsOnFinalObjective )
+	EVENT( EV_ObjManager_MapIsTraingingMap,				sdObjectiveManagerLocal::Event_MapIsTrainingMap )
+	EVENT( EV_ObjManager_SetActorPrimaryAction,			sdObjectiveManagerLocal::Event_SetActorPrimaryAction )
+	EVENT( EV_ObjManager_SetBriefingPauseTime,			sdObjectiveManagerLocal::Event_SetBriefingPauseTime )
+	EVENT( EV_ObjManager_SetPlayerIsOnFinalMission,		sdObjectiveManagerLocal::Event_SetPlayerIsOnFinalMission )
+	EVENT( EV_ObjManager_SetTrainingBotsCanGrabForwardSpawns, sdObjectiveManagerLocal::Event_SetTrainingBotsCanGrabForwardSpawns )
 	EVENT( EV_ObjManager_GetBotCriticalClass,			sdObjectiveManagerLocal::Event_GetBotCriticalClass )
 	EVENT( EV_ObjManager_GetNumClassPlayers,			sdObjectiveManagerLocal::Event_GetNumClassPlayers )
 END_CLASS
@@ -259,6 +269,8 @@ sdObjectiveManagerLocal::sdObjectiveManagerLocal( void ) : scriptObject( NULL ) 
 	onCarryableItemReturnedFunc = NULL;
 	onSpawnCapturedFunc = NULL;
 	onSpawnLiberatedFunc = NULL;
+	getSpectateEntityFunc = NULL;
+	onDeployableDeployedFunc = NULL;
 	gdfCriticalClass = NOCLASS;
 	stroggCriticalClass = NOCLASS;
 }
@@ -317,6 +329,8 @@ void sdObjectiveManagerLocal::OnNewScriptLoad( void ) {
 	onCarryableItemReturnedFunc = scriptObject->GetFunction( "OnCarryableItemReturned" );
 	onSpawnCapturedFunc = scriptObject->GetFunction( "OnSpawnCaptured" );
 	onSpawnLiberatedFunc = scriptObject->GetFunction( "OnSpawnLiberated" );
+	getSpectateEntityFunc = scriptObject->GetFunction( "GetSpectateEntity" );
+	onDeployableDeployedFunc = scriptObject->GetFunction( "OnDeployableDeployed" );
 }
 
 /*
@@ -1075,8 +1089,8 @@ try_again:
                 if ( !botThreadData.botActions[ i ]->ArmedChargesInsideActionBBox( entNum ) ) {
 					botThreadData.botActions[ i ]->SetActionState( ACTION_STATE_NORMAL );
 					Event_NotifyBotOfEvent( NOTEAM, NOCLASS, ACTION_STATE_DEFUSED ); //mal: let the bot's know a major event just happened!
-					break;
 				}
+				break;
 			}
 
 			case ACTION_STATE_START_BUILD: { //mal: someones building an obj! Let the bots know.
@@ -1535,6 +1549,10 @@ void sdObjectiveManagerLocal::Event_NotifyBotOfEvent( const playerTeamTypes_t pl
 			continue;
 		}
 
+		if ( playerInfo.isActor ) {
+			continue;
+		}
+
 		if ( playerTeam != NOTEAM ) {
             if ( playerInfo.team != playerTeam ) {
 				continue;
@@ -1738,6 +1756,53 @@ void sdObjectiveManagerLocal::Event_SetSecondaryAction( const playerTeamTypes_t 
 
 /*
 ================
+sdObjectiveManagerLocal::Event_SetActorPrimaryAction
+================
+*/
+void sdObjectiveManagerLocal::Event_SetActorPrimaryAction( const char* actionName, bool isDeployableMission, int goalPauseTime ) {
+
+	int	actionNum = botThreadData.FindActionByName( actionName );
+
+	if ( actionNum != -1 ) {
+		botThreadData.actorMissionInfo.actionNumber = actionNum;
+		botThreadData.actorMissionInfo.hasBriefedPlayer = false;
+		botThreadData.actorMissionInfo.goalPauseTime = ( goalPauseTime * 1000 );
+		botThreadData.actorMissionInfo.hasEnteredActorNode = false;
+
+		if ( isDeployableMission ) {
+			botThreadData.actorMissionInfo.deployableStageIsActive = true;
+		}
+
+		if ( botThreadData.actorMissionInfo.actorClientNum > -1 && botThreadData.actorMissionInfo.actorClientNum < MAX_CLIENTS ) {
+			clientInfo_t& player = botThreadData.GetGameWorldState()->clientInfo[ botThreadData.actorMissionInfo.actorClientNum ];
+			player.resetState = 2; //mal: now clear the bots AI, so they can prepare for the next mission....
+		}
+		return;
+	}
+
+	gameLocal.DWarning( "Map Script Error! No valid bot action found by the name %s in setActorPrimaryAction", actionName );
+}
+
+/*
+================
+sdObjectiveManagerLocal::Event_SetBriefingPauseTime
+================
+*/
+void sdObjectiveManagerLocal::Event_SetBriefingPauseTime( int pauseTime ) {
+	botThreadData.actorMissionInfo.chatPauseTime = pauseTime;
+}
+
+/*
+================
+sdObjectiveManagerLocal::Event_SetTrainingBotsCanGrabForwardSpawns
+================
+*/
+void sdObjectiveManagerLocal::Event_SetTrainingBotsCanGrabForwardSpawns() {
+	botThreadData.actorMissionInfo.forwardSpawnIsAllowed = true;
+}
+
+/*
+================
 sdObjectiveManagerLocal::Event_SetBotSightDist
 ================
 */
@@ -1783,6 +1848,34 @@ sdObjectiveManagerLocal::Event_GameIsOnFinalObjective
 */
 void sdObjectiveManagerLocal::Event_GameIsOnFinalObjective() {
 	botThreadData.GetGameWorldState()->botGoalInfo.gameIsOnFinalObjective = true;
+}
+
+/*
+================
+sdObjectiveManagerLocal::Event_MapIsTrainingMap
+================
+*/
+void sdObjectiveManagerLocal::Event_MapIsTrainingMap() {
+	botThreadData.GetGameWorldState()->botGoalInfo.isTrainingMap = true;
+}
+
+
+/*
+================
+sdObjectiveManagerLocal::Event_SetPlayerIsOnFinalMission 
+================
+*/
+void sdObjectiveManagerLocal::Event_SetPlayerIsOnFinalMission() {
+	botThreadData.actorMissionInfo.playerNeedsFinalBriefing = true;
+	botThreadData.actorMissionInfo.playerIsOnFinalMission = true;
+	botThreadData.actorMissionInfo.actionNumber = ACTION_NULL;
+	botThreadData.actorMissionInfo.hasBriefedPlayer = false;
+	botThreadData.actorMissionInfo.deployableStageIsActive = false;
+	
+	if ( botThreadData.actorMissionInfo.actorClientNum > -1 && botThreadData.actorMissionInfo.actorClientNum < MAX_CLIENTS ) {
+		clientInfo_t& player = botThreadData.GetGameWorldState()->clientInfo[ botThreadData.actorMissionInfo.actorClientNum ];
+		player.resetState = 2; //mal: now clear the bots AI, so they can prepare for the next mission....
+	}
 }
 
 /*
@@ -1888,6 +1981,10 @@ void sdObjectiveManagerLocal::Event_SetBotTeamRetreatTime( const playerTeamTypes
 		}
 
 		if ( !player.isBot ) {
+			continue;
+		}
+
+		if ( player.isActor ) {
 			continue;
 		}
 
@@ -2346,6 +2443,14 @@ void sdObjectiveManagerLocal::Event_SetTeamNeededClass( const playerTeamTypes_t 
 		return;
 	}
 
+	if ( gameLocal.rules->IsWarmup() ) {
+		return;
+	}
+
+	if ( botThreadData.GetGameWorldState()->botGoalInfo.isTrainingMap ) {
+		return;
+	}
+
 	if ( storeRequest ) {
 		if ( playerTeam == GDF ) {
 			botThreadData.GetGameWorldState()->botGoalInfo.teamNeededClassInfo[ GDF ].criticalClass = neededClass;
@@ -2418,6 +2523,10 @@ void sdObjectiveManagerLocal::Event_SetTeamNeededClass( const playerTeamTypes_t 
 			continue;
 		}
 
+		if ( botThreadData.GetGameWorldState()->clientInfo[ i ].isActor ) {
+			continue;
+		}
+
 		idPlayer* player = gameLocal.GetClient( i );
 
 		if ( player == NULL ) {
@@ -2464,6 +2573,10 @@ void sdObjectiveManagerLocal::Event_SetTeamNeededClass( const playerTeamTypes_t 
 			continue;
 		}
 
+		if ( botThreadData.GetGameWorldState()->clientInfo[ i ].isActor ) {
+			continue;
+		}
+
 		idPlayer* player = gameLocal.GetClient( i );
 
 		if ( player == NULL ) {
@@ -2503,6 +2616,10 @@ void sdObjectiveManagerLocal::Event_SetTeamNeededClass( const playerTeamTypes_t 
 		}
 
 		if ( !botThreadData.GetGameWorldState()->clientInfo[ i ].isBot ) {
+			continue;
+		}
+
+		if ( botThreadData.GetGameWorldState()->clientInfo[ i ].isActor ) {
 			continue;
 		}
 
@@ -2594,4 +2711,35 @@ void sdObjectiveManagerLocal::Event_GetNumClassPlayers( const playerTeamTypes_t 
 	}
 
 	sdProgram::ReturnInteger( count );
+}
+
+/*
+================
+sdObjectiveManagerLocal::PlayerDeployableDeployed
+================
+*/
+void sdObjectiveManagerLocal::PlayerDeployableDeployed() {
+	if ( scriptObject ) {
+		sdScriptHelper h1;
+		scriptObject->CallNonBlockingScriptEvent( onDeployableDeployedFunc, h1 );
+	}
+}
+
+/*
+================
+sdObjectiveManagerLocal::GetSpectateEntity
+================
+*/
+idEntity* sdObjectiveManagerLocal::GetSpectateEntity( void ) {
+	if ( scriptObject != NULL ) {
+		if ( getSpectateEntityFunc != NULL ) {
+			sdScriptHelper h1;
+			scriptObject->CallNonBlockingScriptEvent( getSpectateEntityFunc, h1 );
+			idScriptObject* object = gameLocal.program->GetReturnedObject();
+			if ( object != NULL ) {
+				return object->GetClass()->Cast< idEntity >();
+			}
+		}
+	}
+	return NULL;
 }

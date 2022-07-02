@@ -153,7 +153,7 @@ idBotActions::ArmedMinesInsideActionBBox
 Is there any armed mines currently inside this action's bbox?
 ================
 */
-bool idBotActions::ArmedMinesInsideActionBBox( void  ) const {
+bool idBotActions::ArmedMinesInsideActionBBox() const {
 	for( int j = 0; j < MAX_CLIENTS; j++ ) {
         for( int i = 0; i < MAX_MINES; i++ ) {
 			if ( botThreadData.GetBotWorldState()->clientInfo[ j ].weapInfo.landMines[ i ].entNum == 0 ) {

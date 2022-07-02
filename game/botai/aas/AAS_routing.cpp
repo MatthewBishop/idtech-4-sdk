@@ -22,6 +22,10 @@
 
 #define LEDGE_TRAVELTIME_PANALTY	250
 
+#ifdef MACOS_X
+#include <unistd.h>
+#endif
+
 /*
 ============
 idRoutingCache::idRoutingCache

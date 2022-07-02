@@ -233,6 +233,11 @@ void VPCALL idSIMD_MMX::Memcpy( void *dest0, const void *src0, const int count0 
 		// use the regular one if we cannot copy 8 byte aligned
 		memcpy( dest0, src0, count0 );
 	}
+
+	// the MMX_Memcpy* functions use MOVNTQ, issue a fence operation
+	__asm {
+		sfence
+	}
 }
 
 /*
@@ -319,6 +324,11 @@ loop2:
 	}
 
 	EMMS_INSTRUCTION 
+
+	// the MMX_Memcpy* functions use MOVNTQ, issue a fence operation
+	__asm {
+		sfence
+	}
 }
 
 #endif /* ID_WIN_X86_ASM */

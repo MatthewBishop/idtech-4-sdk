@@ -487,6 +487,19 @@ public:
 
 class sdCallVoteMapChange : public sdCallVote {
 public:
+	static const idDict* sdCallVoteMapChange::GetMapData( const char* name ) {
+		const metaDataContext_t* metaData = gameLocal.mapMetaDataList->FindMetaDataContext( name );
+		if ( metaData == NULL ) {
+			return NULL;
+		}
+
+		if ( !gameLocal.IsMetaDataValidForPlay( *metaData, true ) ) {
+			return NULL;
+		}
+
+		return metaData->meta;
+	}
+
 	static const idDict* sdCallVoteMapChange::GetMapData( int index ) {
 		if( index < 0 || index > gameLocal.mapMetaDataList->GetNumMetaData() ) {
 			return NULL;
@@ -497,6 +510,20 @@ public:
 		}
 
 		return metaData.meta;
+	}
+
+	static const sdDeclMapInfo* sdCallVoteMapChange::GetMapInfo( const char* name ) {
+		const idDict* mapData = GetMapData( name );
+		if ( mapData == NULL ) {
+			return NULL;
+		}
+
+		const char* mapInfoName = mapData->GetString( "mapinfo" );
+		if ( mapInfoName[ 0 ] == '\0' ) {
+			return NULL;
+		}
+
+		return gameLocal.declMapInfoType[ mapInfoName ];
 	}
 
 	static const sdDeclMapInfo* sdCallVoteMapChange::GetMapInfo( int index ) {
@@ -552,7 +579,10 @@ public:
 	virtual void sdCallVoteMapChange::Execute( int dataKey ) const {
 		idCmdArgs args;
 		CreateCmdArgs( args );
-		args.AppendArg( va( "%d", dataKey ) );
+
+		const char* name = GetMapData( dataKey )->GetString( "metadata_name" );
+
+		args.AppendArg( name );
 		sdVoteManagerLocal::Callvote_f( args );
 	}
 
@@ -561,15 +591,16 @@ public:
 			return NULL;
 		}
 
-		int dataKey = atoi( args.Argv( 2 ) );
-		const idDict* mapData = GetMapData( dataKey );
+		const char* metaDataName = args.Argv( 2 );
+
+		const idDict* mapData = GetMapData( metaDataName );
 		if ( mapData == NULL ) {
 			return NULL;
 		}
 
-		const sdDeclMapInfo* mapInfo = GetMapInfo( dataKey );
+		const sdDeclMapInfo* mapInfo = GetMapInfo( metaDataName );
 		if ( mapInfo == NULL ) {
-			assert( 0 );
+			assert( false );
 			return NULL;
 		}
 
@@ -690,6 +721,15 @@ public:
 		}
 
 		const char* campaignName = args.Argv( 2 );
+
+		const metaDataContext_t* metaData = gameLocal.campaignMetaDataList->FindMetaDataContext( campaignName );
+		if ( metaData == NULL ) {
+			return NULL;
+		}
+		if ( !gameLocal.IsMetaDataValidForPlay( *metaData, true ) ) {
+			return NULL;
+		}
+
 		const sdDeclCampaign* campaign = gameLocal.declCampaignType[ campaignName ];
 		if ( campaign == NULL ) {
 			return NULL;

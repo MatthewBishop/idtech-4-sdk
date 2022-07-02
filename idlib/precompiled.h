@@ -20,11 +20,7 @@
 #include <ctype.h>
 #include <typeinfo>
 #include <errno.h>
-#ifdef MACOS_X    //DAJ Xcode can't tell a user from a system header path
-#include </usr/include/math.h>
-#else
 #include <math.h>
-#endif
 #include <wchar.h>	// wmemset
 #include <limits.h>
 

@@ -67,27 +67,49 @@ bool sdGUIDInfo::IsBanned( void ) {
 
 /*
 ============
+sdGUIDInfo::IsFinished
+============
+*/
+bool sdGUIDInfo::IsFinished( void ) {
+	if ( IsBanned() ) {
+		return false;
+	}
+
+	if ( authGroup.Length() > 0 ) {
+		return false;
+	}
+
+	return true;
+}
+
+/*
+============
 sdGUIDInfo::GetPrintableName
 ============
 */
-const char* sdGUIDInfo::GetPrintableName( void ) const {
+void sdGUIDInfo::GetPrintableName( idStr& name ) const {
 	if ( userName.Length() > 0 ) {
-		return userName.c_str();
+		name = va( "'%s'", userName.c_str() );
+	} else {
+		name = "'no name'";
 	}
 
 	switch ( matchType ) {
 		case MT_GUID:
-			return va( "GUID: %u.%u", id.clientId.id[ 0 ], id.clientId.id[ 1 ] );
+			name += va( " GUID: %u.%u", id.clientId.id[ 0 ], id.clientId.id[ 1 ] );
+			return;
 		case MT_IP: {
 			byte* temp = ( ( byte* )&id.ip );
-			return va( "IP: %u.%u.%u.%u", temp[ 0 ], temp[ 1 ], temp[ 2 ], temp[ 3 ] );
+			name += va( " IP: %u.%u.%u.%u", temp[ 0 ], temp[ 1 ], temp[ 2 ], temp[ 3 ] );
+			return;
 		}
 		case MT_PB:
-			return va( "PB GUID: %i", id.pbid );
+			name += va( " PB GUID: %i", id.pbid );
+			return;
 	}
 
 	assert( false );
-	return "UNKNOWN";
+	name += " UNKNOWN";
 }
 
 /*
@@ -141,7 +163,7 @@ void sdGUIDInfo::Write( idFile* file ) const {
 			break;
 		}
 		case MT_PB:
-			file->Printf( "\t\"pbid\"\t\"%i\"\n", id );
+			file->Printf( "\t\"pbid\"\t\"%i\"\n", id.pbid );
 			break;
 	}
 
@@ -224,7 +246,7 @@ void sdGUIDFile::ClearGUIDStates( void ) {
 sdGUIDFile::CheckForUpdates
 ============
 */
-void sdGUIDFile::CheckForUpdates( void ) {
+void sdGUIDFile::CheckForUpdates( bool removeOldEntries ) {
 	idFile* file = fileSystem->OpenFileRead( guidFileName );
 	if ( !file ) {
 		return;
@@ -263,6 +285,10 @@ void sdGUIDFile::CheckForUpdates( void ) {
 			break;
 		}
 	}
+
+	if ( removeOldEntries ) {
+		RemoveOldEntries();
+	}
 }
 
 /*
@@ -270,16 +296,34 @@ void sdGUIDFile::CheckForUpdates( void ) {
 sdGUIDFile::IPForString
 ============
 */
-int sdGUIDFile::IPForString( const char* text ) {
+bool sdGUIDFile::IPForString( const char* text, int& ip ) {
+	ip = 0;
+
 	int temp[ 4 ];
-	sscanf( text, "%u.%u.%u.%u", &temp[ 0 ], &temp[ 1 ], &temp[ 2 ], &temp[ 3 ] );
+	if ( sscanf( text, "%u.%u.%u.%u", &temp[ 0 ], &temp[ 1 ], &temp[ 2 ], &temp[ 3 ] ) != 4 ) {
+		return false;
+	}
 
 	byte iptemp[ 4 ];
 	for ( int i = 0; i < 4; i++ ) {
+		if ( temp[ i ] < 0 || temp[ i ] > 255 ) {
+			return false;
+		}
 		iptemp[ i ] = temp[ i ];
 	}
 
-	return *( ( int* )iptemp );
+	ip = *( ( int* )iptemp );
+
+	return true;
+}
+
+/*
+============
+sdGUIDFile::PBGUIDForString
+============
+*/
+bool sdGUIDFile::PBGUIDForString( const char* text, int& pbguid ) {
+	return sscanf( text, "%i", &pbguid ) == 1;
 }
 
 /*
@@ -287,11 +331,13 @@ int sdGUIDFile::IPForString( const char* text ) {
 sdGUIDFile::GUIDForString
 ============
 */
-sdNetClientId sdGUIDFile::GUIDForString( const char* text ) {
-	sdNetClientId clientId;
-	sscanf( text, "%u.%u", &clientId.id[ 0 ], &clientId.id[ 1 ] );
-	return clientId;
+bool sdGUIDFile::GUIDForString( const char* text, sdNetClientId& id ) {
+	if ( sscanf( text, "%u.%u", &id.id[ 0 ], &id.id[ 1 ] ) != 2 ) {
+		return false;
+	}
+	return true;
 }
+
 /*
 ============
 sdGUIDFile::WriteGUIDFile
@@ -312,6 +358,29 @@ void sdGUIDFile::WriteGUIDFile( void ) {
 
 /*
 ============
+sdGUIDFile::RemoveOldEntries
+============
+*/
+void sdGUIDFile::RemoveOldEntries( void ) {
+	CheckForUpdates( false );
+
+	bool changed = false;
+	for ( int i = 0; i < info.Num(); ) {
+		if ( info[ i ].IsFinished() ) {
+			changed = true;
+			info.RemoveIndexFast( i );
+		} else {
+			i++;
+		}
+	}
+
+	if ( changed ) {
+		WriteGUIDFile();
+	}
+}
+
+/*
+============
 sdGUIDFile::ParseEntry
 ============
 */
@@ -324,14 +393,25 @@ bool sdGUIDFile::ParseEntry( idLexer& src ) {
 		return false;
 	}
 
-	int temp;
 	idStr tempString;
 	if ( data.GetString( "ip", "", tempString ) ) {
-		newInfo.SetIP( IPForString( tempString.c_str() ) );
-	} else if ( data.GetInt( "pbid", "0", temp ) ) {
-		newInfo.SetPBID( temp );
-	} else if ( data.GetString( "guid", "0", tempString ) ) {
-		newInfo.SetGUID( GUIDForString( tempString.c_str() ) );
+		int ip;
+		if ( !IPForString( tempString.c_str(), ip ) ) {
+			return false;
+		}
+		newInfo.SetIP( ip );
+	} else if ( data.GetString( "pbid", "", tempString ) ) {
+		int pbguid;
+		if ( !PBGUIDForString( tempString.c_str(), pbguid ) ) {
+			return false;
+		}
+		newInfo.SetPBID( pbguid );
+	} else if ( data.GetString( "guid", "", tempString ) ) {
+		sdNetClientId id;
+		if ( !GUIDForString( tempString.c_str(), id ) ) {
+			return false;
+		}
+		newInfo.SetGUID( id );
 	}
 
 	newInfo.SetAuthGroup( data.GetString( "auth_group" ) );
@@ -426,6 +506,36 @@ void sdGUIDFile::AuthUser( int clientNum, const clientGUIDLookup_t& lookup ) {
 
 /*
 ============
+sdGUIDFile::AuthUser
+============
+*/
+void sdGUIDFile::SetAutoAuth( const clientGUIDLookup_t& lookup, const char* group ) {
+	CheckForUpdates();
+
+	int index = -1;
+	for ( int i = 0; i < info.Num(); i++ ) {
+		sdGUIDInfo& gInfo = info[ i ];
+		if ( !gInfo.Match( lookup ) ) {
+			continue;
+		}
+
+		index = i;
+		break;
+	}
+
+	if ( index == -1 ) {
+		index = info.Num();
+		info.Alloc().SetMatch( lookup );
+	}
+
+	sdGUIDInfo& gInfo = info[ index ];
+	gInfo.SetAuthGroup( group );
+
+	WriteGUIDFile();
+}
+
+/*
+============
 sdGUIDFile::CheckForBan
 ============
 */
@@ -464,7 +574,9 @@ void sdGUIDFile::ListBans( void ) {
 			continue;
 		}
 
-		gameLocal.Printf( "%d: %s\n", i, gInfo.GetPrintableName() );
+		idStr name;
+		gInfo.GetPrintableName( name );
+		gameLocal.Printf( "%d: %s\n", i, name.c_str() );
 	}
 }
 
@@ -501,7 +613,9 @@ bool sdGUIDFile::WriteBans( int& startIndex, idBitMsg& msg ) {
 
 		count++;
 		msg.WriteLong( i );
-		msg.WriteString( gInfo.GetPrintableName() );
+		idStr name;
+		gInfo.GetPrintableName( name );
+		msg.WriteString( name.c_str() );
 
 		if ( count == MAX_WRITE_BANS ) {
 			startIndex = i;

@@ -126,7 +126,12 @@ void idCmdArgs::TokenizeString( const char *text, bool keepAsStrings ) {
 		argv[argc] = tokenized + totalLen;
 		argc++;
 
-		idStr::Copynz( tokenized + totalLen, token.c_str(), sizeof( tokenized ) - totalLen );
+		// mac version indicated possible buffer overflow
+		int len = sizeof( tokenized ) - totalLen;
+		if ( len > token.Length() + 1 ) {
+			len = token.Length() + 1;
+		}
+		idStr::Copynz( tokenized + totalLen, token.c_str(), len );
 
 		totalLen += len + 1;
 	}

@@ -19,7 +19,8 @@ public:
 	int		GetTextHeight() const { return height; }
 	int		GetLineHeight() const { return lineHeight; }
 
-	float	ToVirtualScreenSize( const int size ) const;
+	int		ToVirtualScreenSize( const int size ) const;
+	float	ToVirtualScreenSizeFloat( const int size ) const;
 
 private:
 	static const int BASE_BUFFER = 256;
@@ -137,8 +138,18 @@ ID_INLINE float sdTextDimensionHelper::GetWidth( const int startIndex, const int
 sdTextDimensionHelper::ToVirtualScreenSize
 ============
 */
-ID_INLINE float sdTextDimensionHelper::ToVirtualScreenSize( const int size ) const {
+ID_INLINE int sdTextDimensionHelper::ToVirtualScreenSize( const int size ) const {
 	return idMath::Ftoi( idMath::Ceil( ( size >> 6 ) / scale ) );
 }
+
+/*
+============
+sdTextDimensionHelper::ToVirtualScreenSizeFloat
+============
+*/
+ID_INLINE float sdTextDimensionHelper::ToVirtualScreenSizeFloat( const int size ) const {
+	return ( size >> 6 ) / scale;
+}
+
 
 #endif /* !__DEVICECONTEXTHELPER_H__ */

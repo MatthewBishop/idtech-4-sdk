@@ -2130,7 +2130,7 @@ void sdInventory::SetupClassOptions( bool clearAmmo, bool setWeapon, bool allowC
 			}
 
 			if ( clearAmmo ) {
-				GiveConsumables( package );
+				GiveConsumables( list[ index ] );
 			}
 		}
 	}

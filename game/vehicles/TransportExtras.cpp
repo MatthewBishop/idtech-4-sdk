@@ -792,8 +792,8 @@ bool sdTransportPositionManager::EjectPlayer( sdVehiclePosition& position, bool 
 	// Find a position to eject to
 	//
 	bool foundOrg = false;
-	idVec3 selectedOrg;
-	idMat3 selectedAxes;
+	idVec3 selectedOrg = player->GetPhysics()->GetOrigin();
+	idMat3 selectedAxes = player->GetPhysics()->GetAxis();
 
 	if ( transport->UnbindOnEject() ) {
 		if( !gameLocal.isClient ) {
@@ -927,7 +927,6 @@ bool sdTransportPositionManager::EjectPlayer( sdVehiclePosition& position, bool 
 		player->GetPhysics()->SetLinearVelocity( v );
 
 		// set the position
-		player->SetOrigin( selectedOrg );
 		if ( foundOrg ) {
 			idAngles temp;
 			temp = selectedAxes.ToAngles();
@@ -936,6 +935,7 @@ bool sdTransportPositionManager::EjectPlayer( sdVehiclePosition& position, bool 
 				temp.pitch = -10.0f;
 			}
 			player->SetViewAngles( temp );
+			player->SetOrigin( selectedOrg );
 		}
 		player->EnableClip();
 	}

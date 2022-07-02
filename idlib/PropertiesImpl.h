@@ -384,6 +384,28 @@ namespace sdProperties {
 		return "";
 	}
 
+#if defined( MACOS_X )
+    template< typename T >
+    struct isNaN_impl {
+        bool operator()(T) { return false; }
+    };
+    
+    template<> 
+    struct isNaN_impl<float> {
+        bool operator()(float x) { return x != x; }
+    };
+
+    template<> 
+    struct isNaN_impl<double> {
+        bool operator()(double x) { return x != x; }
+    };
+    
+    template< typename T > bool isNaN( T x ) {
+        static isNaN_impl<T> impl;
+        return impl(x);
+    }
+#endif
+    
 	/*
 	============
 	sdPropertyValue< T >::SetIndex	
@@ -394,7 +416,13 @@ namespace sdProperties {
 	ID_INLINE void sdPropertyValue< T >::SetIndex( int index, ST newValue ) {
 		assert( !Traits::integral && index >= 0 && ( Traits::dimension == 0 || index < Traits::dimension ));
 
+#if defined( MACOS_X )
+        // Avoid a crash due to infinite recursion if newValue is NaN.
+		// TTimo - no indication this would happen with final/released assets. leaving for mac build only
+        if ( newValue != value[ index ] && !( isNaN( newValue ) && isNaN( value[ index] ) ) ) {
+#else
 		if ( newValue != value[ index ] ) {
+#endif
 			if( onValidate.Num() ) {
 				T tempValue = value;
 				if( !Validate( tempValue )) {

@@ -23,6 +23,8 @@ bool idBotAI::Enter_COMBAT_Foot_AttackEnemy() {
 
 	ignoreNadeTime = 0;
 
+	combatNBGType = NO_COMBAT_TYPE;
+
 	if ( botThreadData.random.RandomInt( 100 ) > 50 ) {
 		ignoreNadeTime = botWorld->gameLocalInfo.time + GRENADE_IGNORE_TIME;
 	}
@@ -125,6 +127,8 @@ bool idBotAI::Enter_COMBAT_Foot_ChaseEnemy() {
 
 	combatMoveType = COMBAT_MOVE_NULL;
 
+	combatNBGType = NO_COMBAT_TYPE;
+
 	lastAINode = "Chase Enemy";
 
 	return true;
@@ -209,6 +213,8 @@ bool idBotAI::Enter_COMBAT_Foot_ChaseEnemy_Grenade() {
 	COMBAT_AI_SUB_NODE = &idBotAI::COMBAT_Foot_ChaseEnemy_Grenade;
 
 	combatMoveType = COMBAT_MOVE_NULL;
+
+	combatNBGType = NO_COMBAT_TYPE;
 
 	lastAINode = "Chase w/ nade";
 
@@ -331,6 +337,8 @@ bool idBotAI::Enter_COMBAT_Foot_RetreatFromEnemy() {
 
 	combatMoveType = COMBAT_MOVE_NULL;
 
+	combatNBGType = NO_COMBAT_TYPE;
+
 	lastAINode = "Retreat!";
 
 	return true;
@@ -361,6 +369,12 @@ bool idBotAI::Enter_COMBAT_Foot_EvadeEnemy() {
 
 	combatMoveType = COMBAT_MOVE_NULL;
 
+	combatNBGType = NO_COMBAT_TYPE;
+
+	combatTryMoveCounter = 0;
+
+	combatTryMoveTime = 0;
+
 	lastAINode = "Evade Enemy";
 
 	ignoreNadeTime = 0;
@@ -381,8 +395,12 @@ bool idBotAI::COMBAT_Foot_EvadeEnemy() {
 	bool goalIsPriority = false;
 	idVec3 vec;
 
+	if ( combatTryMoveTime < botWorld->gameLocalInfo.time ) {
+		combatTryMoveCounter = 0;
+	}
+
 	if ( AIStack.STACK_AI_NODE != NULL ) {
-		if ( AIStack.stackActionNum != ACTION_NULL ) {
+		if ( AIStack.stackActionNum > ACTION_NULL && AIStack.stackActionNum < botThreadData.botActions.Num() ) {
 			vec = botThreadData.botActions[ AIStack.stackActionNum ]->origin - botInfo->origin;
 
 			if ( vec.LengthFast() > 300.0f ) {
@@ -406,12 +424,23 @@ bool idBotAI::COMBAT_Foot_EvadeEnemy() {
 					COMBAT_AI_SUB_NODE = &idBotAI::Enter_COMBAT_Foot_AttackEnemy; //mal: if theres a problem getting to our target, just fight our enemy normally.
 					return false;
 				}
+				combatTryMoveCounter = 0;
 				Bot_MoveAlongPath( RUN );
 			} else {
-				int blockedClient = CheckBotBlockingOtherClients( -1 );
+				int blockedClient = Bot_CheckBlockingOtherClients( -1 );
 
-				if ( blockedClient != -1 ) {
-					Bot_MoveAwayFromClient( blockedClient );
+				if ( blockedClient != -1 && combatTryMoveCounter < MAX_MOVE_ATTEMPTS ) {
+					combatTryMoveCounter++;
+					if ( Bot_CanMove( BACK, 100.0f, true ) ) {
+						Bot_MoveToGoal( botCanMoveGoal, vec3_zero, RUN, NULLMOVETYPE );
+					} else if ( Bot_CanMove( RIGHT, 100.0f, true ) ) {
+						Bot_MoveToGoal( botCanMoveGoal, vec3_zero, RUN, NULLMOVETYPE );
+					} else if ( Bot_CanMove( LEFT, 100.0f, true ) ) {
+						Bot_MoveToGoal( botCanMoveGoal, vec3_zero, RUN, NULLMOVETYPE );
+					}
+
+					Bot_LookAtEntity( blockedClient, SMOOTH_TURN );
+					combatTryMoveTime = botWorld->gameLocalInfo.time + 1000;
 					return true;
 				}
 			}
@@ -475,7 +504,19 @@ bool idBotAI::COMBAT_Foot_EvadeEnemy() {
 			Bot_ThrowGrenade( vec, false );	
 		}
 	} else {
-		if ( botInfo->classType == FIELDOPS && botInfo->team == STROGG && ClassWeaponCharged( SHIELD_GUN ) && !ClientHasShieldInWorld( botNum, SHIELD_CONSIDER_RANGE ) && !InFrontOfClient( botNum, botAAS.path.moveGoal ) ) {
+
+		bool enemyInDangerousGroundVehicle = false;
+
+		if ( enemyInVehicle ) {
+			proxyInfo_t vehicle;
+			GetVehicleInfo( botWorld->clientInfo[ enemy ].proxyInfo.entNum, vehicle );
+
+			if ( vehicle.flags & ARMOR ) {
+				enemyInDangerousGroundVehicle = true;
+			}
+		}
+
+		if ( botInfo->classType == FIELDOPS && botInfo->team == STROGG && ClassWeaponCharged( SHIELD_GUN ) && !ClientHasShieldInWorld( botNum, SHIELD_CONSIDER_RANGE ) && ( !InFrontOfClient( botNum, botAAS.path.moveGoal ) || enemyInDangerousGroundVehicle ) ) {
 			botIdealWeapNum = SHIELD_GUN;
 			botIdealWeapSlot = NO_WEAPON;
 			Bot_LookAtEntity( enemy, SMOOTH_TURN );
@@ -502,6 +543,8 @@ bool idBotAI::Enter_COMBAT_Foot_LostEnemyInSmoke() {
 	COMBAT_AI_SUB_NODE = &idBotAI::COMBAT_Foot_LostEnemyInSmoke;
 
 	combatMoveType = COMBAT_MOVE_NULL;
+
+	combatNBGType = NO_COMBAT_TYPE;
 
 	lastAINode = "Lost Enemy In Smoke";
 
@@ -531,7 +574,7 @@ bool idBotAI::Enter_COMBAT_Foot_ReviveTeammate() {
 
 	COMBAT_AI_SUB_NODE = &idBotAI::COMBAT_Foot_ReviveTeammate;
 
-	combatMoveType = COMBAT_MOVE_NULL;
+	combatMoveType = REVIVE_MATE_ATTACK;
 
 	lastAINode = "Combat Reviving";
 
@@ -565,7 +608,10 @@ bool idBotAI::COMBAT_Foot_ReviveTeammate() {
 	}
 
 	if ( exitNode ) {
+		botIdealWeapSlot = GUN;
+		botIdealWeapNum = SMG;
 		COMBAT_AI_SUB_NODE = NULL;
+		combatNBGType = NO_COMBAT_TYPE;
 		Bot_IgnoreClient( combatNBGTarget, MEDIC_IGNORE_TIME );
 		return false;
 	}
@@ -581,6 +627,7 @@ bool idBotAI::COMBAT_Foot_ReviveTeammate() {
 		if ( MoveIsInvalid() ) {
 			Bot_IgnoreClient( combatNBGTarget, MEDIC_IGNORE_TIME ); //mal: no valid path to this client for some reason - ignore him for a while
 			COMBAT_AI_SUB_NODE = NULL;
+			combatNBGType = NO_COMBAT_TYPE;
 			return false;
 		}
 		
@@ -605,6 +652,7 @@ bool idBotAI::COMBAT_Foot_ReviveTeammate() {
 	Bot_LookAtEntity( combatNBGTarget, INSTANT_TURN );
 
 	botIdealWeapSlot = SPECIAL1;
+	botIdealWeapNum = NEEDLE;
 
 	if ( botInfo->weapInfo.isReady && botInfo->weapInfo.weapon == NEEDLE ) {
 		botUcmd->botCmds.attack = true;
@@ -624,6 +672,8 @@ bool idBotAI::Enter_COMBAT_Foot_ChaseEnemy_Aircan() {
 	COMBAT_AI_SUB_NODE = &idBotAI::COMBAT_Foot_ChaseEnemy_Aircan;
 
 	combatMoveType = COMBAT_MOVE_NULL;
+
+	combatNBGType = NO_COMBAT_TYPE;
 
 	lastAINode = "Chase w/ Aircan";
 
@@ -726,6 +776,8 @@ bool idBotAI::Enter_COMBAT_Foot_Hide() {
 
 	combatMoveType = COMBAT_MOVE_NULL;
 
+	combatNBGType = NO_COMBAT_TYPE;
+
 	lastAINode = "Hide";
 
 	return true;
@@ -787,6 +839,8 @@ bool idBotAI::Enter_COMBAT_Foot_ChaseUnseenEnemy() {
 	COMBAT_AI_SUB_NODE = &idBotAI::COMBAT_Foot_ChaseUnseenEnemy;
 
 	combatMoveType = COMBAT_MOVE_NULL;
+
+	combatNBGType = NO_COMBAT_TYPE;
 
 	lastAINode = "Chase Unseen Enemy";
 
@@ -854,8 +908,9 @@ bool idBotAI::COMBAT_Foot_GrabVehicle() {
 
 	GetVehicleInfo( combatNBGTarget, vehicleInfo );
 
-	if ( !VehicleIsValid( vehicleInfo.entNum ) ) {	
+	if ( !VehicleIsValid( vehicleInfo.entNum ) || exitNode ) {	
 		COMBAT_AI_SUB_NODE = NULL;
+		combatNBGType = NO_COMBAT_TYPE;
 		return false;
 	}
 
@@ -880,6 +935,7 @@ bool idBotAI::COMBAT_Foot_GrabVehicle() {
 
 		if ( MoveIsInvalid() ) {
 			COMBAT_AI_SUB_NODE = NULL;
+			combatNBGType = NO_COMBAT_TYPE;
 			return false;
 		}
 		
@@ -898,5 +954,126 @@ bool idBotAI::COMBAT_Foot_GrabVehicle() {
 	Bot_LookAtLocation( vehicleInfo.origin, SMOOTH_TURN );
 
 	botUcmd->botCmds.enterVehicle = true;
+	vehicleEnemyWasInheritedFromFootCombat = true;
+	V_ROOT_AI_NODE = &idBotAI::Run_VCombat_Node; //mal: jump right into combat once enter the vehicle.
+	return true;
+}
+
+/*
+================
+idBotAI::Enter_COMBAT_Foot_AttackTurret
+================
+*/
+bool idBotAI::Enter_COMBAT_Foot_AttackTurret() {
+
+	COMBAT_AI_SUB_NODE = &idBotAI::COMBAT_Foot_AttackTurret;
+
+	combatMoveType = COMBAT_MOVE_NULL;
+
+	combatNBGType = COMBAT_ATTACK_TURRET;
+
+	combatMoveDir = ( botThreadData.random.RandomInt( 100 ) > 50 ) ? RIGHT : LEFT;
+
+	lastAINode = "Attack Turret";
+
+	return true;
+}
+
+/*
+================
+idBotAI::COMBAT_Foot_AttackTurret
+================
+*/
+bool idBotAI::COMBAT_Foot_AttackTurret() {
+	deployableInfo_t deployableInfo;
+
+	if ( !GetDeployableInfo( false, combatNBGTarget, deployableInfo ) ) { //mal: doesn't exist anymore.
+		COMBAT_AI_SUB_NODE = NULL;
+		return false;
+	}
+
+	if ( deployableInfo.disabled || deployableInfo.health < ( deployableInfo.maxHealth / DEPLOYABLE_DISABLED_PERCENT ) ) { //mal: its dead ( enough ).
+		COMBAT_AI_SUB_NODE = NULL;
+		return false;
+	}
+
+	if ( !Bot_HasExplosives( true, true ) ) {
+		COMBAT_AI_SUB_NODE = NULL;
+		return false;
+	}
+
+	trace_t tr;
+	idVec3 deployableOrg = deployableInfo.origin;
+	deployableOrg.z += DEPLOYABLE_ORIGIN_OFFSET;
+	botThreadData.clip->TracePoint( CLIP_DEBUG_PARMS tr, botInfo->viewOrigin, deployableOrg, MASK_SHOT_BOUNDINGBOX | MASK_VEHICLESOLID | CONTENTS_FORCEFIELD, GetGameEntity( botNum ) );
+
+	if ( tr.fraction < 1.0f && tr.c.entityNum != deployableInfo.entNum ) {  //mal: can't see it anymore, so go back to fighting our enemy.
+		COMBAT_AI_SUB_NODE = NULL;
+		return false;
+	} 
+
+	if ( botInfo->classType == FIELDOPS && LocationVis2Sky( deployableInfo.origin ) && ClassWeaponCharged( AIRCAN ) ) {
+		botIdealWeapNum = AIRCAN;
+		botIdealWeapSlot = NO_WEAPON;
+	} else if ( botInfo->classType == SOLDIER && botInfo->weapInfo.primaryWeapon == ROCKET && botInfo->weapInfo.primaryWeapHasAmmo && !botInfo->weapInfo.primaryWeapNeedsReload ) {
+		botIdealWeapSlot = GUN;
+		botIdealWeapNum = NULL_WEAP;
+	} else if ( botInfo->weapInfo.hasNadeAmmo ) {
+		botIdealWeapSlot = NADE;
+		botIdealWeapNum = NULL_WEAP;
+	} else {
+		COMBAT_AI_SUB_NODE = NULL;
+		assert( false );
+		return false;
+	}
+
+	idVec3 vec = deployableInfo.origin - botInfo->origin;
+	float distToTurretSqr = vec.LengthSqr();
+
+	if ( botIdealWeapSlot == NADE ) {
+		if ( distToTurretSqr > Square( GRENADE_THROW_MAXDIST ) ) {
+			Bot_SetupMove( deployableOrg, -1, ACTION_NULL );
+		
+			if ( MoveIsInvalid() ) {
+				COMBAT_AI_SUB_NODE = NULL;
+				return false;
+			}
+
+			Bot_MoveAlongPath( SPRINT );
+			botUcmd->moveType = ( botThreadData.random.RandomInt( 100 ) > 50 ) ? RANDOM_JUMP_RIGHT : RANDOM_JUMP_LEFT;
+			Bot_ThrowGrenade( deployableOrg, true );
+			return true;
+		}
+		Bot_ThrowGrenade( deployableOrg, true );
+	} else if ( botIdealWeapNum == AIRCAN ) {
+		Bot_UseCannister( AIRCAN, deployableOrg );
+	} else if ( botIdealWeapSlot == GUN ) {
+		if ( distToTurretSqr < Square( 500.0f ) ) { // too close, back up some! 
+			if ( Bot_CanMove( BACK, 100.0f, true ) ) {
+				Bot_MoveToGoal( botCanMoveGoal, vec3_zero, RUN, RANDOM_JUMP );
+			} else if ( Bot_CanMove( RIGHT, 100.0f, true ) ) {
+				Bot_MoveToGoal( botCanMoveGoal, vec3_zero, RUN, RANDOM_JUMP_RIGHT );
+			} else if ( Bot_CanMove( LEFT, 100.0f, true ) ) {
+				Bot_MoveToGoal( botCanMoveGoal, vec3_zero, RUN, RANDOM_JUMP_LEFT );
+			}
+
+			Bot_LookAtLocation( deployableOrg, SMOOTH_TURN ); 
+			return true;
+		}
+		
+		Bot_LookAtLocation( deployableOrg, SMOOTH_TURN ); 
+		botUcmd->botCmds.attack = true;
+	}
+
+	if ( combatMoveDir == NULL_DIR ) {
+		combatMoveDir = ( botThreadData.random.RandomInt( 100 ) > 50 ) ? RIGHT : LEFT;
+	}
+
+	if ( Bot_CanMove( combatMoveDir, 100.0f, true ) ) {
+		Bot_MoveToGoal( botCanMoveGoal, vec3_zero, RUN, ( combatMoveDir == RIGHT ) ? RANDOM_JUMP_RIGHT : RANDOM_JUMP_LEFT );
+	} else {
+		combatMoveDir = NULL_DIR;
+	}
+
 	return true;
 }

@@ -182,12 +182,7 @@ sdLimboProperties::UpdateProficiency
 void sdLimboProperties::UpdateProficiency( idPlayer* player, const sdDeclPlayerClass* pc ) {
 	if ( pc != NULL ) {		
 		const sdProficiencyTable& table = player->GetProficiencyTable();
-		const sdTeamInfo* teamInfo = pc->GetTeam();
-
-		const sdDeclRank* rankLocal = table.GetRank();
-		if ( rankLocal != NULL ) {
-			rank = rankLocal->GetTitle() != NULL ? rankLocal->GetTitle()->Index() : -1;
-		}		
+		const sdTeamInfo* teamInfo = pc->GetTeam();	
 
 		for( int i = 0; i < pc->GetNumProficiencies(); i++ ) {
 			const sdDeclPlayerClass::proficiencyCategory_t& category = pc->GetProficiency( i );
@@ -205,7 +200,6 @@ void sdLimboProperties::UpdateProficiency( idPlayer* player, const sdDeclPlayerC
 			proficiencyXP[ i ]		= table.GetPoints( profIndex );
 		}
 	} else {
-		rank = 0;
 		for( int i = 0; i < gameLocal.declProficiencyTypeType.Num(); i++ ) {
 			proficiency[ i ]		= 0.0f;
 			proficiencyPercent[ i ] = 0.0f;

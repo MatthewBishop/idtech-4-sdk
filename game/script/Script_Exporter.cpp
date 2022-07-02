@@ -1,6 +1,8 @@
 // Copyright (C) 2007 Id Software, Inc.
 //
 
+#include <set>
+
 #include "../precompiled.h"
 #pragma hdrstop
 
@@ -1514,62 +1516,11 @@ void sdScriptExporter::WriteBuildVersion( void ) {
 	fileSystem->CloseFile( buildVersionFile );
 }
 
-#ifdef MACOS_X
-#include <set>
-
-struct PBXFile
-{
-    static std::set<int> used_hashes;
-    
-    static int getUniqueHash(const idStr& string)
-    {
-        int hash = idStr::Hash(string);
-
-        while ( used_hashes.find(hash) != used_hashes.end() )
-        {
-            ++hash;
-        }
-        
-        used_hashes.insert(hash);
-    }
-    
-    idStr filename;
-    idStr file_reference;
-    idStr build_reference;
-    
-    PBXFile() : filename(""), file_reference(""), build_reference("") {}
-    PBXFile(const PBXFile& in_file) : filename(in_file.filename), 
-        file_reference(in_file.file_reference), build_reference(in_file.build_reference) {}
-    
-    PBXFile operator=(const PBXFile& other)
-    {
-        filename = other.filename;
-        file_reference = other.file_reference;
-        build_reference = other.build_reference;
-        
-        return *this;
-    }
-    
-    PBXFile(idStr new_filename) : filename(new_filename)
-    {
-        int fileHash = getUniqueHash(filename);
-        
-        sprintf(file_reference, "%x%x%x%x%x", fileHash, fileHash, fileHash, fileHash, fileHash);
-        file_reference.CapLength(24);
-        file_reference.ToUpper();
-        
-        int buildFileHash = getUniqueHash(file_reference);
-        sprintf(build_reference, "%x%x%x%x%x", buildFileHash, buildFileHash, buildFileHash, buildFileHash, buildFileHash);
-        build_reference.CapLength(24);
-        build_reference.ToUpper();
-    }
-};
-
-std::set<int> PBXFile::used_hashes;
-#endif
-
 void sdScriptExporter::WriteProjectFile( void ) {
-#ifndef MACOS_X
+
+    // ASM 
+    WriteXCodeProjectFile();
+    
 	const char *project_basename = "src/base/CompiledScript.vcproj.base";
 	idFile* projectBaseFile = fileSystem->OpenFileRead( project_basename );
 	if ( projectBaseFile == NULL ) {
@@ -1641,9 +1592,46 @@ void sdScriptExporter::WriteProjectFile( void ) {
 		fileSystem->CopyFile( src.c_str(), dest.c_str() );
 	}
 	fileSystem->FreeFileList( dependencies );
+}
 
-#else
-    const char *project_basename = "src/CompiledScript.xcodeproj/project.pbxproj.base";
+struct PBXFile
+{
+    static unsigned long long lastUsed;
+    
+    idStr filename;
+    idStr file_reference;
+    idStr build_reference;
+    
+    PBXFile() : filename(""), file_reference(""), build_reference("") {}
+    PBXFile(const PBXFile& in_file) : filename(in_file.filename), 
+    file_reference(in_file.file_reference), build_reference(in_file.build_reference) {}
+    
+    PBXFile operator=(const PBXFile& other)
+    {
+        filename = other.filename;
+        file_reference = other.file_reference;
+        build_reference = other.build_reference;
+        
+        return *this;
+    }
+    
+    PBXFile(const char* new_filename) : filename(new_filename)
+    {
+        unsigned long fileHash = ++lastUsed;
+        unsigned long buildFileHash = ++lastUsed;
+        
+        sprintf(file_reference, "%llX", fileHash);
+        file_reference.CapLength(24);
+        
+        sprintf(build_reference, "%llX", buildFileHash);
+        build_reference.CapLength(24);
+    }
+};
+
+unsigned long long PBXFile::lastUsed = 0xA6F06A190CB4529ELL;
+
+void sdScriptExporter::WriteXCodeProjectFile( void ) {
+    const char *project_basename = "src/compiledscript.xcodeproj/project.pbxproj.base";
 	idFile* projectBaseFile = fileSystem->OpenFileRead( project_basename );
 	if ( projectBaseFile == NULL ) {
 		// si_pure or SD_RESTRICTED_FILESYSTEM might screw you here
@@ -1671,13 +1659,13 @@ void sdScriptExporter::WriteProjectFile( void ) {
     idList< PBXFile > projectHFiles;
     
 	for ( int i = 0; i < generatedCppFiles.Num(); i++ ) {
-		generatedCppFiles[ i ].StripPath();
-        projectCPPFiles.Append( PBXFile( generatedCppFiles[ i ] ) );
+		int index = projectCPPFiles.Append( PBXFile( generatedCppFiles[ i ] ) );
+		projectCPPFiles[ index ].filename.StripPath();
 	}
 
-	for ( int i = 0; i < generatedHFiles.Num(); i++ ) {
-		generatedHFiles[ i ].StripPath();
-        projectHFiles.Append( PBXFile( generatedHFiles[ i ] ) );
+	for ( int i = 0; i < generatedHFiles.Num(); i++ ) {		
+        int index = projectHFiles.Append( PBXFile( generatedHFiles[ i ] ) );
+		projectHFiles[ index ].filename.StripPath();
 	}
     
 	idStr PBXBuildFileReplaceString;
@@ -1725,8 +1713,8 @@ void sdScriptExporter::WriteProjectFile( void ) {
     temp.Replace( "$INSERTHEADERREFERENCESHERE$", PBXFileHeaderReferences.c_str() );
     temp.Replace( "$INSERTBUILDPHASEHERE$", PBXBuildPhase.c_str() );
     
-    fileSystem->CreateOSPath( "src/CompiledScript.xcodeproj/" );
-    idFile* projectBaseOutput = fileSystem->OpenFileWrite( "src/CompiledScript.xcodeproj/project.pbxproj", "fs_devpath" );
+    fileSystem->CreateOSPath( "src/compiledscript.xcodeproj/" );
+    idFile* projectBaseOutput = fileSystem->OpenFileWrite( "src/compiledscript.xcodeproj/project.pbxproj", "fs_devpath" );
 	if ( projectBaseOutput == NULL ) {
 		return;
 	}
@@ -1773,9 +1761,6 @@ void sdScriptExporter::WriteProjectFile( void ) {
 
     // Build phase: (INSERTBUILDPHASEHERE)
     // 				96F06A1A0CB452A50010D225 /* Generated_EventCalls.cpp in Sources */,
-
-    
-#endif
 }
 
 void sdScriptExporter::WriteSysCalls( void ) {

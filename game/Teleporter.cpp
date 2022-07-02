@@ -196,6 +196,11 @@ void sdTeleporter::OnTouch( idEntity *other, const trace_t& trace ) {
 		return;
 	}
 
+	idPlayer* player = other->Cast< idPlayer >();
+	if ( player != NULL && !player->IsSpectator() && player->GetHealth() <= 0 ) {
+		return;
+	}
+
 	// abort if it didn't touch the trigger model
 	if ( trace.c.id != 1 ) {
 		return;

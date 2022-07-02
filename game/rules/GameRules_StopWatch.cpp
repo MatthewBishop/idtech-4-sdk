@@ -823,3 +823,18 @@ const sdDeclLocStr* sdGameRulesStopWatch::GetWinningReason( void ) const {
 
 	return NULL;
 }
+
+/*
+============
+sdGameRulesStopWatch::GetDemoNameInfo
+============
+*/
+const char* sdGameRulesStopWatch::GetDemoNameInfo( void ) {
+	static idStr demoNameBuffer;
+	if ( progression == GP_FIRST_MATCH ) {
+		demoNameBuffer = va( "stopwatch_first" );
+	} else {
+		demoNameBuffer = va( "stopwatch_second" );
+	}
+	return demoNameBuffer.c_str();
+}

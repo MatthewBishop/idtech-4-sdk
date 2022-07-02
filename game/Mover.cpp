@@ -1182,7 +1182,7 @@ void idPlat::OnTouch( idEntity *other, const trace_t& trace ) {
 		return;
 	}
 
-	if ( player->GetHealth() < 0 ) {
+	if ( player->GetHealth() <= 0 ) {
 		return;
 	}
 

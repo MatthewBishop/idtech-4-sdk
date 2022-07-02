@@ -44,7 +44,7 @@ idCVar gamedate(					"gamedate",					__DATE__,		CVAR_GAME | CVAR_ROM, "" );
 
 // server info
 idCVar si_name(						"si_name",					GAME_NAME " Server",	CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE, "name of the server" );
-idCVar si_maxPlayers(				"si_maxPlayers",			"16",					CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_INTEGER, "max number of players allowed on the server", 1, static_cast< float >( MAX_CLIENTS ) );
+idCVar si_maxPlayers(				"si_maxPlayers",			"24",					CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_INTEGER | CVAR_RANKLOCKED, "max number of players allowed on the server", 1, static_cast< float >( MAX_CLIENTS ) );
 idCVar si_privateClients(			"si_privateClients",		"0",					CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_INTEGER, "max number of private players allowed on the server", 0, static_cast< float >( MAX_CLIENTS ) );
 idCVar si_teamDamage(				"si_teamDamage",			"1",					CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_BOOL | CVAR_RANKLOCKED, "enable team damage" );
 idCVar si_needPass(					"si_needPass",				"0",					CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_BOOL | CVAR_RANKLOCKED, "enable client password checking" );
@@ -94,6 +94,7 @@ idCVar ui_voipReceiveGlobal(		"ui_voipReceiveGlobal",			"0",		CVAR_GAME | CVAR_P
 idCVar ui_voipReceiveTeam(			"ui_voipReceiveTeam",			"1",		CVAR_GAME | CVAR_PROFILE | CVAR_USERINFO | CVAR_ARCHIVE | CVAR_BOOL, "if true, receive voice chat sent to the team channel" );
 idCVar ui_voipReceiveFireTeam(		"ui_voipReceiveFireTeam",		"1",		CVAR_GAME | CVAR_PROFILE | CVAR_USERINFO | CVAR_ARCHIVE | CVAR_BOOL, "if true, receive voice chat sent to the fireteam channel" );
 idCVar ui_showComplaints(			"ui_showComplaints",			"1",		CVAR_GAME | CVAR_PROFILE | CVAR_USERINFO | CVAR_ARCHIVE | CVAR_BOOL, "if true, receive complaints popups for team kills" );
+idCVar ui_swapFlightYawAndRoll(		"ui_swapFlightYawAndRoll",		"0",		CVAR_GAME | CVAR_PROFILE | CVAR_USERINFO | CVAR_ARCHIVE | CVAR_BOOL, "if true, swaps the yaw & roll controls for flying vehicles - mouse becomes yaw and keys become roll" );
 
 // change anytime vars
 idCVar g_decals(					"g_decals",					"1",			CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE | CVAR_BOOL, "show decals such as bullet holes" );
@@ -177,6 +178,17 @@ idCVar g_showPlayerSpeed(			"g_showPlayerSpeed",		"0",			CVAR_GAME | CVAR_BOOL, 
 
 idCVar m_helicopterPitch(			"m_helicopterPitch",		"-0.022",		CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_NOCHEAT, "helicopter mouse pitch scale" );
 idCVar m_helicopterYaw(				"m_helicopterYaw",			"0.022",		CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_NOCHEAT, "helicopter mouse yaw scale" );
+
+idCVar m_helicopterPitchScale(		"m_helicopterPitchScale",	"1",			CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_NOCHEAT, "sensitivity scale (over base) for Anansi/Tormentor pitch" );
+idCVar m_helicopterYawScale(		"m_helicopterYawScale",		"1",			CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_NOCHEAT, "sensitivity scale (over base) for Anansi/Tormentor yaw" );
+idCVar m_bumblebeePitchScale(		"m_bumblebeePitchScale",	"1",			CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_NOCHEAT, "sensitivity scale (over base) for Bumblebee pitch" );
+idCVar m_bumblebeeYawScale(			"m_bumblebeeYawScale",		"1",			CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_NOCHEAT, "sensitivity scale (over base) for Bumblebee yaw" );
+idCVar m_lightVehiclePitchScale(	"m_lightVehiclePitchScale",	"1",			CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_NOCHEAT, "sensitivity scale (over base) for Husky/Armadillo/Hog/Trojan pitch" );
+idCVar m_lightVehicleYawScale(		"m_lightVehicleYawScale",	"1",			CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_NOCHEAT, "sensitivity scale (over base) for Husky/Armadillo/Hog/Trojan yaw" );
+idCVar m_heavyVehiclePitchScale(	"m_heavyVehiclePitchScale",	"1",			CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_NOCHEAT, "sensitivity scale (over base) for Titan/Cyclops pitch" );
+idCVar m_heavyVehicleYawScale(		"m_heavyVehicleYawScale",	"1",			CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_NOCHEAT, "sensitivity scale (over base) for Titan/Cyclops yaw" );
+idCVar m_playerPitchScale(			"m_playerPitchScale",		"1",			CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_NOCHEAT, "sensitivity scale (over base) for player pitch" );
+idCVar m_playerYawScale(			"m_playerYawScale",			"1",			CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_NOCHEAT, "sensitivity scale (over base) for player yaw" );
 
 idCVar ik_enable(					"ik_enable",				"1",			CVAR_GAME | CVAR_BOOL, "enable IK" );
 idCVar ik_debug(					"ik_debug",					"0",			CVAR_GAME | CVAR_BOOL, "show IK debug lines" );
@@ -398,9 +410,10 @@ idCVar bot_doObjectives(			"bot_doObjectives",				"1",		CVAR_GAME | CVAR_BOOL | 
 idCVar bot_ignoreGoals(				"bot_ignoreGoals",				"0",		CVAR_GAME | CVAR_INTEGER | CVAR_CHEAT,		"If set to 1, bots will ignore all map objectives. Useful for debugging bot behavior" );
 idCVar bot_useVehicles(				"bot_useVehicles",				"1",		CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT,		"0 = bots dont use vehicles, 1 = bots do use vehicles" );
 idCVar bot_stayInVehicles(			"bot_stayInVehicles",			"0",		CVAR_GAME | CVAR_BOOL,						"1 = bots will never leave their vehicle. Only useful for debugging. Default is 0" );
-idCVar bot_useStrafeJump(			"bot_useStrafeJump",			"0",		CVAR_GAME | CVAR_BOOL,						"0 = bots can't strafe jump, 1 = bots CAN strafe jump to goal locations that are far away" );
+idCVar bot_useStrafeJump(			"bot_useStrafeJump",			"1",		CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT,		"0 = bots can't strafe jump, 1 = bots CAN strafe jump to goal locations that are far away" );
 idCVar bot_useSuicideWhenStuck(		"bot_useSuicideWhenStuck",		"1",		CVAR_GAME | CVAR_BOOL,						"0 = bots never suicide when stuck. 1 = bots suicide if they detect that they're stuck" );
 idCVar bot_useDeployables(			"bot_useDeployables",			"1",		CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT,		"0 = bots dont drop deployables of any kind, 1 = bots can drop all deployables" );
+idCVar bot_useMines(				"bot_useMines",					"1",		CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT,		"0 = bots dont use mines, 1 = bots can use mines. Default = 1" );
 idCVar bot_sillyWarmup(				"bot_sillyWarmup",				"0",		CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT,		"0 = bots play the game like normal, 1 = bots shoot each other and act silly during warmup" );
 idCVar bot_useSpawnHosts(			"bot_useSpawnHosts",			"1",		CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT,		"0 = strogg bots can't use spawn host bodies, 1 = bots can use spawnhosts" );
 idCVar bot_useUniforms(				"bot_useUniforms",				"1",		CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT,		"0 = bots won't steal uniforms, 1 = bots take uniforms" );
@@ -409,7 +422,7 @@ idCVar bot_noTaunt(					"bot_noTaunt",					"1",		CVAR_GAME | CVAR_BOOL | CVAR_NO
 idCVar bot_aimSkill(				"bot_aimSkill",					"1",		CVAR_GAME | CVAR_INTEGER | CVAR_NETWORKSYNC | CVAR_NOCHEAT,	"Sets the bot's default aiming skill. 0 = EASY, 1 = MEDIUM, 2 = EXPERT, 3 = MASTER", 0, 3, idCmdSystem::ArgCompletion_Integer<0,3> );
 idCVar bot_skill(					"bot_skill",					"3",		CVAR_GAME | CVAR_INTEGER | CVAR_NETWORKSYNC | CVAR_NOCHEAT,	"Sets the bot's default AI skill. 0 = EASY, 1 = NORMAL, 2 = EXPERT, 3 = TRAINING MODE - this mode is useful for learning about the game", 0, 3, idCmdSystem::ArgCompletion_Integer<0,3> );
 idCVar bot_knifeOnly(				"bot_knifeOnly",				"0",		CVAR_GAME | CVAR_BOOL,						"goofy mode where the bots only use their knifes in combat." );
-idCVar bot_ignoreEnemies(			"bot_ignoreEnemies",			"0",		CVAR_GAME | CVAR_INTEGER,					"If set to 1, bots will ignore all enemies. Useful for debugging bot behavior" );
+idCVar bot_ignoreEnemies(			"bot_ignoreEnemies",			"0",		CVAR_GAME | CVAR_INTEGER,					"If set to 1, bots will ignore all enemies. 2 = Ignore Strogg. 3 = Ignore GDF. Useful for debugging bot behavior" );
 idCVar bot_debug(					"bot_debug",					"0",		CVAR_GAME | CVAR_BOOL,						"Debug various bot subsystems. Many bot debugging features are disabled if this is not set to 1" );
 idCVar bot_debugActionGoalNumber(	"bot_debugActionGoalNumber",	"-1",		CVAR_GAME | CVAR_INTEGER,					"Set to any action number on the map to have the bot ALWAYS do that action, for debugging. -1 = disabled. NOTE: The bot will treat the goal as a camp goal. This is useful for path testing." );
 idCVar bot_debugSpeed(				"bot_debugSpeed",				"-1",		CVAR_GAME | CVAR_INTEGER,					"Debug bot's move speed. -1 = disable" );
@@ -445,6 +458,7 @@ idCVar bot_testPathToBotAction(		"bot_testPathToBotAction",		"-1",		CVAR_GAME | 
 idCVar bot_pauseInVehicleTime(		"bot_pauseInVehicleTime",		"7",		CVAR_GAME | CVAR_INTEGER,					"Time the bots will pause when first enter a vehicle ( in seconds ) to allow others to jump in. Default is 7 seconds." );
 idCVar bot_doObjsInTrainingMode(	"bot_doObjsInTrainingMode",		"1",		CVAR_GAME | CVAR_BOOL,						"Controls whether or not bots will do objectives in training mode, if the human isn't the correct class to do the objective. 0 = bots won't do primary or secondary objecitives in training mode. 1 = bots will do objectives. Default = 1. " );
 idCVar bot_doObjsDelayTimeInMins(	"bot_doObjsDelayTimeInMins",	"3",		CVAR_GAME | CVAR_INTEGER,					"How long of a delay in time the bots will have before they start considering objectives while in Training mode. Default is 3 minutes. " );
+idCVar bot_useAirVehicles(			"bot_useAirVehicles",			"1",		CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT,		"0 = bots dont use air vehicles, 1 = bots do use air vehicles. Useful for debugging ground vehicles only." );
 
 idCVar g_showCrosshairInfo(			"g_showCrosshairInfo",			"1",		CVAR_INTEGER | CVAR_GAME,					"shows information about the entity under your crosshair" );
 
@@ -530,7 +544,7 @@ idCVar net_serverDlTable(			"net_serverDlTable",			"",			CVAR_GAME | CVAR_ARCHIV
 
 idCVar g_drawMineIcons(				"g_drawMineIcons",				"1",		CVAR_GAME | CVAR_BOOL | CVAR_ARCHIVE | CVAR_PROFILE,		"Draw icons on the HUD for mines." );
 idCVar g_allowMineIcons(			"g_allowMineIcons",				"1",		CVAR_GAME | CVAR_BOOL | CVAR_NETWORKSYNC | CVAR_RANKLOCKED, "Allow clients to draw icons on the HUD for mines." );
-idCVar g_mineIconSize(				"g_mineIconSize",				"10",		CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE | CVAR_PROFILE,		"Size of the screen space mine icons. NOTE: Will only take effect for new mines, not those already existing." );
+idCVar g_mineIconSize(				"g_mineIconSize",				"10",		CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE | CVAR_PROFILE,		"Size of the screen space mine icons. NOTE: Will only take effect for new mines, not those already existing.", 0, 20 );
 idCVar g_mineIconAlphaScale(		"g_mineIconAlphaScale",			"1",		CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE | CVAR_PROFILE,		"Alpha scale to apply to mine icons. NOTE: Will only take effect for new mines, not those already existing." );
 
 idCVar g_drawVehicleIcons(			"g_drawVehicleIcons",			"1",		CVAR_GAME | CVAR_BOOL | CVAR_ARCHIVE | CVAR_PROFILE,		"Draw icons on the HUD for vehicles (eg spawn invulnerability)." );
@@ -552,6 +566,7 @@ idCVar g_noTVChat(					"g_noTVChat",					"0",		CVAR_GAME | CVAR_ARCHIVE | CVAR_B
 
 idCVar g_drawHudMessages(			"g_drawHudMessages",			"1",		CVAR_GAME | CVAR_INTEGER | CVAR_ARCHIVE | CVAR_PROFILE,		"Draw task, task success and objective text on HUD." );
 idCVar g_mineTriggerWarning(		"g_mineTriggerWarning",			"1",		CVAR_GAME | CVAR_BOOL | CVAR_ARCHIVE | CVAR_PROFILE,		"Show warning message on HUD when triggering a proximity mine." );
+idCVar g_aptWarning(				"g_aptWarning",					"3",		CVAR_GAME | CVAR_INTEGER | CVAR_ARCHIVE | CVAR_PROFILE,		"Show warning message on HUD when APT is locking on. 0: Off 1: Visual warning only 2: Beep only 3: Visual and beep" );
 
 idCVar g_trainingMode(				"g_trainingMode",				"0",		CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT,						"whether the game is in training mode or not" );
 

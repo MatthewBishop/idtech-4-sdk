@@ -4,6 +4,9 @@
 #include "../precompiled.h"
 #pragma hdrstop
 
+#if defined( MACOS_X )
+#pragma GCC visibility push(hidden)
+#endif
 stringDataAllocator_t*	idStr::stringDataAllocator;
 bool					idStr::stringAllocatorIsShared;
 
@@ -12,14 +15,22 @@ struct ShutdownStringAllocator {
 		idStr::ShutdownMemory();
 	}
 };
-
+#if defined( MACOS_X )
+#pragma GCC visibility pop
+#endif
 
 struct strColor_t {
 	idVec4		color;
 	const char* str;
 };
 
+#if defined( MACOS_X )
+#pragma GCC visibility push(hidden)
+#endif
 static ShutdownStringAllocator shutdownStringAllocator;
+#if defined( MACOS_X )
+#pragma GCC visibility pop
+#endif
 
 idStr::hmsFormat_t	idStr::defaultHMSFormat;
 

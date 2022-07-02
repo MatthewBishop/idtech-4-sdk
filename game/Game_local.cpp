@@ -1517,6 +1517,8 @@ void idGameLocal::Init( void ) {
 		rulesCache.Set( type->classname, type->CreateInstance()->Cast< sdGameRules >() );
 	}
 
+	isAutorecording = false;
+	hasTakenScoreShot = false;
 
 	Printf( "game initialized.\n" );
 	Printf( "--------------------------------------\n" );
@@ -2644,7 +2646,10 @@ idGameLocal::OnLocalMapRestart
 ===================
 */
 void idGameLocal::OnLocalMapRestart( void ) {
+	rules->OnLocalMapRestart();
 	sdObjectiveManager::GetInstance().OnLocalMapRestart();
+
+	hasTakenScoreShot = false;
 }
 
 /*
@@ -3071,14 +3076,19 @@ void idGameLocal::InitFromNewMap( const char* mapName, idRenderWorld *renderWorl
 		}
 	}
 
-	gamestate = GAMESTATE_ACTIVE;
-
 	botThreadData.Init();
 	botThreadData.LoadBotNames();
+	botThreadData.LoadTrainingBotNames();
+
+	gamestate = GAMESTATE_ACTIVE;
 
 	botThread->StartThread();
 
+	hasTakenScoreShot = false;
+
 	Printf( "--------------------------------------\n" );
+
+	guidFile.RemoveOldEntries();
 }
 
 /*
@@ -3175,6 +3185,7 @@ void idGameLocal::MapShutdown( void ) {
 	if ( gamestate == GAMESTATE_NOMAP ) {
 		return;
 	}
+	assert( gamestate != GAMESTATE_STARTUP );
 
 	if( rules != NULL ) {
 		rules->SetWinner( NULL );
@@ -4385,6 +4396,14 @@ void idGameLocal::RunFrame( const usercmd_t *clientCmds, int elapsedTime ) {
 		// Some will remove themselves
 		sdEffect::UpdateDeadEffects();
 
+		if ( viewPlayer != NULL ) {
+			playerView.CalculateShake( viewPlayer );
+
+			// fps unlock: record view position
+			int index = framenum & 1;
+			unlock.originlog[ index ] = viewPlayer->GetRenderView()->vieworg;
+		}
+
 		// service any pending events
 		idEvent::ServiceEvents();
 
@@ -4406,14 +4425,6 @@ void idGameLocal::RunFrame( const usercmd_t *clientCmds, int elapsedTime ) {
 
 		ControlBotPopulation();
 		botThreadData.CheckBotClassSpread();
-
-		if ( viewPlayer != NULL ) {
-			playerView.CalculateShake( viewPlayer );
-
-			// fps unlock: record view position
-			int index = framenum & 1;
-			unlock.originlog[ index ] = viewPlayer->GetRenderView()->vieworg;
-		}
 
 		// set latest world state as current for the bots
 		botThreadData.SetCurrentGameWorldState();
@@ -4589,11 +4600,6 @@ void idGameLocal::FinishClientStatsRequest( void ) {
 	}
 
 	CreateClientStatsHash( clientStatsRequestIndex );
-
-	sdNetStatKeyValList& statsList = clientStatsList[ clientStatsRequestIndex ];
-	idHashIndex& hashIndex = clientStatsHash[ clientStatsRequestIndex ];
-
-	hashIndex.Clear();
 
 	rankInfo.CreateData( clientStatsHash[ clientStatsRequestIndex ], clientStatsList[ clientStatsRequestIndex ], rankScratchInfo );
 
@@ -4876,6 +4882,10 @@ void idGameLocal::ClientUpdateView( const usercmd_t &cmd, int timeLeft ) {
 
 	idPlayer *p = GetActiveViewer();
 	if ( p == NULL ) {
+		return;
+	}
+
+	if ( p->IsBeingBriefed() ) {
 		return;
 	}
 
@@ -10103,6 +10113,165 @@ void idGameLocal::DisablePlayerHeadModels( void ) {
 			continue;
 		}
 		player->GetPlayerPhysics().DisableHeadClipModel();
+	}
+}
+
+/*
+================
+idGameLocal::GetDemoName
+================
+*/
+idCVar g_autoDemoNameFormat( "g_autoDemoNameFormat", "$year$$month$$day$_$hour$$min$$sec$_$map$_$rules$_$name$_build_$srcrev$_$mediarev$.ndm", CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE, "demo name format: date - $year$, $month$, $day$   time - $hour$, $min$, $sec$   map name - $map$   ruleset info - $rules$   player name - $name$    versions - $srcrev$ $mediarev$" );
+
+void idGameLocal::GetDemoName( idStr& output ) {
+	idStr name = "na";
+	if ( gameLocal.isClient ) {
+		idPlayer* localPlayer = gameLocal.GetLocalPlayer();
+		if ( localPlayer != NULL ) {
+			name = localPlayer->userInfo.name;
+			name.RemoveColors();
+		}
+	} else {
+		name = "server";
+	}
+
+	// just in case
+	name.ReplaceChar( '/', '_' );
+	name.ReplaceChar( '\\', '_' );
+
+	sysTime_t time;
+	sys->RealTime( &time );
+
+	idStr mapStr = mapFileName.c_str();
+	mapStr.ReplaceChar( '/', '_' );
+	mapStr.ReplaceFirst( "maps_", "" );		// the maps tag is boring. die.
+	mapStr.StripFileExtension();
+	
+
+	output = g_autoDemoNameFormat.GetString();
+
+	// date
+	output.Replace( "$year$", va( "%d", 1900 + time.tm_year ) );
+	output.Replace( "$month$", va( "%02d", 1 + time.tm_mon ) );
+	output.Replace( "$day$", va( "%02d", time.tm_mday ) );
+
+	// time
+	output.Replace( "$hour$", va( "%02d", time.tm_hour ) );
+	output.Replace( "$min$", va( "%02d", time.tm_min ) );
+	output.Replace( "$sec$", va( "%02d", time.tm_sec ) );
+
+	// other
+	output.Replace( "$map$", mapStr.c_str() );
+	output.Replace( "$rules$", rules->GetDemoNameInfo() );
+	output.Replace( "$name$", name.c_str() );
+	output.Replace( "$srcrev$", va( "%d", ENGINE_SRC_REVISION ) );
+	output.Replace( "$mediarev$", va( "%d", ENGINE_MEDIA_REVISION ) );
+}
+
+/*
+============
+idGameLocal::StartAutorecording
+============
+*/
+idCVar g_autoRecordDemos( "g_autoRecordDemos", "0", CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE, "automatically start & stop demos at the start & end of a map" );
+
+void idGameLocal::StartAutorecording() {
+	if ( sdDemoManager::GetInstance().InPlayBack() ) {
+		return;
+	}
+
+	if ( g_autoRecordDemos.GetBool() && !isAutorecording ) {
+		idStr demoName = "";
+		gameLocal.GetDemoName( demoName );
+
+		if ( demoName.Length() > 0 ) {
+			cmdSystem->BufferCommandText( CMD_EXEC_APPEND, va( "recordNetDemo \"%s\"\n", demoName.c_str() ) );
+			isAutorecording = true;
+		}
+	}
+}
+
+/*
+============
+idGameLocal::StopAutorecording
+============
+*/
+void idGameLocal::StopAutorecording() {
+	if ( sdDemoManager::GetInstance().InPlayBack() ) {
+		return;
+	}
+
+	if ( isAutorecording ) {
+		cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "stopNetDemo\n" );
+		isAutorecording = false;
+	}
+}
+
+/*
+================
+idGameLocal::GetScoreboardShotName
+================
+*/
+idCVar g_autoScreenshotNameFormat( "g_autoScreenshotNameFormat", "screenshots/scoreboard_$year$$month$$day$_$hour$$min$$sec$_$map$_$rules$_$name$_build_$srcrev$_$mediarev$.tga", CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE, "auto screenshot name format: date - $year$, $month$, $day$   time - $hour$, $min$, $sec$   map name - $map$   ruleset info - $rules$   player name - $name$    versions - $srcrev$ $mediarev$" );
+
+void idGameLocal::GetScoreboardShotName( idStr& output ) {
+	idStr name = "na";
+	if ( gameLocal.isClient ) {
+		idPlayer* localPlayer = gameLocal.GetLocalPlayer();
+		if ( localPlayer != NULL ) {
+			name = localPlayer->userInfo.name;
+			name.RemoveColors();
+		}
+	} else {
+		name = "server";
+	}
+	
+	// just in case
+	name.ReplaceChar( '/', '_' );
+	name.ReplaceChar( '\\', '_' );
+
+	sysTime_t time;
+	sys->RealTime( &time );
+
+	idStr mapStr = mapFileName.c_str();
+	mapStr.ReplaceFirst( "maps_", "" );		// the maps tag is boring. die.
+	mapStr.ReplaceChar( '/', '_' );
+	mapStr.StripFileExtension();
+	
+
+	output = g_autoScreenshotNameFormat.GetString();
+
+	// date
+	output.Replace( "$year$", va( "%d", 1900 + time.tm_year ) );
+	output.Replace( "$month$", va( "%02d", 1 + time.tm_mon ) );
+	output.Replace( "$day$", va( "%02d", time.tm_mday ) );
+
+	// time
+	output.Replace( "$hour$", va( "%02d", time.tm_hour ) );
+	output.Replace( "$min$", va( "%02d", time.tm_min ) );
+	output.Replace( "$sec$", va( "%02d", time.tm_sec ) );
+
+	// other
+	output.Replace( "$map$", mapStr.c_str() );
+	output.Replace( "$rules$", rules->GetDemoNameInfo() );
+	output.Replace( "$name$", name.c_str() );
+	output.Replace( "$srcrev$", va( "%d", ENGINE_SRC_REVISION ) );
+	output.Replace( "$mediarev$", va( "%d", ENGINE_MEDIA_REVISION ) );
+}
+
+/*
+============
+idGameLocal::OnEndGameScoreboardActive
+============
+*/
+idCVar g_autoScreenshot( "g_autoScreenshot", "0", CVAR_BOOL | CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE, "automatically take a screenshot of the scoreboard at the end of a map" );
+
+void idGameLocal::OnEndGameScoreboardActive() {
+	if ( !hasTakenScoreShot && g_autoScreenshot.GetBool() ) {
+		idStr shotName;
+		GetScoreboardShotName( shotName );
+		cmdSystem->BufferCommandText( CMD_EXEC_APPEND, va( "screenshot \"%s\"\n", shotName.c_str() ) );
+		hasTakenScoreShot = true;
 	}
 }
 

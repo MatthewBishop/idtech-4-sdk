@@ -158,9 +158,9 @@ int sdHotServerList::GetServerScore( const sdNetSession& session, sdNetManager& 
 
 	int ping = session.GetPing();
 	if ( ping < GOOD_PING_MAX ) {
-		score += BROWSER_GOOD_BONUS;
+		score += BROWSER_GOOD_BONUS * 2;
 	} else if ( ping < OK_PING_MAX ) {
-		score += BROWSER_OK_BONUS;
+		score += BROWSER_OK_BONUS * 2;
 	}
 
 	if ( /* manager.PreferRanked() && */ session.IsRanked() ) {
@@ -586,7 +586,7 @@ void sdNetManager::InitFunctions() {
 	SD_UI_FUNC_TAG( hasAccount, "Has account." )
 		SD_UI_FUNC_RETURN_PARM( float, "True if logged in to an account." )
 	SD_UI_END_FUNC_TAG
-	ALLOC_FUNC( "hasAccount",				'f', "",		&sdNetManager::Script_HasAccount );
+	ALLOC_FUNC( "hasAccountImmediate",				'f', "",		&sdNetManager::Script_HasAccount );
 
 	SD_UI_FUNC_TAG( accountSetUsername, "Set a username for an account." )
 		SD_UI_FUNC_PARM( string, "username", "Username to set." )
@@ -701,6 +701,17 @@ void sdNetManager::InitFunctions() {
 		SD_UI_FUNC_PARM( float, "source", "Source to get servers from. See FS_* defines." )
 	SD_UI_END_FUNC_TAG
 	ALLOC_FUNC( "updateHotServers",		'v', "f",		&sdNetManager::Script_UpdateHotServers );
+
+	SD_UI_FUNC_TAG( joinBestServer, "Joins the server that is at the top of the hot server list." )
+		SD_UI_FUNC_PARM( float, "source", "Source to get servers from. See FS_* defines." )
+		SD_UI_END_FUNC_TAG
+	ALLOC_FUNC( "joinBestServer",		'v', "f",		&sdNetManager::Script_JoinBestServer );
+
+	SD_UI_FUNC_TAG( getNumHotServers, "Gets the number of available hot servers" )
+		SD_UI_FUNC_PARM( float, "source", "Source to get servers from. See FS_* defines." )
+		SD_UI_FUNC_RETURN_PARM( float, "Number of hot servers." )
+		SD_UI_END_FUNC_TAG
+		ALLOC_FUNC( "getNumHotServers",		'f', "f",		&sdNetManager::Script_GetNumHotServers );
 
 	SD_UI_FUNC_TAG( joinServer, "Join a server." )
 		SD_UI_FUNC_PARM( float, "source", "Source to get servers from. See FS_* defines." )
@@ -1295,7 +1306,6 @@ void sdNetManager::RunFrame() {
 		}
 	}
 
-#if !defined( SD_DEMO_BUILD )
 	bool findingServers =	findHistoryServersTask != NULL || 
 							findServersTask != NULL ||
 							findLANServersTask != NULL ||
@@ -1308,6 +1318,7 @@ void sdNetManager::RunFrame() {
 		lastServerUpdateIndex = 0;
 	}
 
+#if !defined( SD_DEMO_BUILD )
 	if ( initFriendsTask && initFriendsTask->GetState() == sdNetTask::TS_DONE ) {
 		networkService->FreeTask( initFriendsTask );
 		initFriendsTask = NULL;
@@ -3959,13 +3970,18 @@ void sdNetManager::Script_QueryXPStats( sdUIFunctionStack& stack ) {
 	idPlayer* localPlayer = gameLocal.GetLocalPlayer();
 	if( localPlayer != NULL ) {
 		const sdProficiencyTable& table = localPlayer->GetProficiencyTable();
-		const sdDeclProficiencyType* prof = gameLocal.declProficiencyTypeType.LocalFind( profKey.c_str() );
-		int index = prof->Index();
+		const sdDeclProficiencyType* prof = gameLocal.declProficiencyTypeType[ profKey.c_str() ];
+
 		float xp;
-		if( total ) {
-			xp = table.GetPoints( index );
+		if ( prof == NULL ) {
+			xp = 0.f;
 		} else {
-			xp = table.GetPointsSinceBase( index );
+			int index = prof->Index();
+			if( total ) {
+				xp = table.GetPoints( index );
+			} else {
+				xp = table.GetPointsSinceBase( index );
+			}
 		}
 		stack.Push( va( "%i", idMath::Ftoi( xp ) ) );
 		return;
@@ -4538,6 +4554,12 @@ bool sdNetManager::SessionIsFiltered( const sdNetSession& netSession, bool ignor
 			continue;
 		}
 
+
+		// jrad - this is superseded by SF_MAXBOTS, but left in for backwards compatibility while loading profiles
+		if( filter.type == SF_BOTS ) {
+			continue;
+		}
+
 		// don't filter by most items for repeaters
 		if( netSession.IsRepeater() ) {
 			if( filter.type != SF_FULL &&
@@ -4586,8 +4608,13 @@ bool sdNetManager::SessionIsFiltered( const sdNetSession& netSession, bool ignor
 			case SF_PING:
 				value = netSession.GetPing();
 				break;
+/* jrad - this is superseded by SF_MAXBOTS, but left in for backwards compatibility while loading profiles
 			case SF_BOTS:
 				value = ( ( ( netSession.GetNumClients() - netSession.GetNumBotClients() ) == 0 ) && ( netSession.GetNumBotClients() > 0 ) ) ? 1.0f : 0.0f;
+				break;
+*/
+			case SF_MAXBOTS:
+				value = netSession.GetNumBotClients();
 				break;
 			case SF_FAVORITE:
 				value = activeUser->GetProfile().GetProperties().GetBool( va( "favorite_%s", netSession.GetHostAddressString() ), "0" );
@@ -6070,4 +6097,58 @@ void sdNetManager::Script_GetNumInterestedInServer( sdUIFunctionStack& stack ) {
 	}
 
 	stack.Push( interested );
+}
+
+/*
+============
+sdNetManager::Script_JoinBestServer
+============
+*/
+void sdNetManager::Script_JoinBestServer( sdUIFunctionStack& stack ) {
+	int iSource;
+	stack.Pop( iSource );
+
+	findServerSource_e source;
+	if( !sdIntToContinuousEnum< findServerSource_e >( iSource, FS_MIN, FS_MAX, source ) ) {
+		gameLocal.Error( "JoinBestServer: source '%i' out of range", iSource );
+		return;
+	}
+
+	sdNetTask* task;
+	idList< sdNetSession* >* netSessions;
+	sdHotServerList* netHotServers;
+	GetSessionsForServerSource( source, netSessions, task, netHotServers );
+
+	if( netHotServers->GetNumServers() == 0 ) {
+		return;
+	}
+	sdNetSession* session = netHotServers->GetServer( 0 );
+	if( session == NULL ) {
+		return;
+	}
+	session->Join();
+}
+
+/*
+============
+sdNetManager::Script_GetNumHotServers
+============
+*/
+void sdNetManager::Script_GetNumHotServers( sdUIFunctionStack& stack ) {
+	int iSource;
+	stack.Pop( iSource );
+
+	findServerSource_e source;
+	if( !sdIntToContinuousEnum< findServerSource_e >( iSource, FS_MIN, FS_MAX, source ) ) {
+		gameLocal.Error( "JoinBestServer: source '%i' out of range", iSource );
+		stack.Push( 0.0f );
+		return;
+	}
+
+	sdNetTask* task;
+	idList< sdNetSession* >* netSessions;
+	sdHotServerList* netHotServers;
+	GetSessionsForServerSource( source, netSessions, task, netHotServers );
+
+	stack.Push( netHotServers->GetNumServers() );
 }

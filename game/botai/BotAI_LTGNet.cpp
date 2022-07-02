@@ -33,9 +33,21 @@ bool idBotAI::Enter_LTG_FollowMate() {
 
 	ltgReached = false;
 
+	ltgUseShield = true;
+
+	routeNode = NULL;
+
+	ltgUseSmoke = true;
+
 	ResetRandomLook();
 
 	blockingTeammateCounter = 0;
+
+	ltgMoveTime = 0;
+
+	ltgPauseTime = 0;
+
+	ltgTryMoveCounter = 0;
 
 	ltgMoveDir = NULL_DIR;
 
@@ -45,7 +57,11 @@ bool idBotAI::Enter_LTG_FollowMate() {
 		const clientInfo_t& playerInfo = botWorld->clientInfo[ ltgTarget ];
 
 		if ( !playerInfo.isBot ) {
-			Bot_AddDelayedChat( botNum, LETS_GO, 1 );
+			idVec3 vec = playerInfo.origin - botInfo->origin;
+
+			if ( vec.LengthSqr() > Square( MEDIC_ACK_MIN_DIST * 2.0f ) ) {
+				Bot_AddDelayedChat( botNum, LETS_GO, 1 );
+			}
 		}
 	}
 
@@ -66,7 +82,6 @@ bool idBotAI::LTG_FollowMate() {
 	int attacker;
 	float dist;
 	float maxDist = 475.0f; //mal: the furthest the bot will let you go, before he reacts.
-	float vehicleMaxDist = ( ltgType == FOLLOW_TEAMMATE_BY_REQUEST ) ? ( ESCORT_RANGE * 2.0f ) : 1900.0f;
 	proxyInfo_t vehicleInfo;
 	botMoveFlags_t defaultMove = SPRINT;
 	idVec3 vec;	
@@ -77,6 +92,11 @@ bool idBotAI::LTG_FollowMate() {
 	}
 
 	if ( !ClientIsValid( ltgTarget, ltgTargetSpawnID ) ) { //mal: client disconnected/got kicked/went spec, etc.
+		Bot_ExitAINode();
+		return false;
+	}
+
+	if ( Client_IsCriticalForCurrentObj( botNum, TOO_CLOSE_TO_GOAL_TO_FOLLOW_DIST ) || ( ClientHasObj( botNum ) && ClientIsCloseToDeliverObj( botNum, TOO_CLOSE_TO_DELIVER_TO_FOLLOW_DIST ) ) ) {
 		Bot_ExitAINode();
 		return false;
 	}
@@ -98,12 +118,23 @@ bool idBotAI::LTG_FollowMate() {
 		return false;
 	}
 
+	if ( playerInfo.isBot ) { //mal: dont follow a bot thats following someone else.
+		if ( botThreadData.bots[ ltgTarget ] != NULL && botThreadData.bots[ ltgTarget ]->GetAIState() == LTG && ( botThreadData.bots[ ltgTarget ]->GetLTGType() == FOLLOW_TEAMMATE || botThreadData.bots[ ltgTarget ]->GetLTGType() == FOLLOW_TEAMMATE_BY_REQUEST ) ) {
+			Bot_ExitAINode();
+			return false;
+		}
+	}
+
+	if ( ltgMoveTime < botWorld->gameLocalInfo.time ) {
+		ltgTryMoveCounter = 0;
+	}
+
 	int moveAwayFromClientCrossHairCounter = ( playerInfo.weapInfo.isFiringWeap ) ? 1 : 10; //mal: if our friend is shooting, move out of the way quicker!
 
 	vec = playerInfo.origin - botInfo->origin;
 	dist = vec.LengthSqr();
 
-	if ( botThreadData.AllowDebugData() && bot_followMe.GetInteger() == 2 ) {
+	if ( botWorld->gameLocalInfo.botFollowPlayer == 2 ) {
 		rideVehicle = false;
 	}
 
@@ -119,11 +150,6 @@ bool idBotAI::LTG_FollowMate() {
 			return false;
 		} //mal: theres no room for us on this ride, so forget following this player.
 
-		if ( dist > Square( vehicleMaxDist ) ) { //mal: ride is too far away to bother with.
-			Bot_ExitAINode();
-			return false;
-		}
-
 		if ( ltgChat && playerInfo.isBot == false ) {
 			Bot_AddDelayedChat( botNum, HOLD_VEHICLE, 0 );
 			ltgChat = false;
@@ -134,21 +160,17 @@ bool idBotAI::LTG_FollowMate() {
 		vLTGTargetSpawnID = ltgTargetSpawnID;
 	    V_ROOT_AI_NODE = &idBotAI::Run_VLTG_Node;
 		V_LTG_AI_SUB_NODE = &idBotAI::Enter_VLTG_RideWithMate;
-		return false;
-	}
-
-	if ( !botThreadData.AllowDebugData() && bot_followMe.GetInteger() == 0 ) {
-		if ( dist > Square( ( ESCORT_RANGE * 2.0f ) ) ) { 
-			Bot_IgnoreClient( ltgTarget, CLIENT_IGNORE_TIME ); //mal: somehow this client got moved far away from us - ignore him
-			Bot_ExitAINode();
-			return false;
-		}
+		return true;
 	}
 
 	if ( ( playerInfo.posture == IS_CROUCHED || playerInfo.posture == IS_PRONE ) && playerInfo.crouchCounter > ltgCounter ) {
 		if ( dist < Square( maxDist ) ) {
             defaultMove = CROUCH;
 		}
+	} else if ( playerInfo.xySpeed == 0.0f && dist < Square( ltgDist ) ) {
+		defaultMove = WALK;
+	} else if ( dist < Square( 900.0f ) ) {
+		defaultMove = RUN;
 	}
 
 	botUcmd->actionEntityNum = ltgTarget; //mal: let the game and obstacle avoidance know we want to interact with this entity.
@@ -166,21 +188,125 @@ bool idBotAI::LTG_FollowMate() {
 
 		Bot_MoveAlongPath( ( dist > Square( maxDist * 2 ) ) ? Bot_ShouldStrafeJump( playerInfo.origin ) : defaultMove );
 
+		if ( dist < Square( maxDist ) && botAAS.blockedByObstacleCounterOnFoot > MAX_FRAMES_BLOCKED_BY_OBSTACLE_ON_FOOT ) {
+			ltgDist += 5.0f;
+		}//mal: if we've been trying to reach our target for too long, and got caught up on something or someone, relax the dist requirements a bit.
+
 		ltgTimer = 0; //mal: we're chasing our friend, so reset the timer.
 		ltgReached = false;
+		ltgTryMoveCounter = 0;
 		ResetRandomLook();
 		return true;
 	}
 
+	if ( botInfo->classType == FIELDOPS && botInfo->team == STROGG && ltgUseShield && botInfo->lastShieldDroppedTime + 1500 < botWorld->gameLocalInfo.time ) {
+		int numShieldsInWorld = Bot_NumShieldsInWorld();
+
+		if ( numShieldsInWorld < 2 && playerInfo.xySpeed < WALKING_SPEED && ClassWeaponCharged( SHIELD_GUN ) && ( playerInfo.weapInfo.weapon == PLIERS || playerInfo.weapInfo.weapon == NEEDLE || playerInfo.weapInfo.weapon == HACK_TOOL || playerInfo.weapInfo.weapon == HE_CHARGE ) ) {
+			bool hasShield = Bot_HasShieldInWorldNearLocation( playerInfo.origin, 300.0f );
+			float maxDistToPlayer = ( hasShield ) ? 40.0f : SHIELD_FIRING_RANGE;
+
+			if ( tacticalActionIgnoreTime < botWorld->gameLocalInfo.time ) {
+				tacticalActionIgnoreTime = botWorld->gameLocalInfo.time + 1000;
+			}
+
+			if ( dist > Square( maxDistToPlayer ) || botInfo->onLadder ) {
+				Bot_SetupMove( vec3_zero, ltgTarget, ACTION_NULL );
+				
+				if ( MoveIsInvalid() ) {
+					ltgUseShield = false;
+					return true;
+				}
+
+				ltgPauseTime = botWorld->gameLocalInfo.time + 1000;
+
+				Bot_MoveAlongPath( RUN );
+				return true;
+			}
+
+			if ( hasShield ) { //mal: if we've dropped a shield in front of him, drop one behind him to form a bubble of protection.
+				Bot_LookAtLocation( ltgOrigin, SMOOTH_TURN );
+			} else {
+				idVec3 loc = playerInfo.viewOrigin;
+				loc.z += 32.0f;
+				Bot_LookAtLocation( loc, SMOOTH_TURN );
+
+				if ( ltgOrigin.IsZero() ) {
+					ltgOrigin = playerInfo.origin;
+					vec = playerInfo.origin - botInfo->origin;
+					float distToPlayer = vec.LengthFast();
+					float zValue = ltgOrigin.z;
+					ltgOrigin += ( -( distToPlayer ) * playerInfo.viewAxis[ 0 ] );
+					ltgOrigin.z = ( zValue - 32.0f );
+				}
+			}
+
+			botIdealWeapNum = SHIELD_GUN;
+			botIdealWeapSlot = NO_WEAPON;
+
+			ignoreWeapChange = true;
+
+			ltgTimer = 0; //mal: we're chasing our friend, so reset the timer.
+			ltgReached = false;
+			ltgTryMoveCounter = 0;
+			ResetRandomLook();
+	
+			if ( botInfo->weapInfo.weapon == SHIELD_GUN && ltgPauseTime < botWorld->gameLocalInfo.time ) {
+				botUcmd->botCmds.attack = true;
+			}
+
+			return true;
+		}
+	} else if ( ltgUseSmoke && botInfo->classType == COVERTOPS && botInfo->team == GDF && ClassWeaponCharged( SMOKE_NADE ) ) {
+		if ( playerInfo.xySpeed < WALKING_SPEED && ( playerInfo.weapInfo.weapon == PLIERS || playerInfo.weapInfo.weapon == HACK_TOOL || playerInfo.weapInfo.weapon == HE_CHARGE ) ) {
+			
+			if ( dist > Square( 350.0f ) || botInfo->onLadder ) {
+				Bot_SetupMove( vec3_zero, ltgTarget, ACTION_NULL );
+
+				if ( MoveIsInvalid() ) {
+					ltgUseSmoke = false;
+					return true;
+				}
+
+				Bot_MoveAlongPath( RUN );
+				return true;
+			}
+
+			Bot_LookAtEntity( ltgTarget, SMOOTH_TURN );
+
+			botIdealWeapNum = SMOKE_NADE;
+			botIdealWeapSlot = NO_WEAPON;	
+
+			ignoreWeapChange = true;
+
+			ltgTimer = 0; //mal: we're chasing our friend, so reset the timer.
+			ltgReached = false;
+			ltgTryMoveCounter = 0;
+			ResetRandomLook();
+
+			if ( botInfo->weapInfo.weapon == SMOKE_NADE && botThreadData.random.RandomInt( 100 ) > 50 ) {
+				botUcmd->botCmds.attack = true;
+			}
+
+			return true;
+		}
+	}
+
 	if ( enemy == -1 ) {
-        attacker = CheckClientAttacker( ltgTarget );
+        attacker = CheckClientAttacker( ltgTarget, 1 );
 
 		if ( attacker != -1 ) {
-            ltgTime = botWorld->gameLocalInfo.time + 15000;
-			ROOT_AI_NODE = &idBotAI::Run_LTG_Node;
-			LTG_AI_SUB_NODE = &idBotAI::Enter_LTG_HuntGoal;
-			ltgTarget = attacker;
-			ltgTargetSpawnID = botWorld->clientInfo[ attacker ].spawnID;
+			int travelTime;
+			const clientInfo_t& attackerInfo = botWorld->clientInfo[ attacker ];
+			if ( Bot_LocationIsReachable( false, attackerInfo.origin, travelTime ) ) {
+		        aiState = LTG;
+				ltgType = HUNT_GOAL;
+				ltgTime = botWorld->gameLocalInfo.time + 15000;
+				ROOT_AI_NODE = &idBotAI::Run_LTG_Node;
+				LTG_AI_SUB_NODE = &idBotAI::Enter_LTG_HuntGoal;
+				ltgTarget = attacker;
+				ltgTargetSpawnID = attackerInfo.spawnID;
+			}
 		}
 	}
 
@@ -190,27 +316,47 @@ bool idBotAI::LTG_FollowMate() {
 		return true;
 	}
 
-	if ( dist < Square( 125.0f ) ) { // too close, back up some!  
-		if ( Bot_CanMove( BACK, 100.0f, true )) {
+	if ( dist < Square( 50.0f ) && ltgTryMoveCounter < MAX_MOVE_ATTEMPTS ) { // too close, back up some!  
+		ltgTryMoveCounter++;
+		if ( Bot_CanMove( BACK, 100.0f, true ) ) {
 			Bot_MoveToGoal( botCanMoveGoal, vec3_zero, defaultMove, NULLMOVETYPE );
-		} else if ( Bot_CanMove( RIGHT, 100.0f, true )) {
+		} else if ( Bot_CanMove( RIGHT, 100.0f, true ) ) {
 			Bot_MoveToGoal( botCanMoveGoal, vec3_zero, defaultMove, NULLMOVETYPE );
-		} else if ( Bot_CanMove( LEFT, 100.0f, true )) {
+		} else if ( Bot_CanMove( LEFT, 100.0f, true ) ) {
 			Bot_MoveToGoal( botCanMoveGoal, vec3_zero, defaultMove, NULLMOVETYPE );
 		}
 
 		Bot_LookAtEntity( ltgTarget, SMOOTH_TURN );
 		ltgTimer = 0; //mal: we're retreating from our friend, so reset the timer.
 		ltgReached = false;
+		ltgMoveTime = botWorld->gameLocalInfo.time + 1000;
+
+		if ( ltgDist < maxDist ) {
+			ltgDist += 5.0f;
+		}
 		return true;
 	}
 
-	int blockedClient = CheckBotBlockingOtherClients( ltgTarget );
+	int blockedClient = Bot_CheckBlockingOtherClients( ltgTarget );
 
-	if ( blockedClient != -1 ) {
+	if ( blockedClient != -1 && ltgTryMoveCounter < MAX_MOVE_ATTEMPTS ) {
+		ltgTryMoveCounter++;
+		if ( Bot_CanMove( BACK, 100.0f, true ) ) {
+			Bot_MoveToGoal( botCanMoveGoal, vec3_zero, defaultMove, NULLMOVETYPE );
+		} else if ( Bot_CanMove( RIGHT, 100.0f, true ) ) {
+			Bot_MoveToGoal( botCanMoveGoal, vec3_zero, defaultMove, NULLMOVETYPE );
+		} else if ( Bot_CanMove( LEFT, 100.0f, true ) ) {
+			Bot_MoveToGoal( botCanMoveGoal, vec3_zero, defaultMove, NULLMOVETYPE );
+		}
+
+		Bot_LookAtEntity( blockedClient, SMOOTH_TURN );
 		ltgTimer = 0;
-		Bot_MoveAwayFromClient( blockedClient );
 		ltgReached = false;
+		ltgMoveTime = botWorld->gameLocalInfo.time + 1000;
+		if ( ltgDist < maxDist ) {
+			ltgDist += 5.0f;
+		}
+
 		return true;
 	}
 
@@ -234,7 +380,8 @@ bool idBotAI::LTG_FollowMate() {
 		ltgMoveDir = NULL_DIR;
 	}
 
-	if ( blockingTeammateCounter > moveAwayFromClientCrossHairCounter ) {
+	if ( blockingTeammateCounter > moveAwayFromClientCrossHairCounter && ltgTryMoveCounter < MAX_MOVE_ATTEMPTS ) {
+		ltgTryMoveCounter++;
 		if ( ltgMoveDir == NULL_DIR ) {
 			if ( botThreadData.random.RandomInt( 100 ) > 50 ) {
 				if ( Bot_CanMove( RIGHT, 100.0f, true ) ) {
@@ -266,10 +413,11 @@ bool idBotAI::LTG_FollowMate() {
 		}
 
 		Bot_LookAtEntity( ltgTarget, SMOOTH_TURN ); //mal: look at our target for a bit when first reached.
-		Bot_MoveToGoal( vec3_zero, vec3_zero, NULLMOVEFLAG, botMoveType );
+		Bot_MoveToGoal( vec3_zero, vec3_zero, defaultMove, botMoveType );
 
 		ltgTimer = 0;
 		ltgReached = false;
+		ltgMoveTime = botWorld->gameLocalInfo.time + 1000;
 		return true;
 	}
 
@@ -543,9 +691,6 @@ bool idBotAI::LTG_ErrorThink() {
 	}
 
 	Bot_ResetState( true, true );
-
-	CheckBotBlockingOtherClients( -1 );
-
 	return true;
 }
 
@@ -657,6 +802,10 @@ bool idBotAI::Enter_LTG_PlantGoal() {
 		Bot_AddDelayedChat( botNum, GENERIC_PLANT, 3 );
 	}
 
+	ltgMoveTime = 0;
+
+	ltgTryMoveCounter = 0;
+
 	lastAINode = "Plant Goal";
 	
 	return true;
@@ -709,6 +858,10 @@ bool idBotAI::LTG_PlantGoal() {
 		return true;
 	}
 
+	if ( ltgMoveTime < botWorld->gameLocalInfo.time ) {
+		ltgTryMoveCounter = 0;
+	}
+
 	vec = botThreadData.botActions[ actionNum ]->origin - botInfo->origin;
 	dist = vec.LengthSqr();
 
@@ -727,10 +880,20 @@ bool idBotAI::LTG_PlantGoal() {
 
 			Bot_MoveToGoal( vec3_zero, vec3_zero, CROUCH, NULLMOVETYPE );
 
-			int blockedClient = CheckBotBlockingOtherClients( -1 ); //mal: try not to block other clients who may also want to plant, or get by.
+			int blockedClient = Bot_CheckBlockingOtherClients( -1 ); //mal: try not to block other clients who may also want to plant, or get by.
 
-			if ( blockedClient != -1 ) {
-				Bot_MoveAwayFromClient( blockedClient );
+			if ( blockedClient != -1 && ltgTryMoveCounter < MAX_MOVE_ATTEMPTS ) {
+				ltgTryMoveCounter++;
+				if ( Bot_CanMove( BACK, 100.0f, true ) ) {
+					Bot_MoveToGoal( botCanMoveGoal, vec3_zero, CROUCH, NULLMOVETYPE );
+				} else if ( Bot_CanMove( RIGHT, 100.0f, true ) ) {
+					Bot_MoveToGoal( botCanMoveGoal, vec3_zero, CROUCH, NULLMOVETYPE );
+				} else if ( Bot_CanMove( LEFT, 100.0f, true ) ) {
+					Bot_MoveToGoal( botCanMoveGoal, vec3_zero, CROUCH, NULLMOVETYPE );
+				}
+				
+				Bot_LookAtEntity( blockedClient, SMOOTH_TURN );
+				ltgMoveTime = botWorld->gameLocalInfo.time + 1000;
 			}
 
 			return true;
@@ -766,6 +929,10 @@ The bot has an objective on the map that he wants to hack.
 */
 bool idBotAI::Enter_LTG_HackGoal() {
 
+	if ( botInfo->weapInfo.primaryWeapon == SNIPERRIFLE ) {
+		botUcmd->botCmds.switchAwayFromSniperRifle = true;
+	}
+
 	LTG_AI_SUB_NODE = &idBotAI::LTG_HackGoal;
 	
 	lastAINode = "Hack Goal";
@@ -779,7 +946,6 @@ idBotAI_LTG::LTG_HackGoal
 ================
 */
 bool idBotAI::LTG_HackGoal() {
-
 	int vehicleNum;
 	float dist;
 	idVec3 vec;
@@ -933,6 +1099,8 @@ bool idBotAI::Enter_LTG_HuntGoal() {
 
 	ltgType = HUNT_GOAL;
 
+	routeNode = NULL;
+
 	if ( ltgTime > 30000 ) { //mal: if we've decided to do this for a while, push it onto the stack.
         PushAINodeOntoStack( -1, -1, actionNum, DEFAULT_LTG_TIME, false, false );
 	}
@@ -956,10 +1124,12 @@ idBotAI_LTG::LTG_HuntGoal
 bool idBotAI::LTG_HuntGoal() {
 	float dist;
 	idVec3 vec;
+	int ignoreHuntGoalClientTime = 5000;
 
 	if ( ltgTime < botWorld->gameLocalInfo.time ) { //mal: times up - leave!
 		Bot_ClearAIStack();
 		Bot_ExitAINode();
+		Bot_IgnoreClient( ltgTarget, ignoreHuntGoalClientTime );
 		fastAwareness = false;
 		return false;
 	}
@@ -967,6 +1137,7 @@ bool idBotAI::LTG_HuntGoal() {
 	if ( !ClientIsValid( ltgTarget, ltgTargetSpawnID ) ) {
 		Bot_ClearAIStack();
 		Bot_ExitAINode();
+		Bot_IgnoreClient( ltgTarget, ignoreHuntGoalClientTime );
 		fastAwareness = false;
 		return false;
 	}
@@ -986,12 +1157,13 @@ bool idBotAI::LTG_HuntGoal() {
 	vec = playerInfo.origin - botInfo->origin;
 	dist = vec.LengthSqr();
 
-	if ( dist > Square( 50.0f ) || botInfo->onLadder ) {
+	if ( dist > Square( 50.0f ) || botInfo->onLadder || botInfo->inWater ) {
 		Bot_SetupMove( playerInfo.origin, -1, ACTION_NULL );
 
 		if ( MoveIsInvalid() ) {
 			Bot_ClearAIStack();
 			Bot_ExitAINode();
+			Bot_IgnoreClient( ltgTarget, ignoreHuntGoalClientTime );
 			fastAwareness = false;
 			return false;
 		}
@@ -1002,6 +1174,7 @@ bool idBotAI::LTG_HuntGoal() {
 
 	Bot_ClearAIStack();
 	Bot_ExitAINode(); //mal: if we get this far, and still no enemy, somethings goofy, so just leave.
+	Bot_IgnoreClient( ltgTarget, ignoreHuntGoalClientTime );
 	fastAwareness = false;
 
 	return true;
@@ -1033,7 +1206,6 @@ idBotAI_LTG::LTG_MineGoal
 ================
 */
 bool idBotAI::LTG_MineGoal() {
-
 	int vehicleNum;
 	float dist;
 	idVec3 vec;
@@ -1212,6 +1384,8 @@ bool idBotAI::Enter_LTG_InvestigateGoal() {
 	
 	stayInPosition = false;
 
+	routeNode = NULL;
+
 //mal: higher skill bots are more likely to respond to heard sounds, and go after the person making them, then lower skilled bots.
 	if ( botThreadData.GetBotSkill() == BOT_SKILL_EASY ) {
 		stayInPosition = true;
@@ -1270,7 +1444,7 @@ bool idBotAI::LTG_InvestigateGoal() {
 
 	matesInArea = ClientsInArea( botNum, botThreadData.botActions[ actionNum ]->GetActionOrigin(), 350.0f, botInfo->team, NOCLASS, false, false, false, false, false );
 
-	if ( matesInArea > 1 ) {
+	if ( matesInArea > MIN_NUM_INVESTIGATE_CLIENTS ) {
 		Bot_ExitAINode();
 		return false;;
 	} //mal: already some ppl there, so lets do something else.
@@ -1278,7 +1452,7 @@ bool idBotAI::LTG_InvestigateGoal() {
 	vec = botThreadData.botActions[ actionNum ]->origin - botInfo->origin;
 	dist = vec.LengthSqr();
 
-	if ( dist > Square( 100.0f ) || botInfo->onLadder ) { //mal: get REALLY close to the action in question, so we can see thru smoke, other obstalces that may be in the way.
+	if ( dist > Square( CLOSE_ENOUGH_TO_INVESTIGATE_GOAL_RANGE ) || botInfo->onLadder ) { //mal: get REALLY close to the action in question, so we can see thru smoke, other obstalces that may be in the way.
 
 		Bot_SetupMove( vec3_zero, -1, actionNum );
 
@@ -1301,7 +1475,15 @@ bool idBotAI::LTG_InvestigateGoal() {
 			nbgTime = botWorld->gameLocalInfo.time + 30000; //mal: if we're camping at an action we investigated, only do so for 30 secs ( bomb will be defused/blow by then anyhow ).
 		}
 	} else {
-        Bot_ExitAINode(); //mal: reached our goal, so just leave.
+		int criticalEnemiesInArea = ClientsInArea( botNum, botThreadData.botActions[ actionNum ]->GetActionOrigin(), CRITICAL_ENEMY_CLOSE_TO_GOAL_RANGE, ( botInfo->team == GDF ) ? STROGG : GDF, TeamCriticalClass( ( botInfo->team == GDF ) ? STROGG : GDF ), false, false, false, false, false );
+
+		if ( criticalEnemiesInArea == 0 ) {
+			Bot_ExitAINode(); //mal: reached our goal, so just leave.
+		} else {
+			ROOT_AI_NODE = &idBotAI::Run_NBG_Node;
+			NBG_AI_SUB_NODE = &idBotAI::Enter_NBG_Camp;
+			nbgTime = botWorld->gameLocalInfo.time + 5000; 
+		}
 	}
 
 	return false;
@@ -1387,7 +1569,7 @@ bool idBotAI::LTG_UseVehicle() {
 						return false;
 					}
 
-					Bot_MoveAlongPath( SPRINT );
+					Bot_MoveAlongPath( Bot_ShouldStrafeJump( ltgOrigin ) );
 					return true;
 				} else {
 					if ( botThreadData.random.RandomInt( 100 ) > 90 ) {
@@ -1444,12 +1626,12 @@ bool idBotAI::LTG_UseVehicle() {
 
 	dist = vec.LengthSqr();
 
-	Bot_MoveAlongPath( ( dist > Square( 100.0f ) ) ? SPRINT : RUN );
+	Bot_MoveAlongPath( ( dist > Square( 100.0f ) ) ? Bot_ShouldStrafeJump( goalOrigin ) : RUN );
 
 //mal: if we're fairly close, start sending the vehicle use cmd
 	if ( dist < Square( 350.0f ) ) {
+		Bot_LookAtLocation( vehicleInfo.origin, SMOOTH_TURN );
 		if ( botThreadData.random.RandomInt( 100 ) > 50 ) {
-			Bot_LookAtLocation( vehicleInfo.origin, SMOOTH_TURN );
             botUcmd->botCmds.enterVehicle = true;
 		}
 	}
@@ -1535,6 +1717,11 @@ bool idBotAI::LTG_FixMCP() {
 	}
 
 	if ( vehicleInfo.inWater || !vehicleInfo.inPlayZone || vehicleInfo.areaNum == 0 || vehicleInfo.isFlipped ) {
+		Bot_ExitAINode();
+		return false;
+	}
+
+	if ( vehicleInfo.health > ( vehicleInfo.maxHealth / 2 ) && vehicleInfo.driverEntNum == -1 ) { //mal: get the MCP to the outpost once its ready to move!
 		Bot_ExitAINode();
 		return false;
 	}
@@ -1725,12 +1912,6 @@ bool idBotAI::Enter_LTG_DeliverGoal() {
 
 	ltgReached = false;
 
-	if ( botThreadData.random.RandomInt( 100 ) > 50 ) {
-		ltgPosture = CROUCH;
-	} else {
-		ltgPosture = RUN;
-	}
-	
 	lastAINode = "Deliver Goal";
 
 	return true;
@@ -1794,18 +1975,10 @@ bool idBotAI::LTG_DeliverGoal() {
 		return true;
 	}
 
-	if ( ltgReached == false ) {
-		int enemiesInArea = ClientsInArea( botNum, botInfo->origin, 1500.0f, ( botInfo->team == GDF ) ? STROGG : GDF, NOCLASS, false, false, false, true, true );
-
-		if ( enemiesInArea > 1 ) { //mal: if lots of enemies in area, may be wiser to try to take cover.
-			ltgPosture = CROUCH;
-		}
-	}
-
 //mal: the deliver point may have a delay, in which case we will wait and look around for enemies while our goal is "transmitted".
 	Bot_LookAtLocation( botThreadData.botActions[ actionNum ]->actionBBox.GetCenter(), SMOOTH_TURN );
 	ltgReached = true;
-	Bot_MoveToGoal( vec3_zero, vec3_zero, ltgPosture, NULLMOVETYPE );
+	Bot_MoveToGoal( vec3_zero, vec3_zero, WALK, NULLMOVETYPE );
 	botUcmd->botCmds.activate = true;
 	botUcmd->botCmds.activateHeld = true;
 	return true;
@@ -1894,7 +2067,7 @@ bool idBotAI::LTG_StealGoal() {
 
 	if ( MoveIsInvalid() ) {
 		Bot_ExitAINode();
-		Bot_ClearAIStack();
+		Bot_IgnoreAction( actionNum, ACTION_IGNORE_TIME ); //mal: no valid path to this action for some reason - ignore it for a while
 		return false;
 	}
 
@@ -1952,7 +2125,7 @@ bool idBotAI::LTG_RecoverDroppedGoal() {
 
 	if ( dist > Square( 15.0f ) || botInfo->onLadder ) {
 
-		Bot_SetupMove( botWorld->botGoalInfo.carryableObjs[ ltgTarget ].origin, -1, ACTION_NULL );
+		Bot_SetupMove( botWorld->botGoalInfo.carryableObjs[ ltgTarget ].origin, -1, ACTION_NULL, botWorld->botGoalInfo.carryableObjs[ ltgTarget ].areaNum );
 
 		if ( MoveIsInvalid() ) {
 			Bot_ExitAINode();
@@ -2052,6 +2225,13 @@ bool idBotAI::LTG_DeployableGoal() {
 	vec = botThreadData.botActions[ actionNum ]->origin - botInfo->origin;
 	dist = vec.LengthSqr();
 
+	deployableInfo_t deployable;
+
+	if ( GetDeployableAtAction( actionNum, deployable ) ) {
+		botUcmd->actionEntityNum = deployable.entNum; //mal: let the game and obstacle avoidance know we want to interact with this entity.
+		botUcmd->actionEntitySpawnID = deployable.spawnID;
+	}
+
 	if ( dist > Square( botThreadData.botActions[ actionNum ]->radius ) || botInfo->onLadder ) {
 
 		Bot_SetupMove( vec3_zero, -1, actionNum );
@@ -2090,6 +2270,8 @@ bool idBotAI::Enter_LTG_DestroyDeployable() {
 
 	ltgReachedTarget = false;
 
+	rocketLauncherLockFailedTime = 0;
+
 	ltgMoveDir = ( botThreadData.random.RandomInt( 100 ) > 50 ) ? RIGHT : LEFT;
 
 	lastAINode = "Destroying Deployable";
@@ -2112,6 +2294,7 @@ bool idBotAI::LTG_DestroyDeployable() {
 	idVec3 vec;
 
 	if ( ltgTime < botWorld->gameLocalInfo.time ) { //mal: times up - leave!
+		Bot_IgnoreDeployable( deployableInfo.entNum, 15000 );
 		Bot_ExitAINode();
 		return false;
 	}
@@ -2135,12 +2318,14 @@ bool idBotAI::LTG_DestroyDeployable() {
 	}
 
 	if ( ( deployableInfo.disabled && botInfo->classType == COVERTOPS ) || deployableInfo.health < ( deployableInfo.maxHealth / DEPLOYABLE_DISABLED_PERCENT ) ) { //mal: its dead ( enough ).
+		Bot_IgnoreDeployable( deployableInfo.entNum, 15000 );
 		Bot_ExitAINode();
 		return false;
 	}
 
 	if ( !Bot_HasExplosives( false ) ) {
 #ifdef PACKS_HAVE_NO_NADES
+		Bot_IgnoreDeployable( deployableInfo.entNum, 15000 );
 		Bot_ExitAINode();
 		return false;
 #else 
@@ -2189,6 +2374,7 @@ bool idBotAI::LTG_DestroyDeployable() {
 		
 		if ( MoveIsInvalid() ) {
 			Bot_ExitAINode();
+			Bot_IgnoreDeployable( deployableInfo.entNum, 15000 );
 			return false;
 		}
 
@@ -2267,6 +2453,7 @@ bool idBotAI::LTG_DestroyDeployable() {
 			Bot_SetupMove( deployableOrigin, -1, ACTION_NULL );
 		
 			if ( MoveIsInvalid() ) {
+				Bot_IgnoreDeployable( deployableInfo.entNum, 15000 );
 				Bot_ExitAINode();
 				return false;
 			}
@@ -2286,6 +2473,7 @@ bool idBotAI::LTG_DestroyDeployable() {
 				actionNum = Bot_FindNearbySafeActionToMoveToward( deployableOrigin, THIRD_EYE_SAFE_RANGE );
 
 				if ( actionNum == ACTION_NULL ) { //mal: OH NOES!1 Panic and lets get out of here.
+					Bot_IgnoreDeployable( deployableInfo.entNum, 15000 );
 					Bot_ExitAINode();
 					return false;
 				}
@@ -2301,6 +2489,7 @@ bool idBotAI::LTG_DestroyDeployable() {
 				Bot_SetupMove( botThreadData.botActions[ actionNum ]->GetActionOrigin(), -1, ACTION_NULL );
 		
 				if ( MoveIsInvalid() ) {
+					Bot_IgnoreDeployable( deployableInfo.entNum, 15000 );
 					Bot_ExitAINode();
 					return false;
 				}
@@ -2329,14 +2518,22 @@ bool idBotAI::LTG_DestroyDeployable() {
 		}
 
 		if ( ltgReached == false ) {
+			rocketLauncherLockFailedTime = botWorld->gameLocalInfo.time + 5000;
 			ltgReached = true;
 		} else {
 			botUcmd->botCmds.altAttackOn = true;
 		}
 
+		if ( rocketLauncherLockFailedTime < botWorld->gameLocalInfo.time && botInfo->targetLockEntNum != deployableInfo.entNum ) { //mal: can't get a lock for some reason - ignore this deployable.
+			Bot_IgnoreDeployable( deployableInfo.entNum, 15000 );
+			Bot_ExitAINode();
+			return false;
+		}
+
 		if ( botInfo->targetLocked != false ) {
 			if ( botInfo->targetLockEntNum == deployableInfo.entNum ) {
 				botUcmd->botCmds.attack = true;
+				rocketLauncherLockFailedTime = botWorld->gameLocalInfo.time + 10000;
 			} else {
 				botUcmd->botCmds.altAttackOn = false;
 				ltgReached = false;
@@ -2355,6 +2552,7 @@ bool idBotAI::LTG_DestroyDeployable() {
 			Bot_SetupMove( vec, -1, ACTION_NULL );
 
 			if ( MoveIsInvalid() ) {
+				Bot_IgnoreDeployable( deployableInfo.entNum, 15000 );
 				Bot_ExitAINode();
 				return false;
 			}
@@ -2919,6 +3117,7 @@ idBotAI_LTG::LTG_EnterVehicleGoal
 */
 bool idBotAI::LTG_EnterVehicleGoal() {
 	if ( ltgTime < botWorld->gameLocalInfo.time ) { //mal: times up - leave!
+		Bot_IgnoreVehicle( ltgTarget, 15000 );
 		Bot_ExitAINode();
 		return false;
 	}
@@ -2927,6 +3126,7 @@ bool idBotAI::LTG_EnterVehicleGoal() {
 	GetVehicleInfo( ltgTarget, vehicleInfo );
 
 	if ( vehicleInfo.entNum == 0 || !VehicleIsValid( vehicleInfo.entNum ) ) {
+		Bot_IgnoreVehicle( vehicleInfo.entNum, 15000 );
 		Bot_ExitAINode();
 		return false;
 	}
@@ -2940,23 +3140,772 @@ bool idBotAI::LTG_EnterVehicleGoal() {
 	Bot_SetupMove( vehicleOrigin, -1, ACTION_NULL );
 
 	if ( MoveIsInvalid() ) {
+		Bot_IgnoreVehicle( vehicleInfo.entNum, 15000 );
+		Bot_ExitAINode();
 		return false;
 	}
 
-	Bot_MoveAlongPath( SPRINT );
+	Bot_MoveAlongPath( Bot_ShouldStrafeJump( vehicleOrigin ) );
 
 	idVec3 vec = vehicleInfo.origin - botInfo->origin;
 
 //mal: if we're fairly close, start sending the vehicle use cmd
 	if ( vec.LengthSqr() < Square( 350.0f ) ) {
+		Bot_LookAtLocation( vehicleInfo.origin, SMOOTH_TURN );
 		if ( botThreadData.random.RandomInt( 100 ) > 50 ) {
-			Bot_LookAtLocation( vehicleInfo.origin, SMOOTH_TURN );
             botUcmd->botCmds.enterVehicle = true;
 		}
 	}
 	return true;
 }
 
+/*
+================
+idBotAI_LTG::Enter_LTG_ActorEscortPlayerToGoal
+================
+*/
+bool idBotAI::Enter_LTG_ActorEscortPlayerToGoal() {
+
+	LTG_AI_SUB_NODE = &idBotAI::LTG_ActorEscortPlayerToGoal;
+
+	ltgType = ACTOR_GOAL;
+
+	lastAINode = "Actor Goal";
+
+	ltgReached = false;
+
+	ltgTimer = 0;
+
+	ltgCounter = 0;
+
+	ltgTime = 0;
+
+	ltgReachedTarget = false;
+
+	if ( botThreadData.actorMissionInfo.hasBriefedPlayer ) {
+		ltgChat = false;
+	} else {
+		ltgChat = true;
+
+		if ( !botThreadData.actorMissionInfo.hasEnteredActorNode ) {
+			ltgCounter = botWorld->gameLocalInfo.time + botThreadData.actorMissionInfo.goalPauseTime;
+			botUcmd->botCmds.actorHasEnteredActorNode = true;
+		}
+	}
+
+	ltgMoveTime = 0;
+
+	return true;
+}
+
+/*
+================
+idBotAI_LTG::LTG_ActorEscortPlayerToGoal
+================
+*/
+bool idBotAI::LTG_ActorEscortPlayerToGoal() {
+	if ( !Bot_CheckActionIsValid( actionNum ) ) {
+		Bot_ExitAINode();
+		return false;	
+	}
+
+	if ( botThreadData.botActions[ actionNum ]->GetObjForTeam( botInfo->team ) == ACTION_DENY_SPAWNPOINT && botThreadData.botActions[ actionNum ]->GetTeamOwner() == NOTEAM ) {
+		Bot_ExitAINode();
+		return false;
+	}
+
+	if ( botThreadData.botActions[ actionNum ]->GetObjForTeam( botInfo->team ) == ACTION_FORWARD_SPAWN && botThreadData.botActions[ actionNum ]->GetTeamOwner() == botInfo->team ) {
+		Bot_ExitAINode();
+		return false;
+	}
+
+	if ( !ClientIsValid( ltgTarget, ltgTargetSpawnID ) ) {
+		Bot_ExitAINode();
+		botUcmd->botCmds.actorSurrenderStatus = true;
+		return false;
+	}
+
+	if ( ltgCounter > botWorld->gameLocalInfo.time ) {
+		if ( botThreadData.random.RandomInt( 100 ) > 94 ) {
+			idVec3 vec;
+			if ( Bot_RandomLook( vec ) )  {
+				Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot. 
+			}
+		}
+		return true;
+	}
+
+	const clientInfo_t& player = botWorld->clientInfo[ ltgTarget ];
+
+	if ( ltgTime > botWorld->gameLocalInfo.time ) {
+		Bot_LookAtLocation( player.viewOrigin, SMOOTH_TURN );
+		return true;
+	}	
+
+	if ( player.proxyInfo.entNum != CLIENT_HAS_NO_VEHICLE ) {
+		Bot_ExitAINode();
+		botUcmd->botCmds.actorSurrenderStatus = true;
+		return false;
+	}
+
+	if ( player.inLimbo || ( !player.hasGroundContact && player.invulnerableEndTime > botWorld->gameLocalInfo.time ) ) { //mal: if our player gets killed, don't do anything til he respawns.
+		if ( botThreadData.random.RandomInt( 100 ) > 95 ) {
+			idVec3 vec;
+			Bot_RandomLook( vec );
+			Bot_LookAtLocation( vec, SMOOTH_TURN );
+		}
+
+		ltgReached = false;
+		Bot_MoveToGoal( vec3_zero, vec3_zero, CROUCH, NULLMOVETYPE );
+		return true;
+	}
+
+	if ( player.health <= 0 || ( player.revived && player.spawnTime + 1000 > botWorld->gameLocalInfo.time ) ) { //mal: if our player died, or was just revived, just exit for now.
+		return true;
+	}
+
+	idVec3 vec = player.origin - botInfo->origin;
+	vec.z = 0.0f;
+	float botDistToPlayerSqr = vec.LengthSqr();
+
+	vec = botThreadData.botActions[ actionNum ]->origin - player.origin;
+	vec.z = 0.0f;
+	float playerDistToGoalSqr = vec.LengthSqr();
+
+	vec = botThreadData.botActions[ actionNum ]->origin - botInfo->origin;
+	vec.z = 0.0f;
+	float botDistToGoalSqr = vec.LengthSqr();
+
+	if ( botThreadData.botActions[ actionNum ]->GetObjForTeam( botInfo->team ) == ACTION_HE_CHARGE && ClientHasChargeInWorld( ltgTarget, true, actionNum ) ) {
+		if ( botDistToPlayerSqr > Square( 175.0f ) ||  botInfo->onLadder ) {
+			Bot_SetupMove( vec3_zero, ltgTarget, ACTION_NULL );
+
+			if ( MoveIsInvalid() ) {
+				Bot_ExitAINode();
+				return false;
+			}
+
+			Bot_MoveAlongPath( SPRINT );
+			return true;
+		}
+
+		
+		botMoveFlags_t defaultMove = NULLMOVEFLAG;
+
+		if ( player.posture == IS_CROUCHED  ) {
+			defaultMove = CROUCH;
+		}
+
+		Bot_MoveToGoal( vec3_zero, vec3_zero, defaultMove, NULLMOVETYPE );
+
+		if ( botThreadData.random.RandomInt( 100 ) > 94 ) {
+			if ( Bot_RandomLook( vec ) )  {
+				Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot.
+			}
+		}
+		return true;
+	} //mal: cover our player while we wait down the charge counter.
+
+	if ( botThreadData.botActions[ actionNum ]->GetObjForTeam( botInfo->team ) == ACTION_HE_CHARGE && ClientHasChargeInWorld( ltgTarget, false, actionNum, true ) ) {
+		plantedChargeInfo_t bombInfo;
+		FindChargeInWorld( actionNum, bombInfo, ARM );
+
+		vec = bombInfo.origin - player.origin;
+
+		if ( vec.LengthSqr() > Square( 200.0f ) && botThreadData.random.RandomInt( 1000 ) > 900 ) {
+			Bot_AddDelayedChat( botNum, GOT_YOUR_BACK, 1 ); //mal: stay away from that bomb!
+		}
+	} //mal: woah buddy! Get back there and arm your charge!
+
+	if ( ltgReached == false ) {
+		if ( ltgMoveTime < botWorld->gameLocalInfo.time && ( botDistToPlayerSqr > Square( 1000.0f ) || ltgReachedTarget == false || botInfo->onLadder ) ) {
+			Bot_SetupMove( vec3_zero, ltgTarget, ACTION_NULL );
+
+			if ( MoveIsInvalid() ) {
+				Bot_ExitAINode();
+				return false;
+			}
+
+			ltgMoveTime = 0;
+
+			if ( ltgReachedTarget == false ) { // was 150 below
+				if ( botDistToPlayerSqr < Square( 200.0f ) && player.hasGroundContact && botThreadData.Nav_IsDirectPath( AAS_PLAYER, botInfo->team, botInfo->areaNum, botInfo->origin, player.origin ) ) {
+					ltgReachedTarget = true;
+					if ( ltgChat == true ) {
+						botUcmd->botCmds.actorBriefedPlayer = true; //mal: let the game know we've briefed the player, so we don't do it again.
+						ltgPauseTime = botWorld->gameLocalInfo.time + ( 1000 * botThreadData.actorMissionInfo.chatPauseTime );
+						timeTilAttackEnemy = -1;
+						enemy = -1;
+					} else {
+
+					}
+				}
+			}
+
+			Bot_MoveAlongPath( ( botDistToPlayerSqr < Square( 250.0f ) && player.xySpeed < RUNNING_SPEED ) ? RUN : SPRINT );
+			return true;
+		} else if ( ltgMoveTime > botWorld->gameLocalInfo.time || ( botDistToPlayerSqr > Square( 900.0f ) && playerDistToGoalSqr > botDistToGoalSqr ) ) {
+			if ( botThreadData.random.RandomInt( 100 ) > 98 ) {
+			}
+			Bot_LookAtLocation( player.viewOrigin, SMOOTH_TURN );
+
+			if ( ltgMoveTime == 0 ) {
+				ltgMoveTime = botWorld->gameLocalInfo.time + 1500;
+			}
+			return true;
+		}
+	}
+
+	if ( ltgPauseTime > botWorld->gameLocalInfo.time ) {
+		Bot_LookAtLocation( player.viewOrigin, SMOOTH_TURN );
+		botUcmd->botCmds.actorIsBriefingPlayer = true;
+		return true;
+	}
+
+	if ( botDistToGoalSqr > Square( 500.0f ) || botInfo->onLadder ) {	// is 500 too close, or too far?
+
+		Bot_SetupMove( vec3_zero, -1, actionNum );
+
+		if ( MoveIsInvalid() ) {
+			Bot_ExitAINode();
+			return false;
+		}
+
+//		botMoveFlags_t botMoveFlags = RUN;
+
+		botMoveFlags_t botMoveFlags = SPRINT;
+
+		if ( playerDistToGoalSqr < botDistToGoalSqr ) {
+			botMoveFlags = SPRINT;
+		}
+
+		ltgMoveTime = 0;
+
+
+//		if ( botDistToPlayerSqr > Square( 500.0f ) && playerDistToGoalSqr > botDistToGoalSqr ) {
+//			botMoveFlags = RUN;
+//		} // else if ( ( botDistToPlayerSqr < Square( 350.0f ) && player.xySpeed >= RUNNING_SPEED ) || playerDistToGoalSqr < botDistToGoalSqr ) {
+//			botMoveFlags = SPRINT;
+//		}
+
+		Bot_MoveAlongPath( botMoveFlags );
+		return true;
+	}
+
+	//mal: from here on down, we've reached the goal, and are merely defending the player while he does his work....
+
+	int playerAttacker = CheckClientAttacker( ltgTarget, 3 ); //mal: if our friend is under attack, move towards him to protect him.
+
+	if ( playerAttacker != -1 && botDistToPlayerSqr > Square( 75.0f ) ) {
+		Bot_SetupMove( vec3_zero, ltgTarget, ACTION_NULL );
+		
+		if ( MoveIsInvalid() ) {
+			Bot_ExitAINode();
+			return false;
+		}
+
+		Bot_MoveAlongPath( RUN );
+		return true;
+	}
+
+	if ( ltgReached == false ) {
+		ltgReached = true;
+		ltgTimer = botWorld->gameLocalInfo.time + 5000;
+	}
+
+	if ( ltgTimer > botWorld->gameLocalInfo.time ) {
+		Bot_LookAtEntity( ltgTarget, SMOOTH_TURN ); //look at our friend when first reach goal
+	} else if ( botThreadData.random.RandomInt( 100 ) > 94 ) {
+		if ( Bot_RandomLook( vec ) )  {
+			Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot.
+		}
+	}
+
+	Bot_MoveToGoal( vec3_zero, vec3_zero, CROUCH, NULLMOVETYPE );
+	return true;
+}
+
+/*
+================
+idBotAI_LTG::Enter_LTG_ActorGiveFinalBriefingToPlayer
+================
+*/
+bool idBotAI::Enter_LTG_ActorGiveFinalBriefingToPlayer() {
+
+	LTG_AI_SUB_NODE = &idBotAI::LTG_ActorGiveFinalBriefingToPlayer;
+
+	ltgType = ACTOR_GOAL;
+
+	lastAINode = "Last Actor Goal";
+
+	ltgReached = false;
+
+	ltgCounter = botWorld->gameLocalInfo.time + botThreadData.actorMissionInfo.goalPauseTime;
+
+	ltgPauseTime = 0;
+
+	return true;
+}
+
+/*
+================
+idBotAI_LTG::LTG_ActorGiveFinalBriefingToPlayer
+================
+*/
+bool idBotAI::LTG_ActorGiveFinalBriefingToPlayer() {
+	if ( !ClientIsValid( ltgTarget, ltgTargetSpawnID ) ) {
+		Bot_ExitAINode();
+		botUcmd->botCmds.actorSurrenderStatus = true;
+		return false;
+	}
+
+	if ( ltgCounter > botWorld->gameLocalInfo.time ) {
+		if ( botThreadData.random.RandomInt( 100 ) > 94 ) {
+			idVec3 vec;
+			if ( Bot_RandomLook( vec ) )  {
+				Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot.
+			}
+		}
+		return true;
+	}
+
+	const clientInfo_t& player = botWorld->clientInfo[ ltgTarget ];
+
+	if ( player.proxyInfo.entNum != CLIENT_HAS_NO_VEHICLE ) {
+		Bot_ExitAINode();
+		botUcmd->botCmds.actorSurrenderStatus = true;
+		return false;
+	}
+
+	if ( player.inLimbo || ( !player.hasGroundContact && player.invulnerableEndTime > botWorld->gameLocalInfo.time ) ) { //mal: if our player gets killed, don't do anything til he respawns.
+		if ( botThreadData.random.RandomInt( 100 ) > 95 ) {
+			idVec3 vec;
+			Bot_RandomLook( vec );
+			Bot_LookAtLocation( vec, SMOOTH_TURN );
+		}
+
+		ltgReached = false;
+		Bot_MoveToGoal( vec3_zero, vec3_zero, CROUCH, NULLMOVETYPE );
+		return true;
+	}
+
+	idVec3 vec = player.origin - botInfo->origin;
+	vec.z = 0.0f;
+	float botDistToPlayerSqr = vec.LengthSqr();
+
+	if ( !ltgReached ) {
+		if ( botDistToPlayerSqr > Square( 150.0f ) || botInfo->onLadder ) {
+			Bot_SetupMove( vec3_zero, ltgTarget, ACTION_NULL );
+
+			if ( MoveIsInvalid() ) {
+				Bot_ExitAINode();
+				return false;
+			}
+
+			Bot_MoveAlongPath( SPRINT );
+			return true;
+		} else {
+			ltgReached = true;
+			botUcmd->botCmds.actorBriefedPlayer = true; //mal: let the game know we've briefed the player, so we don't do it again.
+			ltgPauseTime = botWorld->gameLocalInfo.time + ( 1000 * botThreadData.actorMissionInfo.chatPauseTime );
+		}
+	}
+
+	if ( ltgPauseTime > botWorld->gameLocalInfo.time ) {
+		Bot_LookAtLocation( player.viewOrigin, SMOOTH_TURN );
+		botUcmd->botCmds.actorIsBriefingPlayer = true;
+		if ( botDistToPlayerSqr < Square( 100.0f ) ) { // too close, back up some!  
+			if ( Bot_CanMove( BACK, 75.0f, true ) ) {
+				Bot_MoveToGoal( botCanMoveGoal, vec3_zero, NULLMOVEFLAG, NULLMOVETYPE );
+			} else if ( Bot_CanMove( RIGHT, 100.0f, true ) ) {
+				Bot_MoveToGoal( botCanMoveGoal, vec3_zero, NULLMOVEFLAG, NULLMOVETYPE );
+			} else if ( Bot_CanMove( LEFT, 100.0f, true ) ) {
+				Bot_MoveToGoal( botCanMoveGoal, vec3_zero, NULLMOVEFLAG, NULLMOVETYPE );
+			}
+		}
+		return true;
+	}
+
+	botUcmd->botCmds.actorSurrenderStatus = true;
+	Bot_ExitAINode();
+	return false;
+}
+
+/*
+================
+idBotAI_LTG::Enter_LTG_ThirdEyeCameraGoal
+================
+*/
+bool idBotAI::Enter_LTG_ThirdEyeCameraGoal() {
+
+	LTG_AI_SUB_NODE = &idBotAI::LTG_ThirdEyeCameraGoal;
+
+	ltgTime = botWorld->gameLocalInfo.time + 60000;
+
+	ltgType = THIRD_EYE_GOAL;
+	
+	lastAINode = "Third Eye Goal";
+
+	ltgReached = false;
+
+	ltgPauseTime = 0;
+
+	return true;
+}
+
+/*
+================
+idBotAI_LTG::LTG_ThirdEyeCameraGoal
+================
+*/
+bool idBotAI::LTG_ThirdEyeCameraGoal() {
+	if ( ltgTime < botWorld->gameLocalInfo.time ) { //mal: times up - leave!
+		Bot_ExitAINode();
+		return false;
+	}
+
+	if ( !Bot_CheckActionIsValid( actionNum ) ) {
+		Bot_ExitAINode();
+		return false;
+	}
+
+	if ( !botThreadData.botActions[ actionNum ]->active ) { //mal: action got turned off
+		Bot_ExitAINode();
+		return false;
+	}
+
+	if ( actionNumInsideDanger == actionNum ) { //mal: if our action is encased inside a danger ( landmine ), and we're not destroying it, must not be able to, so leave.
+		Bot_ExitAINode();
+		return false;
+	}
+
+	if ( !ClassWeaponCharged( THIRD_EYE ) || botInfo->isDisguised ) {
+		Bot_ExitAINode();
+		return false;
+	}
+
+	idVec3 vec = botThreadData.botActions[ actionNum ]->origin - botInfo->origin;
+	float distSqr = vec.LengthSqr();
+
+	if ( distSqr > Square( botThreadData.botActions[ actionNum ]->radius ) || botInfo->onLadder ) {
+
+		Bot_SetupMove( vec3_zero, -1, actionNum );
+
+		if ( MoveIsInvalid() ) {
+			Bot_IgnoreAction( actionNum, ACTION_IGNORE_TIME ); //mal: no valid path to this action for some reason - ignore it for a while
+			Bot_ExitAINode();
+			return false;
+		}
+
+		Bot_MoveAlongPath( ( distSqr > Square( 100.0f ) && enemy == -1 ) ? Bot_ShouldStrafeJump( botThreadData.botActions[ actionNum ]->origin ) : RUN );
+		return true;
+	}
+
+	if ( !ltgReached ) {
+		ltgReached = true;
+		ltgPauseTime = botWorld->gameLocalInfo.time + 1000;
+	}		
+
+	botIdealWeapNum = THIRD_EYE;
+	botIdealWeapSlot = NO_WEAPON;
+	ignoreWeapChange = true;
+
+	Bot_LookAtLocation( botThreadData.botActions[ actionNum ]->actionBBox.GetCenter(), SMOOTH_TURN );
+
+	if ( botInfo->weapInfo.weapon == THIRD_EYE && ltgPauseTime < botWorld->gameLocalInfo.time ) {
+		botUcmd->botCmds.attack = true;
+	}
+
+	return true;
+}
+
+/*
+================
+idBotAI_LTG::Enter_LTG_ProtectCharge
+================
+*/
+bool idBotAI::Enter_LTG_ProtectCharge() {
+
+	LTG_AI_SUB_NODE = &idBotAI::LTG_ProtectCharge;
+
+	ltgTime = botWorld->gameLocalInfo.time + 40000;
+
+	ltgType = PROTECT_CHARGE;
+	
+	lastAINode = "Protect Charge";
+
+	ltgDist = 300.0f + ( ( float ) botThreadData.random.RandomInt( 500 ) );
+
+	ltgPosture = ( botThreadData.random.RandomInt( 100 ) > 50 ) ? CROUCH : WALK;
+
+	ltgReached = false;
+
+	ltgUseMine = true;
+
+	ltgChat = false; //mal: track whether or not we should use airstrike on charge.
+
+	if ( botInfo->classType == FIELDOPS ) {
+		plantedChargeInfo_t charge;
+
+		if ( FindChargeBySpawnID( ltgTargetSpawnID, charge ) ) {
+			if ( LocationVis2Sky( charge.origin ) ) {
+				ltgChat = true;
+				ltgDist = 900.0f;
+			}
+		}
+	}
+
+	return true;
+}
+
+/*
+================
+idBotAI_LTG::LTG_ProtectCharge
+================
+*/
+bool idBotAI::LTG_ProtectCharge() {
+	if ( ltgTime < botWorld->gameLocalInfo.time ) { //mal: times up - leave!
+		ignorePlantedChargeTime = botWorld->gameLocalInfo.time + IGNORE_PLANTED_CHARGE_TIME;
+		Bot_ExitAINode();
+		return false;
+	}
+
+	plantedChargeInfo_t charge;
+
+	if ( !FindChargeBySpawnID( ltgTargetSpawnID, charge ) ) {
+		ignorePlantedChargeTime = botWorld->gameLocalInfo.time + IGNORE_PLANTED_CHARGE_TIME;
+		Bot_ExitAINode();
+		return false;
+	}
+
+	bool isVisible = false;
+	idVec3 vec = charge.origin - botInfo->origin;
+	float distSqr = vec.LengthSqr();
+
+	int enemyEngsInArea = ClientsInArea( botNum, charge.origin, 300.0f, ( botInfo->team == GDF ) ? STROGG : GDF, ENGINEER, false, false, false, false, false );
+
+	if ( enemyEngsInArea > 0 ) { //mal: do this in case we aren't visible to the charge we're protecting, and we don't just sit there and wait while its defused.
+		ltgDist = 150.0f;
+	}
+
+	trace_t tr;
+	botThreadData.clip->TracePoint( CLIP_DEBUG_PARMS tr, botInfo->viewOrigin, charge.origin, BOT_VISIBILITY_TRACE_MASK, GetGameEntity( botNum ) );
+
+	if ( tr.fraction == 1.0f || tr.c.entityNum == charge.entNum ) { 
+		isVisible = true;
+	}
+
+	if ( distSqr > Square( ltgDist ) || botInfo->onLadder || botInfo->inWater || !isVisible ) {
+
+		Bot_SetupMove( charge.origin, -1, ACTION_NULL, charge.areaNum );
+
+		if ( MoveIsInvalid() ) {
+			ignorePlantedChargeTime = botWorld->gameLocalInfo.time + IGNORE_PLANTED_CHARGE_TIME;
+			Bot_ExitAINode();
+			return false;
+		}
+
+		Bot_MoveAlongPath( ( distSqr > Square( 100.0f ) && enemy == -1 ) ? Bot_ShouldStrafeJump( charge.origin ) : RUN );
+		return true;
+	}
+
+	if ( botInfo->classType == ENGINEER && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && ltgUseMine && botInfo->abilities.selfArmingMines ) {
+		if ( !TeamMineInArea( charge.origin, 300.0f ) ) {
+			if ( ltgReached == false ) { //mal: store off our camp location for later.
+				ltgOrigin = botInfo->origin;
+				ltgReached = true;
+			}
+
+			if ( distSqr > Square( 100.0f ) || botInfo->onLadder ) {
+
+				Bot_SetupMove( charge.origin, -1, ACTION_NULL, charge.areaNum );
+
+				if ( MoveIsInvalid() ) {
+					ltgUseMine = false;
+					return true;
+				}
+
+				Bot_MoveAlongPath( RUN );
+				return true;
+			}
+
+			Bot_LookAtLocation( charge.origin, INSTANT_TURN );
+			ignoreWeapChange = true;
+			botIdealWeapSlot = NO_WEAPON;
+			botIdealWeapNum = LANDMINE;
+
+			if ( botInfo->weapInfo.weapon == LANDMINE ) {
+				if ( botThreadData.random.RandomInt( 100 ) > 50 ) {
+					botUcmd->botCmds.attack = true;
+				}
+			}
+		} else {
+			vec = ltgOrigin - botInfo->origin;
+			if ( vec.LengthSqr() > Square( 75.0f ) || botInfo->onLadder ) {
+
+				Bot_SetupMove( ltgOrigin, -1, ACTION_NULL );
+
+				if ( MoveIsInvalid() ) {
+					ignorePlantedChargeTime = botWorld->gameLocalInfo.time + IGNORE_PLANTED_CHARGE_TIME;
+					Bot_ExitAINode();
+					return false;
+				}
+
+				Bot_MoveAlongPath( RUN );
+				return true;
+			}
+		}
+	} else if ( botInfo->classType == FIELDOPS && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && ltgChat && ClassWeaponCharged( AIRCAN ) ) {
+		
+		int enemiesInArea = ClientsInArea( botNum, charge.origin, 1200.0f, ( botInfo->team == GDF ) ? STROGG : GDF, NOCLASS, false, false, false, false, false );
+		
+		if ( enemiesInArea > 0 ) {
+			if ( LocationVis2Sky( botInfo->origin ) ) {
+				ignoreWeapChange = true;
+				Bot_UseCannister( AIRCAN, charge.origin );
+				return true;
+			}
+		}
+	}
+
+	if ( botThreadData.random.RandomInt( 100 ) > 93 ) {
+		idVec3 vec;
+		
+		if ( Bot_RandomLook( vec ) )  {
+			Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot.
+		}
+	}
+
+	Bot_MoveToGoal( vec3_zero, vec3_zero, ltgPosture, NULLMOVETYPE );
+	return true;
+}
+
+/*
+================
+idBotAI_LTG::Enter_LTG_PatrolDeliverGoal
+
+The bot wants to roam to the deliver action, just to make sure its clear and hold it for the carrier.
+================
+*/
+bool idBotAI::Enter_LTG_PatrolDeliverGoal() {
+
+	LTG_AI_SUB_NODE = &idBotAI::LTG_PatrolDeliverGoal;
+
+	ltgType = PATROL_DELIVER_GOAL;
+	
+	stayInPosition = false;
+
+//mal: higher skill bots are more likely to respond to heard sounds, and go after the person making them, then lower skilled bots.
+	if ( botThreadData.GetBotSkill() == BOT_SKILL_EASY ) {
+		stayInPosition = true;
+	} else if ( botThreadData.GetBotSkill() == BOT_SKILL_NORMAL ) {
+		if ( botThreadData.random.RandomInt( 100 ) > 30 ) {
+			stayInPosition = true;
+		}
+	} else {
+		if ( botThreadData.random.RandomInt( 100 ) > 70 ) {
+			stayInPosition = true;
+		}
+	}
+
+	ltgReached = false;
+
+	ltgMoveTime = 0;
+
+	ltgTryMoveCounter = 0;
+
+	lastAINode = "Patrol Deliver Goal";
+
+	return true;
+}
+
+/*
+================
+idBotAI_LTG::LTG_PatrolDeliverGoal
+================
+*/
+bool idBotAI::LTG_PatrolDeliverGoal() {
+	if ( ltgTime < botWorld->gameLocalInfo.time ) { //mal: times up - leave!
+		Bot_ExitAINode();
+		return false;
+	}
+
+	if ( !Bot_CheckActionIsValid( actionNum ) ) {
+		Bot_ExitAINode();
+		return false;
+	}
+
+	if ( !botThreadData.botActions[ actionNum ]->active ) { //mal: action got turned off
+		Bot_ExitAINode();
+		return false;
+	}
+
+	int matesInArea = ClientsInArea( botNum, botThreadData.botActions[ actionNum ]->GetActionOrigin(), PATROL_DELIVER_TEST_DIST, botInfo->team, NOCLASS, false, false, false, true, true );
+
+	if ( matesInArea > MAX_PATROL_DELIVER_CLIENTS ) {
+		Bot_ExitAINode();
+		return false;
+	} //mal: enough clients there camping
+
+	if ( ltgMoveTime < botWorld->gameLocalInfo.time ) {
+		ltgTryMoveCounter = 0;
+	}
+
+	idVec3 vec = botThreadData.botActions[ actionNum ]->origin - botInfo->origin;
+	float distSqr = vec.LengthSqr();
+
+	if ( distSqr > Square( botThreadData.botActions[ actionNum ]->radius + 75.0f ) || botInfo->onLadder ) {
+
+		Bot_SetupMove( vec3_zero, -1, actionNum );
+
+		if ( MoveIsInvalid() ) {
+			Bot_IgnoreAction( actionNum, ACTION_IGNORE_TIME ); //mal: no valid path to this action for some reason - ignore it for a while
+			Bot_ExitAINode();
+			return false;
+		}
+
+		ltgReached = false;
+		Bot_MoveAlongPath( ( distSqr > Square( 100.0f ) && enemy == -1 ) ? Bot_ShouldStrafeJump( botThreadData.botActions[ actionNum ]->origin ) : RUN );
+		return true;
+	}
+
+	reachedPatrolPointTime = botWorld->gameLocalInfo.time;
+
+	int blockedClient = Bot_CheckBlockingOtherClients( -1, 75.0f );
+	botMoveFlags_t defaultMove = ( botInfo->posture == IS_CROUCHED ) ? CROUCH : WALK;
+
+	if ( blockedClient != -1 && ltgTryMoveCounter < MAX_MOVE_ATTEMPTS ) {
+		ltgTryMoveCounter++;
+		if ( Bot_CanMove( BACK, 100.0f, true ) ) {
+			Bot_MoveToGoal( botCanMoveGoal, vec3_zero, defaultMove, NULLMOVETYPE );
+		} else if ( Bot_CanMove( RIGHT, 100.0f, true ) ) {
+			Bot_MoveToGoal( botCanMoveGoal, vec3_zero, defaultMove, NULLMOVETYPE );
+		} else if ( Bot_CanMove( LEFT, 100.0f, true ) ) {
+			Bot_MoveToGoal( botCanMoveGoal, vec3_zero, defaultMove, NULLMOVETYPE );
+		}
+
+		Bot_LookAtEntity( blockedClient, SMOOTH_TURN );
+		ltgReached = false;
+		ltgMoveTime = botWorld->gameLocalInfo.time + 1000;
+		return true;
+	}
+
+	if ( !ClientIsValid( heardClient, -1 ) ) {
+		if ( botThreadData.random.RandomInt( 100 ) > 90 || ltgReached == false ) {
+			idVec3 vec;
+			if ( Bot_RandomLook( vec ) )  {
+				Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot.
+				ltgReached = true; //mal: we reached our goal, and am going to camp now. ONLY after we've looked around a bit.
+			}
+		}
+	} else {
+		Bot_MoveToGoal( vec3_zero, vec3_zero, CROUCH, NULLMOVETYPE ); //mal: crouch down, waiting for our enemy....
+		Bot_LookAtLocation( botWorld->clientInfo[ heardClient ].origin, SMOOTH_TURN ); //we hear someone - look at where they're at.
+		ltgReached = false; //mal: as long as we hear someone, keep this updated.
+	}
+
+	return true;
+}
 
 
 

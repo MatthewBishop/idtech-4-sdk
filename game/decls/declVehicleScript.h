@@ -164,6 +164,8 @@ struct positionViewMode_t {
 
 	idStr							sensitivityYaw;
 	idStr							sensitivityPitch;
+	idStr							sensitivityYawScale;
+	idStr							sensitivityPitchScale;
 };
 
 

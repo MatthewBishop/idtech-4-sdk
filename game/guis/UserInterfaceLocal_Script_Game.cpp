@@ -443,8 +443,8 @@ void sdUserInterfaceLocal::Script_GetPersistentRankInfo( sdUIFunctionStack& stac
 
 	gameLocal.rankInfo.CreateData( sdGlobalStatsTracker::GetInstance().GetLocalStatsHash(), sdGlobalStatsTracker::GetInstance().GetLocalStats(), gameLocal.rankScratchInfo );
 
-	if( gameLocal.rankScratchInfo.completeTasks >= 0 && gameLocal.rankScratchInfo.completeTasks < gameLocal.declRankType.Num() ) {
-		const sdDeclRank* rank = gameLocal.FindRankForLevel( gameLocal.rankScratchInfo.completeTasks );
+	const sdDeclRank* rank = gameLocal.FindRankForLevel( gameLocal.rankScratchInfo.completeTasks );
+	if ( rank != NULL ) {
 		if( !type.Icmp( "title" ) ) {
 			stack.Push( rank->GetTitle()->GetName() );
 			return;
@@ -518,6 +518,7 @@ void sdUserInterfaceLocal::Script_GetPersistentRankInfo( sdUIFunctionStack& stac
 			return;
 		}
 	}
+
 	gameLocal.Warning( "Script_GetPersistentRankInfo: unknown rank info type '%s' for rank index '%i'", type.c_str(), gameLocal.rankScratchInfo.completeTasks );
 	stack.Push( "" );	
 }

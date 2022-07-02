@@ -16,12 +16,14 @@ unsigned short idTokenCache::FindToken( const idToken& token ) {
 	int hashKey = uniqueTokenHash.GenerateKey( token.c_str(), true );
 	int i;
 	for ( i = uniqueTokenHash.GetFirst( hashKey ); i != idHashIndexUShort::NULL_INDEX; i = uniqueTokenHash.GetNext( i ) ) {
+		// from mac version
+		if (( i < 0 ) || ( i > uniqueTokens.Num())) break;	// JWW - Added this line to circumvent assert/crash when 'i' is out-of-bounds
 		const idToken& hashedToken = uniqueTokens[ i ];
 		if (( hashedToken.type == token.type ) && 
-			( hashedToken.subtype == token.subtype ) &&
+			( ( hashedToken.subtype & ~TT_VALUESVALID ) == ( token.subtype & ~TT_VALUESVALID ) ) &&
 			( hashedToken.linesCrossed == token.linesCrossed ) &&
 			( hashedToken.WhiteSpaceBeforeToken() == token.WhiteSpaceBeforeToken() ) &&
-			( ( hashedToken.flags & ~TT_VALUESVALID ) == ( token.flags & ~TT_VALUESVALID ) ) &&
+			( hashedToken.flags == token.flags ) &&
 			( hashedToken.Cmp( token.c_str() ) == 0 ) ) {
 			return i;
 		}
@@ -50,9 +52,9 @@ bool idTokenCache::Write( idFile* f ) {
 
 		assert( token.type < 255 );
 		f->WriteChar( token.type );
-		f->WriteInt( token.subtype );
+		f->WriteInt( token.subtype & ~TT_VALUESVALID ); // force a recalculation of the value
 		f->WriteInt( token.linesCrossed );
-		f->WriteInt( token.flags & ~TT_VALUESVALID );	// force a recalculation of the value
+		f->WriteInt( token.flags );
 		f->WriteChar( ( token.whiteSpaceEnd_p - token.whiteSpaceStart_p ) > 0 ? 1 : 0 );
 	}
 	
@@ -98,6 +100,7 @@ bool idTokenCache::Read( idFile* f ) {
 		token.type = c;
 
 		f->ReadInt( token.subtype );
+		token.subtype &= ~TT_VALUESVALID;
 		f->ReadInt( token.linesCrossed );
 
 		f->ReadInt( token.flags );

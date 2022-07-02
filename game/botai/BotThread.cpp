@@ -42,11 +42,15 @@ void idBotThread::StartThread() {
 	if ( thread != NULL ) {
 		return;
 	}
+#ifdef _XENON
+	thread = new sdThread( this, THREAD_NORMAL, XENON_STACKSIZE_BOT );
+#else
 	thread = new sdThread( this, THREAD_LOWEST );
+#endif
 	thread->SetName( "BotThread" );
 
 #ifdef _XENON
-	thread->SetProcessor( 2 );
+	thread->SetProcessor( XENON_THREADCORE_BOT );
 #endif
 
 	if ( !thread->Start() ) {

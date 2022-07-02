@@ -47,8 +47,13 @@ print '%d files in the generated folder' % len( generated_source_list )
 
 base_source = [ os.path.join( '#game/script/compiledscript', i ) for i in [ 'CompiledScript_Base.cpp', 'CompiledScript_Class.cpp', 'CompiledScript_Event.cpp', 'CompiledScript_TypeInfo.cpp', 'CompiledScripts_Types.cpp' ] ]
 
-g_compiledscript_env = g_env.Copy()
+g_compiledscript_env = g_env.Clone()
 g_compiledscript_env.Append( CPPPATH = [ '#game/script/compiledscript', generated_source_dir ] )
+
+# f00gly hack so I can use scons to expand the compiled scripts stuff
+if ( sys.platform == 'darwin' ):
+	sys.exit( 0 )
+
 compiledscript = g_compiledscript_env.SharedLibrarySafe( g_compiledscript_env, 'compiledscript', generated_source_list + base_source )
 
 Return( 'compiledscript' )

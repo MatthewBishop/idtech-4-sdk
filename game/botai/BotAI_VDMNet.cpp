@@ -39,14 +39,31 @@ bool idBotAI::Run_VLTG_Node() {
 		return false;
 	}
 
+	if ( botVehicleInfo == NULL ) { //mal: if we're not in a vehicle anymore, run our on-foot thinking
+		Bot_ResetState( true, false );
+		return false;
+	}
+
 	if ( botVehicleInfo->type == MCP && botVehicleInfo->isDeployed ) {
 		Bot_ResetState( true, true );
 		Bot_ExitVehicle( false );
 		return false;
 	}
 
+	if ( ( botVehicleInfo->type == ANANSI || botVehicleInfo->type == HORNET ) && botVehicleInfo->driverEntNum != botNum ) {
+		if ( botVehicleInfo->driverEntNum > -1 && botVehicleInfo->driverEntNum < MAX_CLIENTS ) {
+			const clientInfo_t& pilot = botWorld->clientInfo[ botVehicleInfo->driverEntNum ];
+
+			if ( pilot.isBot ) {
+				Bot_ResetState( true, true );
+				Bot_ExitVehicle( false );
+				return false;
+			}
+		}
+	}
+
 	if ( botVehicleInfo->type == MCP && botVehicleInfo->isImmobilized && !botVehicleInfo->isEMPed ) {
-		Bot_ExitVehicleAINode( true );
+		Bot_ResetState( true, true );
 		Bot_ExitVehicle( false );
 		return false;
 	}
@@ -57,8 +74,9 @@ bool idBotAI::Run_VLTG_Node() {
 		return false;
 	}
 
-	if ( ( botVehicleInfo->type == HUSKY || botVehicleInfo->type == BADGER ) && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) {
+	if ( ( botVehicleInfo->type == HUSKY || botVehicleInfo->type == BADGER || botVehicleInfo->type == ICARUS || botVehicleInfo->type == HOG ) && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) {
 		if ( Bot_VehicleIsUnderAVTAttack() != -1 ) {
+			Bot_ExitVehicleAINode( true );
 			Bot_ExitVehicle();
 			Bot_IgnoreVehicle( botVehicleInfo->entNum, 15000 );
 			return false;
@@ -106,9 +124,14 @@ bool idBotAI::Run_VLTG_Node() {
 		return true;
 	}
 
-	if ( botVehicleInfo == NULL ) { //mal: if we're not in a vehicle anymore, run our on-foot thinking
-		Bot_ResetState( true, false );
-		return false;
+	if ( botVehicleInfo->type != MCP && Bot_CheckForHumanNearByWhoMayWantRide() && Bot_VehicleIsUnderAVTAttack() == -1 ) {
+		if ( vehicleCheckForPossibleHumanPassengerChatTime < botWorld->gameLocalInfo.time ) {
+			Bot_AddDelayedChat( botNum, NEED_LIFT, 1 );
+			botUcmd->botCmds.honkHorn = true;
+			vehicleCheckForPossibleHumanPassengerChatTime = botWorld->gameLocalInfo.time + 10000;
+		}
+		Bot_MoveToGoal( vec3_zero, vec3_zero, NULLMOVEFLAG, FULL_STOP ); //hit the brakes!
+		return true;
 	}
 
 	if ( V_LTG_AI_SUB_NODE == NULL && botExitTime < botWorld->gameLocalInfo.time ) { 
@@ -193,11 +216,32 @@ bool idBotAI::Run_VCombat_Node() {
 
 	if ( playerInfo.proxyInfo.entNum != CLIENT_HAS_NO_VEHICLE ) {
 		GetVehicleInfo( playerInfo.proxyInfo.entNum, enemyVehicleInfo );
+
+		if ( enemyVehicleInfo.type == MCP && enemyVehicleInfo.isImmobilized && enemyVehicleInfo.driverEntNum == enemy ) {
+			if ( !Bot_VehicleFindEnemy() ) {
+		       Bot_ResetState( true, false ); 
+			}
+			return false;
+		}
 	}
 
     if ( botVehicleInfo->damagedPartsCount > 1 ) { //mal: vehicle is too damamged to drive, so get out of it.
 		Bot_ExitVehicle();
 		return false;
+	}
+
+	if ( botVehicleInfo->type != BUFFALO && Bot_VehicleIsUnderAVTAttack() != -1 && ( ( botVehicleInfo->flags & ARMOR ) || botVehicleInfo->type > ICARUS ) ) {
+		Bot_ResetState( true, true ); 
+		return false;
+	}
+
+	if ( ( botVehicleInfo->type == BADGER || botVehicleInfo->type == ICARUS || botVehicleInfo->type == HOG ) && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && botVehicleInfo->driverEntNum == botNum ) {
+		if ( Bot_VehicleIsUnderAVTAttack() != -1 ) {
+			Bot_ExitVehicleAINode( true );
+			Bot_ExitVehicle();
+			Bot_IgnoreVehicle( botVehicleInfo->entNum, 15000 );
+			return false;
+		}
 	}
 
 	UpdateEnemyInfo();
@@ -209,11 +253,13 @@ bool idBotAI::Run_VCombat_Node() {
 		return false;
 	}
 
-	if ( playerInfo.proxyInfo.entNum == CLIENT_HAS_NO_VEHICLE && enemyInfo.enemyDist > ENEMY_VEHICLE_SIGHT_DIST && !ClientHasObj( enemy ) ) { //mal: we wont bother with ppl on foot too much
+	if ( !vehicleEnemyWasInheritedFromFootCombat ) {
+		if ( playerInfo.proxyInfo.entNum == CLIENT_HAS_NO_VEHICLE && enemyInfo.enemyDist > ENEMY_VEHICLE_SIGHT_DIST && !ClientHasObj( enemy ) && !ClientIsDefusingOurTeamCharge( enemy ) ) { //mal: we wont bother with ppl on foot too much
 		if ( !Bot_VehicleFindEnemy() ) {
             Bot_ResetState( true, false ); 
 		}
 		return false;
+	}
 	}
 
 	if ( playerInfo.proxyInfo.entNum != CLIENT_HAS_NO_VEHICLE && enemyInfo.enemyDist > ENEMY_VEHICLE_SIGHT_DIST ) {
@@ -271,7 +317,7 @@ bool idBotAI::Enter_VLTG_RoamGoal() {
 			if ( matesInArea > 0 ) {
 				vLTGPauseTime = botWorld->gameLocalInfo.time + ( botWorld->gameLocalInfo.botPauseInVehicleTime * 1000 );
 
-				if ( TeamHumanNearLocation( botInfo->team, botInfo->origin, 1200.0f ) ) {
+				if ( TeamHumanNearLocation( botInfo->team, botInfo->origin, 1200.0f, true, NOCLASS, true, true ) ) {
 					botUcmd->botCmds.honkHorn = true; //mal: honk our horn to get the humans attention.
 					vLTGChat = true;
 				}
@@ -284,6 +330,10 @@ bool idBotAI::Enter_VLTG_RoamGoal() {
 	V_LTG_AI_SUB_NODE = &idBotAI::VLTG_RoamGoal;
 
 	vLTGTime = botWorld->gameLocalInfo.time + 60000;
+
+	vLTGDeployableTargetAttackTime = 0;
+	
+	vLTGDeployableTarget = -1;
 
 	lastAINode = "Vehicle Roam Goal";
 
@@ -298,9 +348,7 @@ idBotAI::VLTG_RoamGoal
 ================
 */
 bool idBotAI::VLTG_RoamGoal() {
-   	float dist;
-	botMoveTypes_t moveType = NULLMOVETYPE;
-	idVec3 vec;
+ 	botMoveTypes_t moveType = NULLMOVETYPE;
 
 	if ( vLTGTime < botWorld->gameLocalInfo.time ) { //mal: times up - leave!
 		Bot_ExitVehicleAINode( true );
@@ -327,9 +375,18 @@ bool idBotAI::VLTG_RoamGoal() {
 				Bot_ExitVehicleAINode( true );
 				Bot_ExitVehicle();
 			} else {
-                if ( botThreadData.random.RandomInt( 100 ) > 95 ) {
-					if ( Bot_RandomLook( vec ) )  {
-						Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot.
+                int deployableTargetToKill = Bot_CheckForDeployableTargetsWhileVehicleGunner();
+
+				if ( deployableTargetToKill != -1 ) {
+					Bot_AttackDeployableTargetsWhileVehicleGunner( deployableTargetToKill );
+				} else {
+					vLTGDeployableTargetAttackTime = 0;
+					vLTGDeployableTarget = -1;
+					if ( botThreadData.random.RandomInt( 100 ) > RANDOMLY_LOOK_AROUND_WHILE_VEHICLE_GUNNER_CHANCE ) {
+						idVec3 vec;
+						if ( Bot_RandomLook( vec ) )  {
+							Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot. If we're not in a vehicle that lets us look around, this will be pointless.
+						}
 					}
 				}
 			}
@@ -352,13 +409,13 @@ bool idBotAI::VLTG_RoamGoal() {
 		return true;
 	}
 
-	vec = botThreadData.botActions[ actionNum ]->origin - botInfo->origin;
+	idVec3 vec = botThreadData.botActions[ actionNum ]->origin - botInfo->origin;
 
 	if ( botVehicleInfo->type > ICARUS ) {
 		vec[ 2 ] = 0.0f;
 	}
 
-	dist = vec.LengthSqr();
+	float dist = vec.LengthSqr();
 
 	int matesInArea = VehiclesInArea( botNum, botThreadData.botActions[ actionNum ]->GetActionOrigin(), botThreadData.botActions[ actionNum ]->GetRadius(), botInfo->team, false, botVehicleInfo->entNum );
 
@@ -666,6 +723,10 @@ bool idBotAI::Enter_VLTG_RideWithMate() {
 
 	vehicleAINodeSwitch.nodeSwitchCount++;
 
+	vLTGDeployableTargetAttackTime = 0;
+	
+	vLTGDeployableTarget = -1;
+
 	return true;
 }
 
@@ -675,8 +736,6 @@ idBotAI::VLTG_RideWithMate
 ================
 */
 bool idBotAI::VLTG_RideWithMate() {
-	idVec3 vec;
-
 	if ( !ClientIsValid( vLTGTarget, vLTGTargetSpawnID ) ) {
 		Bot_ExitVehicleAINode( true );
 		Bot_ExitVehicle();
@@ -719,9 +778,24 @@ bool idBotAI::VLTG_RideWithMate() {
 		return false;
 	}	
 
-	if ( botThreadData.random.RandomInt( 100 ) > 95 ) {
-        if ( Bot_RandomLook( vec ) )  {
-			 Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot. If we're not in a vehicle that lets us look around, this will be pointless.
+	if ( Bot_WithObjShouldLeaveVehicle() || Bot_WhoIsCriticalForCurrentObjShouldLeaveVehicle() ) {
+		Bot_ExitVehicleAINode( true );
+		Bot_ExitVehicle();
+		return false;
+	}
+
+	int deployableTargetToKill = Bot_CheckForDeployableTargetsWhileVehicleGunner();
+
+	if ( deployableTargetToKill != -1 ) {
+		Bot_AttackDeployableTargetsWhileVehicleGunner( deployableTargetToKill );
+	} else {
+		vLTGDeployableTargetAttackTime = 0;
+		vLTGDeployableTarget = -1;
+		if ( botThreadData.random.RandomInt( 100 ) > RANDOMLY_LOOK_AROUND_WHILE_VEHICLE_GUNNER_CHANCE ) {
+			idVec3 vec;
+			if ( Bot_RandomLook( vec ) )  {
+				 Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot. If we're not in a vehicle that lets us look around, this will be pointless.
+			}
 		}
 	}
 
@@ -749,8 +823,18 @@ bool idBotAI::Enter_VLTG_StopVehicle() {
 	lastAINode = "Stopping Vehicle";
 
 	if ( botVehicleInfo->driverEntNum != botNum && botInfo->classType == ENGINEER ) {
-		Bot_AddDelayedChat( botNum, STOP_WILL_FIX_RIDE, 1 );
+		if ( botVehicleInfo->driverEntNum > -1 && botVehicleInfo->driverEntNum < MAX_CLIENTS ) {
+			const clientInfo_t& player = botWorld->clientInfo[ botVehicleInfo->driverEntNum ];
+			
+			if ( !player.isBot ) {
+				Bot_AddDelayedChat( botNum, STOP_WILL_FIX_RIDE, 1 );
+			}
+		}
 	}
+
+	vLTGDeployableTargetAttackTime = 0;
+	
+	vLTGDeployableTarget = -1;
 
 	vehicleAINodeSwitch.nodeSwitchCount++;
 
@@ -780,9 +864,18 @@ bool idBotAI::VLTG_StopVehicle() {
 	}
 
 	if ( botVehicleInfo->driverEntNum != botNum ) {
-        if ( botThreadData.random.RandomInt( 100 ) > 95 ) {
-			if ( Bot_RandomLook( vec ) )  {
-				 Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot. If we're not in a vehicle that lets us look around, this will be pointless.
+        int deployableTargetToKill = Bot_CheckForDeployableTargetsWhileVehicleGunner();
+
+		if ( deployableTargetToKill != -1 ) {
+			Bot_AttackDeployableTargetsWhileVehicleGunner( deployableTargetToKill );
+		} else {
+			vLTGDeployableTargetAttackTime = 0;
+			vLTGDeployableTarget = -1;
+			if ( botThreadData.random.RandomInt( 100 ) > RANDOMLY_LOOK_AROUND_WHILE_VEHICLE_GUNNER_CHANCE ) {
+				idVec3 vec;
+				if ( Bot_RandomLook( vec ) )  {
+					 Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot. If we're not in a vehicle that lets us look around, this will be pointless.
+				}
 			}
 		}
 	}
@@ -808,7 +901,7 @@ bool idBotAI::Enter_VLTG_CampGoal() {
 			if ( matesInArea > 0 ) {
 				vLTGPauseTime = botWorld->gameLocalInfo.time + ( botWorld->gameLocalInfo.botPauseInVehicleTime * 1000 );
 
-				if ( TeamHumanNearLocation( botInfo->team, botInfo->origin, 1200.0f ) ) {
+				if ( TeamHumanNearLocation( botInfo->team, botInfo->origin, 1200.0f, true, NOCLASS, true, true ) ) {
 					botUcmd->botCmds.honkHorn = true; //mal: honk our horn to get the humans attention.
 					vLTGChat = true;
 				}
@@ -825,6 +918,10 @@ bool idBotAI::Enter_VLTG_CampGoal() {
 	ResetRandomLook(); //mal: start out looking this far at random targets
 
 	vLTGReached = false;
+
+	vLTGDeployableTargetAttackTime = 0;
+	
+	vLTGDeployableTarget = -1;
 
 	lastAINode = "Vehicle Camp Goal";
 
@@ -872,9 +969,18 @@ bool idBotAI::VLTG_CampGoal() {
 				Bot_ExitVehicleAINode( true );
 				Bot_ExitVehicle();
 			} else {
-                if ( botThreadData.random.RandomInt( 100 ) > 95 ) {
-					if ( Bot_RandomLook( vec ) )  {
-						Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot.
+                int deployableTargetToKill = Bot_CheckForDeployableTargetsWhileVehicleGunner();
+
+				if ( deployableTargetToKill != -1 ) {
+					Bot_AttackDeployableTargetsWhileVehicleGunner( deployableTargetToKill );
+				} else {
+					vLTGDeployableTargetAttackTime = 0;
+					vLTGDeployableTarget = -1;
+					if ( botThreadData.random.RandomInt( 100 ) > RANDOMLY_LOOK_AROUND_WHILE_VEHICLE_GUNNER_CHANCE ) {
+						idVec3 vec;
+						if ( Bot_RandomLook( vec ) )  {
+							Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot. If we're not in a vehicle that lets us look around, this will be pointless.
+						}
 					}
 				}
 			}
@@ -981,6 +1087,10 @@ bool idBotAI::Enter_VLTG_DriveMCPToGoal() {
 
 	lastAINode = "Drive MCP Goal";
 
+	vLTGDeployableTargetAttackTime = 0;
+	
+	vLTGDeployableTarget = -1;
+
 	vehicleAINodeSwitch.nodeSwitchCount++;
 
 	return true;
@@ -1005,18 +1115,29 @@ bool idBotAI::VLTG_DriveMCPToGoal() {
 		return false;
 	}
 
-	if ( botVehicleInfo->actionRouteNumber != ACTION_NULL && !ActionIsIgnored( botVehicleInfo->actionRouteNumber ) ) {
-		Bot_ExitVehicleAINode( true );
-		return false;
+	if ( !ignoreMCPRouteAction ) {
+		if ( botVehicleInfo->actionRouteNumber != ACTION_NULL && !ActionIsIgnored( botVehicleInfo->actionRouteNumber ) ) {
+			Bot_ExitVehicleAINode( true );
+			return false;
+		}
 	}
 
 	if ( botVehicleInfo->driverEntNum != botNum ) { //mal: if someone moved us out of our seat, either take over the vehicle, or just hang out. We're just looking for trouble anyhow.
 		if ( botVehicleInfo->driverEntNum == -1 ) {
 			botUcmd->botCmds.becomeDriver = true;
 		} else {
-            if ( botThreadData.random.RandomInt( 100 ) > 95 ) {
-				if ( Bot_RandomLook( vec ) )  {
-					Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot.
+            int deployableTargetToKill = Bot_CheckForDeployableTargetsWhileVehicleGunner();
+
+			if ( deployableTargetToKill != -1 ) {
+				Bot_AttackDeployableTargetsWhileVehicleGunner( deployableTargetToKill );
+			} else {
+				vLTGDeployableTargetAttackTime = 0;
+				vLTGDeployableTarget = -1;
+				if ( botThreadData.random.RandomInt( 100 ) > RANDOMLY_LOOK_AROUND_WHILE_VEHICLE_GUNNER_CHANCE ) {
+					idVec3 vec;
+					if ( Bot_RandomLook( vec ) )  {
+						Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot. If we're not in a vehicle that lets us look around, this will be pointless.
+					}
 				}
 			}
 		}
@@ -1115,14 +1236,12 @@ bool idBotAI::VLTG_GroundVehicleDestroyDeployable() {
 		return false;
 	}
 
-	if ( deployable.health < ( deployable.maxHealth / DEPLOYABLE_DISABLED_PERCENT ) ) { //mal: its dead ( enough ).
-		Bot_ExitVehicleAINode( true );
-		botUcmd->botCmds.becomeDriver = true;
-		return false;
-	}
-
-	if ( Bot_VehicleIsUnderAVTAttack() != -1 ) {
-		botUcmd->botCmds.launchDecoysNow = true;
+	if ( botInfo->team != botWorld->botGoalInfo.attackingTeam || deployable.type != APT ) {
+		if ( deployable.health < ( deployable.maxHealth / DEPLOYABLE_DISABLED_PERCENT ) ) { //mal: its dead ( enough ).
+			Bot_ExitVehicleAINode( true );
+			botUcmd->botCmds.becomeDriver = true;
+			return false;
+		}
 	}
 
 	bool isVisible = true;
@@ -1342,6 +1461,14 @@ bool idBotAI::Enter_VLTG_AircraftDestroyDeployable() {
 		botUcmd->botCmds.switchVehicleWeap = true;
 	}
 
+	vLTGDistFoundDeployable = 0.0f;
+
+	vLTGUseAltAttackPointOnDeployable = false;
+
+	vLTGAttackDeployableCounter = 0;
+
+	vLTGKeepMovingTime = 0;
+
 	lastAINode = "Destroy Deployable";
 
 	vehicleAINodeSwitch.nodeSwitchCount++;
@@ -1367,9 +1494,11 @@ bool idBotAI::VLTG_AircraftDestroyDeployable() {
 		return false;
 	}
 
-	if ( deployable.health < ( deployable.maxHealth / DEPLOYABLE_DISABLED_PERCENT ) ) { //mal: its dead ( enough ).
-		Bot_ExitVehicleAINode( true );
-		return false;
+	if ( botInfo->team != botWorld->botGoalInfo.attackingTeam || deployable.type != APT ) { //mal: when on the attack - destroy APTS - since they are the biggest threat to our mates.
+		if ( deployable.health < ( deployable.maxHealth / DEPLOYABLE_DISABLED_PERCENT ) ) { //mal: its dead ( enough ).
+			Bot_ExitVehicleAINode( true );
+			return false;
+		}
 	}
 
 	bool isVisible = true;
@@ -1407,8 +1536,10 @@ bool idBotAI::VLTG_AircraftDestroyDeployable() {
 
 		Bot_SetupVehicleMove( deployable.origin, -1, ACTION_NULL );
 
+		vLTGDistFoundDeployable = 0.0f;
+
 		if ( MoveIsInvalid() ) {
-			Bot_IgnoreDeployable( deployable.entNum, 15000 ); //mal: no valid path to this action for some reason - ignore it for a while
+			Bot_IgnoreDeployable( deployable.entNum, 5000 ); //mal: no valid path to this deployable for some reason - ignore it for a while
 			Bot_ExitVehicleAINode( true );
 			return false;
 		}
@@ -1421,6 +1552,18 @@ bool idBotAI::VLTG_AircraftDestroyDeployable() {
 	bool overRideLook = false;
 	float desiredRange = WEAPON_LOCK_DIST;
 	float tooCloseRange = ( botVehicleInfo->type == ANANSI ) ? 3500.0f : 4500.0f;
+
+	if ( vLTGDistFoundDeployable == 0.0f ) {
+		vLTGDistFoundDeployable = distSqr;
+	}
+
+	if ( vLTGDistFoundDeployable <= Square( tooCloseRange ) && vLTGMoveTime < botWorld->gameLocalInfo.time ) { //mal: deployable could be hidden by buildings ( like on Ark ), so give us a chance to take a few shots when find it.
+		vLTGAttackDeployableCounter++;
+	}
+
+	if ( vLTGAttackDeployableCounter > 1 ) { //mal: we've tried 2 times to hit this deployable, so now try something different.
+		vLTGUseAltAttackPointOnDeployable = true;
+	}
 
 //mal: pick whats our best weapon
 	if ( botInfo->proxyInfo.weapon == LAW ) { 
@@ -1447,19 +1590,15 @@ bool idBotAI::VLTG_AircraftDestroyDeployable() {
 		}
 	}
 
-	if ( botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) {
-		botUcmd->botCmds.launchDecoys = true; //mal: we're exposing our flank, so fire some decoys to cover our move.
-	}
-
 //mal: we're too close, so manuever around and fire.
 	if ( distSqr < Square( tooCloseRange ) && vLTGMoveTime < botWorld->gameLocalInfo.time ) {
 		int actionNumber = ACTION_NULL;
 
 		if ( botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) {
-			actionNumber = Bot_FindNearbySafeActionToMoveToward( botInfo->origin, desiredRange );
+			actionNumber = Bot_FindNearbySafeActionToMoveToward( botInfo->origin, desiredRange, vLTGUseAltAttackPointOnDeployable );
 		}
 
-		if ( actionNumber != -1 ) {
+		if ( actionNumber != ACTION_NULL ) {
 			vLTGMoveActionGoal = actionNumber;
 			vLTGMoveTime = botWorld->gameLocalInfo.time + 10000;
 			vLTGMoveTooCloseRange = tooCloseRange + ( ( botVehicleInfo->type == ANANSI ) ? 4500.0f : 3000.0f );
@@ -1490,7 +1629,7 @@ bool idBotAI::VLTG_AircraftDestroyDeployable() {
 	if ( vLTGMoveTime > 0 ) {
 		if ( vLTGMoveActionGoal != ACTION_NULL ) {
 			Bot_SetupVehicleMove( vec3_zero, -1, vLTGMoveActionGoal );
-			if ( botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) {
+			if ( botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO && botThreadData.random.RandomInt( 100 ) > 95 ) {
 				botUcmd->botCmds.launchDecoysNow = true; //mal: we're exposing our flank, so fire some decoys to cover our move.
 			}
 		} else {
@@ -1535,7 +1674,7 @@ bool idBotAI::VLTG_AircraftDestroyDeployable() {
 		Bot_SetupVehicleMove( deployableOrigin, -1, ACTION_NULL );
 
 		if ( MoveIsInvalid() ) {
-			Bot_IgnoreDeployable( deployable.entNum, 15000 ); //mal: no valid path for some reason - ignore for a while
+			Bot_IgnoreDeployable( deployable.entNum, 5000 ); //mal: no valid path for some reason - ignore for a while
 			Bot_ResetEnemy();
 			return false;
 		}
@@ -1551,12 +1690,22 @@ bool idBotAI::VLTG_AircraftDestroyDeployable() {
 		Bot_SetupVehicleMove( deployableOrigin, -1, ACTION_NULL ); //mal: still want to take into account obstacles, so do a move check.
 
 		if ( MoveIsInvalid() ) {
-			Bot_IgnoreDeployable( deployable.entNum, 15000 ); //mal: no valid path for some reason - ignore for a while
+			Bot_IgnoreDeployable( deployable.entNum, 5000 ); //mal: no valid path for some reason - ignore for a while
 			Bot_ResetEnemy();
 			return false;
 		}
 
-		Bot_MoveToGoal( botAAS.path.moveGoal, vec3_zero, RUN, ( botAAS.obstacleNum == -1 ) ? AIR_BRAKE : NULLMOVETYPE );
+		botMoveTypes_t defaultMoveType = AIR_BRAKE;
+
+		if ( botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && Bot_VehicleIsUnderAVTAttack() != -1 || Bot_CheckIfEnemyHasUsInTheirSightsWhenInAirVehicle() || Bot_CheckEnemyHasLockOn( -1, true ) || vLTGKeepMovingTime > botWorld->gameLocalInfo.time ) { //mal: do a bombing run if someone is shooting at us!
+			defaultMoveType = NULLMOVETYPE;
+
+			if ( vLTGKeepMovingTime < botWorld->gameLocalInfo.time ) {
+				vLTGKeepMovingTime = botWorld->gameLocalInfo.time + FLYER_AVOID_DANGER_TIME;
+			}
+		}
+
+		Bot_MoveToGoal( botAAS.path.moveGoal, vec3_zero, RUN, ( botAAS.obstacleNum == -1 ) ? defaultMoveType : NULLMOVETYPE );
 		Bot_LookAtEntity( deployable.entNum, SMOOTH_TURN );
 	}
 
@@ -1578,6 +1727,10 @@ bool idBotAI::Enter_VLTG_TravelToGoalOrigin() {
 	vLTGTime = botWorld->gameLocalInfo.time + 60000;
 
 	lastAINode = "Vehicle Origin Goal";
+
+	vLTGDeployableTargetAttackTime = 0;
+	
+	vLTGDeployableTarget = -1;
 
 	vehicleAINodeSwitch.nodeSwitchCount++;
 
@@ -1620,9 +1773,18 @@ bool idBotAI::VLTG_TravelToGoalOrigin() {
 				Bot_ExitVehicleAINode( true );
 				Bot_ExitVehicle();
 			} else {
-                if ( botThreadData.random.RandomInt( 100 ) > 95 ) {
-					if ( Bot_RandomLook( vec ) )  {
-						Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot.
+                int deployableTargetToKill = Bot_CheckForDeployableTargetsWhileVehicleGunner();
+
+				if ( deployableTargetToKill != -1 ) {
+					Bot_AttackDeployableTargetsWhileVehicleGunner( deployableTargetToKill );
+				} else {
+					vLTGDeployableTargetAttackTime = 0;
+					vLTGDeployableTarget = -1;
+					if ( botThreadData.random.RandomInt( 100 ) > RANDOMLY_LOOK_AROUND_WHILE_VEHICLE_GUNNER_CHANCE ) {
+						idVec3 vec;
+						if ( Bot_RandomLook( vec ) )  {
+							Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot. If we're not in a vehicle that lets us look around, this will be pointless.
+						}
 					}
 				}
 			}
@@ -1674,6 +1836,10 @@ bool idBotAI::Enter_VLTG_DriveMCPToRouteGoal() {
 
 	lastAINode = "MCP Route Goal";
 
+	vLTGDeployableTargetAttackTime = 0;
+	
+	vLTGDeployableTarget = -1;
+
 	vehicleAINodeSwitch.nodeSwitchCount++;
 
 	return true;
@@ -1701,9 +1867,18 @@ bool idBotAI::VLTG_DriveMCPToRouteGoal() {
 		if ( botVehicleInfo->driverEntNum == -1 ) {
 			botUcmd->botCmds.becomeDriver = true;
 		} else {
-            if ( botThreadData.random.RandomInt( 100 ) > 95 ) {
-				if ( Bot_RandomLook( vec ) )  {
-					Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot.
+            int deployableTargetToKill = Bot_CheckForDeployableTargetsWhileVehicleGunner();
+
+			if ( deployableTargetToKill != -1 ) {
+				Bot_AttackDeployableTargetsWhileVehicleGunner( deployableTargetToKill );
+			} else {
+				vLTGDeployableTargetAttackTime = 0;
+				vLTGDeployableTarget = -1;
+				if ( botThreadData.random.RandomInt( 100 ) > RANDOMLY_LOOK_AROUND_WHILE_VEHICLE_GUNNER_CHANCE ) {
+					idVec3 vec;
+					if ( Bot_RandomLook( vec ) )  {
+						Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot. If we're not in a vehicle that lets us look around, this will be pointless.
+					}
 				}
 			}
 		}
@@ -1755,6 +1930,10 @@ bool idBotAI::Enter_VLTG_HuntGoal() {
 
 	lastAINode = "Vehicle Hunt Goal";
 
+	vLTGDeployableTargetAttackTime = 0;
+	
+	vLTGDeployableTarget = -1;
+
 	vehicleAINodeSwitch.nodeSwitchCount++;
 
 	return true;
@@ -1787,10 +1966,18 @@ bool idBotAI::VLTG_HuntGoal() {
 				Bot_ExitVehicleAINode( true );
 				Bot_ExitVehicle();
 			} else {
-                if ( botThreadData.random.RandomInt( 100 ) > 95 ) {
-					idVec3 vec;
-					if ( Bot_RandomLook( vec ) )  {
-						Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot.
+                int deployableTargetToKill = Bot_CheckForDeployableTargetsWhileVehicleGunner();
+
+				if ( deployableTargetToKill != -1 ) {
+					Bot_AttackDeployableTargetsWhileVehicleGunner( deployableTargetToKill );
+				} else {
+					vLTGDeployableTargetAttackTime = 0;
+					vLTGDeployableTarget = -1;
+					if ( botThreadData.random.RandomInt( 100 ) > RANDOMLY_LOOK_AROUND_WHILE_VEHICLE_GUNNER_CHANCE ) {
+						idVec3 vec;
+						if ( Bot_RandomLook( vec ) )  {
+							Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for enemies and whatnot. If we're not in a vehicle that lets us look around, this will be pointless.
+						}
 					}
 				}
 			}

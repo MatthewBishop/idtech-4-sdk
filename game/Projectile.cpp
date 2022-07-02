@@ -775,6 +775,11 @@ idProjectile::OnTouch
 ================
 */
 void idProjectile::OnTouch( idEntity *other, const trace_t& trace ) {
+	idPlayer* player = other->Cast< idPlayer >();
+	if ( player != NULL && !player->IsSpectator() && player->GetHealth() <= 0 ) {
+		return;
+	}
+
 	sdLoggedTrace* loggedTrace = gameLocal.RegisterLoggedTrace( trace );
 
 	sdScriptHelper helper;

@@ -1655,7 +1655,7 @@ void sdUIWindow::ShortenText( const wchar_t* src, const sdBounds2D& rect, qhandl
 	int i = len - 1;
 	while( i >= 0 && current >= target ) {
 		int advance = tdh.GetAdvance( i );
-		current -= tdh.ToVirtualScreenSize( advance );
+		current -= tdh.ToVirtualScreenSizeFloat( advance );
 		i--;
 	}
 	if( i > 0 ) {

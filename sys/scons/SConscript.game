@@ -25,7 +25,7 @@ proj_list = [ os.path.join( '../..', i ) for i in proj_list ]
 gamedecl_list = scons_utils.ExtractSource( File( decl_proj ).abspath )
 gamedecl_list = [ os.path.join( '../..', i ) for i in gamedecl_list ]
 
-local_env = g_game_env.Copy()
+local_env = g_game_env.Clone()
 
 if ( local_gamedll == 1 ):
 	local_env.Append( CPPDEFINES = 'GAME_DLL' )

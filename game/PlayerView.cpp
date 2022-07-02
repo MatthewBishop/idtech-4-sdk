@@ -533,6 +533,10 @@ void idPlayerView::DrawScoreBoard( idPlayer* player ) {
 			}
 		}		
 		scoreboardUI->Draw();
+
+		if( gameLocal.localPlayerProperties.ShouldShowEndGame() ) {
+			gameLocal.OnEndGameScoreboardActive();
+		}
 	} else if( scoreboardUI->IsActive() ){
 		scoreboardUI->Deactivate();
 	}
@@ -773,8 +777,12 @@ void idPlayerView::UpdateRepeaterView( void ) {
 		while ( count > 0 ) {
 			idVec3 newOrigin = repeaterViewInfo.origin + ( timeLeft * velocity );
 
+			idBounds bounds;
+			idPhysics_Player::CalcSpectateBounds( bounds );
+			const idClipModel* clipModel = gameLocal.clip.GetTemporaryClipModel( bounds );
+
 			trace_t trace;
-			gameLocal.clip.TranslationWorld( trace, repeaterViewInfo.origin, newOrigin, gameLocal.clip.GetThirdPersonOffsetModel(), mat3_identity, CONTENTS_SOLID | CONTENTS_PLAYERCLIP | CONTENTS_BODY ); 
+			gameLocal.clip.TranslationWorld( trace, repeaterViewInfo.origin, newOrigin, clipModel, mat3_identity, CONTENTS_SOLID | CONTENTS_PLAYERCLIP | CONTENTS_BODY ); 
 			if ( trace.fraction != 1.f ) {
 				repeaterViewInfo.origin = trace.endpos;
 				timeLeft -= timeLeft * trace.fraction;
@@ -822,6 +830,23 @@ void idPlayerView::CalculateRepeaterView( renderView_t& view ) {
 	view.y = 0;
 	view.width = SCREEN_WIDTH;
 	view.height = SCREEN_HEIGHT;
+}
+
+/*
+===================
+idPlayerView::SetRepeaterViewPosition
+===================
+*/
+void idPlayerView::SetRepeaterViewPosition( const idVec3& origin, const idAngles& angles ) {
+	repeaterViewInfo.origin = origin;
+
+	// set the delta angle
+	idAngles delta;
+	for( int i = 0; i < 3; i++ ) {
+		delta[ i ] = angles[ i ] - SHORT2ANGLE( repeaterUserCmd.angles[ i ] );
+	}
+
+	repeaterViewInfo.deltaViewAngles = delta;
 }
 
 /*

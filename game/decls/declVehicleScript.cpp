@@ -398,6 +398,22 @@ bool sdDeclVehicleScript::ParseView( positionViewMode_t& view, idParser& src ) {
 
 			view.sensitivityPitch = token;
 
+		} else if( !token.Icmp( "sensitivityYawScale" ) ) {
+
+			if( !src.ExpectTokenType( TT_STRING, 0, &token ) ) {
+				return false;
+			}
+
+			view.sensitivityYawScale = token;
+
+		} else if( !token.Icmp( "sensitivityPitchScale" ) ) {
+
+			if( !src.ExpectTokenType( TT_STRING, 0, &token ) ) {
+				return false;
+			}
+
+			view.sensitivityPitchScale = token;
+
 		} else if( !token.Icmp( "zoomOutSound" ) ) {
 
 			if( !src.ExpectTokenType( TT_STRING, 0, &token ) ) {

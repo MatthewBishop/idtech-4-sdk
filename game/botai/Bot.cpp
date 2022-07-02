@@ -44,21 +44,23 @@ idBot::idBot
 ================
 */
 idBot::idBot() {
-
 	firePistol = false;
 	firePliers = false;
 	lefty = false;
 	moveJumpNow = false;
 	leftyTimer = 5;
 	jumpTimer = 10;
+	nextAimUpdateTime = 0;
 	movingForward = 0;
 	proneDelay = 0;
 	hornTime = 0;
+	lowSkillAimPoint.Zero();
 	decoyTime = 0;
 	botNextWeapTime = 0;
 	botNextSiegeCmdTime = 0;
 	altAttackDelay = 0;
 	updateAimTime = 0;
+	botNextVehicleCmdTime = 0;
 	oldBotGoalType = NULL_GOAL_TYPE;
 	botViewAngles.Zero();
 	botHackMoveAngles.Zero();
@@ -90,7 +92,13 @@ void idBot::Think() {
 		return;
 	}
 
- 	if ( bot_pause.GetBool() ) { //mal: if the bot is being paused......
+	const clientInfo_t& bot = botThreadData.GetGameWorldState()->clientInfo[ entityNumber ];
+
+#ifdef _XENON
+ 	if ( bot_pause.GetBool() || ( gameLocal.rules && gameLocal.rules->IsWarmup() ) || ( botThreadData.PlayerIsBeingBriefed() && !bot.isActor ) ) { //mal: if the bot is being paused......
+#else
+	if ( bot_pause.GetBool() || ( botThreadData.PlayerIsBeingBriefed() && !bot.isActor ) ) { //mal: if the bot is being paused......
+#endif
 		usercmd_t &ucmd = gameLocal.usercmds[ entityNumber ];
 		Bot_ResetUcmd( ucmd );
 		ucmd.gameTime = gameLocal.time;
@@ -141,7 +149,6 @@ Sends the bot's user cmds to the server, updates bots cmd timers, etc.
 ================
 */
 void idBot::Bot_InputToUserCmd() {
-	
 	usercmd_t &ucmd = gameLocal.usercmds[ entityNumber ];
 	const botAIOutput_t& botOutput = botThreadData.GetGameOutputState()->botOutput[ entityNumber ];
 	clientInfo_t& botInfo = botThreadData.GetGameWorldState()->clientInfo[ entityNumber ];
@@ -153,6 +160,12 @@ void idBot::Bot_InputToUserCmd() {
 	ucmd.duplicateCount = 0;
 
 	Bot_ResetUcmd( ucmd );
+
+#ifdef _XENON
+	if ( gameLocal.rules->IsWarmup() ) { //mal: dont think or do anything in warmup on 360
+		return;
+	}
+#endif
 
 	botThreadData.VOChat( botOutput.desiredChat, entityNumber, botOutput.desiredChatForced );
 
@@ -166,6 +179,19 @@ void idBot::Bot_InputToUserCmd() {
 
 	if ( botOutput.botCmds.ackJustSpawned ) { //mal: the AI thread ack'd just spawning, so turn this flag off.
         botInfo.justSpawned = false;
+	}
+
+	if ( botOutput.botCmds.actorBriefedPlayer ) {
+		botThreadData.actorMissionInfo.hasBriefedPlayer = true;
+	}
+
+	if ( botOutput.botCmds.actorSurrenderStatus ) {
+		botInfo.isActor = false;
+	}
+
+	if ( botOutput.botCmds.actorIsBriefingPlayer ) { //mal_TODO: play the player anims for chatting. This has yet to be added. Play the chat here too.
+		gameLocal.Printf("Blah ");
+		botThreadData.GetGameWorldState()->clientInfo[ botThreadData.actorMissionInfo.targetClientNum ].briefingTime = gameLocal.time + 100;
 	}
 
 	if ( botOutput.tkReviveTime > 0 ) {
@@ -535,16 +561,31 @@ void idBot::Bot_ClientAimAtEnemy( int clientNum ) {
 	if ( !isPlayer ) { //mal: for vehicles, the origin can be kinda low, so up it a bit.
 		proxyInfo_t enemyVehicleInfo;	
 		GetVehicleInfo( player->GetProxyEntity()->entityNumber, enemyVehicleInfo );
-		float vehicleOffset = botThreadData.GetVehicleTargetOffset( enemyVehicleInfo.type );
-		vec.z += ( enemyVehicleInfo.bbox[ 1 ][ 2 ] - enemyVehicleInfo.bbox[ 0 ][ 2 ] ) * vehicleOffset;
+
+		if ( playerInfo.proxyInfo.weapon == MINIGUN && ( enemyVehicleInfo.type == MCP || enemyVehicleInfo.type == TITAN ) ) {
+			vec = GetPlayerViewPosition( clientNum );
+
+			if ( enemySpeed <= WALKING_SPEED ) {
+				vec.x += ( float ) botThreadData.random.RandomInt( 55 );
+				vec.y += ( float ) botThreadData.random.RandomInt( 55 );
+			}
+		} else {
+			float vehicleOffset = botThreadData.GetVehicleTargetOffset( enemyVehicleInfo.type );
+			vec.z += ( enemyVehicleInfo.bbox[ 1 ][ 2 ] - enemyVehicleInfo.bbox[ 0 ][ 2 ] ) * vehicleOffset;
+		}
 	}
 
 //mal: low skill bots have a degree of "jitter", and wont keep on target too much. We dont care about other bots for this, only humans.
 	if ( aimSkill < 1 && botThreadData.GetGameWorldState()->clientInfo[ player->entityNumber ].isBot == false && isPlayer && !hasRocket && !hasGrenade ) {
 		if ( velocity.LengthSqr() < Square( 84.0f ) && dist > Square( 300.0f ) ) { //mal: if the player is on foot, and isn't moving much, we'll add a bit of jitter so we dont kill them always.
-			vec.x += ( float ) botThreadData.random.RandomInt( 55 );
-			vec.y += ( float ) botThreadData.random.RandomInt( 55 );
-			vec.z -= ( float ) botThreadData.random.RandomInt( 155 );
+			if ( nextAimUpdateTime < gameLocal.time ) {
+				lowSkillAimPoint.x = ( float ) botThreadData.random.RandomInt( 55 );
+				lowSkillAimPoint.y = ( float ) botThreadData.random.RandomInt( 55 );
+				lowSkillAimPoint.z = -( float ) botThreadData.random.RandomInt( 155 );
+				nextAimUpdateTime = gameLocal.time + 500;
+			} else {
+				vec += lowSkillAimPoint;
+			}
 		}
 	}
 
@@ -804,6 +845,7 @@ void idBot::MoveUcmds( usercmd_t &ucmd ) {
 	idVec3 moveGoal2 = botThreadData.GetGameOutputState()->botOutput[ entityNumber ].moveGoal2;
 	botMoveFlags_t moveFlag = botThreadData.GetGameOutputState()->botOutput[ entityNumber ].moveFlag;
 	botMoveTypes_t moveType = botThreadData.GetGameOutputState()->botOutput[ entityNumber ].moveType;
+	botMoveTypes_t specialMoveType = botThreadData.GetGameOutputState()->botOutput[ entityNumber ].specialMoveType;
 	bool hasGroundContacts = GetPhysics()->HasGroundContacts();
 
 	botHackMoveAngles = botViewAngles;
@@ -1022,6 +1064,7 @@ void idBot::MoveUcmds( usercmd_t &ucmd ) {
     ucmd.buttons.btn.run = true; //mal: this will be true by default
 
 	switch( moveFlag ) {
+#ifndef _XENON
 		case PRONE: {
 			if ( !IsProne() ) {
 				if ( proneDelay < gameLocal.time ) {
@@ -1031,6 +1074,12 @@ void idBot::MoveUcmds( usercmd_t &ucmd ) {
 			}
 			break;
 		}
+#else 
+		case PRONE: { //mal: on the consoles, any call to prone, becomes a call to crouch ( the anims are being removed to save memory ).
+			ucmd.upmove = -127;
+			break;
+		}
+#endif
 
 		case CROUCH: {
             ucmd.upmove = -127;
@@ -1064,7 +1113,7 @@ void idBot::MoveUcmds( usercmd_t &ucmd ) {
 					ucmd.upmove = 0;
 				}
 
-				if ( leftyTimer >= 2 ) {
+				if ( leftyTimer >= 5 ) { //mal: this used to be 2.
 					lefty = !lefty;
 					leftyTimer = 0;
 				}
@@ -1087,6 +1136,14 @@ void idBot::MoveUcmds( usercmd_t &ucmd ) {
 			
 		default: {
             break;
+		}
+	}
+
+	if ( specialMoveType == QUICK_JUMP ) {
+		if ( !bot_noRandomJump.GetBool() && botThreadData.GetBotSkill() != BOT_SKILL_DEMO ) {
+			if ( botThreadData.random.RandomInt( 100 ) > 75 ) {
+				ucmd.upmove = 127;
+			}
 		}
 	}
 
@@ -1282,7 +1339,7 @@ void idBot::ActionUcmds( usercmd_t &ucmd ) {
 	}
 	
 	if ( clientUcmd.botCmds.attack ) {
-        if ( clientUcmd.botCmds.constantFire ) {
+		if ( clientUcmd.botCmds.constantFire || ( clientInfo.classType == SOLDIER && clientInfo.weapInfo.weapon == PISTOL && clientInfo.team == STROGG ) ) {
             ucmd.buttons.btn.attack = true;
 		} else {
 			if ( weaponReady && clientInfo.weapInfo.weapon != PISTOL && clientInfo.weapInfo.weapon != SCOPED_SMG ) {
@@ -1294,9 +1351,11 @@ void idBot::ActionUcmds( usercmd_t &ucmd ) {
 		}
 	}
 
+#ifndef _XENON
 	if ( clientUcmd.botCmds.topHat ) {
 		ucmd.buttons.btn.tophat = true;
 	}
+#endif
 
 	if ( clientUcmd.botCmds.launchPacks ) {
 		if ( clientInfo.weapInfo.weapon == HEALTH || clientInfo.weapInfo.weapon == AMMO_PACK ) {
@@ -1306,7 +1365,21 @@ void idBot::ActionUcmds( usercmd_t &ucmd ) {
 	}
 	
 	if ( clientUcmd.botCmds.reload ) {
-        Reload();
+		Reload();
+	}
+
+	if ( clientUcmd.botCmds.droppingSupplyCrate ) {
+		botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].supplyCrateRequestTime = gameLocal.time + SUPPLY_CRATE_DELAY_TIME;
+	}
+
+	if ( clientUcmd.botCmds.destroySupplyCrate ) {
+		if ( clientInfo.supplyCrate.entNum != 0 ) {
+			idEntity *supplyCrate = gameLocal.entities[ clientInfo.supplyCrate.entNum ];
+
+			if ( supplyCrate != NULL ) {
+				supplyCrate->Damage( NULL, NULL, idVec3( 0.0f, 0.0f, 1.0f ), DAMAGE_FOR_NAME( "damage_grenade_frag_splash" ), 999.0f, NULL );
+			}
+		}
 	}
 
 	if ( clientUcmd.botCmds.honkHorn == true || hornTime > gameLocal.time ) {
@@ -1355,10 +1428,23 @@ void idBot::ActionUcmds( usercmd_t &ucmd ) {
 		}            
 	}
 
-	if ( clientUcmd.botCmds.exitVehicle != false ) {
+	if ( clientUcmd.botCmds.switchAwayFromSniperRifle ) {
+		const sdDeclPlayerClass* pc;
+		if ( clientInfo.team == GDF ) {
+			pc = gameLocal.declPlayerClassType[ "covertops" ];
+		} else {
+			pc = gameLocal.declPlayerClassType[ "infiltrator" ];
+		}
+
+		ChangeClass( pc, 0 );
+	}
+
+	if ( clientUcmd.botCmds.exitVehicle != false && botNextVehicleCmdTime < gameLocal.time ) {
         idEntity* proxy = GetProxyEntity();
+
 		if ( proxy != NULL ) {
 			PerformImpulse( UCI_USE_VEHICLE );
+			botNextVehicleCmdTime = gameLocal.time + NEXT_VEHICLE_CMD_TIME;
 		}
 	}
 
@@ -1478,9 +1564,11 @@ void idBot::VehicleUcmds( usercmd_t &ucmd ) {
 		}
 	}
 
+#ifndef _XENON
 	if ( clientUcmd.botCmds.topHat ) {
 		ucmd.buttons.btn.tophat = true;
 	}
+#endif
 
 	if ( clientUcmd.botCmds.becomeGunner ) {
 		if ( transport->GetUsableInterface()->GetNumPositions() > 1 ) {
@@ -1503,11 +1591,12 @@ void idBot::VehicleUcmds( usercmd_t &ucmd ) {
 		botNextWeapTime = gameLocal.time + 1000;
 	}
 
-	if ( clientUcmd.botCmds.exitVehicle ) {
+	if ( clientUcmd.botCmds.exitVehicle && botNextVehicleCmdTime < gameLocal.time ) {
 		idEntity* proxy = GetProxyEntity();
 
 		if ( proxy != NULL ) {
 			PerformImpulse( UCI_USE_VEHICLE );
+			botNextVehicleCmdTime = gameLocal.time + NEXT_VEHICLE_CMD_TIME;
 		}
 	}
 
@@ -1794,7 +1883,7 @@ void idBot::GroundVehicleControls( usercmd_t &ucmd ) {
 			movingForward = 0;
 		}
 
-		if ( useBrakes ) {//mal: hit the brakes!
+		if ( useBrakes && vehicleInfo.type != GOLIATH ) {//mal: hit the brakes!
 			ucmd.upmove = 127;
 		} else {
 			if ( canSprint ) {
@@ -1839,7 +1928,7 @@ void idBot::GroundVehicleControls( usercmd_t &ucmd ) {
 			ucmd.upmove = 127;
 		}
 	} else {
-		if ( useBrakes ) {
+		if ( useBrakes && vehicleInfo.type != GOLIATH ) {
 			ucmd.upmove = 127;
 		}
 
@@ -1876,7 +1965,11 @@ void idBot::GroundVehicleControls( usercmd_t &ucmd ) {
 		ucmd.forwardmove = 0;
 		ucmd.rightmove = 0;
 		ucmd.buttons.btn.sprint = false;
-		ucmd.upmove = 127;
+
+		if ( vehicleInfo.type != GOLIATH ) {
+			ucmd.upmove = 127;
+		}
+
 		if ( vehicleInfo.forwardSpeed > 50.0f ) {
 			ucmd.forwardmove = -127;
 		} else if ( vehicleInfo.forwardSpeed < -50.0f ) {
@@ -2331,9 +2424,11 @@ void idBot::AirVehicleControls( usercmd_t &ucmd ) {
 		isBraking = true;
 	}
 
+#ifndef _XENON
 	if ( botOutput.botCmds.topHat ) {
 		ucmd.buttons.btn.tophat = true;
 	}
+#endif
 
 	if ( botThreadData.GetGameOutputState()->botOutput[ entityNumber ].moveType == AIR_COAST ) {
 		ucmd.buttons.btn.sprint = false;
@@ -2406,9 +2501,11 @@ void idBot::AirVehicleControls( usercmd_t &ucmd ) {
 					}
 
 					if ( botThreadData.GetGameOutputState()->botOutput[ entityNumber ].moveGoal == vec3_zero ) {
+#ifndef _XENON
 						if ( vehiclePitch < 0 ) {
 							ucmd.buttons.btn.tophat = false;
 						}
+#endif
 
 						if ( inFront ) {
 							Bot_ChangeAirVehicleViewAngles( transport->GetViewForPlayer( this ).GetRequiredViewAngles( enemyOrg ), false, false );

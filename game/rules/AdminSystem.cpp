@@ -1350,11 +1350,17 @@ bool sdAdminSystemCommand_AddBot::PerformCommand( const idCmdArgs& cmd, const sd
 	} else {
 
 		playerClassTypes_t criticalClass;
+		int numDesiredCriticalClass;
+		int	numDesiredMedicClass;
 
 		if ( botTeam == GDF ) {
 			criticalClass = botThreadData.GetGameWorldState()->botGoalInfo.team_GDF_criticalClass;
+			numDesiredCriticalClass = ( botThreadData.GetNumClientsOnTeam( GDF ) >= 6 ) ? 3 : 2;
+			numDesiredMedicClass = ( botThreadData.GetNumClientsOnTeam( GDF ) >= 7 ) ? 2 : 1;
 		} else {
 			criticalClass = botThreadData.GetGameWorldState()->botGoalInfo.team_STROGG_criticalClass;
+			numDesiredCriticalClass = ( botThreadData.GetNumClientsOnTeam( STROGG ) >= 6 ) ? 3 : 2;
+			numDesiredMedicClass = ( botThreadData.GetNumClientsOnTeam( STROGG ) >= 7 ) ? 2 : 1;
 		}
 
 		int numMedic = botThreadData.GetNumClassOnTeam( team, MEDIC );
@@ -1371,9 +1377,9 @@ bool sdAdminSystemCommand_AddBot::PerformCommand( const idCmdArgs& cmd, const sd
 		}
 
 		//mal: make sure we always have a couple bots of the critical class first, unless the human wants to do the obj.
-		if ( numCritical < 2 && numCritical != -1 ) {
+		if ( numCritical < numDesiredCriticalClass && numCritical != -1 ) {
 			botClass = criticalClass;
-		} else if ( numMedic == 0 ) {
+		} else if ( numMedic < numDesiredMedicClass ) {
 			botClass = MEDIC;
 		} else if ( numSoldier == 0 ) {
 			botClass = SOLDIER;

@@ -146,8 +146,6 @@ returns the number of bytes freed
 */
 template<class type, int blockSize>
 int sdPoolAlloc<type,blockSize>::Compact( void ) {
-	bool			allFreed = true;
-
 	bool			usedHeap = false;
 	block_t**		blocksToUnlink = NULL;
 	int				blocksToUnlinkNum = 0;
@@ -163,6 +161,8 @@ int sdPoolAlloc<type,blockSize>::Compact( void ) {
 	block_t* prev = NULL;
 
 	while( block != NULL ) {
+		bool allFreed = true;
+
 		for( int i = 0; i < blockSize; i++ ) {
 			if( !IsFree( &block->elements[ i ] ) ) {
 				allFreed = false;
@@ -500,7 +500,7 @@ public:
 	============
 	*/
 	void operator delete[]( void* ptr, size_t size ) {
-		::delete[]( ptr );
+		::delete[]( static_cast< char* >( ptr ) );
 	}
 
 	/*
@@ -509,7 +509,7 @@ public:
 	============
 	*/
 	void operator delete[]( void *ptr, size_t size, int t2, char *fileName, int lineNumber ) {
-		::delete[]( ptr );
+		::delete[]( static_cast< char* >( ptr ) );
 	}
 
 private:

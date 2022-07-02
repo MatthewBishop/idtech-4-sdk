@@ -296,6 +296,8 @@ void			Sys_WritePid();
 
 const char*		Sys_GetEnv( const char* varName );
 
+FILE*			Sys_TempFile( void );
+
 /*
 ==============================================================
 

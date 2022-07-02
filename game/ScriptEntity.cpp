@@ -2390,6 +2390,11 @@ void sdScriptEntity::OnTouch( idEntity *other, const trace_t& trace ) {
 		return;
 	}
 
+	idPlayer* player = other->Cast< idPlayer >();
+	if ( player != NULL && !player->IsSpectator() && player->GetHealth() <= 0 ) {
+		return;
+	}
+
 	sdLoggedTrace* loggedTrace = gameLocal.RegisterLoggedTrace( trace );
 
 	sdScriptHelper helper;
@@ -2574,18 +2579,12 @@ void sdScriptEntity::UpdateKillStats( idPlayer* player, const sdDeclDamage* dama
 
 	sdStatsTracker& tracker = sdGlobalStatsTracker::GetInstance();
 
-	sdPlayerStatEntry* entry = NULL;
-
 	teamAllegiance_t allegiance = GetEntityAllegiance( player );
 	if ( allegiance == TA_ENEMY ) {
-		entry = tracker.GetStat( tracker.AllocStat( va( "%s_kills_%s", prefix, killStatSuffix.c_str() ), sdNetStatKeyValue::SVT_INT ) );
-		entry = tracker.GetStat( tracker.AllocStat( va( "total_kills_%s", prefix, killStatSuffix.c_str() ), sdNetStatKeyValue::SVT_INT ) );
+		tracker.GetStat( tracker.AllocStat( va( "%s_kills_%s", prefix, killStatSuffix.c_str() ), sdNetStatKeyValue::SVT_INT ) )->IncreaseValue( player->entityNumber, 1 );
+		tracker.GetStat( tracker.AllocStat( va( "total_kills_%s", prefix, killStatSuffix.c_str() ), sdNetStatKeyValue::SVT_INT ) )->IncreaseValue( player->entityNumber, 1 );
 	} else if ( allegiance == TA_FRIEND ) {
-		entry = tracker.GetStat( tracker.AllocStat( va( "%s_teamkills_%s", prefix, killStatSuffix.c_str() ), sdNetStatKeyValue::SVT_INT ) );
-	}
-
-	if ( entry ) {
-		entry->IncreaseValue( player->entityNumber, 1 );
+		tracker.GetStat( tracker.AllocStat( va( "%s_teamkills_%s", prefix, killStatSuffix.c_str() ), sdNetStatKeyValue::SVT_INT ) )->IncreaseValue( player->entityNumber, 1 );
 	}
 }
 

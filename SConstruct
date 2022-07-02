@@ -366,13 +366,13 @@ if ( ID_MCHECK == '1' ):
 g_base_env = Environment( ENV = os.environ, CC = CC, CXX = CXX, LINK = LINK, CPPFLAGS = BASECPPFLAGS, CXXFLAGS = BASECXXFLAGS, LINKFLAGS = BASELINKFLAGS, CPPPATH = CORECPPPATH, LIBPATH = CORELIBPATH )
 scons_utils.SetupUtils( g_base_env )
 
-g_env = g_base_env.Copy()
+g_env = g_base_env.Clone()
 
 g_env['CPPFLAGS'] += OPTCPPFLAGS
 g_env['CPPFLAGS'] += CORECPPFLAGS
 g_env['LINKFLAGS'] += CORELINKFLAGS
 
-g_game_env = g_base_env.Copy()
+g_game_env = g_base_env.Clone()
 g_game_env['CPPFLAGS'] += OPTCPPFLAGS
 g_game_env['CPPFLAGS'] += GAMECPPFLAGS
 
@@ -470,6 +470,7 @@ if ( TARGET_CORE == '1' or TARGET_MONO == '1' ):
 BuildDir( g_build, '.', duplicate = 0 )
 if ( g_sdk ):
 	version_file = [ [ 'framework/BuildVersion.h' ], [ '#framework/BuildVersion.cpp' ] ] # not generated in SDK builds
+	version = '-1.-1'
 else:
 	( version_file, version ) = SConscript( 'sys/scons/SConscript.version' )
 

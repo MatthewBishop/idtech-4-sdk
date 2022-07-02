@@ -71,6 +71,8 @@ protected:
 
 	idCVar*							sensitivityYaw;
 	idCVar*							sensitivityPitch;
+	idCVar*							sensitivityYawScale;
+	idCVar*							sensitivityPitchScale;
 
 	idVec3							thirdPersonViewOrigin;
 	idMat3							thirdPersonViewAxes;

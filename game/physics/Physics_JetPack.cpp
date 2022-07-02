@@ -1536,6 +1536,8 @@ VEC_CHECK_BAD( current.velocity );
 //		pusher->Disable();
 		SlideMove( true, true, false, pushCount + 1, timeDelta );
 //		pusher->Enable();
+		current.velocity.FixDenormals();
+		current.origin.FixDenormals();
 VEC_CHECK_BAD( current.velocity );
 VEC_CHECK_BAD( current.origin );
 
