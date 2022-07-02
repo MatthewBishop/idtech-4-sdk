@@ -104,7 +104,8 @@ typedef struct glconfig_s {
 // Anu adding support to toggle SMP
 #ifdef ENABLE_INTEL_SMP
 	bool				isSmpAvailable;
-	bool				isSmpActive;
+	int					isSmpActive;
+	int					rearmSmp;
 #endif
 // INTEL END
 
@@ -214,6 +215,8 @@ public:
 	virtual void			ShutdownOpenGL( void ) = 0;
 
 	virtual bool			IsOpenGLRunning( void ) const = 0;
+	virtual void			GetValidModes( idStr &Mode4x3Text, idStr &Mode4x3Values, idStr &Mode16x9Text, idStr &Mode16x9Values, 
+										   idStr &Mode16x10Text, idStr &Mode16x10Values ) = 0;
 
 	virtual bool			IsFullScreen( void ) const = 0;
 	virtual int				GetScreenWidth( void ) const = 0;
@@ -273,13 +276,6 @@ public:
 	};
 	virtual void			TrackTextureUsage( TextureTrackCommand command, int frametime = 0, const char *name=NULL ) = 0;
 #endif
-#if defined(_CONSOLE) || defined(TEST_MANUAL_STREAMING)
-	virtual void			BeginManualStreaming( idList<dword> &imageTable, idList<int> &imageCmds ) = 0;
-	virtual void			UpdateManualStreaming( int frametime ) = 0;
-	virtual bool			ServiceManualStreaming( void ) = 0;
-	virtual void			EndManualStreaming( void ) = 0;
-	virtual bool			IsManuallyStreaming( void ) = 0;
-#endif
 // RAVEN END
 
 	// font support
@@ -288,8 +284,7 @@ public:
 	virtual void			SetColor( const idVec4 &rgba ) = 0;
 	virtual void			SetColor4( float r, float g, float b, float a ) = 0;
 
-	virtual void			DrawStretchPic( const idDrawVert *verts, const glIndex_t *indexes, int vertCount, int indexCount, const idMaterial *material,
-											bool clip = true, float min_x = 0.0f, float min_y = 0.0f, float max_x = 640.0f, float max_y = 480.0f ) = 0;
+	virtual void			DrawStretchPic( const idDrawVert *verts, const glIndex_t *indexes, int vertCount, int indexCount, const idMaterial *material, bool clip = true ) = 0;
 	virtual void			DrawStretchPic( float x, float y, float w, float h, float s1, float t1, float s2, float t2, const idMaterial *material ) = 0;
 // RAVEN BEGIN
 // jnewquist: Deal with flipped back-buffer copies on Xenon

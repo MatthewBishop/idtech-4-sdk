@@ -13,7 +13,10 @@ public:
 	ABSTRACT_PROTOTYPE( rvClientEntity );
 
 	rvClientEntity ( void );
+
 	virtual ~rvClientEntity ( void );
+
+	void				Spawn				( void );
 
 	virtual void		Present				( void );
 	virtual void		Think				( void );
@@ -25,12 +28,14 @@ public:
 	const idVec3&		GetOrigin			( void );
 	const idMat3&		GetAxis				( void );
 	
-	void				Bind				( idEntity* master, jointHandle_t joint = INVALID_JOINT );
+	void				Bind				( idEntity* master, jointHandle_t joint = INVALID_JOINT, bool isOrientated = false );
 	void				Unbind				( void );
 
 	virtual bool		IsClient			( void ) const;
 	virtual void		DrawDebugInfo		( void ) const;
 
+	void				SetSoundVolume( float volume );
+	bool				StartSound( const char *soundName, const s_channelType channel, int soundShaderFlags, bool broadcast, int *length );
 	int					StartSoundShader	( const idSoundShader *shader, const s_channelType channel, int soundShaderFlags );
 
 	// I'm guessing someone may decide to derive from rvClientEntity, so this virtual.
@@ -43,6 +48,13 @@ public:
 	void				Save				( idSaveGame *savefile ) const;
 	void				Restore				( idRestoreGame *savefile );
 
+	virtual void		GetImpactInfo		( idEntity *ent, int id, const idVec3 &point, impactInfo_t *info );
+	virtual void		ApplyImpulse		( idEntity *ent, int id, const idVec3 &point, const idVec3 &impulse, bool splash );
+	virtual void		AddForce			( idEntity *ent, int id, const idVec3 &point, const idVec3 &force );
+
+	virtual bool		UpdateAnimationControllers( void );
+
+	void				InitDefaultPhysics	( const idVec3 &origin, const idMat3 &axis );
 protected:
 
 	void				RunPhysics			( void );
@@ -57,16 +69,21 @@ public:
 	idLinkList<rvClientEntity>	spawnNode;
 	idLinkList<rvClientEntity>	bindNode;
 
+	idDict						spawnArgs;
+
 protected:
+	idPhysics_Static			defaultPhysicsObj;					// default physics object
+	idPhysics*					physics;
 
 	idVec3						worldOrigin;
+	idVec3						worldVelocity;
 	idMat3						worldAxis;
 
 	idEntityPtr<idEntity>		bindMaster;
 	idVec3						bindOrigin;
 	idMat3						bindAxis;
 	jointHandle_t				bindJoint;
-	
+	bool						bindOrientated;
 	refSound_t					refSound;
 };
 
@@ -138,13 +155,13 @@ ID_INLINE bool rvClientEntityPtr<type>::SetSpawnId( int id ) {
 
 template< class type >
 ID_INLINE bool rvClientEntityPtr<type>::IsValid( void ) const {
-	return ( gameLocal.clientSpawnIds[ spawnId & ( ( 1 << CENTITYNUM_BITS ) - 1 ) ] == ( spawnId >> CENTITYNUM_BITS ) );
+	return ( gameLocal.clientSpawnIds[ spawnId & ( ( 1 << CENTITYNUM_BITS ) - 1 ) ] == ( ( spawnId >> CENTITYNUM_BITS ) & ( 0xffffffff >> CENTITYNUM_BITS ) ) );
 }
 
 template< class type >
 ID_INLINE type *rvClientEntityPtr<type>::GetEntity( void ) const {
 	int entityNum = spawnId & ( ( 1 << CENTITYNUM_BITS ) - 1 );
-	if ( ( gameLocal.clientSpawnIds[ entityNum ] == ( spawnId >> CENTITYNUM_BITS ) ) ) {
+	if ( ( gameLocal.clientSpawnIds[ entityNum ] == ( ( spawnId >> CENTITYNUM_BITS ) & ( 0xffffffff >> CENTITYNUM_BITS ) ) ) ) {
 		return static_cast<type *>( gameLocal.clientEntities[ entityNum ] );
 	}
 	return NULL;
@@ -183,9 +200,19 @@ public:
 	void				Spawn( void );
 
 	virtual bool		Collide( const trace_t &collision, const idVec3 &velocity );
-	
-	int		currentEntityNumber;
-};
+	virtual	void		PushBindInfo( idEntity* master, jointHandle_t joint, bool orientated );
+	virtual void		PopBindInfo( void );
 
+	virtual	void		PushOriginInfo( const idVec3& origin, const idMat3& axis );
+	virtual void		PopOriginInfo( void );
+
+	int					currentEntityNumber;
+private:
+	idEntity*			pushedBindMaster;
+	jointHandle_t		pushedBindJoint;
+	idVec3				pushedOrigin;
+	idMat3				pushedAxis;
+	bool				pushedOrientated;		
+};
 
 #endif // __GAME_CLIENT_ENTITY_H__

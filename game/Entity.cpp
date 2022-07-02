@@ -417,6 +417,9 @@ void idGameEdit::ParseSpawnArgsToRefSound( const idDict *args, refSound_t *refSo
 	if ( args->GetBool( "s_unclamped" ) ) {
 		refSound->parms.soundShaderFlags |= SSF_UNCLAMPED;
 	}
+	if ( args->GetBool( "s_center" ) ) {
+		refSound->parms.soundShaderFlags |= SSF_CENTER;
+	}
 
 	refSound->parms.soundClass = args->GetInt( "s_soundClass" );
 
@@ -540,12 +543,6 @@ void idEntity::Spawn( void ) {
 	const char			*scriptObjectName;
 
 	gameLocal.RegisterEntity( this );
-
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-	declManager->SetEntityMaterialList(&renderEntity.allMaterials);
-#endif
 
 // bdube: make sure there is a classname before trying to use it
 	if ( spawnArgs.GetString( "classname", NULL, &classname ) ) {
@@ -679,10 +676,8 @@ void idEntity::Spawn( void ) {
 // bgeisler: added
 	fl.triggerAnim = spawnArgs.GetBool( "trigger_anim" );
 
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-	declManager->SetEntityMaterialList(0);
-#endif
+	// precache decls
+	declManager->FindType( DECL_ENTITYDEF, "damage_crush", false, false );
 // RAVEN END
 }
 
@@ -793,7 +788,7 @@ void idEntity::Save( idSaveGame *savefile ) const {
 
 	savefile->WriteStaticObject( defaultPhysicsObj );
 
-	savefile->WriteObject( bindMaster );
+	savefile->WriteObject( bindMaster.GetEntity() );
 	savefile->WriteJoint( bindJoint );
 	savefile->WriteInt( bindBody );
 	savefile->WriteObject( teamMaster );
@@ -894,7 +889,10 @@ void idEntity::Restore( idRestoreGame *savefile ) {
 	savefile->ReadStaticObject( defaultPhysicsObj );
 	RestorePhysics( &defaultPhysicsObj );
 
-	savefile->ReadObject( reinterpret_cast<idClass *&>( bindMaster ) );
+	idEntity *templol = 0;
+	savefile->ReadObject( reinterpret_cast<idClass *&>( templol ) );
+	bindMaster = templol;
+
 	savefile->ReadJoint( bindJoint );
 	savefile->ReadInt( bindBody );
 	savefile->ReadObject( reinterpret_cast<idClass *&>( teamMaster ) );
@@ -932,6 +930,9 @@ void idEntity::Restore( idRestoreGame *savefile ) {
 
 	savefile->ReadInt( instance );
 	savefile->ReadInt( clipWorld );
+
+	// precache decls
+	declManager->FindType( DECL_ENTITYDEF, "damage_crush", false, false );
 }
 
 /*
@@ -1613,6 +1614,14 @@ void idEntity::Present( void ) {
 	}
 // RAVEN END
 
+	// don't render server demo stuff that's not in our instance
+	if ( gameLocal.GetDemoState() == DEMO_PLAYING && gameLocal.IsServerDemo() ) {
+		if ( instance != 0 ) {
+			FreeModelDef();
+			return;
+		}
+	}
+
 	// don't present to the renderer if the entity hasn't changed
 	if ( !( thinkFlags & TH_UPDATEVISUALS ) ) {
 		return;
@@ -1714,13 +1723,6 @@ renderView_t *idEntity::GetRenderView( void ) {
 
 	renderView->time = gameLocal.time;
 
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming.
-#if defined(_XENON)
-	renderView->streamingPrecache = false;
-#endif
-// RAVEN END
-
 	return renderView;
 }
 
@@ -1783,8 +1785,19 @@ rvClientEffect* idEntity::PlayEffect( const idDecl *effect, jointHandle_t joint,
 // RAVEN END
 
 	RV_PUSH_SYS_HEAP_ID(RV_HEAP_ID_MULTIPLE_FRAME);
-	rvClientEffect* clientEffect = new rvClientEffect( effect );
+	rvClientEffect* clientEffect = new rvClientEffect ( effect );
 	RV_POP_HEAP();
+
+	if( !clientEffect ) {
+		common->Warning( "Failed to create effect \'%s\'\n", effect->GetName() );
+		return NULL;
+	}
+
+	if( clientEffect->entityNumber == -1 ) {
+		common->Warning( "Failed to spawn effect \'%s\'\n", effect->GetName() );
+		delete clientEffect;
+		return NULL;
+	}
 
 	clientEffect->SetOrigin ( originOffset );
 	clientEffect->SetAxis ( axisOffset );
@@ -1866,12 +1879,21 @@ rvClientEffect* idEntity::PlayEffect( const idDecl *effect, const idVec3& origin
 // RAVEN BEGIN
 // mwhitlock: Dynamic memory consolidation
 	RV_PUSH_SYS_HEAP_ID(RV_HEAP_ID_MULTIPLE_FRAME);
-// RAVEN END
 	rvClientEffect* clientEffect = new rvClientEffect ( effect );
-// RAVEN BEGIN
-// mwhitlock: Dynamic memory consolidation
 	RV_POP_HEAP();
 // RAVEN END
+
+	if( !clientEffect ) {
+		common->Warning( "Failed to create effect \'%s\'\n", effect->GetName() );
+		return NULL;
+	}
+
+	if( clientEffect->entityNumber == -1 ) {
+		common->Warning( "Failed to spawn effect \'%s\'\n", effect->GetName() );
+		delete clientEffect;
+		return NULL;
+	}
+
 	clientEffect->SetOrigin ( localOrigin );
 	clientEffect->SetAxis ( localAxis );
 	clientEffect->Bind ( this );
@@ -2041,7 +2063,7 @@ bool idEntity::StartSoundShader( const idSoundShader *shader, const s_channelTyp
 		return false;
 	}
 
-// rjohnson: don't play sounds on a dedicated server!
+	// rjohnson: don't play sounds on a dedicated server!
 	if ( gameLocal.isMultiplayer && !gameLocal.isClient && !gameLocal.isListenServer ) {
 		return false;
 	}
@@ -2098,7 +2120,7 @@ void idEntity::StopSound( const s_channelType channel, bool broadcast ) {
 	}
 
 	// in MP, don't play sounds from other instances
-	if( gameLocal.isMultiplayer && gameLocal.GetLocalPlayer() && gameLocal.GetLocalPlayer()->GetInstance() != instance ) {
+	if ( gameLocal.isMultiplayer && gameLocal.GetLocalPlayer() && gameLocal.GetLocalPlayer()->GetInstance() != instance ) {
 		return;
 	}
 
@@ -4523,9 +4545,11 @@ void idEntity::Teleport( const idVec3 &origin, const idAngles &angles, idEntity 
 idEntity::TouchTriggers
 
   Activate all trigger entities touched at the current position.
+
+  Optionally only activate triggers of ownerType
 ============
 */
-bool idEntity::TouchTriggers( void ) const {
+bool idEntity::TouchTriggers( const idTypeInfo* ownerType ) const {
 	int				i, numClipModels, numEntities;
 	idClipModel *	cm;
 	idClipModel *	clipModels[ MAX_GENTITIES ];
@@ -4553,6 +4577,10 @@ bool idEntity::TouchTriggers( void ) const {
 		ent = cm->GetEntity();
 
 		if ( !ent->RespondsTo( EV_Touch ) && !ent->HasSignal( SIG_TOUCH ) ) {
+			continue;
+		}
+
+		if( ownerType && !ent->IsType( *ownerType ) ) {
 			continue;
 		}
 
@@ -6491,13 +6519,6 @@ void idAnimatedEntity::AddDamageEffect( const trace_t &collision, const idVec3 &
 	const char *splat, *decal, *key;
 	idVec3 dir;
 
-// RAVEN BEGIN
-// mekberg: changed from g_bloodEffects to g_decals
-	if ( !g_decals.GetBool() ) {
-		return;
-	}
-// RAVEN END
-
 	const idDeclEntityDef *def = gameLocal.FindEntityDef( damageDefName, false );
 	if ( def == NULL || !def->dict.GetBool ( "bleed" ) ) {
 		return;
@@ -6523,6 +6544,10 @@ void idAnimatedEntity::AddDamageEffect( const trace_t &collision, const idVec3 &
 		idGameLocal::WriteDecl( msg, def );
 		idGameLocal::WriteDecl( msg, collision.c.material );
 		ServerSendInstanceEvent( EVENT_ADD_DAMAGE_EFFECT, &msg, false, -1 );
+	}
+
+	if ( !g_decals.GetBool() ) {
+		return;
 	}
 
 	if ( gameLocal.GetLocalPlayer() && GetInstance() != gameLocal.GetLocalPlayer()->GetInstance() ) {
@@ -6562,6 +6587,9 @@ void idAnimatedEntity::AddDamageEffect( const trace_t &collision, const idVec3 &
 			}
 			if ( decal && *decal ) {
 				ProjectOverlay( collision.c.point, dir, 20.0f, decal );
+				if( IsType( idPlayer::GetClassType() ) ) {
+					ProjectHeadOverlay( collision.c.point, dir, 20.0f, decal );
+				}
 			}
 		}
 	}

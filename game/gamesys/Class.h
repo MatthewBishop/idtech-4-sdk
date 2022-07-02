@@ -64,6 +64,20 @@ It prototypes variables used in class instanciation and type checking.
 Use this on single inheritance concrete classes only.
 ================
 */
+#ifdef USE_STATIC_CLASS_CONSTRUCTION
+
+#define CLASS_PROTOTYPE( nameofclass )									\
+private:																\
+	static	idTypeInfo						Type;						\
+public:																	\
+	static	void							RegisterClass( void );		\
+	static	idClass							*CreateInstance( void );	\
+	static	idTypeInfo						&GetClassType( void );		\
+	virtual	idTypeInfo						*GetType( void ) const;		\
+	static	idEventFunc<nameofclass>		eventCallbacks[]
+
+#else
+
 // RAVEN BEGIN
 // jnewquist: Use accessor for static class type 
 #define CLASS_PROTOTYPE( nameofclass )									\
@@ -77,6 +91,8 @@ public:																	\
 	static	idEventFunc<nameofclass>		eventCallbacks[]
 // RAVEN END
 
+#endif // USE_STATIC_CLASS_CONSTRUCTION
+
 /*
 ================
 CLASS_DECLARATION
@@ -88,6 +104,41 @@ proper superclass is indicated or the run-time type information will be
 incorrect.  Use this on concrete classes only.
 ================
 */
+
+#ifdef USE_STATIC_CLASS_CONSTRUCTION
+
+#define CLASS_DECLARATION( nameofsuperclass, nameofclass )											\
+	idTypeInfo nameofclass::Type( #nameofclass, #nameofsuperclass,											\
+			( idEventFunc<idClass> * )nameofclass::eventCallbacks,	nameofclass::CreateInstance, ( void ( idClass::* )( void ) )&nameofclass::Spawn,	\
+			( rvStateFunc<idClass> * )nameofclass::stateCallbacks,																						\
+			( void ( idClass::* )( idSaveGame * ) const )&nameofclass::Save, ( void ( idClass::* )( idRestoreGame * ) )&nameofclass::Restore );	\
+	void nameofclass::RegisterClass( void ) {														\
+	}																								\
+	void Register_##nameofclass( void ) {															\
+		nameofclass::RegisterClass();																\
+	}																								\
+	idClass *nameofclass::CreateInstance( void ) {													\
+		try {																						\
+			RV_PUSH_SYS_HEAP_ID(RV_HEAP_ID_LEVEL);													\
+			nameofclass *ptr = new nameofclass;														\
+			RV_POP_HEAP();																			\
+			ptr->FindUninitializedMemory();															\
+			return ptr;																				\
+		}																							\
+		catch( idAllocError & ) {																	\
+			return NULL;																			\
+		}																							\
+	}																								\
+	idTypeInfo &nameofclass::GetClassType( void ) {													\
+		return nameofclass::Type;																	\
+	}																								\
+	idTypeInfo *nameofclass::GetType( void ) const {												\
+		return &nameofclass::Type;																	\
+	}																								\
+idEventFunc<nameofclass> nameofclass::eventCallbacks[] = {
+
+#else
+
 // RAVEN BEGIN
 // bdube: Added states
 // jnewquist: Use accessor for static class type
@@ -125,6 +176,9 @@ incorrect.  Use this on concrete classes only.
 idEventFunc<nameofclass> nameofclass::eventCallbacks[] = {
 // RAVEN END
 
+#endif // USE_STATIC_CLASS_CONSTRUCTION
+
+
 /*
 ================
 ABSTRACT_PROTOTYPE
@@ -134,6 +188,21 @@ It prototypes variables used in class instanciation and type checking.
 Use this on single inheritance abstract classes only.
 ================
 */
+
+#ifdef USE_STATIC_CLASS_CONSTRUCTION
+
+#define ABSTRACT_PROTOTYPE( nameofclass )								\
+private:																\
+	static	idTypeInfo						Type;						\
+public:																	\
+	static	void							RegisterClass( void );		\
+	static	idClass							*CreateInstance( void );	\
+	static	idTypeInfo						&GetClassType( void );		\
+	virtual	idTypeInfo						*GetType( void ) const;		\
+	static	idEventFunc<nameofclass>		eventCallbacks[]
+
+#else
+
 // RAVEN BEGIN
 // jnewquist: Use accessor for static class type 
 #define ABSTRACT_PROTOTYPE( nameofclass )								\
@@ -147,6 +216,8 @@ public:																	\
 	static	idEventFunc<nameofclass>		eventCallbacks[]
 // RAVEN END
 
+#endif // USE_STATIC_CLASS_CONSTRUCTION
+
 /*
 ================
 ABSTRACT_DECLARATION
@@ -158,6 +229,32 @@ indicated or the run-time tyep information will be incorrect.  Use this
 on abstract classes only.
 ================
 */
+
+#ifdef USE_STATIC_CLASS_CONSTRUCTION
+
+#define ABSTRACT_DECLARATION( nameofsuperclass, nameofclass )										\
+	idTypeInfo nameofclass::Type( #nameofclass, #nameofsuperclass,									\
+			( idEventFunc<idClass> * )nameofclass::eventCallbacks, nameofclass::CreateInstance, ( void ( idClass::* )( void ) )&nameofclass::Spawn,	\
+			( rvStateFunc<idClass> * )nameofclass::stateCallbacks,																					\
+			( void ( idClass::* )( idSaveGame * ) const )&nameofclass::Save, ( void ( idClass::* )( idRestoreGame * ) )&nameofclass::Restore );		\
+	void nameofclass::RegisterClass( void ) {														\
+	}																								\
+	void Register_##nameofclass( void ) {															\
+		nameofclass::RegisterClass();																\
+	}																								\
+	idClass *nameofclass::CreateInstance( void ) {													\
+		gameLocal.Error( "Cannot instanciate abstract class %s.", #nameofclass );					\
+		return NULL;																				\
+	}																								\
+	idTypeInfo &nameofclass::GetClassType( void ) {													\
+		return nameofclass::Type;																	\
+	}																								\
+	idTypeInfo *nameofclass::GetType( void ) const {												\
+		return &nameofclass::Type;																	\
+	}																								\
+	idEventFunc<nameofclass> nameofclass::eventCallbacks[] = {
+
+#else
 
 // RAVEN BEGIN
 // bdube: added states
@@ -187,6 +284,8 @@ on abstract classes only.
 	idEventFunc<nameofclass> nameofclass::eventCallbacks[] = {
 
 // RAVEN END
+
+#endif // USE_STATIC_CLASS_CONSTRUCTION
 
 typedef void ( idClass::*classSpawnFunc_t )( void );
 

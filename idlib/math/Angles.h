@@ -86,6 +86,8 @@ public:
 	const float *	ToFloatPtr( void ) const;
 	float *			ToFloatPtr( void );
 	const char *	ToString( int precision = 2 ) const;
+
+	bool			FixDenormals( void );
 };
 
 extern idAngles ang_zero;
@@ -282,5 +284,23 @@ ID_INLINE idAngles& idAngles::Remap( const int map[], const int dirMap[] ) {
 	return *this;
 }
 // RAVEN END
+
+ID_INLINE bool idAngles::FixDenormals( void ) {
+	bool denormal = false;
+	if ( fabs( yaw ) < 1e-30f ) {
+		yaw = 0.0f;
+		denormal = true;
+	}
+	if ( fabs( pitch ) < 1e-30f ) {
+		pitch = 0.0f;
+		denormal = true;
+	}
+	if ( fabs( roll ) < 1e-30f ) {
+		roll = 0.0f;
+		denormal = true;
+	}
+	return denormal;
+
+}
 
 #endif /* !__MATH_ANGLES_H__ */

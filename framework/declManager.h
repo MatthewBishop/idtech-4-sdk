@@ -65,6 +65,7 @@ typedef enum {
 	DECL_MAPDEF,
 
 	// new decl types can be added here
+	DECL_PLAYER_MODEL,
 
 	DECL_MAX_TYPES			= 32
 } declType_t;
@@ -293,6 +294,7 @@ ID_INLINE SerializableBase *idDeclStreamAllocator( SerialInputStream &stream ) {
 
 
 class idMaterial;
+class idDeclTable;
 class idDeclSkin;
 class idSoundShader;
 
@@ -302,6 +304,7 @@ class rvDeclMatType;
 class rvDeclLipSync;
 class rvDeclPlayback;
 class rvDeclEffect;
+class rvDeclPlayerModel;
 // RAVEN END
 
 class idDeclManager {
@@ -396,6 +399,7 @@ public:
 // RAVEN END
 									// Convenience functions for specific types.
 	virtual	const idMaterial *		FindMaterial( const char *name, bool makeDefault = true ) = 0;
+	virtual const idDeclTable *		FindTable( const char *name, bool makeDefault = true ) = 0;
 	virtual const idDeclSkin *		FindSkin( const char *name, bool makeDefault = true ) = 0;
 	virtual const idSoundShader *	FindSound( const char *name, bool makeDefault = true ) = 0;
 // RAVEN BEGIN
@@ -407,6 +411,7 @@ public:
 // RAVEN END
 
 	virtual const idMaterial *		MaterialByIndex( int index, bool forceParse = true ) = 0;
+	virtual const idDeclTable *		TableByIndex( int index, bool forceParse = true ) = 0;
 	virtual const idDeclSkin *		SkinByIndex( int index, bool forceParse = true ) = 0;
 	virtual const idSoundShader *	SoundByIndex( int index, bool forceParse = true ) = 0;
 // RAVEN BEGIN

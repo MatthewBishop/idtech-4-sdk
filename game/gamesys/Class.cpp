@@ -195,10 +195,14 @@ from the class list since the program is shutting down.
 */
 void idTypeInfo::Shutdown() {
 	// free up the memory used for event lookups
-	if ( eventMap && freeEventMap ) {
-		delete[] eventMap;
+	if ( eventMap ) {
+		if ( freeEventMap ) {
+			delete[] eventMap;
+		}
 		eventMap = NULL;
 	}
+	typeNum = 0;
+	lastChild = 0;
 }
 
 
@@ -1318,6 +1322,9 @@ void idClass::RegisterClasses( void )
 	REGISTER(rvClientEffect); // ..\..\code\game\client\ClientEffect.cpp
 	REGISTER(rvClientEntity); // ..\..\code\game\client\ClientEntity.cpp
 	REGISTER(rvClientModel); // ..\..\code\game\client\ClientModel.cpp
+	REGISTER(rvAnimatedClientEntity); // ..\..\code\game\client\ClientModel.cpp
+	REGISTER(rvClientAFEntity); // ..\..\code\game\client\ClientAFEntity.cpp
+	REGISTER(rvClientAFAttachment); // ..\..\code\game\client\ClientAFEntity.cpp
 	REGISTER(rvClientMoveable); // ..\..\code\game\client\ClientMoveable.cpp
 	REGISTER(rvClientPhysics); // ..\..\code\game\client\ClientEntity.cpp
 	REGISTER(rvConveyor); // ..\..\code\game\Mover.cpp

@@ -917,7 +917,9 @@ bool idPhysics_RigidBody::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	}
 
 #ifdef RB_TIMINGS
-	timer_total.Start();
+	if ( rb_showTimings->integer != 0 ) {
+		timer_total.Start();
+	}
 #endif
 
 	// move the rigid body velocity into the frame of a pusher
@@ -932,14 +934,18 @@ bool idPhysics_RigidBody::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	Integrate( timeStep, next );
 
 #ifdef RB_TIMINGS
-	timer_collision.Start();
+	if ( rb_showTimings->integer != 0 ) {
+		timer_collision.Start();
+	}
 #endif
 
 	// check for collisions from the current to the next state
 	collided = CheckForCollisions( timeStep, next, collision );
 
 #ifdef RB_TIMINGS
-	timer_collision.Stop();
+	if ( rb_showTimings->integer != 0 ) {
+		timer_collision.Stop();
+	}
 #endif
 
 	// set the new state
@@ -966,13 +972,17 @@ bool idPhysics_RigidBody::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	if ( !noContact ) {
 
 #ifdef RB_TIMINGS
-		timer_collision.Start();
+		if ( rb_showTimings->integer != 0 ) {
+			timer_collision.Start();
+		}
 #endif
 		// get contacts
 		EvaluateContacts();
 
 #ifdef RB_TIMINGS
-		timer_collision.Stop();
+		if ( rb_showTimings->integer != 0 ) {
+			timer_collision.Stop();
+		}
 #endif
 
 		// check if the body has come to rest
@@ -1015,27 +1025,29 @@ bool idPhysics_RigidBody::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	}
 
 #ifdef RB_TIMINGS
-	timer_total.Stop();
+	if ( rb_showTimings->integer != 0 ) {
+		timer_total.Stop();
 
-	if ( rb_showTimings->integer == 1 ) {
-		gameLocal.Printf( "%12s: t %1.4f cd %1.4f\n",
-						self->name.c_str(),
-						timer_total.Milliseconds(), timer_collision.Milliseconds() );
-		lastTimerReset = 0;
-	}
-	else if ( rb_showTimings->integer == 2 ) {
-		numRigidBodies++;
-		if ( endTimeMSec > lastTimerReset ) {
-			gameLocal.Printf( "rb %d: t %1.4f cd %1.4f\n",
-							numRigidBodies,
+		if ( rb_showTimings->integer == 1 ) {
+			gameLocal.Printf( "%12s: t %1.4f cd %1.4f\n",
+							self->name.c_str(),
 							timer_total.Milliseconds(), timer_collision.Milliseconds() );
+			lastTimerReset = 0;
 		}
-	}
-	if ( endTimeMSec > lastTimerReset ) {
-		lastTimerReset = endTimeMSec;
-		numRigidBodies = 0;
-		timer_total.Clear();
-		timer_collision.Clear();
+		else if ( rb_showTimings->integer == 2 ) {
+			numRigidBodies++;
+			if ( endTimeMSec > lastTimerReset ) {
+				gameLocal.Printf( "rb %d: t %1.4f cd %1.4f\n",
+								numRigidBodies,
+								timer_total.Milliseconds(), timer_collision.Milliseconds() );
+			}
+		}
+		if ( endTimeMSec > lastTimerReset ) {
+			lastTimerReset = endTimeMSec;
+			numRigidBodies = 0;
+			timer_total.Clear();
+			timer_collision.Clear();
+		}
 	}
 #endif
 

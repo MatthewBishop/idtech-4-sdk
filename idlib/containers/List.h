@@ -58,6 +58,8 @@ class idList {
 public:
 
 	typedef int		cmp_t( const type *, const type * );
+	typedef int		filter_t( const type * );
+
 	typedef type	new_t( void );
 
 					idList( int newgranularity = 16 );
@@ -121,6 +123,7 @@ public:
 // abahr:
 	int				TypeSize() const { return sizeof(type); }
 	void			RemoveNull();
+	// gcc 4.0: see ListGame.h
 	void			RemoveContents( bool clear );
 // ddynerman: range remove
 	bool			RemoveRange( int low, int high );
@@ -1180,27 +1183,6 @@ ID_INLINE void idList<type>::RemoveNull() {
 		if( !list[ix] ) {
 			RemoveIndex( ix );
 		}
-	}
-}
-
-/*
-================
-idList<type>::RemoveContents
-================
-*/
-template< class type >
-ID_INLINE void idList<type>::RemoveContents( bool clear ) {
-	RemoveNull();
-
-	for( int ix = Num() - 1; ix >= 0; --ix ) {
-		list[ ix ]->PostEventMS( &EV_Remove, 0 );
-		list[ ix ] = NULL;
-	}
-
-	if ( clear ) {
-		Clear();
-	} else {
-		memset( list, 0, Allocated() );
 	}
 }
 

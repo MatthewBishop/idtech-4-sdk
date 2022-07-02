@@ -261,7 +261,7 @@ void idCameraView::GetViewParms( renderView_t *view ) {
 	
 // RAVEN BEGIN
 // bdube: interpolate fov
-	gameLocal.CalcFov( fov.GetCurrentValue ( gameLocal.time ), view->fov_x, view->fov_y );
+	gameLocal.CalcFov( fov.GetCurrentValue( gameLocal.time ), view->fov_x, view->fov_y );
 // RAVEN END
 }
 
@@ -918,10 +918,16 @@ rvCameraAnimation::CallFrameCommandSound
 =====================
 */
 void rvCameraAnimation::CallFrameCommandSound ( const frameCommand_t& command, idEntity* ent, const s_channelType channel ) const {
+	
+	int flags = 0;
+	if( channel == ( FC_SOUND_GLOBAL - FC_SOUND ) ) {
+		flags = SSF_PRIVATE_SOUND;
+	}
+
 	if ( command.string ) {
-		ent->StartSound ( command.string->c_str(), channel, 0, false, NULL );
+		ent->StartSound ( command.string->c_str(), channel, flags, false, NULL );
 	} else {
-		ent->StartSoundShader( command.soundShader, channel, 0, false, NULL );
+		ent->StartSoundShader( command.soundShader, channel, flags, false, NULL );
 	}
 }
 
@@ -1702,50 +1708,6 @@ void idCameraAnim::Spawn( void ) {
 	LoadAnim();
 
 // RAVEN BEGIN
-// jnewquist: Track texture usage during cinematics for streaming purposes
-#if defined(_CONSOLE) || defined(TEST_MANUAL_STREAMING)
-	idToken token;
-	idStr filename = "cinematics/";
-	filename += gameLocal.mapFileNameStripped;
-	filename += "_";
-	filename += name;
-	filename += ".cincmd";
-	idLexer precache(DECL_LEXER_FLAGS|LEXFL_ONLYSTRINGS);
-	if ( !precache.LoadFile(filename) )
-	{
-		return;
-	}
-	if ( !precache.ReadToken(&token) ) {
-		return;
-	}
-	int imageCount = atoi(token);
-	//common->Printf("imageCount: %d\n", imageCount);
-	imageTable.AssureSize(imageCount);
-	int index = 0;
-	while(precache.ReadToken(&token) && index < imageCount)
-	{
-		imageTable[index++] = strtoul(token, NULL, 16);
-		//common->Printf("%08x\n", imageTable[index-1]);
-	}
-	if ( index < imageCount ) {
-		return;
-	}
-	int cmdCount = atoi(token)*2;
-	//common->Printf("cmdCount %d\n", cmdCount);
-	imageCmds.AssureSize(cmdCount);
-	index = 0;
-	while(precache.ReadToken(&token) && index < cmdCount)
-	{
-		imageCmds[index] = atoi(token);
-		if (precache.ReadToken(&token)) {
-			imageCmds[index+1] = atoi(token);
-		} else {
-			break;
-		}
-		//common->Printf("%d %d\n", imageCmds[index], imageCmds[index+1]);
-		index += 2;
-	}
-#endif
 #ifndef _CONSOLE
 	// touch the cinematic streaming command file during build
 	if ( cvarSystem->GetCVarBool("com_makingBuild") && cvarSystem->GetCVarBool("com_Bundler") )
@@ -1810,10 +1772,6 @@ void idCameraAnim::Start( void ) {
 #ifndef _CONSOLE
 	renderSystem->TrackTextureUsage( idRenderSystem::TEXTURE_TRACK_BEGIN, cameraDef->GetAnim(1)->GetFrameRate(), GetName() );
 #endif
-#if defined(_CONSOLE) || defined(TEST_MANUAL_STREAMING)
-	//common->Printf("Starting %s\n", GetName());
-	renderSystem->BeginManualStreaming( imageTable, imageCmds );
-#endif
 // RAVEN END
 
 	// if the player has already created the renderview for this frame, have him update it again so that the camera starts this frame
@@ -1848,10 +1806,6 @@ void idCameraAnim::Stop( void ) {
 // jnewquist: Track texture usage during cinematics for streaming purposes
 #ifndef _CONSOLE
 		renderSystem->TrackTextureUsage( idRenderSystem::TEXTURE_TRACK_END, cameraDef->GetAnim(1)->GetFrameRate() );
-#endif
-#if defined(_CONSOLE) || defined(TEST_MANUAL_STREAMING)
-		//common->Printf("Stopping %s\n", GetName());
-		renderSystem->EndManualStreaming();
 #endif
 // RAVEN END
 	}
@@ -2056,9 +2010,6 @@ void idCameraAnim::GetViewParms( renderView_t *view ) {
 // jnewquist: Track texture usage during cinematics for streaming purposes
 #ifndef _CONSOLE
 	renderSystem->TrackTextureUsage( idRenderSystem::TEXTURE_TRACK_UPDATE, realFrame );
-#endif
-#if defined(_CONSOLE) || defined(TEST_MANUAL_STREAMING)
-	renderSystem->UpdateManualStreaming( realFrame );
 #endif
 }
 // RAVEN END

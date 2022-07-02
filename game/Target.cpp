@@ -602,6 +602,13 @@ void idTarget_Give::Spawn( void ) {
 #endif
 	}
 // RAVEN END
+
+	// precache decls
+	const idKeyValue *kv = spawnArgs.MatchPrefix( "item", NULL );
+	while ( kv ) {
+		declManager->FindType( DECL_ENTITYDEF, kv->GetValue(), false, false );
+		kv = spawnArgs.MatchPrefix( "item", kv );
+	}
 }
 
 // RAVEN BEGIN

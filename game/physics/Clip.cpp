@@ -32,6 +32,7 @@ typedef struct trmCache_s {
 	idMat3					inertiaTensor;
 	const idMaterial *		material;
 	idCollisionModel *		collisionModel;
+	int						hash; // only used to identify non-hashed trm's in a save.
 } trmCache_t;
 
 idVec3 vec3_boxEpsilon( CM_BOX_EPSILON, CM_BOX_EPSILON, CM_BOX_EPSILON );
@@ -151,29 +152,64 @@ int idClipModel::TraceModelCacheSize( void ) {
 idClipModel::AllocTraceModel
 ===============
 */
-int idClipModel::AllocTraceModel( const idTraceModel &trm, const idMaterial *material ) {
+int idClipModel::AllocTraceModel( const idTraceModel &trm, const idMaterial *material, bool notHashed ) {
 	int i, hashKey, traceModelIndex;
 	trmCache_t *entry;
-
-	hashKey = GetTraceModelHashKey( trm );
-	for ( i = traceModelHash.First( hashKey ); i >= 0; i = traceModelHash.Next( i ) ) {
-		if ( traceModelCache[i]->trm == trm ) {
-			traceModelCache[i]->refCount++;
-			return i;
+	
+	if ( notHashed ) {
+		hashKey = 0xffffffff;
+	} else {
+		hashKey = GetTraceModelHashKey( trm );
+		
+		for ( i = traceModelHash.First( hashKey ); i >= 0; i = traceModelHash.Next( i ) ) {
+			if ( traceModelCache[i]->trm == trm ) {
+				traceModelCache[i]->refCount++;
+				return i;
+			}
 		}
 	}
+	
 
 	entry = new trmCache_t;
 	entry->trm = trm;
 	entry->trm.GetMassProperties( 1.0f, entry->volume, entry->centerOfMass, entry->inertiaTensor );
 	entry->refCount = 1;
 	entry->material = material;
+	entry->hash = hashKey;
 	traceModelIndex = traceModelCache.Append( entry );
-	traceModelHash.Add( hashKey, traceModelIndex );
+	
+	if ( !notHashed ) {
+		traceModelHash.Add( hashKey, traceModelIndex );
+	}
 
 	entry->collisionModel = collisionModelManager->ModelFromTrm( gameLocal.GetMapName(), va( "traceModel%d", traceModelIndex ), trm, material );
 
 	return traceModelIndex;
+}
+
+/*
+===============
+idClipModel::Replace
+===============
+*/
+void idClipModel::ReplaceTraceModel( int index, const idTraceModel &trm, const idMaterial *material, bool notHashed ) {
+	if ( !notHashed ) {
+		common->Error( "ReplaceTraceModel was misused. Replace can only be used on non-hashed models right now.\n" );
+		return;
+	}
+	
+	trmCache_t *entry = traceModelCache[ index ];
+	entry->trm = trm;
+	entry->trm.GetMassProperties( 1.0f, entry->volume, entry->centerOfMass, entry->inertiaTensor );
+	entry->refCount = 1;
+	entry->hash = 0xffffffff;
+	entry->material = material;
+
+	if(entry->collisionModel)
+	{
+		collisionModelManager->FreeModel( entry->collisionModel );
+	}
+	entry->collisionModel = collisionModelManager->ModelFromTrm( gameLocal.GetMapName(), va( "traceModel%d", index ), trm, material );
 }
 
 /*
@@ -248,6 +284,7 @@ void idClipModel::SaveTraceModels( idSaveGame *savefile ) {
 		savefile->WriteVec3( entry->centerOfMass );
 		savefile->WriteMat3( entry->inertiaTensor );
 		savefile->WriteMaterial( entry->material );
+		savefile->WriteInt( entry->hash );
 	}
 }
 
@@ -271,12 +308,15 @@ void idClipModel::RestoreTraceModels( idRestoreGame *savefile ) {
 		savefile->ReadVec3( entry->centerOfMass );
 		savefile->ReadMat3( entry->inertiaTensor );
 		savefile->ReadMaterial( entry->material );
+		savefile->ReadInt( entry->hash );
 
 		entry->refCount = 0;
 		entry->collisionModel = NULL;
 
 		traceModelCache[i] = entry;
-		traceModelHash.Add( GetTraceModelHashKey( entry->trm ), i );
+		if ( entry->hash != 0xffffffff ) {
+			traceModelHash.Add( GetTraceModelHashKey( entry->trm ), i );
+		}
 	}
 
 	CacheCollisionModels();
@@ -346,9 +386,14 @@ bool idClipModel::LoadModel( const char *name ) {
 idClipModel::LoadModel
 ================
 */
-void idClipModel::LoadModel( const idTraceModel &trm, const idMaterial *material ) {
-	FreeModel();
-	traceModelIndex = AllocTraceModel( trm, material );
+void idClipModel::LoadModel( const idTraceModel &trm, const idMaterial *material, bool notHashed ) {
+	if ( !notHashed || traceModelIndex == -1 ) {
+		FreeModel();
+		traceModelIndex = AllocTraceModel( trm, material, notHashed );
+	} else {
+		ReplaceTraceModel( traceModelIndex, trm, material, notHashed );
+	}
+	
 	bounds = trm.bounds;
 }
 
@@ -1311,6 +1356,7 @@ ID_INLINE bool TestHugeTranslation( trace_t &results, const idClipModel *mdl, co
 		results.endAxis = trmAxis;
 		memset( &results.c, 0, sizeof( results.c ) );
 		results.c.point = start;
+		results.c.entityNum = ENTITYNUM_WORLD;
 
 		if ( mdl->GetEntity() ) {
 			gameLocal.Printf( "huge translation for clip model %d on entity %d '%s'\n", mdl->GetId(), mdl->GetEntity()->entityNumber, mdl->GetEntity()->GetName() );

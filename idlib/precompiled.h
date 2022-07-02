@@ -8,10 +8,6 @@
 // nrausch: conditional cvar archive flag so that the pc build will archive certain cvars
 #ifdef _XENON
 
-#ifdef _FINAL
-#define _XENFINAL
-#endif
-
 #undef _WINDOWS
 #define PC_CVAR_ARCHIVE CVAR_NOCHEAT //so it doesn't clobber
 #else
@@ -55,9 +51,7 @@ class ThreadedAlloc;		// class that is only used to expand the AutoCrit template
 	#define _LITTLE_ENDIAN
 	#undef _CASE_SENSITIVE_FILESYSTEM
 	#define _USE_OPENAL
-	#ifdef _USE_OPENAL
-//		#define _USE_VOICECHAT
-	#endif
+	#define _USE_VOICECHAT
 	#define __WITH_PB__
 	//#define _RV_MEM_SYS_SUPPORT
 	// when using the PC to make Xenon builds, enable _MD5R_SUPPORT / _MD5R_WRITE_SUPPORT and run with fs_game q4baseXenon
@@ -78,8 +72,11 @@ class ThreadedAlloc;		// class that is only used to expand the AutoCrit template
 	#endif
 
 	// SMP support for running the backend on a 2nd thread
-	//#define ENABLE_INTEL_SMP
-
+	#define ENABLE_INTEL_SMP
+	// Enables the batching of vertex cache request in SMP mode.
+	// Note (TTimo): is tied to ENABLE_INTEL_SMP
+	#define ENABLE_INTEL_VERTEXCACHE_OPT
+	
 	// Empty define for Xbox 360 compatibility
 	#define RESTRICT
 	#define TIME_THIS_SCOPE(x)
@@ -135,6 +132,14 @@ class ThreadedAlloc;		// class that is only used to expand the AutoCrit template
 
 	#define RESTRICT
 	#define TIME_THIS_SCOPE(x)
+
+	// we release both a non-SMP and an SMP binary for Linux
+	#ifdef ENABLE_INTEL_SMP
+	// Enables the batching of vertex cache request in SMP mode.
+	// Note (TTimo): is tied to ENABLE_INTEL_SMP
+	#define ENABLE_INTEL_VERTEXCACHE_OPT
+	#endif
+
 #endif
 
 #ifdef MACOS_X
@@ -146,15 +151,25 @@ class ThreadedAlloc;		// class that is only used to expand the AutoCrit template
 #include <limits.h>
 #include <float.h>				// for FLT_MIN
 
-// TMP
-//	#define __WITH_PB__
+	// SMP support for running the backend on a 2nd thread
+	#define ENABLE_INTEL_SMP
+	// Enables the batching of vertex cache request in SMP mode.
+	// Note (TTimo): is tied to ENABLE_INTEL_SMP
+	#define ENABLE_INTEL_VERTEXCACHE_OPT
+
+	#define __WITH_PB__
 	#undef WIN32
 	#undef _XBOX
 	#undef _CONSOLE
 	#define _OPENGL
+#ifdef __ppc__
 	#undef _LITTLE_ENDIAN
+#else
+	#define _LITTLE_ENDIAN
+#endif
 	#define _CASE_SENSITIVE_FILESYSTEM
-
+	#define _USE_OPENAL
+	#define ID_INLINE inline
 	#define NEWLINE				"\n"
 
 	#define _GLVAS_SUPPPORT
@@ -283,6 +298,7 @@ class ThreadedAlloc;		// class that is only used to expand the AutoCrit template
 // RAVEN END
 #include "../framework/declAF.h"
 #include "../framework/DeclPDA.h"
+#include "../framework/DeclPlayerModel.h"
 // RAVEN BEGIN
 // jscott: new decl types
 #include "../framework/declMatType.h"

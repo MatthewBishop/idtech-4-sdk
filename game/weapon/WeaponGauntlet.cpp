@@ -308,8 +308,14 @@ rvWeaponGauntlet::StartBlade
 ================
 */
 void rvWeaponGauntlet::StartBlade ( void ) {
-	viewModel->GetAnimator()->SetJointAngularVelocity ( bladeJoint, bladeSpinFast, gameLocal.time, bladeAccel ); 
-	GetWorldModel()->GetAnimator()->SetJointAngularVelocity ( bladeJoint_world, bladeSpinFast, gameLocal.time, bladeAccel ); 
+	if ( viewModel ) {
+		viewModel->GetAnimator()->SetJointAngularVelocity ( bladeJoint, bladeSpinFast, gameLocal.time, bladeAccel ); 
+	}
+	
+	if ( GetWorldModel() ) {	
+		GetWorldModel()->GetAnimator()->SetJointAngularVelocity ( bladeJoint_world, bladeSpinFast, gameLocal.time, bladeAccel ); 
+	}
+	
 	StopSound ( SND_CHANNEL_ITEM, false );
 //	StartSound ( "snd_blade_fast", SND_CHANNEL_ITEM, 0, false, NULL );
 	StartSound( "snd_spin_up", SND_CHANNEL_ITEM, 0, false, 0 );
@@ -321,8 +327,14 @@ rvWeaponGauntlet::StopBlade
 ================
 */
 void rvWeaponGauntlet::StopBlade ( void ) {
-	viewModel->GetAnimator()->SetJointAngularVelocity ( bladeJoint, bladeSpinSlow, gameLocal.time, bladeAccel ); 
-	GetWorldModel()->GetAnimator()->SetJointAngularVelocity ( bladeJoint_world, bladeSpinSlow, gameLocal.time, bladeAccel ); 
+	if ( viewModel ) {
+		viewModel->GetAnimator()->SetJointAngularVelocity ( bladeJoint, bladeSpinSlow, gameLocal.time, bladeAccel ); 
+	}
+	
+	if ( GetWorldModel() ) {
+		GetWorldModel()->GetAnimator()->SetJointAngularVelocity ( bladeJoint_world, bladeSpinSlow, gameLocal.time, bladeAccel ); 
+	}
+	
 	StopSound ( SND_CHANNEL_WEAPON, false );
 //	StartSound ( "snd_blade_slow", SND_CHANNEL_ITEM, 0, false, NULL );
 	

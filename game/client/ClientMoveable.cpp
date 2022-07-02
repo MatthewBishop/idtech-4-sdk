@@ -78,20 +78,18 @@ idVec3 simpleTri[3] =
 rvClientMoveable::Spawn
 ================
 */
-void rvClientMoveable::Spawn ( const idDict* spawnArgs, idEntity* owner ) {
-	assert ( spawnArgs );
-
+void rvClientMoveable::Spawn ( void ) {
 	// parse static models the same way the editor display does
-	gameEdit->ParseSpawnArgsToRenderEntity( spawnArgs, &renderEntity );
+	gameEdit->ParseSpawnArgsToRenderEntity( &spawnArgs, &renderEntity );
 
 	idTraceModel	trm;
 	int				clipShrink;
 	idStr			clipModelName;
 
 	// check if a clip model is set
-	spawnArgs->GetString( "clipmodel", "", clipModelName );
+	spawnArgs.GetString( "clipmodel", "", clipModelName );
 	if ( !clipModelName.Length ()  ) {
-		clipModelName = spawnArgs->GetString ( "model" );		// use the visual model
+		clipModelName = spawnArgs.GetString( "model" );		// use the visual model
 	}
 
 	if ( clipModelName == SIMPLE_TRI_NAME ) {
@@ -106,19 +104,18 @@ void rvClientMoveable::Spawn ( const idDict* spawnArgs, idEntity* owner ) {
 	}
 
 	// if the model should be shrunk
-	clipShrink = spawnArgs->GetInt( "clipshrink" );
+	clipShrink = spawnArgs.GetInt( "clipshrink" );
 	if ( clipShrink != 0 ) {
 		trm.Shrink( clipShrink * CM_CLIP_EPSILON );
 	}
 
 	physicsObj.SetSelf ( gameLocal.entities[ENTITYNUM_CLIENT] );		
-	physicsObj.SetClipModel ( new idClipModel( trm ), spawnArgs->GetFloat ( "density", "0.5" ), entityNumber );
-	physicsObj.GetClipModel()->SetOwner( owner );
-	physicsObj.GetClipModel()->SetEntity( owner );
+	physicsObj.SetClipModel ( new idClipModel( trm ), spawnArgs.GetFloat ( "density", "0.5" ), entityNumber );
+
 	physicsObj.SetOrigin( GetOrigin() );
 	physicsObj.SetAxis( GetAxis() );
-	physicsObj.SetBouncyness( spawnArgs->GetFloat( "bouncyness", "0.6" ) );
-	physicsObj.SetFriction( spawnArgs->GetFloat("linear_friction", "0.6"), spawnArgs->GetFloat( "angular_friction", "0.6"), spawnArgs->GetFloat("friction", "0.05") );
+	physicsObj.SetBouncyness( spawnArgs.GetFloat( "bouncyness", "0.6" ) );
+	physicsObj.SetFriction( spawnArgs.GetFloat("linear_friction", "0.6"), spawnArgs.GetFloat( "angular_friction", "0.6"), spawnArgs.GetFloat("friction", "0.05") );
 	physicsObj.SetGravity( gameLocal.GetCurrentGravity(this) );
 	physicsObj.SetContents( 0 );
 	// abahr: changed to MASK_SHOT_RENDERMODEL because brass was getting pinched between the player and the wall in some cases
@@ -126,15 +123,45 @@ void rvClientMoveable::Spawn ( const idDict* spawnArgs, idEntity* owner ) {
 	physicsObj.SetClipMask( CONTENTS_OPAQUE ); // MASK_SHOT_RENDERMODEL | CONTENTS_CORPSE | CONTENTS_MOVEABLECLIP | CONTENTS_WATER );
 	physicsObj.Activate ( );
 
-	trailEffect = gameLocal.PlayEffect ( *spawnArgs, "fx_trail", physicsObj.GetCenterMass(), GetAxis(), true );	
-	trailAttenuateSpeed = spawnArgs->GetFloat ( "trailAttenuateSpeed", "200" );
+	trailEffect = gameLocal.PlayEffect ( spawnArgs, "fx_trail", physicsObj.GetCenterMass(), GetAxis(), true );	
+	trailAttenuateSpeed = spawnArgs.GetFloat ( "trailAttenuateSpeed", "200" );
 	
-	bounceSoundShader = declManager->FindSound ( spawnArgs->GetString ( "snd_bounce" ), false );
+	bounceSoundShader = declManager->FindSound ( spawnArgs.GetString ( "snd_bounce" ), false );
 	bounceSoundTime   = 0;
-	mPlayBounceSoundOnce = spawnArgs->GetBool("bounce_sound_once");
+	mPlayBounceSoundOnce = spawnArgs.GetBool("bounce_sound_once");
 	mHasBounced = false;
 	
-	scale.Init( gameLocal.GetTime(), SEC2MS(spawnArgs->GetFloat("scale_reset_duration", "0.2")), Max(VECTOR_EPSILON, spawnArgs->GetFloat("scale", "1.0f")), 1.0f );
+	scale.Init( gameLocal.GetTime(), SEC2MS(spawnArgs.GetFloat("scale_reset_duration", "0.2")), Max(VECTOR_EPSILON, spawnArgs.GetFloat("scale", "1.0f")), 1.0f );
+}
+
+/*
+================
+rvClientMoveable::SetOrigin
+================
+*/
+void rvClientMoveable::SetOrigin( const idVec3& origin ) {
+	rvClientEntity::SetOrigin( origin );
+	physicsObj.SetOrigin( origin );
+}
+
+/*
+================
+rvClientMoveable::SetAxis
+================
+*/
+void rvClientMoveable::SetAxis( const idMat3& axis ) {
+	rvClientEntity::SetAxis( axis );
+	physicsObj.SetAxis( axis );
+}
+
+/*
+================
+rvClientMoveable::SetOwner
+================
+*/
+void rvClientMoveable::SetOwner( idEntity* owner ) {
+	physicsObj.GetClipModel()->SetOwner( owner );
+	physicsObj.GetClipModel()->SetEntity( owner );
 }
 
 /*
@@ -152,20 +179,20 @@ void rvClientMoveable::Think ( void ) {
 	// Special case the sound update to use the center mass since the origin may be in an odd place
 	idSoundEmitter *emitter = soundSystem->EmitterForIndex( SOUNDWORLD_GAME, refSound.referenceSoundHandle );
 	if ( emitter ) {
-		refSound.origin = physicsObj.GetCenterMass ( );
-		refSound.velocity = physicsObj.GetLinearVelocity();
+		refSound.origin = worldOrigin;
+		refSound.velocity = worldVelocity;
 		emitter->UpdateEmitter( refSound.origin, refSound.velocity, refSound.listenerId, &refSound.parms );
 	}
 
 	// Keep the trail effect following
 	if ( trailEffect ) {
 		float speed;
-		speed = idMath::ClampFloat ( 0, trailAttenuateSpeed, physicsObj.GetLinearVelocity ( ).LengthFast ( ) );
+		speed = idMath::ClampFloat ( 0, trailAttenuateSpeed, worldVelocity.LengthFast ( ) );
 		if ( physicsObj.IsAtRest ( ) ) {
 			trailEffect->Stop ( );
 			trailEffect = NULL;
 		} else {
-			trailEffect->SetOrigin ( physicsObj.GetCenterMass() );
+			trailEffect->SetOrigin ( worldOrigin );
 			trailEffect->SetAxis ( worldAxis );
 			trailEffect->Attenuate ( speed / trailAttenuateSpeed );
 		}
@@ -334,18 +361,16 @@ void rvClientMoveable::SpawnClientMoveables( idEntity* ent, const char *type, id
 			break;
 		}
 	
-// RAVEN BEGIN
-// mwhitlock: Dynamic memory consolidation
-		RV_PUSH_HEAP_MEM(ent);
-// RAVEN END
-		rvClientMoveable *newModel = new rvClientMoveable();
-// RAVEN BEGIN
-// mwhitlock: Dynamic memory consolidation
-		RV_POP_HEAP();
-// RAVEN END
+		rvClientMoveable* newModel = NULL;
+		// force spawnclass to rvClientMoveable
+		gameLocal.SpawnClientEntityDef( *entityDef, (rvClientEntity**)(&newModel), false, "rvClientMoveable" );
+
+		if( !newModel ) {
+			gameLocal.Warning( "error spawning client moveable (invalid entity def '%s' on entity '%s')\n", kv->GetValue().c_str(), ent->name.c_str() );
+			break;
+		}
 		newModel->SetOrigin ( origin );
 		newModel->SetAxis( axis );
-		newModel->Spawn ( entityDef );	
 
 		list->Append( newModel );
 		kv = ent->spawnArgs.MatchPrefix( va( "def_%s", type ), kv );

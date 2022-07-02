@@ -67,6 +67,9 @@ idItem::idItem() {
 	clReady = -1;
 	effectIdle = NULL;
 	itemPVSArea = 0;
+	effectIdle = NULL;
+	simpleItem = false;
+	pickedUp = false;
 }
 
 /*
@@ -154,6 +157,9 @@ idItem::UpdateRenderEntity
 ================
 */
 bool idItem::UpdateRenderEntity( renderEntity_s *renderEntity, const renderView_t *renderView ) const {
+	if( simpleItem ) {
+		return false;
+	}
 
 	if ( lastRenderViewTime == renderView->time ) {
 		return false;
@@ -248,19 +254,36 @@ idItem::GetPhysicsToVisualTransform
 ================
 */
 bool idItem::GetPhysicsToVisualTransform( idVec3 &origin, idMat3 &axis ) {
+	if( simpleItem ) {
+		if( gameLocal.GetLocalPlayer() && gameLocal.GetLocalPlayer()->GetRenderView() ) {
+			if( gameLocal.GetLocalPlayer()->spectating ) {
+				idPlayer* spec = (idPlayer*)gameLocal.entities[ gameLocal.GetLocalPlayer()->spectator ];
+				if( spec && spec->GetRenderView() ) {
+					axis = spec->GetRenderView()->viewaxis;
+				}
+			} else {
+				axis = gameLocal.GetLocalPlayer()->GetRenderView()->viewaxis;	
+			}
+		}
+		origin = idVec3( 0.0f, 0.0f, 32.0f );
+		return true;
+	}
+
 	if( !spin || (gameLocal.isServer && !gameLocal.isListenServer) ) {
 		return false;
 	}
-	
+
 	idAngles ang;
 	ang.pitch = ang.roll = 0.0f;
 	ang.yaw = ( gameLocal.time & 4095 ) * 360.0f / -4096.0f;
 	axis = ang.ToMat3() * GetPhysics()->GetAxis();
 
-	float scale = 0.005f + entityNumber * 0.00001f;
+	float scale = 0.005f;
+	float offset = entityNumber * 0.685145f;		// rjohnson: just a random number here to shift the cos curve
+
 	origin.Zero();
 
-	origin += GetPhysics()->GetAxis()[2] * (4.0f + idMath::Cos( ( gameLocal.time + 1000 ) * scale ) * 4.0f);
+	origin += GetPhysics()->GetAxis()[2] * (4.0f + idMath::Cos( ( ( gameLocal.time + 1000 ) * scale ) + offset ) * 4.0f);
 
 	return true;
 }
@@ -273,7 +296,8 @@ idItem::Collide
 ================
 */
 bool idItem::Collide( const trace_t &collision, const idVec3 &velocity ) {
-	if ( gameLocal.isMultiplayer && collision.c.contents & CONTENTS_ITEMCLIP ) {
+	idEntity* lol = gameLocal.entities[ collision.c.entityNum ];
+	if ( gameLocal.isMultiplayer && collision.c.contents & CONTENTS_ITEMCLIP && lol && !lol->IsType( idItem::GetClassType() ) ) {
 		PostEventMS( &EV_Remove, 0 );
 	}
 	return false;
@@ -297,8 +321,10 @@ void idItem::Think( void ) {
 		renderEntity.suppressShadowInViewID = 0;
 	}
 
-	UpdateVisuals();
-	Present();
+	if( !(simpleItem && pickedUp) ) {
+		UpdateVisuals();
+		Present();
+	}
 }
 
 /*
@@ -337,8 +363,8 @@ void idItem::InstanceJoin( void ) {
 	idEntity::InstanceJoin();
 
 	UpdateModelTransform();
-	if ( spawnArgs.GetString( "fx_idle" ) ) {
-		PlayEffect( "fx_idle", GetPhysics()->GetOrigin(), GetPhysics()->GetAxis(), true );
+	if ( !simpleItem && spawnArgs.GetString( "fx_idle" ) ) {
+		PlayEffect( "fx_idle", renderEntity.origin, renderEntity.axis, true );
 	}
 }
 
@@ -431,10 +457,6 @@ void idItem::Spawn( void ) {
 		BecomeActive( TH_THINK );
 	}
 
-	if ( spawnArgs.GetString( "fx_idle" ) ) {
-		effectIdle = PlayEffect( "fx_idle", GetPhysics()->GetOrigin(), GetPhysics()->GetAxis(), true );
-	}
-
 	// pulse ( and therefore itemShellHandle ) was taken out and shot. do not sync
 	//pulse = !spawnArgs.GetBool( "nopulse" );
 	pulse = false;
@@ -475,7 +497,7 @@ void idItem::Spawn( void ) {
 // RAVEN BEGIN
 // mekberg: added for removing pickups in mp in pits
 	if ( gameLocal.isMultiplayer ) {
-		GetPhysics( )->SetClipMask( GetPhysics( )->GetClipMask( ) | CONTENTS_ITEMCLIP );
+		trigger->SetContents( trigger->GetContents() | CONTENTS_ITEMCLIP );
 	}
 // RAVEN END
 
@@ -484,6 +506,38 @@ void idItem::Spawn( void ) {
 	} else {
 		itemPVSArea = 0;
 	}
+
+	simpleItem = g_simpleItems.GetBool() && gameLocal.isMultiplayer && !IsType( rvItemCTFFlag::GetClassType() );
+	if( simpleItem ) {
+		memset( &renderEntity, 0, sizeof( renderEntity ) );
+		renderEntity.axis		= mat3_identity;
+		renderEntity.shaderParms[ SHADERPARM_RED ]				= 1.0f;
+		renderEntity.shaderParms[ SHADERPARM_GREEN ]			= 1.0f;
+		renderEntity.shaderParms[ SHADERPARM_BLUE ]				= 1.0f;
+		renderEntity.shaderParms[ SHADERPARM_ALPHA ]			= 1.0f;
+		renderEntity.shaderParms[ SHADERPARM_SPRITE_WIDTH ]		= 32.0f;
+		renderEntity.shaderParms[ SHADERPARM_SPRITE_HEIGHT ]	= 32.0f;
+		renderEntity.hModel = renderModelManager->FindModel( "_sprite" );
+		renderEntity.callback = NULL;
+		renderEntity.numJoints = 0;
+		renderEntity.joints = NULL;
+		renderEntity.customSkin = 0;
+		renderEntity.noShadow = true;
+		renderEntity.noSelfShadow = true;
+		renderEntity.customShader = declManager->FindMaterial( spawnArgs.GetString( "mtr_simple_icon" ) );
+
+		renderEntity.referenceShader = 0;
+		renderEntity.bounds = renderEntity.hModel->Bounds( &renderEntity );
+		SetAxis( mat3_identity );
+	} else {
+		if ( spawnArgs.GetString( "fx_idle" ) ) {
+			UpdateModelTransform();
+			effectIdle = PlayEffect( "fx_idle", renderEntity.origin, renderEntity.axis, true );
+		}
+	}
+	
+	GetPhysics( )->SetClipMask( GetPhysics( )->GetClipMask( ) | CONTENTS_ITEMCLIP );
+	pickedUp = false;
 }
 
 /*
@@ -560,11 +614,7 @@ void idItem::SendPickupMsg( int clientNum ) {
 	msg.WriteByte( clientNum );
 
 	// send as unreliable to client picking up the item, so it can play HUD things
-	for( int i = 0; i < MAX_CLIENTS; i++ ) {
-		if( gameLocal.entities[ i ] ) {
-			gameLocal.SendUnreliableMessagePVS( msg, this, itemPVSArea );	
-		}
-	}
+	gameLocal.SendUnreliableMessagePVS( msg, this, itemPVSArea );	
 }
 
 /*
@@ -573,8 +623,28 @@ idItem::Pickup
 ================
 */
 bool idItem::Pickup( idPlayer *player ) {
-	assert( !gameLocal.isClient );
-	
+	//dropped weapon?
+	bool dropped = spawnArgs.GetBool( "dropped" );
+
+	if( gameLocal.isMultiplayer && !dropped && spawnArgs.FindKey( "weaponclass" ) 
+		&& gameLocal.serverInfo.GetBool( "si_weaponStay" ) && gameLocal.time > player->lastPickupTime + 1000 ) {
+		
+		idDict attr;
+		GetAttributes( attr );
+		const idKeyValue* arg = attr.FindKey( "weapon" );
+
+		if( arg ) {
+			if( !player->inventory.Give( player, player->spawnArgs, arg->GetKey(), arg->GetValue(), NULL, false, dropped, true ) ) {
+				StartSound( "snd_noacquire", SND_CHANNEL_ITEM, 0, false, NULL );
+			}
+		}
+	}
+
+	// only predict noacquire on client
+	if( gameLocal.isClient ) {
+		return false;
+	}
+
 	if ( !GiveToPlayer( player ) ) {
 		return false;
 	}
@@ -593,8 +663,7 @@ bool idItem::Pickup( idPlayer *player ) {
 	// trigger our targets
 	ActivateTargets( player );
 
-	//dropped weapon?
-	bool dropped = spawnArgs.GetBool( "dropped" );
+	player->lastPickupTime = gameLocal.time;
 
 	//if a placed item and si_weaponStay is on and we're a weapon, don't remove and respawn
 	if ( gameLocal.IsMultiplayer() ) {
@@ -617,6 +686,14 @@ bool idItem::Pickup( idPlayer *player ) {
 	} else {
 		Hide();
 		BecomeInactive( TH_THINK );
+	}
+
+	pickedUp = true;
+
+	// allow SetSkin or Hide() to get called regardless of simpleitem mode
+	if( simpleItem ) {
+		FreeModelDef();
+		UpdateVisuals();
 	}
 
 	// remove the highlight shell
@@ -701,8 +778,8 @@ void idItem::ClientUnstale( void ) {
 	idEntity::ClientUnstale();
 
 	UpdateModelTransform();
-	if ( spawnArgs.GetString( "fx_idle" ) ) {
-		PlayEffect( "fx_idle", GetPhysics()->GetOrigin(), GetPhysics()->GetAxis(), true );
+	if ( !simpleItem && spawnArgs.GetString( "fx_idle" ) ) {
+		PlayEffect( "fx_idle", renderEntity.origin, renderEntity.axis, true );
 	}
 }
 
@@ -746,18 +823,25 @@ void idItem::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 	// client spawns the ent with ready == -1 so the state set happens at least once
 	if ( newReady != clReady ) {
 		if ( newReady ) {
+			// g_simpleItems might force a hide even with a pickup skin
 			if ( pickupSkin ) {
 				SetSkin( skin );
 			} else {
+				SetSkin( skin );
 				Show();
 			}
+
+			if( simpleItem ) {
+				UpdateVisuals();			
+			}
+			pickedUp = false;
 
 			if ( effectIdle.GetEntity( ) ) {
 				UpdateModelTransform();
 				effectIdle->SetOrigin( resetOrigin );
-			} else if ( spawnArgs.GetString( "fx_idle" ) ) {
+			} else if ( spawnArgs.GetString( "fx_idle" ) && !simpleItem ) {
 				UpdateModelTransform();
-				effectIdle = PlayEffect( "fx_idle", GetPhysics()->GetOrigin(), GetPhysics()->GetAxis(), true );
+				effectIdle = PlayEffect( "fx_idle", renderEntity.origin, renderEntity.axis, true );
 			}
 		} else {
 			if ( pickupSkin ) {
@@ -765,6 +849,14 @@ void idItem::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 			} else {
 				Hide();
 			}
+
+			if( simpleItem ) {
+				FreeModelDef();
+				UpdateVisuals();
+			}
+			
+			pickedUp = true;
+
 			StopEffect( "fx_idle" );
 			effectIdle = NULL;
 		}
@@ -786,9 +878,10 @@ void idItem::Event_Pickup( int clientNum ) {
 	if ( !spawnArgs.GetBool( "globalAcquireSound" ) ) {
 		StartSound( "snd_acquire", SND_CHANNEL_ITEM, 0, false, NULL );
 	}
-
+	
 	if( clientNum == gameLocal.localClientNum ) {
 		player = (idPlayer*)gameLocal.entities[ clientNum ];
+		player->lastPickupTime = gameLocal.time;
 		if ( player ) {
 			player->GiveItem( this );
 		}
@@ -881,13 +974,25 @@ idItem::Event_Respawn
 */
 void idItem::Event_Respawn( void ) {
 
+	// with simple items, re-show the item, but still set srvReady to true to let clients
+	// know how to deal
 	if ( pickupSkin ) {
-		SetSkin( skin );
 		srvReady = true;
-	} else {
+		if( !simpleItem ) {
+			SetSkin( skin );
+		}
+	} 
+	
+	if( !pickupSkin ) {
 		BecomeActive( TH_THINK );	
 		Show();
 	}
+
+	if( simpleItem ) {
+		Show();
+	}
+
+	pickedUp = false;
 
 	inViewTime = -1000;
 	lastCycle = -1;
@@ -897,8 +1002,9 @@ void idItem::Event_Respawn( void ) {
 	PostEventMS( &EV_SetGravity, 0 );
 	CancelEvents( &EV_RespawnItem ); // don't double respawn
 
-	if ( spawnArgs.GetString( "fx_idle" ) ) {
-		PlayEffect( "fx_idle", GetPhysics()->GetOrigin(), GetPhysics()->GetAxis(), true );
+	if ( !simpleItem && spawnArgs.GetString( "fx_idle" ) ) {
+		UpdateModelTransform();
+		PlayEffect( "fx_idle", renderEntity.origin, renderEntity.axis, true );
 	}
 }
 
@@ -920,7 +1026,9 @@ void idItem::Event_RespawnFx( void ) {
 		gameLocal.SendUnreliableMessagePVS( msg, this, gameLocal.pvs.GetPVSArea( GetPhysics()->GetOrigin() ) );
 	}
 
-	gameLocal.PlayEffect( spawnArgs, "fx_respawn", GetPhysics()->GetOrigin(), idVec3(0,0,1).ToMat3(), false, vec3_origin );
+	if( !simpleItem ) {
+		gameLocal.PlayEffect( spawnArgs, "fx_respawn", GetPhysics()->GetOrigin(), idVec3(0,0,1).ToMat3(), false, vec3_origin );
+	}
 }
 
 /*
@@ -1092,6 +1200,11 @@ bool idItemPowerup::Pickup( idPlayer* player ) {
 	// regular pickup routine, but unique items need to think to know when to respawn
 	bool pickup;
 	
+	if( gameLocal.isClient ) {
+		// no client-side powerup prediction
+		return false;
+	}
+
 	pickup = idItem::Pickup( player );
 	if( unique ) {
 		BecomeActive( TH_THINK );
@@ -1196,6 +1309,7 @@ void idObjective::Event_CamShot( ) {
 			// draw a view to a texture
 			renderSystem->CropRenderSize( 256, 256, true );
 			gameRenderWorld->RenderScene( &fullView );
+			// TTimo: I don't think this jives with SMP code, but I grepped through the final maps and didn't see any using it
  			renderSystem->CaptureRenderToFile( shotName );
 			renderSystem->UnCrop();
 		}
@@ -1814,11 +1928,13 @@ void rvItemCTFFlag::Spawn () {
 
 	switch ( team ) {
 		case TEAM_MARINE: {
-			powerup = POWERUP_CTF_MARINEFLAG;	
+			powerup = POWERUP_CTF_MARINEFLAG;
+			gameLocal.mpGame.SetFlagEntity( this, TEAM_MARINE );
 			break;
 		}
 		case TEAM_STROGG: {
 			powerup = POWERUP_CTF_STROGGFLAG;	
+			gameLocal.mpGame.SetFlagEntity( this, TEAM_STROGG );
 			break;
 		}
 		case TEAM_MAX: {
@@ -1836,7 +1952,7 @@ void rvItemCTFFlag::Spawn () {
 			((rvCTFGameState*)gameLocal.mpGame.GetGameState())->SetFlagState( team, FS_DROPPED );
 		}	
 		if ( reset ) {
-			PostEventSec( &EV_ResetFlag, 1 );
+			//PostEventSec( &EV_ResetFlag, 1 );
 		} else {
 			PostEventSec( &EV_ResetFlag, 30 );
 		}
@@ -1862,7 +1978,7 @@ rvItemCTFFlag::Event_LinkTrigger
 ================
 */
 void rvItemCTFFlag::Event_LinkTrigger( void ) {
-	trigger->SetContents( CONTENTS_TRIGGER );
+	trigger->SetContents( CONTENTS_TRIGGER | CONTENTS_ITEMCLIP );
 }
 
 /*
@@ -1941,7 +2057,11 @@ rvItemCTFFlag::Pickup
 ================
 */
 bool rvItemCTFFlag::Pickup( idPlayer *player ) {
-	
+	if( gameLocal.isClient ) {
+		// no client-side CTF flag prediction
+		return false;
+	}
+
 	if ( !GiveToPlayer( player ) ) {
 		return false;
 	}
@@ -1966,6 +2086,8 @@ bool rvItemCTFFlag::Pickup( idPlayer *player ) {
 
 	// hide the model
 	Hide();
+
+	gameLocal.mpGame.SetFlagEntity( NULL, team );
 
 	gameLocal.mpGame.AddPlayerTeamScore( player, 1 );
 
@@ -2018,7 +2140,8 @@ void rvItemCTFFlag::ResetFlag( int powerup ) {
 		if ( flag->dropped ) {			
 			flag->PostEventMS( &EV_Remove, 0 );
 		} else {
-			flag->PostEventMS( &EV_RespawnItem, 0 );			
+			flag->PostEventMS( &EV_RespawnItem, 0 );
+			gameLocal.mpGame.SetFlagEntity( flag, flag->team );
 		}
 	}
 
@@ -2056,7 +2179,9 @@ rvItemCTFFlag::Collide
 ================
 */
 bool rvItemCTFFlag::Collide( const trace_t &collision, const idVec3 &velocity ) {
-	if ( collision.c.contents & CONTENTS_ITEMCLIP ) {
+	idEntity* lol = gameLocal.entities[ collision.c.entityNum ];
+	
+	if ( collision.c.contents & CONTENTS_ITEMCLIP && lol && !lol->IsType( idItem::GetClassType() ) ) {
 		ResetFlag( powerup );
 	}
 	return false;

@@ -117,6 +117,8 @@ public:	// common physics interface
 	bool					IsDead ( void ) const;
 // RAVEN END
 
+	void					SetClipModelNoLink( idClipModel *clip );
+
 private:
 	// player physics state
 	playerPState_t			current;

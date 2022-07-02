@@ -19,6 +19,7 @@ public:
 	void					Restore				( idRestoreGame *savefile );
 	void					PreSave				( void );
 	void					PostSave			( void );
+	void					ClientUnstale		( void );
 
 protected:
 	jointHandle_t			jointBatteryView;
@@ -257,3 +258,13 @@ void rvWeaponRailgun::Event_RestoreHum ( void ) {
 	StopSound( SND_CHANNEL_BODY2, false );
 	StartSound( "snd_idle_hum", SND_CHANNEL_BODY2, 0, false, NULL );
 }
+
+/*
+================
+rvWeaponRailgun::ClientUnStale
+================
+*/
+void rvWeaponRailgun::ClientUnstale( void ) {
+	Event_RestoreHum();
+}
+

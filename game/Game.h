@@ -1,4 +1,3 @@
-
 #ifndef __GAME_H__
 #define __GAME_H__
 
@@ -48,6 +47,12 @@ enum demoState_t {
 	DEMO_PLAYING
 };
 
+enum demoReliableGameMessage_t {
+	DEMO_RECORD_CLIENTNUM,
+	DEMO_RECORD_EXCLUDE,
+	DEMO_RECORD_COUNT
+};
+
 // RAVEN BEGIN
 // bdube: forward reference
 class rvClientEffect;
@@ -84,6 +89,9 @@ public:
 
 	// Retrieve the game's userInfo dict for a client.
 	virtual const idDict *		GetUserInfo( int clientNum ) = 0;
+
+	// Checks to see if a client is active
+	virtual bool				IsClientActive( int clientNum ) = 0;
 
 	// The game gets a chance to alter userinfo before they are emitted to server.
 	virtual void				ThrottleUserInfo( void ) = 0;
@@ -145,7 +153,7 @@ public:
 	virtual void				HandleMainMenuCommands( const char *menuCommand, idUserInterface *gui ) = 0;
 
 	// Early check to deny connect.
-	virtual allowReply_t		ServerAllowClient( int numClients, const char *IP, const char *guid, const char *password, char reason[MAX_STRING_CHARS] ) = 0;
+	virtual allowReply_t		ServerAllowClient( int clientId, int numClients, const char *IP, const char *guid, const char *password, const char *privatePassword, char reason[MAX_STRING_CHARS] ) = 0;
 
 	// Connects a client.
 	virtual void				ServerClientConnect( int clientNum ) = 0;
@@ -186,6 +194,7 @@ public:
 // RAVEN BEGIN
 // ddynerman: client game frame
 	virtual void				ClientRun( void ) = 0;
+	virtual void				ClientEndFrame( void ) = 0;
 
 // jshepard: rcon password check
 	virtual void				ProcessRconReturn( bool success ) = 0;
@@ -255,16 +264,22 @@ public:
 // RAVEN END
 
 	// Set the demo state.
-	virtual void				SetDemoState( demoState_t state ) = 0;
+	virtual void				SetDemoState( demoState_t state, bool serverDemo ) = 0;
 
 	// Writes current network info to a file (used as initial state for demo recording).
-	virtual void				WriteClientNetworkInfo( idFile* file, int clientNum ) = 0;
+	virtual void				WriteNetworkInfo( idFile* file, int clientNum ) = 0;
 
 	// Reads current network info from a file (used as initial state for demo playback).
-	virtual void				ReadClientNetworkInfo( int gameTime, idFile* file, int clientNum ) = 0;
+	virtual void				ReadNetworkInfo( int gameTime, idFile* file, int clientNum ) = 0;
 
 	// Let gamecode decide if it wants to accept demos from older releases of the engine.
 	virtual bool				ValidateDemoProtocol( int minor_ref, int minor ) = 0;
+
+	// Write a snapshot for server demo recording.
+	virtual void				ServerWriteDemoSnapshot( int sequence, idBitMsg &msg ) = 0;
+
+	// Read a snapshot from a server demo stream.
+	virtual void				ClientReadDemoSnapshot( int sequence, const int gameFrame, const int gameTime, const idBitMsg &msg ) = 0;
 };
 
 extern idGame *					game;
@@ -557,7 +572,10 @@ extern rvGameLog *				gameLog;
 // 6: more network demo APIs
 // 7: cleanups
 // 8: added some demo functions to the FS class
-const int GAME_API_VERSION		= 8;
+// 9: bump up for 1.1 patch
+// 9: Q4 Gold
+// 10: Patch 2 changes
+const int GAME_API_VERSION		= 10;
 
 struct gameImport_t {
 

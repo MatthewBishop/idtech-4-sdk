@@ -622,7 +622,8 @@ void idAI::Spawn( void ) {
 	animPrefix = spawnArgs.GetString ( "animPrefix", "" );
 
 	// Standard flags
-	fl.notarget = spawnArgs.GetBool ( "notarget", "0" );
+	fl.notarget		= spawnArgs.GetBool ( "notarget", "0" );
+	fl.quickBurn	= false;
 
 	// AI flags
 	flagOverrides = 0;
@@ -1135,7 +1136,6 @@ idAI::Think
 =====================
 */
 void idAI::Think( void ) {
-	idTimer timerThink;
 
 	// if we are completely closed off from the player, don't do anything at all
 	if ( CheckDormant() ) {
@@ -1695,6 +1695,18 @@ void idAI::Killed( idEntity *inflictor, idEntity *attacker, int damage, const id
 		physicsObj.SetLinearVelocity( vec3_zero );
 		physicsObj.PutToRest();
 		physicsObj.DisableImpact();
+
+	} else if( fl.quickBurn ){
+		if ( spawnArgs.MatchPrefix( "lipsync_death" ) ) {
+			Speak( "lipsync_death", true );
+		} else {
+			StartSound( "snd_death", SND_CHANNEL_VOICE, 0, false, NULL );
+		}
+
+		physicsObj.SetLinearVelocity( vec3_zero );
+		physicsObj.PutToRest();
+		physicsObj.DisableImpact();
+
 	} else {
 		if ( StartRagdoll() ) {
 			if ( spawnArgs.MatchPrefix( "lipsync_death" ) ) {
@@ -3067,7 +3079,7 @@ idEntity *idAI::HeardSound( int ignore_team ){
 		
 		if ( dist < Square( combat.earRange ) ) {
 			//really close?
-			if ( dist < Square( combat.earRange/4.0f ) ) {				
+			if ( dist < Square( combat.earRange/4.0f ) ) {		
 				return actor;
 			//possible LOS
 			} else if ( dist < Square( combat.visRange * 2.0f ) && CanSee( actor, false ) ) {
@@ -4185,6 +4197,14 @@ idEntity *idAI::FindEnemy ( bool inFov, bool forceNearest, float maxDistSqr ){
 		// If this enemy isnt in the same pvps then use them as a backup
 		if ( !gameLocal.pvs.InCurrentPVS( pvs, actor->GetPVSAreas(), actor->GetNumPVSAreas() ) ) {
 			continue;
+		}
+
+		// this is pretty specific to Quake 4, but we don't want the player to be around an enemy too long who can't see him. We need to randomly spike the
+		// awareRange on creatures to simulate them looking behind them, or noticing someone standing around for too long.
+		// Modders take note, this will prevent most "sneaking up on bad guys" action because they will likely spike their aware ranges out
+		// during the sneaking.
+		if( gameLocal.random.RandomFloat() < 0.005f )	{
+			awareRangeSqr *= 15;
 		}
 
 		// fov doesn't matter if they're within awareRange, we "sense" them if we're alert... (or should LOS not even matter at this point?)

@@ -792,6 +792,8 @@ public:
 	void			Init( int sequence );
 
 	bool			Add( const byte *data, const int size, bool sequencing );
+	// prepend to a message without the need to a memcopy and readjust
+	bool			AddConcat( const byte *data1, const int size1, const byte *data2, const int size2, bool sequencing );
 // RAVEN BEGIN
 // rjohnson: added check for data overflow
 	bool			Get( byte *data, int dataSize, int &size, bool sequencing );

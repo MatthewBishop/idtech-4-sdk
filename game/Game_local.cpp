@@ -44,11 +44,7 @@ idCVarHelp *				idCVarHelp::staticCVarHelps = NULL;
 idCVarHelp *				idCVarHelp::staticCVarHelpsTail = NULL;
 // RAVEN END
 
-#if defined( MACOS_X )
-idCVar com_forceGenericSIMD( "com_forceGenericSIMD", "1", CVAR_BOOL|CVAR_SYSTEM, "force generic platform independent SIMD" );
-#else
 idCVar com_forceGenericSIMD( "com_forceGenericSIMD", "0", CVAR_BOOL|CVAR_SYSTEM, "force generic platform independent SIMD" );
-#endif
 
 #endif
 
@@ -77,6 +73,10 @@ const char *idGameLocal::sufaceTypeNames[ MAX_SURFACE_TYPES ] = {
 GetGameAPI
 ============
 */
+
+#if __GNUC__ >= 4
+#pragma GCC visibility push(default)
+#endif
 extern "C" gameExport_t *GetGameAPI( gameImport_t *import ) {
 
 	if ( import->version == GAME_API_VERSION ) {
@@ -126,6 +126,9 @@ extern "C" gameExport_t *GetGameAPI( gameImport_t *import ) {
 
 	return &gameExport;
 }
+#if __GNUC__ >= 4
+#pragma GCC visibility pop
+#endif
 
 /*
 ===========
@@ -175,8 +178,6 @@ idGameLocal::Clear
 void idGameLocal::Clear( void ) {
 	int i;
 
-	pendingDisconnect = false;
-	
 	serverInfo.Clear();
 	numClients = 0;
 	for ( i = 0; i < MAX_CLIENTS; i++ ) {
@@ -216,10 +217,6 @@ void idGameLocal::Clear( void ) {
 	pvs.Shutdown();
 	sessionCommand.Clear();
 	locationEntities = NULL;
-// RAVEN BEGIN
-// bdube: not using smoke particles
-//	smokeParticles = NULL;
-// RAVEN END
 	editEntities = NULL;
 	entityHash.Clear( 1024, MAX_GENTITIES );
 	inCinematic = false;
@@ -264,7 +261,9 @@ void idGameLocal::Clear( void ) {
 // RAVEN END
 	spawnArgs.Clear();
 	gravity.Set( 0, 0, -1 );
+	playerPVS.i = -1;
 	playerPVS.h = -1;
+	playerConnectedAreas.i = -1;
 	playerConnectedAreas.h = -1;
 	gamestate = GAMESTATE_UNINITIALIZED;
 	skipCinematic = false;
@@ -306,6 +305,14 @@ void idGameLocal::Clear( void ) {
 	memset( lagometer, 0, sizeof( lagometer ) );
 
 	demoState = DEMO_NONE;
+	serverDemo = false;
+
+	memset( &usercmd, 0, sizeof( usercmd ) );
+	memset( &oldUsercmd, 0, sizeof( oldUsercmd ) );
+	followPlayer = -1;	// start free flying
+	demo_hud = NULL;
+	demo_mphud = NULL;
+	demo_cursor = NULL;
 }
 
 /*
@@ -393,7 +400,6 @@ void idGameLocal::Init( void ) {
 // rjohnson: camera is now contained in a def for frame commands
 	declManager->RegisterDeclType( "camera",			DECL_CAMERADEF,		idDeclAllocator<idDeclCameraDef> );
 // RAVEN END
-
 	// register game specific decl folders
 // RAVEN BEGIN
 #ifndef RV_SINGLE_DECL_FILE
@@ -436,13 +442,6 @@ void idGameLocal::Init( void ) {
 	// load default scripts
 	program.Startup( SCRIPT_DEFAULT );
 	
-// RAVEN BEGIN
-// bdube: disable id particles
-/*
-	smokeParticles = new idSmokeParticles;
-*/
-// RAVEN END
-
 	// set up the aas
 // RAVEN BEGIN
 // ddynerman: added false as 2nd parameter, otherwise def will be created
@@ -584,6 +583,7 @@ void idGameLocal::Shutdown( void ) {
 	newInfo.Clear();
 	spawnArgs.Clear();
 	shakeSounds.Clear();
+	aiManager.Clear();
 // RAVEN END
 
 	ShutdownConsoleCommands();
@@ -602,7 +602,11 @@ void idGameLocal::Shutdown( void ) {
 	entityUsageList.Clear();
 // RAVEN END
 
+	freeView.Shutdown();
+
 	Printf( "---------------------------------------------\n" );
+
+	instances.DeleteContents( true );
 
 #ifdef GAME_DLL
 
@@ -1024,6 +1028,22 @@ void idGameLocal::Error( const char *fmt, ... ) const {
 }
 
 /*
+===============
+gameError
+===============
+*/
+void gameError( const char *fmt, ... ) {
+	va_list		argptr;
+	char		text[MAX_STRING_CHARS];
+
+	va_start( argptr, fmt );
+	idStr::vsnPrintf( text, sizeof( text ), fmt, argptr );
+	va_end( argptr );
+
+	gameLocal.Error( "%s", text );
+}
+
+/*
 ===========
 idGameLocal::SetLocalClient
 ============
@@ -1122,6 +1142,19 @@ const idDict* idGameLocal::GetUserInfo( int clientNum ) {
 
 /*
 ===========
+idGameLocal::IsClientActive
+============
+*/
+bool idGameLocal::IsClientActive( int clientNum ) {
+	if ( entities[ clientNum ] && entities[ clientNum ]->IsType( idPlayer::GetClassType() ) ) {
+		return true;
+	}
+
+	return false;
+}
+
+/*
+===========
 idGameLocal::SetServerInfo
 ============
 */
@@ -1148,6 +1181,9 @@ void idGameLocal::SetServerInfo( const idDict &_serverInfo ) {
 // RAVEN END
 
 	if ( isServer ) {
+		
+		//common->Printf( "Writing server info\n" );
+		
 		// Let our clients know the server info changed
 		outMsg.Init( msgBuf, sizeof( msgBuf ) );
 		outMsg.WriteByte( GAME_RELIABLE_MESSAGE_SERVERINFO );
@@ -1341,13 +1377,6 @@ void idGameLocal::LoadMap( const char *mapName, int randseed ) {
 	AI_MoveInitialize();
 // RAVEN END
 
-
-
-// RAVEN BEGIN
-// bdube: not using smoke particles
-	// clear the smoke particle free list
-//	smokeParticles->Init();
-// RAVEN END
 	FindEntityDef( "preCacheExtras", false );
 
 	if ( !sameMap ) {
@@ -1371,7 +1400,7 @@ void idGameLocal::LocalMapRestart( int instance ) {
 	Printf( "----------- Game Map Restart (%s) ------------\n", instance == -1 ? "all instances" : va( "instance %d", instance ) );
 
 	// client always respawns everything, so make sure it picks up the right map entities
-	if( instance == -1 || isClient ) {
+	if ( instance == -1 || isClient ) {
 		memset( isMapEntity, 0, sizeof(bool) * MAX_GENTITIES );
 	} else {
 		assert( instance >= 0 && instance < instances.Num() );
@@ -1382,14 +1411,6 @@ void idGameLocal::LocalMapRestart( int instance ) {
 			}
 		}
 	}
-
-// RAVEN BEGIN
-// jnewquist: Controller rumble
-#ifdef _XBOX
-	extern void IN_KillRumble(void);
-	IN_KillRumble();
-#endif
-// RAVEN END
 
 	gamestate = GAMESTATE_SHUTDOWN;
 
@@ -1492,7 +1513,7 @@ void idGameLocal::MapRestart( int instance ) {
 			}
 //RAVEN END
 		}
-		cmdSystem->BufferCommandText( CMD_EXEC_NOW, "rescanSI" );
+		cmdSystem->BufferCommandText( CMD_EXEC_NOW, "rescanSI" " " __FILE__ " " __LINESTR__ );
 
 // RAVEN BEGIN
 // ddynerman: check if gametype changed
@@ -2119,6 +2140,12 @@ void idGameLocal::MapClear( bool clearClients, int instance ) {
 	}
 
 	entityHash.Clear( 1024, MAX_GENTITIES );
+// RAVEN BEGIN
+// rjohnson: reset spawnedEntities during clear to ensure no left over pieces that get remapped to a new id ( causing bad snapshot reading )
+	if ( instance == -1 ) {
+		spawnedEntities.Clear();
+	}
+// RAVEN END
 
 	if ( !clearClients ) {
 		// add back the hashes of the clients/stuff in other instances
@@ -2127,6 +2154,12 @@ void idGameLocal::MapClear( bool clearClients, int instance ) {
 				continue;
 			}
 			entityHash.Add( entityHash.GenerateKey( entities[ i ]->name.c_str(), true ), i );
+// RAVEN BEGIN
+// rjohnson: reset spawnedEntities during clear to ensure no left over pieces that get remapped to a new id ( causing bad snapshot reading )
+			if ( instance == -1 ) {
+				entities[ i ]->spawnNode.AddToEnd( spawnedEntities );
+			}
+// RAVEN END
 		}
 	}
 
@@ -2477,7 +2510,7 @@ void idGameLocal::CacheDictionaryMedia( const idDict *dict ) {
 	TIME_THIS_SCOPE( __FUNCLINE__);
 
 	if ( dict == NULL ) {
-#ifndef _XENON
+#ifndef _CONSOLE
 		if ( cvarSystem->GetCVarBool( "com_makingBuild") ) {
 			DumpOggSounds();
 		}
@@ -2485,7 +2518,7 @@ void idGameLocal::CacheDictionaryMedia( const idDict *dict ) {
 		return;
 	}
 
-#ifndef _XENON
+#ifndef _CONSOLE
 	if ( cvarSystem->GetCVarBool( "com_makingBuild" ) ) {
 		GetShakeSounds( dict );
 	}
@@ -2751,7 +2784,11 @@ idGameLocal::GetClientByNum
 ================
 */
 idPlayer *idGameLocal::GetClientByNum( int current ) const {
+	if ( current == MAX_CLIENTS ) {
+		return NULL;
+	}
 	if ( current < 0 || current >= numClients ) {
+		// that's a bit nasty but I suppose it has it's use
 		current = 0;
 	}
 	if ( entities[current] ) {
@@ -2856,22 +2893,26 @@ idGameLocal::GetLocalPlayer
 
 Nothing in the game tic should EVER make a decision based on what the
 local client number is, it shouldn't even be aware that there is a
-draw phase even happening.  This just returns client 0, which will
-be correct for single player.
+draw phase even happening.
+
+localClientNum == MAX_CLIENTS when playing server demos
+don't send back the wrong entity obviously
 ================
 */
 idPlayer *idGameLocal::GetLocalPlayer() const {
-	if ( localClientNum < 0 ) {
+	if ( localClientNum < 0 || localClientNum == MAX_CLIENTS ) {
 		return NULL;
 	}
 
-// RAVEN BEGIN
-// jnewquist: Use accessor for static class type 
 	if ( !entities[ localClientNum ] || !entities[ localClientNum ]->IsType( idPlayer::GetClassType() ) ) {
-// RAVEN END
 		// not fully in game yet
 		return NULL;
 	}
+	
+	// through idGameLocal::MapShutdown, deleting player ents, calls idEntity::StopSound
+	// calls in here and triggers the assert because proper type info is already gone
+	//assert( gamestate == GAMESTATE_SHUTDOWN || entities[ localClientNum ]->IsType( idPlayer::GetClassType() ) );
+	
 	return static_cast<idPlayer *>( entities[ localClientNum ] );
 }
 
@@ -3279,11 +3320,14 @@ gameReturn_t idGameLocal::RunFrame( const usercmd_t *clientCmds, int activeEdito
 		previousTime = time;
 		// bdube: use GetMSec access rather than USERCMD_TIME
 		time += GetMSec();
-		realClientTime = time;
 
+		realClientTime = time;
+		{
+TIME_THIS_SCOPE("idGameLocal::RunFrame - gameDebug.BeginFrame()");
 		// bdube: added advanced debug support
 		gameDebug.BeginFrame( );
 		gameLogLocal.BeginFrame( time );
+		}
 
 #ifdef GAME_DLL
 		// allow changing SIMD usage on the fly
@@ -3527,6 +3571,7 @@ gameReturn_t idGameLocal::RunFrame( const usercmd_t *clientCmds, int activeEdito
 
 	ret.syncNextGameFrame = skipCinematic;
 	if ( skipCinematic ) {
+		soundSystem->EndCinematic();
 		soundSystem->SetMute( false );
 		skipCinematic = false;		
 	}
@@ -3535,11 +3580,7 @@ gameReturn_t idGameLocal::RunFrame( const usercmd_t *clientCmds, int activeEdito
 	RunDebugInfo();
 	D_DrawDebugLines();
 
-	if ( pendingDisconnect ) {
-		cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "disconnect" );
-		pendingDisconnect = false;
-	}
-
+	g_simpleItems.ClearModified();
 	return ret;
 }
 // RAVEN END
@@ -3687,44 +3728,14 @@ bool idGameLocal::Draw( int clientNum ) {
 		player->CalculateRenderView();
 		view = player->GetRenderView();
 	}
-	if ( view )
-	{
-		view->streamingPrecache=player->streamingPrecache;
-	}
 #endif
 // RAVEN END
 	// render the scene
 	player->playerView.RenderPlayerView( player->hud );
 
 // RAVEN BEGIN
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-	assert(gameRenderWorld!=0);
-	if(gameRenderWorld!=0)
-	{
-		gameRenderWorld->StreamAreaTextures(!player->streamingPrecache);
-		if(renderSystem->IsManuallyStreaming()) {
-			renderSystem->ServiceManualStreaming();
-		}
-	}
-#elif defined(TEST_MANUAL_STREAMING)
-	if(renderSystem->IsManuallyStreaming()) {
-		renderSystem->ServiceManualStreaming();
-	}
-#endif
-// RAVEN END
-
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming.
-#if defined(_XENON)
-	// We've pre-streamed all textures for first view, so clear the flag.
-	player->streamingPrecache=false;
-#endif
-// RAVEN END
-
-// RAVEN BEGIN
 // bdube: debugging HUD
-	gameDebug.DrawHud ( );
+	gameDebug.DrawHud( );
 // RAVEN END
 
 	return true;
@@ -4099,7 +4110,8 @@ void idGameLocal::RunDebugInfo( void ) {
 	}
 
 	if ( g_showCollisionWorld.GetBool() ) {
-		collisionModelManager->DrawModel( clip[0]->GetWorldCollisionModel(), vec3_origin, mat3_identity, origin, mat3_identity, 128.0f );
+		// use g_maxShowDistance value instead of 128.0f
+		collisionModelManager->DrawModel( clip[0]->GetWorldCollisionModel(), vec3_origin, mat3_identity, origin, mat3_identity, g_maxShowDistance.GetFloat() );
 	}
 
 	if ( g_showCollisionModels.GetBool() ) {
@@ -4467,6 +4479,83 @@ idEntity *idGameLocal::SpawnEntityType( const idTypeInfo &classdef, const idDict
 	spawnArgs.Clear();
 
 	return static_cast<idEntity *>(obj);
+}
+
+/*
+===================
+idGameLocal::SpawnClientEntityDef
+
+Finds the spawn function for the client entity and calls it,
+returning false if not found
+===================
+*/
+bool idGameLocal::SpawnClientEntityDef( const idDict &args, rvClientEntity **cent, bool setDefaults, const char* spawn ) {
+	const char	*classname;
+	idTypeInfo	*cls;
+	idClass		*obj;
+	idStr		error;
+	const char  *name;
+
+	if ( cent ) {
+		*cent = NULL;
+	}
+
+	spawnArgs = args;
+
+	if ( spawnArgs.GetBool( "nospawn" ) ){
+		//not meant to actually spawn, just there for some compiling process
+		return false;
+	}
+
+	if ( spawnArgs.GetString( "name", "", &name ) ) {
+		error = va( " on '%s'", name );
+	}
+
+	spawnArgs.GetString( "classname", NULL, &classname );
+
+	const idDeclEntityDef *def = FindEntityDef( classname, false );
+	if ( !def ) {
+		// RAVEN BEGIN
+		// jscott: a NULL classname would crash Warning()
+		if( classname ) {
+			Warning( "Unknown classname '%s'%s.", classname, error.c_str() );
+		}
+		// RAVEN END
+		return false;
+	}
+
+	spawnArgs.SetDefaults( &def->dict );
+
+	// check if we should spawn a class object
+	if( spawn == NULL ) {
+		spawnArgs.GetString( "spawnclass", NULL, &spawn );
+	}
+
+	if ( spawn ) {
+
+		cls = idClass::GetClass( spawn );
+		if ( !cls ) {
+			Warning( "Could not spawn '%s'.  Class '%s' not found%s.", classname, spawn, error.c_str() );
+			return false;
+		}
+
+		obj = cls->CreateInstance();
+		if ( !obj ) {
+			Warning( "Could not spawn '%s'. Instance could not be created%s.", classname, error.c_str() );
+			return false;
+		}
+
+		obj->CallSpawn();
+
+		if ( cent && obj->IsType( rvClientEntity::GetClassType() ) ) {
+			*cent = static_cast<rvClientEntity*>(obj);
+		}
+
+		return true;
+	}
+
+	Warning( "%s doesn't include a spawnfunc%s.", classname, error.c_str() );
+	return false;
 }
 
 /*
@@ -5967,10 +6056,17 @@ void idGameLocal::SpawnClientMoveable( const char* name, int lifetime, const idV
 	int burn_time = idMath::ClampInt( 0, lifetime, SEC2MS(args->GetFloat( "burn_time", "2.5" )) );
 	
 	// Spawn the debris
-	rvClientMoveable* cent = new rvClientMoveable;
+	
+	rvClientMoveable* cent = NULL;
+	// force the args to spawn a rvClientMoveable
+	SpawnClientEntityDef( *args, (rvClientEntity**)(&cent), false, "rvClientMoveable" );
+	
+	if( !cent ) {
+		return;
+	}
+ 
 	cent->SetOrigin( origin );
 	cent->SetAxis( axis );
-	cent->Spawn( args );
 		
 	cent->GetPhysics()->SetLinearVelocity( velocity );
 	cent->GetPhysics()->SetAngularVelocity( angular_velocity );
@@ -6509,7 +6605,7 @@ void idGameLocal::SpreadLocations() {
 idGameLocal::AddLocation
 ===================
 */
-idLocationEntity* idGameLocal::AddLocation ( const idVec3& point, const char* name ) {
+idLocationEntity* idGameLocal::AddLocation( const idVec3& point, const char* name ) {
 	int areaNum = gameRenderWorld->PointInArea( point );
 	if ( areaNum < 0 ) {
 		Warning ( "idGameLocal::AddLocation: cannot add location entity '%s' at '%g %g %g'\n", name, point.x, point.y, point.z );
@@ -6618,7 +6714,8 @@ prepare for a sequence of initial player spawns
 void idGameLocal::InitializeSpawns( void ) {
 	idEntity* spot = NULL;
 
-	if ( !isMultiplayer || isClient ) {
+	// initialize the spawns for clients as well, need them for free fly demo replays
+	if ( !isMultiplayer ) {
 		return;
 	}
 
@@ -6657,18 +6754,6 @@ void idGameLocal::InitializeSpawns( void ) {
 			spawnSpots.Append ( static_cast<idPlayerStart*>(spot) );
 		}
 		spot = FindEntityUsingDef( spot, "info_player_deathmatch" );
-	}
-
-	if( IsFlagGameType() ) {
-		idEntity* flag = FindEntityUsingDef( NULL, "mp_ctf_marine_flag" );
-		if( flag ) {
-			mpGame.flagBaseLocation[ flag->spawnArgs.GetInt( "team", "0" ) ] = flag->GetPhysics()->GetOrigin();
-		}
-
-		flag = FindEntityUsingDef( NULL, "mp_ctf_strogg_flag" );
-		if( flag ) {
-			mpGame.flagBaseLocation[ flag->spawnArgs.GetInt( "team", "0" ) ] = flag->GetPhysics()->GetOrigin();
-		}
 	}
 
 	while( spot ) {
@@ -6727,8 +6812,24 @@ void idGameLocal::ClearForwardSpawns( void ) {
 
 /*
 ===========
+idGameLocal::SpotWouldTelefrag
+===========
+*/
+bool idGameLocal::SpotWouldTelefrag( idPlayer* player, idPlayerStart* spawn ) {
+	idPlayer*	playerList[ MAX_CLIENTS ];
+	idBounds	bound = player->GetPhysics()->GetBounds();
+
+	bound.TranslateSelf( spawn->GetPhysics()->GetOrigin() );
+	int numEntities = PlayersTouchingBounds( player, bound, CONTENTS_BODY, playerList, MAX_CLIENTS );
+
+	return !( numEntities == 0 );
+}
+
+/*
+===========
 idGameLocal::SelectSpawnSpot
-ddynerman: Selects a spawn spot based on gametype and not-telefragging
+ddynerman: Selects a spawn spot randomly from spots furthest from the player
+			This is taken from q3
 ===========
 */
 idEntity* idGameLocal::SelectSpawnPoint( idPlayer* player ) {
@@ -6740,12 +6841,12 @@ idEntity* idGameLocal::SelectSpawnPoint( idPlayer* player ) {
 		return ent;
 	}
 
-	if( player == NULL ) {
+	if ( player == NULL ) {
 		return NULL;
 	}
 
 	// Give spectators any old random spot
-	if( player->team < 0 || player->team >= TEAM_MAX || player->spectating ) {
+	if ( player->team < 0 || player->team >= TEAM_MAX || player->spectating ) {
 		common->DPrintf("Returning a random spot\n");
 		return spawnSpots[ random.RandomInt( spawnSpots.Num() ) ];
 	}
@@ -6756,8 +6857,7 @@ idEntity* idGameLocal::SelectSpawnPoint( idPlayer* player ) {
 	// Pick which spawns to use based on gametype
 	if( gameLocal.gameType == GAME_DM || gameLocal.gameType == GAME_TDM || gameLocal.gameType == GAME_TOURNEY ) {
 		spawnArray = &spawnSpots;
-	} 
-	else if( IsFlagGameType() ) {	
+	} else if( IsFlagGameType() ) {	
 		if( teamForwardSpawnSpots[ player->team ].Num() ) {
 			spawnArray = &teamForwardSpawnSpots[ player->team ];
 		} else {
@@ -6770,193 +6870,34 @@ idEntity* idGameLocal::SelectSpawnPoint( idPlayer* player ) {
 		return NULL;
 	}
 
-#if 0
-	// Run through each spawn point and mark it's distance to each player
 	for( int i = 0; i < spawnArray->Num(); i++ ) {
-		idVec3 pos = (*spawnArray)[ i ]->GetPhysics()->GetOrigin();
-		spawnSpot_t newSpot;
-		newSpot.dist = 0;
-		newSpot.ent = (*spawnArray)[ i ];
-		for( int j = 0; j < MAX_CLIENTS; j++ ) {	
-// RAVEN BEGIN
-// jnewquist: Use accessor for static class type 
-			if ( !entities[ j ] || !entities[ j ]->IsType( idPlayer::GetClassType() )
-// RAVEN END
-				|| entities[ j ] == player
-				|| static_cast< idPlayer * >( entities[ j ] )->spectating ) {
-				continue;
-			}
+		idPlayerStart* spot = (*spawnArray)[i];
 
-			// ignore distance to people in other instances
-			if( entities[ j ]->GetInstance() != player->GetInstance() ) {
-				continue;
-			}
-
-			// in team deathmatch, only figure distance to teammates
-			if ( gameLocal.gameType == GAME_TDM ) {
-				if ( static_cast< idPlayer * >( entities[ j ] )->team != player->team ) {
-					continue;
-				}
-			}
-			
-			newSpot.dist += ( pos - entities[ j ]->GetPhysics()->GetOrigin() ).LengthSqr();
+		if( spot->GetInstance() != player->GetInstance() || SpotWouldTelefrag( player, spot ) ) {
+			continue;
 		}
+
+		idVec3	pos = spot->GetPhysics()->GetOrigin();
+		float	dist = ( pos - player->GetPhysics()->GetOrigin() ).LengthSqr();
+
+		spawnSpot_t	newSpot;
+		
+		newSpot.dist = dist;
+		newSpot.ent = (*spawnArray)[ i ];
 		weightedSpawns.Append( newSpot );
 	}
 
-	// before we sort the list, we randomize it's order.  In many cases player distance does not differentiate enough,
-	// and we'd like some randomness in the other spawns.
-	for( int i = 0; i < weightedSpawns.Num(); i++ ) {
-		int j = random.RandomInt( weightedSpawns.Num() - i ) + i;
-		if ( i == j ) {
-			continue;
-		}
-		spawnSpot_t temp = weightedSpawns[ i ];
-		weightedSpawns[ i ] = weightedSpawns[ j ];
-		weightedSpawns[ j ] = temp;
-	}
-	
-	// sort the list - spawn spots further from players will be at the beginning of the list, spawns closer will be at the end
-	qsort( ( void * )weightedSpawns.Ptr(), spawnArray->Num(), sizeof( spawnSpot_t ), ( int (*)(const void *, const void *) )sortSpawnPoints );
-
-	// how many spawns we should consider
-	int factor = 3; // num spawns / 3 =~ 30%, so we use top/bottom ~30% of weightedSpawns
-
-	if( gameType == GAME_DM || gameType == GAME_TOURNEY ) {
-		// for deathmatch, pick a spot more remote areas
-		return SpawnInRange( weightedSpawns, player, 0, (spawnArray->Num() - 1) / factor );
-	} else if( gameType == GAME_TDM || IsFlagGameType() ) {
-		// for team deathmatch and ctf pick a spot close to team mates
-		return SpawnInRange( weightedSpawns, player, (spawnArray->Num() - 1) - ((spawnArray->Num() - 1) / factor), spawnArray->Num() - 1 );
-	} else {
-		Error( "SelectSpawnSpot() - Unknown gametype.");
-		return NULL;
+ 	if( weightedSpawns.Num() == 0 ) {
+		// no spawns avaialable, spawn randomly
+		common->DPrintf("no spawns avaialable, spawn randomly\n");
+		return (*spawnArray)[ random.RandomInt( spawnArray->Num() ) ];
 	}
 
-	return SpawnInRange( weightedSpawns, player, 0, (weightedSpawns.Num() - 1) );
+	qsort( ( void * )weightedSpawns.Ptr(), weightedSpawns.Num(), sizeof( spawnSpot_t ), ( int (*)(const void *, const void *) )sortSpawnPoints );
 
-#else
-
-	bool	completelyRandom = false;
-	int		startIndex = 0;
-	int		endIndex = 0;
-
-	if ( gameType == GAME_CTF || 
-		 gameType == GAME_1F_CTF || 
-		 gameType == GAME_ARENA_CTF || 
-		 gameType == GAME_ARENA_1F_CTF ) {
-		// remain random
-
-		completelyRandom = true;
-	 } else if ( player->lastKiller.IsValid() && !player->lastKiller.GetEntity()->spectating ) {
-		// pick from any spot except nearest to where your killer is currently at
-
-		common->DPrintf( "killer is at %s\n", player->lastKiller.GetEntity()->GetPhysics()->GetOrigin().ToString( 0 ) );
-
-		for( int i = 0; i < spawnArray->Num(); i++ ) {
-			idVec3	pos = (*spawnArray)[ i ]->GetPhysics()->GetOrigin();
-			float	dist = ( pos - player->lastKiller.GetEntity()->GetPhysics()->GetOrigin() ).LengthSqr();
-
-			spawnSpot_t		newSpot;
-
-			newSpot.dist = dist;
-			newSpot.ent = (*spawnArray)[ i ];
-
-			weightedSpawns.Append( newSpot );
-		}
-
-		// sort the list - spawn spots further from players will be at the beginning of the list, spawns closer will be at the end
-		qsort( ( void * )weightedSpawns.Ptr(), weightedSpawns.Num(), sizeof( spawnSpot_t ), ( int (*)(const void *, const void *) )sortSpawnPoints );
-
-		startIndex = 0;
-		endIndex = weightedSpawns.Num() - 6 - 1;
-
-		if ( endIndex < startIndex ) {
-			// we don't have enough spawn points!
-			completelyRandom = true;
-		}
-	 } else {
-		completelyRandom = true;
-	 }
-
-	 if ( completelyRandom ) {
-		for( int i = 0; i < spawnArray->Num(); i++ ) {
-			spawnSpot_t		newSpot;
-
-			newSpot.dist = 0;
-			newSpot.ent = (*spawnArray)[ i ];
-
-			weightedSpawns.Append( newSpot );
-		}
-
-		startIndex = 0;
-		endIndex = weightedSpawns.Num() - 1;
-	 }
-
-	common->DPrintf( "spawning player from %d to %d out of %d\n", startIndex, endIndex, weightedSpawns.Num() - 1 );
-	for( int i = startIndex; i <= endIndex; i++ ) {
-		common->DPrintf( "   %d: %d\n", i, weightedSpawns[ i ].dist );
-	}
-
-	idEntity *spot = SpawnInRange( weightedSpawns, player, startIndex, endIndex, weightedSpawns.Num() - 1 );
-
-	common->DPrintf( "Spawned at %s\n", spot->GetPhysics()->GetOrigin().ToString( 0 ) );
-
-	return spot;
-#endif
+	int rnd = rvRandom::flrand( 0.0, 1.0 ) * (weightedSpawns.Num() / 2);
+	return weightedSpawns[ rnd ].ent;
 }
-
-/*
-===========
-idGameLocal::SpawnInRange
-ddynerman:	Selects a spawn spot from spawns in the given range.  Not very 
-			robust, will work best if either lowIndex is at the start of the
-			array or highIndex is at the end.
-===========
-*/
-idEntity* idGameLocal::SpawnInRange( idList<spawnSpot_t>& spawns, idEntity* player, int lowIndex, int highIndex, int maxIndex ) {
-	idPlayer*		playerList[ MAX_CLIENTS ];
-	idList< int >	rawIndex, randomIndex;
-	int				i, index;
-
-	for( i = lowIndex; i <= highIndex; i++ ) {
-		rawIndex.Append( i );
-	}
-
-	for( i = lowIndex; i <= highIndex; i++ ) {
-		index = random.RandomInt( rawIndex.Num() );
-		randomIndex.Append( rawIndex[ index ] );
-		rawIndex.RemoveIndex( index );
-	}
-
-	memset( playerList, 0, sizeof(idEntity*) * MAX_CLIENTS );
-
-	for( i = 0; i < randomIndex.Num(); i++ ) {
-		common->DPrintf( "checking spawn #%d at %s with dist of %d\n", 
-			randomIndex[ i ], spawns[ randomIndex[ i ] ].ent->GetPhysics()->GetOrigin().ToString( 0 ), spawns[ randomIndex[ i ] ].dist );
-
-		idBounds bound = player->GetPhysics()->GetBounds();
-		bound.TranslateSelf( spawns[ randomIndex[ i ] ].ent->GetPhysics()->GetOrigin() );
-
-		int numEntities = PlayersTouchingBounds( player, bound, CONTENTS_BODY, playerList, MAX_CLIENTS );
-
-		if ( numEntities == 0 ) {
-			return spawns[ randomIndex[ i ] ].ent;
-		}
-	}
-
-	if ( lowIndex == 0 && highIndex == maxIndex ) {
-		// bad news, no spawn point available!
-		common->DPrintf( "no spawns left!\n");
-		return spawns[ randomIndex[ 0 ] ].ent;
-	}
-
-	common->DPrintf( "no spawns within limited index, trying everything\n" );
-
-	return SpawnInRange( spawns, player, 0, maxIndex, maxIndex );
-}
-// RAVEN END
-
 /*
 ================
 idGameLocal::UpdateServerInfoFlags
@@ -7194,6 +7135,17 @@ rvClientEffect* idGameLocal::PlayEffect(
 	RV_PUSH_SYS_HEAP_ID(RV_HEAP_ID_MULTIPLE_FRAME);
 	rvClientEffect* clientEffect = new rvClientEffect( effect );
 	RV_POP_HEAP();
+
+	if( !clientEffect ) {
+		common->Warning( "Failed to create effect \'%s\'\n", effect->GetName() );
+		return NULL;
+	}
+
+	if( clientEffect->entityNumber == -1 ) {
+		common->Warning( "Failed to spawn effect \'%s\'\n", effect->GetName() );
+		delete clientEffect;
+		return NULL;
+	}
 
 	clientEffect->SetOrigin( origin );
 	clientEffect->SetAxis( axis );
@@ -7584,13 +7536,15 @@ void idGameLocal::RegisterClientEntity( rvClientEntity *cent ) {
 	assert ( cent );
 
 	if ( clientSpawnCount >= ( 1 << ( 32 - CENTITYNUM_BITS ) ) ) {
-		Error( "idGameLocal::RegisterClientEntity: spawn count overflow" );
+//		Error( "idGameLocal::RegisterClientEntity: spawn count overflow" );
+		clientSpawnCount = INITIAL_SPAWN_COUNT;
 	}
 
 	// Find a free entity index to use
 	while( clientEntities[firstFreeClientIndex] && firstFreeClientIndex < MAX_CENTITIES ) {
 		firstFreeClientIndex++;
 	}
+
 	if ( firstFreeClientIndex >= MAX_CENTITIES ) {
 		cent->PostEventMS ( &EV_Remove, 0 );
 		Warning( "idGameLocal::RegisterClientEntity: no free client entities" );
@@ -7604,6 +7558,7 @@ void idGameLocal::RegisterClientEntity( rvClientEntity *cent ) {
 	clientSpawnIds[ entityNumber ] = clientSpawnCount++;
 	cent->entityNumber = entityNumber;
 	cent->spawnNode.AddToEnd( clientSpawnedEntities );
+	cent->spawnArgs.TransferKeyValues( spawnArgs );
 
 	if ( entityNumber >= num_clientEntities ) {
 		num_clientEntities++;
@@ -8096,6 +8051,44 @@ void idGameLocal::Cmd_PrintSpawnIds_f( const idCmdArgs& args ) {
 	}
 }
 
+/*
+===============
+idGameLocal::GetDemoHud
+===============
+*/
+idUserInterface	*idGameLocal::GetDemoHud( void ) {
+	if ( !demo_hud ) {
+		demo_hud = uiManager->FindGui( "guis/hud.gui", true, false, true );
+		assert( demo_hud );
+	}
+	return demo_hud;
+}
+
+/*
+===============
+idGameLocal::GetDemoMphud
+===============
+*/
+idUserInterface	*idGameLocal::GetDemoMphud( void ) {
+	if ( !demo_mphud ) {
+		demo_mphud = uiManager->FindGui( "guis/mphud.gui", true, false, true );
+		assert( demo_mphud );
+	}
+	return demo_mphud;
+}
+
+/*
+===============
+idGameLocal::GetDemoCursor
+===============
+*/
+idUserInterface *idGameLocal::GetDemoCursor( void ) {
+	if ( !demo_cursor ) {
+		demo_cursor = uiManager->FindGui( "guis/cursor.gui", true, false, true );	   
+		assert( demo_cursor );
+	}
+	return demo_cursor;
+}
 
 // RAVEN BEGIN
 // mwhitlock: Dynamic memory consolidation

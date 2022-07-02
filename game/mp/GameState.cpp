@@ -34,8 +34,6 @@ rvGameState::rvGameState( bool allocPrevious ) {
 	}
 	
 	trackPrevious = allocPrevious;
-
-	type = GS_BASE;
 }
 
 /*
@@ -59,9 +57,6 @@ void rvGameState::Clear( void ) {
 	nextState = INACTIVE;
 	nextStateTime = 0;
 	fragLimitTimeout = 0;
-#ifdef _XENON
-	lastStatUpdate = 0;
-#endif
 }
 
 /*
@@ -165,8 +160,12 @@ rvGameState::GameStateChanged
 */
 void rvGameState::GameStateChanged( void ) {
 	idPlayer* player = gameLocal.GetLocalPlayer();
-
-	if( player == NULL ) {
+	if ( !player ) {
+		if ( gameLocal.GetDemoState() == DEMO_PLAYING && gameLocal.IsServerDemo() && gameLocal.GetDemoFollowClient() >= 0 ) {
+			player = static_cast< idPlayer * >( gameLocal.entities[ gameLocal.GetDemoFollowClient() ] );
+		}
+	}
+	if ( !player ) {
 		gameLocal.Warning( "rvGameState::GameStateChanged() - NULL local player\n" ) ;
 		return;
 	}
@@ -178,10 +177,12 @@ void rvGameState::GameStateChanged( void ) {
 				player->GUIMainNotice( common->GetLocalizedString( "#str_107706" ), true );		
 			}
 #ifdef _XENON
-			// on Xenon Hide the hud until the warmup period ends.
-			player->disableHud = true;
+			// on Xenon remove the pre game lobby when the countdown starts
+			session->SetGUI(NULL, NULL);
+			player->disableHud = false;
+			gameLocal.mpGame.ClearMenu();
 #endif
-			soundSystem->SetActiveSoundWorld(true);
+			soundSystem->SetActiveSoundWorld( true );
 			
 			// reset stats on the client-side
 			if( gameLocal.isClient ) {
@@ -199,6 +200,11 @@ void rvGameState::GameStateChanged( void ) {
 #endif
 			soundSystem->SetActiveSoundWorld(true);
 			if( gameLocal.gameType != GAME_TOURNEY && previousGameState->currentState != INACTIVE ) {
+				gameLocal.mpGame.RemoveAnnouncerSound( AS_GENERAL_PREPARE_TO_FIGHT );
+				gameLocal.mpGame.RemoveAnnouncerSound( AS_GENERAL_THREE );
+				gameLocal.mpGame.RemoveAnnouncerSound( AS_GENERAL_TWO );
+				gameLocal.mpGame.RemoveAnnouncerSound( AS_GENERAL_ONE );
+
 				gameLocal.mpGame.ScheduleAnnouncerSound( AS_GENERAL_PREPARE_TO_FIGHT, gameLocal.time );
 				gameLocal.mpGame.ScheduleAnnouncerSound( AS_GENERAL_THREE, nextStateTime - 3000 );
 				gameLocal.mpGame.ScheduleAnnouncerSound( AS_GENERAL_TWO, nextStateTime - 2000 );
@@ -216,16 +222,33 @@ void rvGameState::GameStateChanged( void ) {
 			}
 			cvarSystem->SetCVarString( "ui_ready", "Not Ready" );
 #ifdef _XENON
+			// on Xenon remove the pre game lobby when the countdown starts
+			session->SetGUI(NULL, NULL);
+			player->disableHud = false;
+			gameLocal.mpGame.ClearMenu();
 			// Kill the loading gui if it's up
 			session->KillLoadingGUI();
 #endif
-			gameLocal.mpGame.ScheduleTimeAnnouncements( );
+			soundSystem->SetActiveSoundWorld( true );
+			
+			// tourney time announcements are scheduled as you join/leave arenas and at arena starts
+			if( gameLocal.gameType != GAME_TOURNEY ) {
+				gameLocal.mpGame.ScheduleTimeAnnouncements( );
+			}
+
 
 			// clear stats on client
 			if( gameLocal.isClient ) {
 				statManager->Init();
 			}
  		} else if( currentState == SUDDENDEATH ) {
+#ifdef _XENON
+			// on Xenon remove the pre game lobby when the countdown starts
+			session->SetGUI(NULL, NULL);
+			player->disableHud = false;
+			gameLocal.mpGame.ClearMenu();
+#endif
+			soundSystem->SetActiveSoundWorld( true );
 			gameLocal.mpGame.ScheduleAnnouncerSound( AS_GENERAL_SUDDEN_DEATH, gameLocal.time );
 			gameLocal.GetLocalPlayer()->GUIMainNotice( common->GetLocalizedString( "#str_104287" ) );
 		} else if( currentState == GAMEREVIEW ) {
@@ -233,6 +256,10 @@ void rvGameState::GameStateChanged( void ) {
 			// check nextState to make sure this only gets called once
 			//if( nextState == INACTIVE ) {
 #ifdef _XENON
+				// on Xenon remove the pre game lobby when the countdown starts
+				session->SetGUI(NULL, NULL);
+				player->disableHud = false;
+				gameLocal.mpGame.ClearMenu();
 				Live()->PlayedRound();
 				if(Live()->RoundsPlayed() < cvarSystem->GetCVarInteger("si_matchRounds"))
 				{
@@ -241,14 +268,15 @@ void rvGameState::GameStateChanged( void ) {
 #else
 				gameLocal.mpGame.ShowStatSummary();
 #endif
-				if( gameLocal.IsTeamGame() ) {
+				soundSystem->SetActiveSoundWorld( true );
+				if( gameLocal.IsTeamGame() && !player->wantSpectate ) {
 					int winningTeam = gameLocal.mpGame.GetScoreForTeam( TEAM_MARINE ) > gameLocal.mpGame.GetScoreForTeam( TEAM_STROGG ) ? TEAM_MARINE : TEAM_STROGG;
 					if( player->team == winningTeam ) {
 						gameLocal.mpGame.ScheduleAnnouncerSound( AS_GENERAL_YOU_WIN, gameLocal.time );
 					} else {
 						gameLocal.mpGame.ScheduleAnnouncerSound( AS_GENERAL_YOU_LOSE, gameLocal.time );
 					}
-				} else if( gameLocal.gameType != GAME_TOURNEY ) {
+				} else if( gameLocal.gameType != GAME_TOURNEY && !player->wantSpectate ) {
 					if( player->GetRank() == 0 ) {
 						gameLocal.mpGame.ScheduleAnnouncerSound( AS_GENERAL_YOU_WIN, gameLocal.time );
 					} else {
@@ -285,7 +313,7 @@ void rvGameState::Run( void ) {
 	switch( currentState ) {
 		case INACTIVE:
 #ifdef _XENON
-			if(Live()->RoundsPlayed() >= cvarSystem->GetCVarInteger("si_matchRounds") && gameLocal.time > nextStateTime)
+			if(Live()->RoundsPlayed() >= cvarSystem->GetCVarInteger("si_matchRounds") )
 			{	
 				Live()->EndMatch();
 				cmdSystem->BufferCommandText( CMD_EXEC_NOW, "disconnect\n" );
@@ -304,31 +332,47 @@ void rvGameState::Run( void ) {
 					nextStateTime = gameLocal.time + 5000 + (1000 * cvarSystem->GetCVarInteger( "g_gameReviewPause" ));
 				} else {
 					nextStateTime = gameLocal.time + (1000 * cvarSystem->GetCVarInteger( "g_gameReviewPause" ));
-				}
-				
+				}				
 #else
 				//get in one last stat update before shutdown
 				//statManager->SendAllStats();
+				nextState = NEXTGAME;
+				nextStateTime = gameLocal.time + 1000 * cvarSystem->GetCVarInteger( "g_gameReviewPause" );
 				if(Live()->RoundsPlayed() >= cvarSystem->GetCVarInteger("si_matchRounds"))
 				{
 
-					NewState(INACTIVE);
 					Live()->WriteSessionStats();
-					nextStateTime = gameLocal.time + 1000;
+					//nextState = INACTIVE;
+					//nextStateTime = gameLocal.time + 1000 * cvarSystem->GetCVarInteger( "g_gameReviewPause" );
 					//cmdSystem->BufferCommandText( CMD_EXEC_NOW, "disconnect\n" );
 					
 				}
-				else
+			/*	else
 				{
-					nextState = NEXTGAME;
-					nextStateTime = gameLocal.time + 1000 * cvarSystem->GetCVarInteger( "g_gameReviewPause" );
 					Live()->PickMap();
-				}
+				}*/
 #endif
 			}
 			break;
 		}
 		case NEXTGAME: {
+
+			// the core will force a restart at 12 hours max
+			// but it's nicer if we can wait for a game transition to perform the restart so the game is not interrupted
+			// perform a restart once we are past 8 hours
+			if ( networkSystem->ServerGetServerTime() > 8*60*60*1000 ) {
+				cmdSystem->BufferCommandText( CMD_EXEC_NOW, "nextMap\n" );
+				return;
+			}
+
+#ifdef _XENON
+			if(Live()->RoundsPlayed() >= cvarSystem->GetCVarInteger("si_matchRounds"))
+			{
+				NewState(INACTIVE);
+				return;
+			}
+#endif
+
 			if ( nextState == INACTIVE ) {
 				// game rotation, new map, gametype etc.
 				// only cycle in tourney if tourneylimit is higher than the specified value
@@ -337,6 +381,7 @@ void rvGameState::Run( void ) {
 					if( gameLocal.gameType == GAME_TOURNEY ) {
 						((rvTourneyGameState*)this)->SetTourneyCount( 0 );
 					}
+
 
 					if ( gameLocal.NextMap() ) {
 						cmdSystem->BufferCommandText( CMD_EXEC_NOW, "serverMapRestart\n" );
@@ -368,7 +413,7 @@ void rvGameState::Run( void ) {
 			{
 				break;
 			}
-			session->KillLoadingGUI();
+			
 #endif
 //RAVEN END
 			if( !gameLocal.serverInfo.GetBool( "si_warmup" ) && gameLocal.gameType != GAME_TOURNEY ) {
@@ -385,17 +430,6 @@ void rvGameState::Run( void ) {
 			break;
 		}
 	}
-
-	//RAVEN BEGIN
-	//asalmon: Xenon must send periodic updates of all multiplayer stats.
-#ifdef _XENON
-	if((Sys_Milliseconds() - lastStatUpdate) > XENON_STAT_UPDATE_INTERVAL)
-	{
-		statManager->SendAllStats();	
-		lastStatUpdate = Sys_Milliseconds();
-	}
-#endif
-	//RAVEN END
 }
 
 /*
@@ -461,7 +495,7 @@ void rvGameState::NewState( mpGameState_t newState ) {
 			for( i = 0; i < MAX_CLIENTS; i++ ) {
 				// dont send this to server - we have all the data already and this will
 				// just trigger extra gamestate detection
-				if( gameLocal.entities[ i ] && i != gameLocal.localClientNum ) {
+				if ( gameLocal.entities[ i ] && i != gameLocal.localClientNum ) {
 					gameLocal.mpGame.ServerWriteInitialReliableMessages( i );
 				}
 			}
@@ -480,7 +514,10 @@ void rvGameState::NewState( mpGameState_t newState ) {
 				// in normal gameplay modes, spawn the player in.  For tourney, the tourney manager handles spawning
 				if( gameLocal.gameType != GAME_TOURNEY ) {
 					p->JoinInstance( 0 );
-					p->ServerSpectate( static_cast<idPlayer *>(ent)->wantSpectate );
+					// in team games, let UserInfoChanged() spawn people on the right teams
+					if( !gameLocal.IsTeamGame() || p->team != -1 ) {
+						p->ServerSpectate( static_cast<idPlayer *>(ent)->wantSpectate );
+					}
 				}
 			}
 
@@ -521,12 +558,15 @@ void rvGameState::NewState( mpGameState_t newState ) {
 				p->SetLeader( false ); // don't carry the flag from previous games	
 			}
 
-			gameLocal.LocalMapRestart();
+			// only restart in team games if si_suddenDeathRestart is set.
+			if( !gameLocal.IsTeamGame() || gameLocal.serverInfo.GetBool( "si_suddenDeathRestart" ) ) {
+				gameLocal.LocalMapRestart();
+			}
+
 			// Mark everyone tied for the lead as leaders
 			i = 0;
 			idPlayer* leader = gameLocal.mpGame.GetRankedPlayer( i );
-			// rjohnson: 9920
-			if ( leader ) {
+			if( leader ) {
 				int highScore = gameLocal.mpGame.GetScore( leader );
 				while( leader ) {
 					if( gameLocal.mpGame.GetScore( leader ) < highScore ) {
@@ -627,10 +667,10 @@ rvGameState& rvGameState::operator=( const rvGameState& rhs ) {
 
 /*
 ===============
-rvGameState::WriteClientNetworkInfo
+rvGameState::WriteNetworkInfo
 ===============
 */
-void rvGameState::WriteClientNetworkInfo( idFile *file, int clientNum ) {
+void rvGameState::WriteNetworkInfo( idFile *file, int clientNum ) {
 	idBitMsg	msg;
 	byte		msgBuf[ MAX_GAME_MESSAGE_SIZE ];
 	
@@ -643,10 +683,10 @@ void rvGameState::WriteClientNetworkInfo( idFile *file, int clientNum ) {
 
 /*
 ===============
-rvGameState::ReadClientNetworkInfo
+rvGameState::ReadNetworkInfo
 ===============
 */
-void rvGameState::ReadClientNetworkInfo( idFile *file, int clientNum ) {
+void rvGameState::ReadNetworkInfo( idFile *file, int clientNum ) {
 	idBitMsg	msg;
 	byte		msgBuf[ MAX_GAME_MESSAGE_SIZE ];
 	int			size;
@@ -669,8 +709,6 @@ Game state info for DM
 */
 rvDMGameState::rvDMGameState( bool allocPrevious ) : rvGameState( allocPrevious ) {
 	trackPrevious = allocPrevious;
-
-	type = GS_DM;
 }
 
 void rvDMGameState::Run( void ) {
@@ -772,8 +810,6 @@ Game state info for Team DM
 */
 rvTeamDMGameState::rvTeamDMGameState( bool allocPrevious ) : rvGameState( allocPrevious ) {
 	trackPrevious = allocPrevious;
-
-	type = GS_TEAMDM;
 }
 
 void rvTeamDMGameState::Run( void ) {
@@ -787,16 +823,6 @@ void rvTeamDMGameState::Run( void ) {
 				team = -1;
 			}
 			bool tiedForFirst = gameLocal.mpGame.GetScoreForTeam( TEAM_MARINE ) == gameLocal.mpGame.GetScoreForTeam( TEAM_STROGG );
-
-			// rjohnson: 9920
-			int		numPlayers = 0;
-			for( int i = 0; i < gameLocal.numClients; i++ ) {
-				idEntity *ent = gameLocal.entities[ i ];
-				if ( ent && ent->IsType( idPlayer::GetClassType() ) ) {
-					numPlayers++;
-				}
-			}
-
 			if ( team >= 0 && !tiedForFirst ) {
 				if ( !fragLimitTimeout ) {
 					common->DPrintf( "enter FragLimit timeout, team %d is leader\n", team );
@@ -825,8 +851,7 @@ void rvTeamDMGameState::Run( void ) {
 				}
 			} else if ( gameLocal.mpGame.TimeLimitHit() ) {
 				gameLocal.mpGame.PrintMessageEvent( -1, MSG_TIMELIMIT );
-				// rjohnson: 9920
-				if( tiedForFirst && numPlayers ) {
+				if( tiedForFirst ) {
 					// if tied at timelimit hit, goto sudden death
 					fragLimitTimeout = 0;
 					NewState( SUDDENDEATH );
@@ -894,8 +919,6 @@ rvCTFGameState::rvCTFGameState( bool allocPrevious ) : rvGameState( false ) {
 	}
 
 	trackPrevious = allocPrevious;
-
-	type = GS_CTF;
 }
 
 /*
@@ -930,7 +953,7 @@ void rvCTFGameState::SendState( int clientNum ) {
 	idBitMsg	outMsg;
 	byte		msgBuf[MAX_GAME_MESSAGE_SIZE];
 
-	assert( gameLocal.isServer && trackPrevious && type == GS_CTF );
+	assert( gameLocal.isServer && trackPrevious && IsType( rvCTFGameState::GetClassType() ) );
 
 	if( clientNum == -1 && (rvCTFGameState&)(*this) == (rvCTFGameState&)(*previousGameState) ) {
 		return;
@@ -968,7 +991,7 @@ rvCTFGameState::ReceiveState
 ================
 */
 void rvCTFGameState::ReceiveState( const idBitMsg& msg ) {
-	assert( type == GS_CTF );
+	assert( IsType( rvCTFGameState::GetClassType() ) );
 
 	rvGameState::UnpackState( msg );
 	UnpackState( msg );
@@ -1033,7 +1056,7 @@ rvCTFGameState::SendInitialState
 ================
 */
 void rvCTFGameState::SendInitialState( int clientNum ) {
-	assert( type == GS_CTF );
+	assert( IsType( rvCTFGameState::GetClassType() ) );
 
 	rvCTFGameState* previousState = (rvCTFGameState*)previousGameState;
 
@@ -1057,12 +1080,17 @@ void rvCTFGameState::GameStateChanged( void ) {
 
 	// CTF specific stuff
 	idPlayer* player = gameLocal.GetLocalPlayer();
-	bool noSounds = false;
-
-	if( player == NULL ) {
-		gameLocal.Error( "rvCTFGameState::GameStateChanged() - NULL local player\n" );
+	if ( !player ) {
+		if ( gameLocal.GetDemoState() == DEMO_PLAYING && gameLocal.IsServerDemo() && gameLocal.GetDemoFollowClient() >= 0 ) {
+			player = static_cast< idPlayer * >( gameLocal.entities[ gameLocal.GetDemoFollowClient() ] );
+		}
+	}
+	if ( !player ) {
+		gameLocal.Warning( "rvCTFGameState::GameStateChanged() - NULL local player\n" ) ;
 		return;
 	}
+
+	bool noSounds = false;
 
 	for( int i = 0; i < TEAM_MAX; i++ ) {
 		if( flagStatus[ i ] == ((rvCTFGameState*)previousGameState)->flagStatus[ i ] ) {
@@ -1091,46 +1119,54 @@ void rvCTFGameState::GameStateChanged( void ) {
 		}
 
 		if( flagStatus[ i ].state == FS_DROPPED && !noSounds ) {
-			if( flagTeam == player->team ) {
-				// our flag was dropped, so the enemy dropped it
-				gameLocal.mpGame.ScheduleAnnouncerSound ( AS_CTF_ENEMY_DROPS_FLAG, gameLocal.time, -1, true );
-			} else {
-				gameLocal.mpGame.ScheduleAnnouncerSound ( AS_CTF_YOUR_TEAM_DROPS_FLAG, gameLocal.time, -1, true );
+			if ( !player->spectating ) {
+				if( flagTeam == player->team ) {
+					// our flag was dropped, so the enemy dropped it
+					gameLocal.mpGame.ScheduleAnnouncerSound ( AS_CTF_ENEMY_DROPS_FLAG, gameLocal.time, -1, true );
+				} else {
+					gameLocal.mpGame.ScheduleAnnouncerSound ( AS_CTF_YOUR_TEAM_DROPS_FLAG, gameLocal.time, -1, true );
+				}
 			}
 
 		if( player->mphud ) {
 				player->mphud->SetStateInt( "team", flagTeam );
 				player->mphud->HandleNamedEvent( "flagDrop" );
 
-				if ( flagTeam == player->team ) {
-					player->mphud->SetStateString( "main_notice_text", common->GetLocalizedString( "#str_107723" ) );
-				} else {
-					player->mphud->SetStateString( "main_notice_text", common->GetLocalizedString( "#str_104420" ) );
-				}
+				if ( !player->spectating ) {
+					if ( flagTeam == player->team ) {
+						player->mphud->SetStateString( "main_notice_text", common->GetLocalizedString( "#str_107723" ) );
+					} else {
+						player->mphud->SetStateString( "main_notice_text", common->GetLocalizedString( "#str_104420" ) );
+					}
 
-				player->mphud->HandleNamedEvent( "main_notice" );
+					player->mphud->HandleNamedEvent( "main_notice" );
+				}
 			}
 		} else if( flagStatus[ i ].state == FS_AT_BASE ) {
 			if( ((rvCTFGameState*)previousGameState)->flagStatus[ i ].state == FS_TAKEN && !noSounds ) {
 				// team scores
-				if( flagTeam == player->team ) {
-					if( gameLocal.mpGame.CanCapture( gameLocal.mpGame.OpposingTeam( flagTeam ) ) ) {
-						gameLocal.mpGame.ScheduleAnnouncerSound ( AS_TEAM_ENEMY_SCORES, gameLocal.time );
-					}
-				} else {
-					if( gameLocal.mpGame.CanCapture( gameLocal.mpGame.OpposingTeam( flagTeam ) ) ) {
-						gameLocal.mpGame.ScheduleAnnouncerSound ( AS_TEAM_YOU_SCORE, gameLocal.time );
+				if ( !player->spectating ) {
+					if( flagTeam == player->team ) {
+						if( gameLocal.mpGame.CanCapture( gameLocal.mpGame.OpposingTeam( flagTeam ) ) ) {
+							gameLocal.mpGame.ScheduleAnnouncerSound ( AS_TEAM_ENEMY_SCORES, gameLocal.time );
+						}
+					} else {
+						if( gameLocal.mpGame.CanCapture( gameLocal.mpGame.OpposingTeam( flagTeam ) ) ) {
+							gameLocal.mpGame.ScheduleAnnouncerSound ( AS_TEAM_YOU_SCORE, gameLocal.time );
+						}
 					}
 				}
 			} else if( ((rvCTFGameState*)previousGameState)->flagStatus[ i ].state == FS_DROPPED && !noSounds ) {
 				// flag returned
-				if( flagTeam == player->team ) {
-					gameLocal.mpGame.ScheduleAnnouncerSound ( AS_CTF_YOUR_FLAG_RETURNED, gameLocal.time, -1, true );
-				} else {
-					gameLocal.mpGame.ScheduleAnnouncerSound ( AS_CTF_ENEMY_RETURNS_FLAG, gameLocal.time, -1, true );
+				if ( !player->spectating ) {
+					if( flagTeam == player->team ) {
+						gameLocal.mpGame.ScheduleAnnouncerSound ( AS_CTF_YOUR_FLAG_RETURNED, gameLocal.time, -1, true );
+					} else {
+						gameLocal.mpGame.ScheduleAnnouncerSound ( AS_CTF_ENEMY_RETURNS_FLAG, gameLocal.time, -1, true );
+					}
 				}
 			}
-
+			
 			if( player->mphud ) {
 				player->mphud->SetStateInt( "team", flagTeam );
 				player->mphud->HandleNamedEvent( "flagReturn" );
@@ -1138,25 +1174,33 @@ void rvCTFGameState::GameStateChanged( void ) {
 		} else if( flagStatus[ i ].state == FS_TAKEN || flagStatus[ i ].state == FS_TAKEN_STROGG || flagStatus[ i ].state == FS_TAKEN_MARINE ) {
 			// flag taken
 			if( flagTeam == player->team ) {
-				if ( !noSounds ) {
-					gameLocal.mpGame.ScheduleAnnouncerSound ( AS_CTF_ENEMY_HAS_FLAG, gameLocal.time, -1, true );
+				if ( !player->spectating ) {
+					if ( !noSounds ) {
+						gameLocal.mpGame.ScheduleAnnouncerSound ( AS_CTF_ENEMY_HAS_FLAG, gameLocal.time, -1, true );
+					}
 				}
 
-				if ( player->mphud ) {
-					player->mphud->SetStateString( "main_notice_text", common->GetLocalizedString( "#str_107722" ) );
-					player->mphud->HandleNamedEvent( "main_notice" );
+				if ( !player->spectating ) {
+					if ( player->mphud ) {
+						player->mphud->SetStateString( "main_notice_text", common->GetLocalizedString( "#str_107722" ) );
+						player->mphud->HandleNamedEvent( "main_notice" );
+					}
 				}
 			} else {
-				if( flagStatus[ i ].clientNum == gameLocal.localClientNum ) {
+				if ( flagStatus[ i ].clientNum == gameLocal.localClientNum ) {
 					if ( !noSounds ) {
 						gameLocal.mpGame.ScheduleAnnouncerSound ( AS_CTF_YOU_HAVE_FLAG, gameLocal.time, -1, true );
 					}					
 
-					// shouchard:  inform the GUI that you've taken the flag
-					player->mphud->SetStateString( "main_notice_text", common->GetLocalizedString( "#str_104419" ) );
-					player->mphud->HandleNamedEvent( "main_notice" );
+					if ( !player->spectating ) {
+						// shouchard:  inform the GUI that you've taken the flag
+						player->mphud->SetStateString( "main_notice_text", common->GetLocalizedString( "#str_104419" ) );
+						player->mphud->HandleNamedEvent( "main_notice" );
+					}
 				} else if ( !noSounds ) {
-					gameLocal.mpGame.ScheduleAnnouncerSound ( AS_CTF_YOUR_TEAM_HAS_FLAG, gameLocal.time, -1, true );
+					if ( !player->spectating ) {
+						gameLocal.mpGame.ScheduleAnnouncerSound ( AS_CTF_YOUR_TEAM_HAS_FLAG, gameLocal.time, -1, true );
+					}
 				}
 			}
 
@@ -1184,17 +1228,7 @@ void rvCTFGameState::Run( void ) {
 				// no capture limit games
 				team = -1;
 			}
-			bool	tiedForFirst = gameLocal.mpGame.GetScoreForTeam( TEAM_MARINE ) == gameLocal.mpGame.GetScoreForTeam( TEAM_STROGG );
-
-			// rjohnson: 9920
-			int		numPlayers = 0;
-			for( int i = 0; i < gameLocal.numClients; i++ ) {
-				idEntity *ent = gameLocal.entities[ i ];
-				if ( ent && ent->IsType( idPlayer::GetClassType() ) ) {
-					numPlayers++;
-				}
-			}
-
+			bool tiedForFirst = gameLocal.mpGame.GetScoreForTeam( TEAM_MARINE ) == gameLocal.mpGame.GetScoreForTeam( TEAM_STROGG );
 			if ( team >= 0 && !tiedForFirst ) {
 				if ( !fragLimitTimeout ) {
 					common->DPrintf( "enter capture limit timeout, team %d is leader\n", team );
@@ -1216,9 +1250,7 @@ void rvCTFGameState::Run( void ) {
 				fragLimitTimeout = 0; 
 			} else if ( gameLocal.mpGame.TimeLimitHit() ) {
 				gameLocal.mpGame.PrintMessageEvent( -1, MSG_TIMELIMIT );
-
-				// rjohnson: 9920
-				if( tiedForFirst && numPlayers ) {
+				if( tiedForFirst ) {
 					// if tied at timelimit hit, goto sudden death
 					fragLimitTimeout = 0;
 					NewState( SUDDENDEATH );
@@ -1271,7 +1303,7 @@ void rvCTFGameState::SetFlagState( int flag, flagState_t newState ) {
 		return;
 	}
 
-	assert( gameLocal.isServer && ( flag >= 0 && flag < TEAM_MAX ) && type == GS_CTF );
+	assert( gameLocal.isServer && ( flag >= 0 && flag < TEAM_MAX ) && IsType( rvCTFGameState::GetClassType() ) );
 
 	flagStatus[ flag ].state = newState;
 }
@@ -1282,7 +1314,7 @@ rvCTFGameState::SetFlagCarrier
 ================
 */
 void rvCTFGameState::SetFlagCarrier( int flag, int clientNum ) {
-	assert( gameLocal.isServer && ( flag >= 0 && flag < TEAM_MAX ) && (clientNum >= 0 && clientNum < MAX_CLIENTS) && type == GS_CTF );
+	assert( gameLocal.isServer && ( flag >= 0 && flag < TEAM_MAX ) && (clientNum >= 0 && clientNum < MAX_CLIENTS) && IsType( rvCTFGameState::GetClassType() ) );
 
 	flagStatus[ flag ].clientNum = clientNum;
 }
@@ -1347,8 +1379,6 @@ rvTourneyGameState::rvTourneyGameState
 ================
 */
 rvTourneyGameState::rvTourneyGameState( bool allocPrevious ) : rvGameState( false ) {
-	type = GS_TOURNEY;
-
 	Clear();
 
 	if( allocPrevious ) {
@@ -1368,7 +1398,7 @@ rvTourneyGameState::Clear
 ================
 */
 void rvTourneyGameState::Clear( void ) {
-	assert( type == GS_TOURNEY );
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
 
 	// mekberg: clear previous game state.
 	if ( previousGameState ) {
@@ -1398,7 +1428,7 @@ void rvTourneyGameState::Clear( void ) {
 	startingRound = 0;
 	maxRound = 0;
 	round = -1;
-	byePlayer = NULL;
+	byeArena = -1;
 	tourneyCount = 0;
 	roundTimeout = 0;
 }
@@ -1428,7 +1458,7 @@ void rvTourneyGameState::Reset( void ) {
 	startingRound = 0;
 	maxRound = 0;
 	round = -1;
-	byePlayer = NULL;
+	byeArena = -1;
 	roundTimeout = 0;
 }
 
@@ -1438,7 +1468,7 @@ rvTourneyGameState::Run
 ================
 */
 void rvTourneyGameState::Run( void ) {
-	assert( type == GS_TOURNEY );
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
 
 	rvGameState::Run();
 
@@ -1468,38 +1498,266 @@ void rvTourneyGameState::Run( void ) {
 			}
 
 			if( roundDone && gameLocal.time > roundTimeout ) {
-				int historyOffset = round - 1; //rounds are 1 indexed
-				idList<rvPair<int, int> > scoreDeltas; //track who won by the largest margin
-				idPlayer* formerByePlayer = byePlayer;
+				int pastRound = round - 1; //rounds are 1 indexed
+				idList<rvPair<idPlayer*, int> > advancingPlayers;
 
 				round++;
 				roundTimeout = 0;
 
 				assert( round >= 2 );
 
-				// add the bye player to the tourney history first, since byePlayer gets overwritten
-				int i;
+				// copy over tourney history for the previous round
+				UpdateTourneyHistory( pastRound );			
 
-				if( byePlayer ) {
-					for( i = 0; i < MAX_ARENAS; i++ ) {
-						if( arenas[ i ].GetState() == AS_INACTIVE ) {
-							break;
-						}
+				// transmit history
+				forceTourneyHistory = true;
+
+				// add who will advance to the next round
+				for( int i = 0; i < MAX_ARENAS; i++ ) {
+					if( arenas[ i ].GetState() == AS_DONE && arenas[ i ].GetWinner() ) {
+						advancingPlayers.Append( rvPair<idPlayer*, int>( arenas[ i ].GetWinner(), i ) );
+						gameLocal.mpGame.AddPlayerWin( arenas[ i ].GetWinner(), 1 );
+					} 
+				}
+
+				// when only one player advances, that player has won the tournament
+				if( advancingPlayers.Num() == 1 ) {
+					idPlayer* winner = advancingPlayers[ 0 ].First();
+					assert( winner );
+
+					for( int i = 0; i < MAX_ARENAS; i++ ) {
+						arenas[ i ].Clear();
 					}
 
-					if( i < MAX_ARENAS && historyOffset >= 0 && historyOffset < MAX_ROUNDS ) {
-						//strncpy( tourneyHistory[ historyOffset ][ i ].playerOne, byePlayer->GetUserInfo()->GetString( "ui_name" ), MAX_TOURNEY_HISTORY_NAME_LEN ); 
-						//tourneyHistory[ historyOffset ][ i ].playerTwo[ 0 ] = '\0';
-						tourneyHistory[ historyOffset ][ i ].playerOneNum = byePlayer->entityNumber;
-						tourneyHistory[ historyOffset ][ i ].playerTwoNum = -1;
-						tourneyHistory[ historyOffset ][ i ].playerOneScore = 0;
-						tourneyHistory[ historyOffset ][ i ].playerTwoScore = 0;
+					gameLocal.Printf( "Round %d: %d (%s) has won the tourney!\n", round - 1, winner->entityNumber, gameLocal.userInfo[ winner->entityNumber ].GetString( "ui_name" ) );
+					// award 5 wins for winning the entire tournament
+					gameLocal.mpGame.AddPlayerWin( winner, 5 );
+					//asalmon: For Xbox 360 do not delay game review
+#ifdef _XENON
+					NewState( GAMEREVIEW );
+#else
+					nextState = GAMEREVIEW;
+					nextStateTime = gameLocal.time + 5000;
+#endif
+					return;
+				}
+
+				// see if we have to swap a player from the byeArena this round
+				bool swapBye = false;
+				int thisByeArena = -1;
+
+				if( byeArena >= 0 ) {
+					// look at the bye arena from the round that just ended
+					thisByeArena = byeArena / (round - 1);
+
+					// if the bye arena is playing in the next round, there's no need to switch players
+					if( !(thisByeArena % 2) ) {
+						if( arenas[ thisByeArena ].GetState() == AS_DONE && arenas[ thisByeArena + 1 ].GetState() == AS_DONE ) {
+							assert( arenas[ thisByeArena ].GetWinner() && arenas[ thisByeArena + 1 ].GetWinner() );
+							swapBye = false;
+						} else {
+							swapBye = true;
+						}
+					} else {
+ 						if( arenas[ thisByeArena ].GetState() == AS_DONE && arenas[ thisByeArena - 1 ].GetState() == AS_DONE ) {
+							assert( arenas[ thisByeArena ].GetWinner() && arenas[ thisByeArena - 1 ].GetWinner() );
+							swapBye = false;
+						} else {
+							swapBye = true;
+						}
 					}
 				}
 
+				idPlayer* oldByePlayer = NULL;
+				idPlayer* newByePlayer = NULL;				
+
+				if( swapBye ) {
+					oldByePlayer = arenas[ thisByeArena ].GetWinner();
+
+					// pick a new bye player only from players who will be fighting next round
+					// i.e., don't swap the bye player with a player who will have a disconnect bye this upcoming round
+					idList<rvPair<idPlayer*, int> > nextRoundPlayers;
+					for( int i = 0; i < MAX_ARENAS; i += 2 ) {
+						if( arenas[ i ].GetState() == AS_DONE && arenas[ i ].GetWinner() && arenas[ i + 1 ].GetState() == AS_DONE && arenas[ i + 1 ].GetWinner() ) {
+							nextRoundPlayers.Append( rvPair<idPlayer*, int>( arenas[ i ].GetWinner(), i ) );
+							nextRoundPlayers.Append( rvPair<idPlayer*, int>( arenas[ i + 1 ].GetWinner(), i + 1 ) );
+						}
+					}
+						
+					if( nextRoundPlayers.Num() ) {
+						newByePlayer = nextRoundPlayers[ gameLocal.random.RandomInt( nextRoundPlayers.Num() ) ].First();
+					}
+				} 
+
+				// assign arenas for the next round
+				for( int i = 0; i < MAX_ARENAS; i += 2 ) {
+					idPlayer* advanceOne = arenas[ i ].GetWinner();
+					idPlayer* advanceTwo = arenas[ i + 1 ].GetWinner();
+
+					arenas[ i ].Clear();
+					arenas[ i + 1 ].Clear();
+
+					// assign new arenas, swapping oldByePlayer with newByePlayer
+					if( newByePlayer && oldByePlayer ) {
+						if( advanceOne == newByePlayer ) {
+							advanceOne = oldByePlayer;
+						} else if( advanceTwo == newByePlayer ) {
+							advanceTwo = oldByePlayer;
+						} else if( advanceOne == oldByePlayer ) {
+							advanceOne = newByePlayer;
+						} else if( advanceTwo == oldByePlayer ) {
+							advanceTwo = newByePlayer;
+						}
+					} 
+					
+					if( advanceOne || advanceTwo ) {
+						arenas[ (i / 2) ].AddPlayers( advanceOne, advanceTwo );
+
+						if( advanceOne ) {
+							advanceOne->JoinInstance( (i / 2) );
+							advanceOne->ServerSpectate( false );
+						}
+
+						if( advanceTwo ) {
+							advanceTwo->JoinInstance( (i / 2) );
+							advanceTwo->ServerSpectate( false );
+						}
+
+						gameLocal.Printf( "Round %d: Arena %d is starting play with players %d (%s) and %d (%s)\n", round, (i / 2), advanceOne ? advanceOne->entityNumber : -1, advanceOne ? advanceOne->GetUserInfo()->GetString( "ui_name" ) : "NULL", advanceTwo ? advanceTwo->entityNumber : -1, advanceTwo ? advanceTwo->GetUserInfo()->GetString( "ui_name" ) : "NULL" );
+
+						arenas[ (i / 2) ].Ready();
+					}
+				}
+
+				// if we have a bye player, figure out who they are going to play
+				/*
+				// this is an index into the arena the bye player will fight in
+				int previousByeOpponent = -1;
+
+				if( byePlayer ) {
+					lowestScoreDeltas.Sort( rvPair<int, int>::rvPairSecondCompare );
+
+					// prune down scoreDeltas to the bottom X players
+					for( i = 0; i < lowestScoreDeltas.Num() - 1; i++ ) {
+						if( lowestScoreDeltas[ i ].Second() != lowestScoreDeltas[ lowestScoreDeltas.Num() - 1 ].Second() ) {
+							lowestScoreDeltas.RemoveIndex( i );
+							i--;
+						}
+					}
+					
+					assert( lowestScoreDeltas.Num() );
+
+					// pick a bye player
+					previousByeOpponent = lowestScoreDeltas[ gameLocal.random.RandomInt( lowestScoreDeltas.Num() ) ].First();
+				}
+
+				bool arenaProcessed[ MAX_ARENAS ];
+				memset( arenaProcessed, 0, sizeof( arenaProcessed ) );
+
+				// setup the arenas for the next round each arena winner plays the winner from the next arena
+				for( i = 0; i < MAX_ARENAS; i++ ) {
+					if( arenas[ i ].GetState() != AS_DONE || arenaProcessed[ i ] ) {
+						continue;
+					}
+
+					idPlayer* advanceOne = arenas[ i ].GetWinner();
+					idPlayer* advanceTwo = NULL;
+
+					assert( advanceOne );
+
+					// remove this player from the arena, so when the arena gets cleared we don't get forced to spectate
+					arenas[ i ].RemovePlayer( advanceOne );
+					
+					// copy over the results of this tourney to the tourney history
+					if( arenas[ i ].GetPlayers()[ 0 ] && arenas[ i ].GetPlayers()[ 1 ] ) {
+						UpdateTourneyHistory( round - 2, i, arenas[ i ].GetPlayers()[ 0 ], arenas[ i ].GetPlayers()[ 1 ] );
+					}
+					
+					arenaProcessed[ i ] = true;
+
+					// find an opponent for the next round
+					if( i == newByeIndex ) {
+						// we are the new bye player, will be set after this loop
+						continue;
+					} else if( i == previousByeOpponent ) {
+						// we are playing the previous round's bye player
+						assert( byePlayer );
+						advanceTwo = byePlayer;
+						byePlayer = NULL;
+					} else {
+						// find the opponent in the next arena
+						int j;
+						for( j = i + 1; j < MAX_ARENAS; j++ ) {
+							// don't match this player with the player becoming a bye player or the player slated to play
+							// the previous round's bye player
+							if( arenas[ j ].GetState() != AS_DONE || j == newByeIndex || j == previousByeOpponent ) {
+								continue;
+							}
+
+							advanceTwo = arenas[ j ].GetWinner();
+							arenaProcessed[ j ] = true;
+
+							arenas[ j ].RemovePlayer( advanceTwo );
+
+							if( arenas[ j ].GetPlayers()[ 0 ] && arenas[ j ].GetPlayers()[ 1 ] ) {
+								UpdateTourneyHistory( round - 2, j, arenas[ j ].GetPlayers()[ 0 ], arenas[ j ].GetPlayers()[ 1 ] );							
+							}
+							
+							arenas[ j ].Clear();
+
+							break;
+						}
+
+						assert( j < MAX_ARENAS );
+					}
+
+					assert( advanceTwo );
+
+					// place advanceOne and advanceTwo in the next arena
+					int arena = FirstAvailableArena();
+
+					arenas[ arena ].Clear();
+					arenas[ arena ].AddPlayers( advanceOne, advanceTwo );
+
+					// award bracket advancement
+					gameLocal.mpGame.AddPlayerWin( advanceOne, 1 );
+					gameLocal.mpGame.AddPlayerWin( advanceTwo, 1 );
+
+					advanceOne->ServerSpectate( false );
+					advanceTwo->ServerSpectate( false );
+
+					gameLocal.Printf( "Round %d: Arena %d is starting play with players %d (%s) and %d (%s)\n", round, arena, advanceOne->entityNumber, advanceOne->GetUserInfo()->GetString( "ui_name" ), advanceTwo->entityNumber, advanceTwo->GetUserInfo()->GetString( "ui_name" ) );
+
+					advanceOne->JoinInstance( arena );
+					advanceTwo->JoinInstance( arena );
+
+					arenas[ arena ].Ready();
+				}
+
+				// at this point, we either didn't have a byePlayer, or the previous byePlayer has been
+				// placed in an arena for this round
+				assert( !byePlayer );
+
+				if( newByeClientNum >= 0 ) {
+					assert( newByeClientNum >= 0 && newByeClientNum < MAX_CLIENTS ); 
+					byePlayer = (idPlayer*)gameLocal.entities[ newByeClientNum ];
+
+					// place the byePlayer in a valid instance
+					byePlayer->JoinInstance( 0 );
+				} else {
+					assert( !setupBye );
+				}			
+
+				// clear any remaining arenas that weren't re-used
+				for( i = 0; i < MAX_ARENAS; i++ ) {
+					if( arenas[ i ].GetState() != AS_WARMUP ) {
+						arenas[ i ].Clear(); 
+					}
+				}*/
+
 				// setup the next round - even though sometimes we process 2 arenas at once, we have to run through all of them, incase
 				// the setup changes mid-round because of people disconnecting
-				for( i = 0; i < MAX_ARENAS; i++ ) {
+				/*for( i = 0; i < MAX_ARENAS; i++ ) {
 					// only consider active arenas
 					if( arenas[ i ].GetState() == AS_INACTIVE ) {
 						continue;
@@ -1525,8 +1783,6 @@ void rvTourneyGameState::Run( void ) {
 						tourneyHistory[ historyOffset ][ i ].playerTwoScore = arenas[ i ].GetPlayerScore( 1 );
 					}
 					
-					scoreDeltas.Append( rvPair<int, int>( arenas[ i ].GetWinner()->entityNumber, gameLocal.mpGame.GetTeamScore( arenas[ i ].GetWinner() ) - gameLocal.mpGame.GetTeamScore( arenas[ i ].GetLoser() ) ) );
-
 					// if this arena is active & done, but the next one is inactive we need to check for a bye
 					if( j >= MAX_ARENAS || arenas[ j ].GetState() == AS_INACTIVE ) {
 						// if we're the last arena and there are no byes and we're done, the tourney is done
@@ -1575,7 +1831,7 @@ void rvTourneyGameState::Run( void ) {
 							tourneyHistory[ historyOffset ][ j ].playerTwoScore = arenas[ j ].GetPlayerScore( 1 );
 						}
 
-						scoreDeltas.Append( rvPair<int, int>( arenas[ j ].GetWinner()->entityNumber, gameLocal.mpGame.GetTeamScore( arenas[ j ].GetWinner() ) - gameLocal.mpGame.GetTeamScore( arenas[ j ].GetLoser() ) ) );
+						scoreDeltas.Append( rvPair<int, int>( j, gameLocal.mpGame.GetTeamScore( arenas[ j ].GetWinner() ) - gameLocal.mpGame.GetTeamScore( arenas[ j ].GetLoser() ) ) );
 
 						// clear arenas
 						arenas[ i ].Clear();
@@ -1600,12 +1856,10 @@ void rvTourneyGameState::Run( void ) {
 					advanceTwo->JoinInstance( (i / 2) );
 
 					arenas[ (i / 2) ].Ready();
-				}
+				}*/
 
 				// in certain situations, a player will get bye'd to the finals and needs to win
-				if ( byePlayer && // rj 9538
-					( ( round >= maxRound && GetNumArenas() == 0 ) ||
-					( byePlayer == formerByePlayer && scoreDeltas.Num() == 0 ) ) ) {  // 
+				/*if ( round >= maxRound && GetNumArenas() == 0 && byePlayer ) {
 					gameLocal.Printf( "Round %d: %d (%s) has won the tourney!\n", round, byePlayer->entityNumber, gameLocal.userInfo[ byePlayer->entityNumber ].GetString( "ui_name" ) );
 					// award 5 wins for winning the entire tournament
 					gameLocal.mpGame.AddPlayerWin( byePlayer, 5 );
@@ -1617,11 +1871,11 @@ void rvTourneyGameState::Run( void ) {
 							nextStateTime = gameLocal.time + 5000;
 #endif
 					break;
-				}
+				}*/
 
 				// if the bye player is the same as before we setup the new round, swap the byeplayer
 				// with someone else - so one player doesn't get a bye all the way to the finals.
-				if( byePlayer && byePlayer == formerByePlayer ) {
+			/*	if( byePlayer && byePlayer == formerByePlayer ) {
 					assert( scoreDeltas.Num() ); // something is very wrong....
 
 					// Pick t
@@ -1633,49 +1887,28 @@ void rvTourneyGameState::Run( void ) {
 						} 
 					}
 					int arena = gameLocal.random.RandomInt( i ); // this is an index to the previous round's arenas
-					int swapPlayer = scoreDeltas[ arena ].First();
-					rvTourneyArena* swapArena = NULL;
-					int playerIndex = -1;
-					for( int i = 0; i < MAX_ARENAS; i++ ) {
-						if( arenas[ i ].GetState() == AS_INACTIVE ) {
-							continue;
-						}
-
-						if( arenas[ i ].GetPlayers()[ 0 ] && arenas[ i ].GetPlayers()[ 0 ]->entityNumber == swapPlayer ) {
-							playerIndex = 0;
-							swapArena = &arenas[ i ];
-						} else if( arenas[ i ].GetPlayers()[ 1 ] && arenas[ i ].GetPlayers()[ 1 ]->entityNumber == swapPlayer ) {
-							playerIndex = 1;
-							swapArena = &arenas[ i ];
-						}
-
+					rvTourneyArena& swapArena = arenas[ (scoreDeltas[ arena ].First() / 2) ];
+					assert( swapArena.GetPlayers()[ 0 ] && swapArena.GetPlayers()[ 1 ] );
+					idPlayer* t = byePlayer;
+					if( arena & 2 ) {
+						// the highest delta was the first players
+						byePlayer = swapArena.GetPlayers()[ 0 ];
+						swapArena.AddPlayers( t, swapArena.GetPlayers()[ 1 ] );
+					} else {
+						// the highest delta was the second player
+						byePlayer = swapArena.GetPlayers()[ 1 ];
+						swapArena.AddPlayers( swapArena.GetPlayers()[ 0 ], t );					
 					}
+					assert( swapArena.GetPlayers()[ 0 ] && swapArena.GetPlayers()[ 1 ] );
 
-					assert( swapArena );
-
-					if( swapArena ) {
-						idPlayer* t = byePlayer;
-						if( playerIndex == 0 ) {
-							// the highest delta was the first players
-							byePlayer = swapArena->GetPlayers()[ 0 ];
-							swapArena->AddPlayers( t, swapArena->GetPlayers()[ 1 ] );
-						} else if( playerIndex == 1 ) {
-							// the highest delta was the second player
-							byePlayer = swapArena->GetPlayers()[ 1 ];
-							swapArena->AddPlayers( swapArena->GetPlayers()[ 0 ], t );					
-						} else {
-							assert( 0 );
-						}
-
-						swapArena->GetPlayers()[ 0 ]->JoinInstance( swapArena->GetArenaID() );
-						swapArena->GetPlayers()[ 1 ]->JoinInstance( swapArena->GetArenaID() );
-						swapArena->GetPlayers()[ 0 ]->ServerSpectate( false );
-						swapArena->GetPlayers()[ 1 ]->ServerSpectate( false );
-						byePlayer->ServerSpectate( true );
-						swapArena->Ready();
-						gameLocal.Printf( "Round %d: Arena %d is re-starting play (bye-swap) with players %d (%s) and %d (%s)\n", round, swapArena->GetArenaID(), swapArena->GetPlayers()[ 0 ]->entityNumber, swapArena->GetPlayers()[ 0 ]->GetUserInfo()->GetString( "ui_name" ), swapArena->GetPlayers()[ 1 ]->entityNumber, swapArena->GetPlayers()[ 1 ]->GetUserInfo()->GetString( "ui_name" ) );
-					}
-				}	
+					swapArena.GetPlayers()[ 0 ]->JoinInstance( swapArena.GetArenaID() );
+					swapArena.GetPlayers()[ 1 ]->JoinInstance( swapArena.GetArenaID() );
+					swapArena.GetPlayers()[ 0 ]->ServerSpectate( false );
+					swapArena.GetPlayers()[ 1 ]->ServerSpectate( false );
+					byePlayer->ServerSpectate( true );
+					swapArena.Ready();
+					gameLocal.Printf( "Round %d: Arena %d is re-starting play (bye-swap) with players %d (%s) and %d (%s)\n", round, swapArena.GetArenaID(), swapArena.GetPlayers()[ 0 ]->entityNumber, swapArena.GetPlayers()[ 0 ]->GetUserInfo()->GetString( "ui_name" ), swapArena.GetPlayers()[ 1 ]->entityNumber, swapArena.GetPlayers()[ 1 ]->GetUserInfo()->GetString( "ui_name" ) );
+				}	*/
 
 				// once the new round is setup, go through and make sure all the spectators are in valid arena
 				for( int i = 0; i < gameLocal.numClients; i++ ) {
@@ -1707,6 +1940,12 @@ void rvTourneyGameState::NewState( mpGameState_t newState ) {
 	switch( newState ) {
 		case WARMUP: {
 			Reset();
+			// force everyone to spectate
+			for( int i = 0; i < MAX_CLIENTS; i++ ) {
+				if( gameLocal.entities[ i ] ) {
+					((idPlayer*)gameLocal.entities[ i ])->ServerSpectate( true );
+				}
+			}
 			break;
 		}
 		case GAMEON: {
@@ -1725,7 +1964,7 @@ rvTourneyGameState::GameStateChanged
 ================
 */
 void rvTourneyGameState::GameStateChanged( void ) {
-	assert( type == GS_TOURNEY );
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
 	rvGameState::GameStateChanged();
 	idPlayer* localPlayer = gameLocal.GetLocalPlayer();
 
@@ -1737,7 +1976,6 @@ void rvTourneyGameState::GameStateChanged( void ) {
 			gameLocal.mpGame.ScheduleAnnouncerSound( AS_TOURNEY_DONE, gameLocal.time );
 		}
 
-
 		// we're starting a new round
 		gameLocal.mpGame.tourneyGUI.RoundStart();
 			
@@ -1745,35 +1983,30 @@ void rvTourneyGameState::GameStateChanged( void ) {
 		gameLocal.mpGame.ScheduleAnnouncerSound( (announcerSound_t)(AS_TOURNEY_PRELIMS + idMath::ClampInt( 1, maxRound, round - 1 ) ), gameLocal.time + 1500);
 	}
 
-	int byeArena = -1;
-
 	for( int i = 0; i < MAX_ARENAS; i++ ) {
 		rvTourneyArena& thisArena = arenas[ i ];
 		rvTourneyArena& previousArena = ((rvTourneyGameState*)previousGameState)->arenas[ i ];
 		
-		if( thisArena.GetState() == AS_INACTIVE && byeArena == -1 ) {
-			byeArena = i;
-		}
-
-		if( (thisArena.GetPlayers()[ 0 ] != previousArena.GetPlayers()[ 0 ]) ||
+		if( ((thisArena.GetPlayers()[ 0 ] != previousArena.GetPlayers()[ 0 ]) ||
 			(thisArena.GetPlayers()[ 1 ] != previousArena.GetPlayers()[ 1 ]) ||
-			(round != ((rvTourneyGameState*)previousGameState)->round ) ) {
-			gameLocal.mpGame.tourneyGUI.ArenaStart( i );
+			(round != ((rvTourneyGameState*)previousGameState)->round )) /*&& 
+			!((thisArena.GetPlayers()[ 0 ] == NULL && thisArena.GetPlayers()[ 1 ] != NULL) ||
+			  (thisArena.GetPlayers()[ 0 ] != NULL && thisArena.GetPlayers()[ 1 ] == NULL) ) */) {
+
+			// don't re-init arenas that have changed and been done for a while
+			if( thisArena.GetState() != AS_DONE || previousArena.GetState() != AS_DONE ) {
+				gameLocal.mpGame.tourneyGUI.ArenaStart( i );
+			}
+
 			if( localPlayer && thisArena.GetPlayers()[ 0 ] == localPlayer ) {
 				gameLocal.mpGame.tourneyGUI.ArenaSelect( i, TGH_PLAYER_ONE );
 			}
 			if( localPlayer && thisArena.GetPlayers()[ 1 ] == localPlayer ) {
 				gameLocal.mpGame.tourneyGUI.ArenaSelect( i, TGH_PLAYER_TWO );
 			}
-
-			// on the client, add this arena to our tourneyHistory
-			if( gameLocal.isClient && thisArena.GetPlayers()[ 0 ] && thisArena.GetPlayers()[ 1 ] && (round - 1 ) >= 0 && (round - 1) < MAX_ROUNDS )  {
-				tourneyHistory[ round - 1 ][ i ].playerOneNum = thisArena.GetPlayers()[ 0 ]->entityNumber;
-				tourneyHistory[ round - 1 ][ i ].playerTwoNum = thisArena.GetPlayers()[ 1 ]->entityNumber;
-			}
 		}
 
-		if( thisArena.GetState() == AS_SUDDEN_DEATH && thisArena.GetState() != previousArena.GetState() ) {
+		if( localPlayer->GetArena() == thisArena.GetArenaID() && thisArena.GetState() == AS_SUDDEN_DEATH && thisArena.GetState() != previousArena.GetState() ) {
 			gameLocal.mpGame.ScheduleAnnouncerSound( AS_GENERAL_SUDDEN_DEATH, gameLocal.time, thisArena.GetArenaID() );
 			gameLocal.GetLocalPlayer()->GUIMainNotice( common->GetLocalizedString( "#str_104287" ) );
 		}
@@ -1794,13 +2027,18 @@ void rvTourneyGameState::GameStateChanged( void ) {
 			}
 
 			// on the client, add this result to our tourneyHistory
-			if( gameLocal.isClient && thisArena.GetPlayers()[ 0 ] && thisArena.GetPlayers()[ 1 ] && (round - 1 ) >= 0 && (round - 1) < MAX_ROUNDS ) {
-				tourneyHistory[ round - 1 ][ i ].playerOneScore = gameLocal.mpGame.GetTeamScore( thisArena.GetPlayers()[ 0 ] );
-				tourneyHistory[ round - 1 ][ i ].playerTwoScore = gameLocal.mpGame.GetTeamScore( thisArena.GetPlayers()[ 1 ] );
-			}
+			//if( gameLocal.isClient && thisArena.GetPlayers()[ 0 ] && thisArena.GetPlayers()[ 1 ] && (round - 1 ) >= 0 && (round - 1) < MAX_ROUNDS ) {
+			//	tourneyHistory[ round - 1 ][ i ].playerOneScore = gameLocal.mpGame.GetTeamScore( thisArena.GetPlayers()[ 0 ] );
+			//	tourneyHistory[ round - 1 ][ i ].playerTwoScore = gameLocal.mpGame.GetTeamScore( thisArena.GetPlayers()[ 1 ] );
+			//}
 		}
 
 		if( localPlayer && (thisArena.GetState() == AS_WARMUP) && (thisArena.GetState() != previousArena.GetState()) && localPlayer->GetArena() == thisArena.GetArenaID() ) {
+			gameLocal.mpGame.RemoveAnnouncerSound( AS_GENERAL_PREPARE_TO_FIGHT );
+			gameLocal.mpGame.RemoveAnnouncerSound( AS_GENERAL_THREE );
+			gameLocal.mpGame.RemoveAnnouncerSound( AS_GENERAL_TWO );
+			gameLocal.mpGame.RemoveAnnouncerSound( AS_GENERAL_ONE );
+			
 			int warmupEndTime = gameLocal.time + ( gameLocal.serverInfo.GetInt( "si_countdown" ) * 1000 ) + 5000; 
 			gameLocal.mpGame.ScheduleAnnouncerSound( AS_GENERAL_PREPARE_TO_FIGHT, gameLocal.time + 5000 );
 			gameLocal.mpGame.ScheduleAnnouncerSound( AS_GENERAL_THREE, warmupEndTime - 3000 );
@@ -1814,21 +2052,9 @@ void rvTourneyGameState::GameStateChanged( void ) {
 		if( (thisArena.GetState() == AS_ROUND) && (thisArena.GetState() != previousArena.GetState()) ) {
   			if( localPlayer && localPlayer->GetArena() == thisArena.GetArenaID() ) {
   				gameLocal.mpGame.ScheduleAnnouncerSound( AS_GENERAL_FIGHT, gameLocal.time );
+				gameLocal.mpGame.ScheduleTimeAnnouncements();
   			}
 		}
-	}
-
-	if( ((rvTourneyGameState*)previousGameState)->byePlayer != byePlayer && byeArena >= 0 && byeArena < MAX_ARENAS ) {
-		if( !byePlayer ) {
-			tourneyHistory[ round - 1 ][ byeArena ].playerOneNum = -1;
-		} else {
-			tourneyHistory[ round - 1 ][ byeArena ].playerOneNum = byePlayer->entityNumber;
-		}
-	
-		tourneyHistory[ round - 1 ][ byeArena ].playerTwoNum = -1;
-		tourneyHistory[ round - 1 ][ byeArena ].playerOneScore = 0;
-		tourneyHistory[ round - 1 ][ byeArena ].playerTwoScore = 0;
-
 	}
 
 	if( ((rvTourneyGameState*)previousGameState)->currentState != currentState ) {
@@ -1841,10 +2067,6 @@ void rvTourneyGameState::GameStateChanged( void ) {
 		} else if( currentState == GAMEON ) {
 			gameLocal.mpGame.tourneyGUI.TourneyStart();
 		}
-	}
-
-	if( byePlayer != ((rvTourneyGameState*)previousGameState)->byePlayer ) {
-		gameLocal.mpGame.tourneyGUI.UpdateByePlayer();
 	}
 
 	if( packTourneyHistory ) {
@@ -1878,7 +2100,6 @@ typedef enum {
 	MSG_TOURNEY_STARTINGROUND,
 	MSG_TOURNEY_ROUND,
 	MSG_TOURNEY_MAXROUND,
-	MSG_TOURNEY_BYEPLAYER,
 	MSG_TOURNEY_HISTORY,
 	MSG_TOURNEY_TOURNEYCOUNT,
 	MSG_TOURNEY_ARENAINFO
@@ -1890,7 +2111,7 @@ rvTourneyGameState::PackState
 ================
 */
 void rvTourneyGameState::PackState( idBitMsg& outMsg ) {
-	assert( type == GS_TOURNEY );
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
 	
 	if( tourneyState != ((rvTourneyGameState*)previousGameState)->tourneyState ) {
 		outMsg.WriteByte( MSG_TOURNEY_TOURNEYSTATE );
@@ -1912,15 +2133,6 @@ void rvTourneyGameState::PackState( idBitMsg& outMsg ) {
 		outMsg.WriteByte( maxRound );
 	}
 	
-	if( byePlayer != ((rvTourneyGameState*)previousGameState)->byePlayer ) {
-		outMsg.WriteByte( MSG_TOURNEY_BYEPLAYER );
-		if( byePlayer ) {
-			outMsg.WriteByte( byePlayer->entityNumber );
-		} else {
-			outMsg.WriteByte( 255 );
-		}
-	}
-
 	for( int i = 0; i < MAX_ARENAS; i++ ) {
 		if( arenas[ i ] != ((rvTourneyGameState*)previousGameState)->arenas[ i ] ) {
 			outMsg.WriteByte( MSG_TOURNEY_ARENAINFO + i );
@@ -1928,21 +2140,25 @@ void rvTourneyGameState::PackState( idBitMsg& outMsg ) {
 		}
 	}
 
-	if( packTourneyHistory ) {
+	if( packTourneyHistory || forceTourneyHistory ) {
+		if( forceTourneyHistory ) {
+			common->Warning("forcing down tourney history\n");
+		}
 		// don't write out uninitialized tourney history
-		if( startingRound > 0 && round > 0 ) {
+		if( startingRound > 0 && round > 1 ) {
 			outMsg.WriteByte( MSG_TOURNEY_HISTORY );
 
 			// client might not yet have startingRound or round
 			outMsg.WriteByte( startingRound ); 
 			outMsg.WriteByte( round ); 
+			outMsg.WriteByte( maxRound );
 
-			for( int i = startingRound - 1; i < round - 1; i++ ) {
+			for( int i = startingRound - 1; i <= Min( (round - 1), (maxRound - 1) ); i++ ) {
 				for( int j = 0; j < MAX_ARENAS / (i + 1); j++ ) {
 					outMsg.WriteString( tourneyHistory[ i ][ j ].playerOne, MAX_TOURNEY_HISTORY_NAME_LEN );
-					outMsg.WriteByte( tourneyHistory[ i ][ j ].playerOneScore );
+					outMsg.WriteChar( idMath::ClampChar( tourneyHistory[ i ][ j ].playerOneScore ) );
 					outMsg.WriteString( tourneyHistory[ i ][ j ].playerTwo, MAX_TOURNEY_HISTORY_NAME_LEN );
-					outMsg.WriteByte( tourneyHistory[ i ][ j ].playerTwoScore );
+					outMsg.WriteChar( idMath::ClampChar( tourneyHistory[ i ][ j ].playerTwoScore ) );
 					outMsg.WriteByte( tourneyHistory[ i ][ j ].playerOneNum );
 					outMsg.WriteByte( tourneyHistory[ i ][ j ].playerTwoNum );
 				}
@@ -1963,7 +2179,7 @@ rvTourneyGameState::UnpackState
 ================
 */
 void rvTourneyGameState::UnpackState( const idBitMsg& inMsg ) {
-	assert( type == GS_TOURNEY );
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
 
 	while( inMsg.GetRemainingData() ) {
 		int index = inMsg.ReadByte();
@@ -1992,28 +2208,19 @@ void rvTourneyGameState::UnpackState( const idBitMsg& inMsg ) {
 				}
 				break;
 			}
-			case MSG_TOURNEY_BYEPLAYER: {
-				int clientNum = inMsg.ReadByte();
-				if( clientNum >= 0 && clientNum < MAX_CLIENTS ) {
-					byePlayer = (idPlayer*)gameLocal.entities[ clientNum ];
-				} else {
-					byePlayer = NULL;
-				}
-				
-				break;
-			}
 			case MSG_TOURNEY_HISTORY: {
 				int startRound = inMsg.ReadByte();
-				int round = inMsg.ReadByte();
+				int rnd = inMsg.ReadByte();
+				int maxr = inMsg.ReadByte();
+				
+				assert( rnd >= 1 ); // something is uninitialized
 
-				assert( round >= 1 ); // something is uninitialized
-
-				for( int i = startRound - 1; i < round - 1; i++ ) {
+				for( int i = startRound - 1; i <= Min( (rnd - 1), (maxr - 1) ); i++ ) {
 					for( int j = 0; j < MAX_ARENAS / (i + 1); j++ ) {
 						inMsg.ReadString( tourneyHistory[ i ][ j ].playerOne, MAX_TOURNEY_HISTORY_NAME_LEN );
-						tourneyHistory[ i ][ j ].playerOneScore = inMsg.ReadByte();
+						tourneyHistory[ i ][ j ].playerOneScore = inMsg.ReadChar();
 						inMsg.ReadString( tourneyHistory[ i ][ j ].playerTwo, MAX_TOURNEY_HISTORY_NAME_LEN );
-						tourneyHistory[ i ][ j ].playerTwoScore = inMsg.ReadByte();
+						tourneyHistory[ i ][ j ].playerTwoScore = inMsg.ReadChar();
 						tourneyHistory[ i ][ j ].playerOneNum = inMsg.ReadByte();
 						tourneyHistory[ i ][ j ].playerTwoNum = inMsg.ReadByte();
 
@@ -2057,7 +2264,7 @@ void rvTourneyGameState::SendState( int clientNum ) {
 	idBitMsg	outMsg;
 	byte		msgBuf[MAX_GAME_MESSAGE_SIZE];
 
-	assert( gameLocal.isServer && trackPrevious && type == GS_TOURNEY );
+	assert( gameLocal.isServer && trackPrevious && IsType( rvTourneyGameState::GetClassType() ) );
 
 	if ( clientNum == -1 && (rvTourneyGameState&)(*this) == (rvTourneyGameState&)(*previousGameState) ) {
 		return;
@@ -2067,6 +2274,10 @@ void rvTourneyGameState::SendState( int clientNum ) {
 	outMsg.WriteByte( GAME_RELIABLE_MESSAGE_GAMESTATE );
 
 	WriteState( outMsg );
+
+	if( clientNum == -1 && forceTourneyHistory ) {
+		forceTourneyHistory = false;
+	}
 
 	networkSystem->ServerSendReliableMessage( clientNum, outMsg );
 
@@ -2095,7 +2306,7 @@ rvTourneyGameState::ReceiveState
 ================
 */
 void rvTourneyGameState::ReceiveState( const idBitMsg& msg ) {
-	assert( type == GS_TOURNEY );
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
 
 	rvGameState::UnpackState( msg );
 	UnpackState( msg );
@@ -2113,7 +2324,7 @@ rvTourneyGameState::SendInitialState
 ================
 */
 void rvTourneyGameState::SendInitialState( int clientNum ) {
-	assert( type == GS_TOURNEY );
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
 
 	rvTourneyGameState* previousState = (rvTourneyGameState*)previousGameState;
 
@@ -2140,13 +2351,13 @@ rvTourneyGameState::operator==
 ================
 */
 bool rvTourneyGameState::operator==( const rvTourneyGameState& rhs ) const {
-	assert( type == GS_TOURNEY && rhs.type == GS_TOURNEY );
+	assert( IsType( rvTourneyGameState::GetClassType() ) && rhs.IsType( rvTourneyGameState::GetClassType() ) );
 
 	if( (rvGameState&)(*this) != (rvGameState&)rhs ) {
 		return false;
 	}
 
-	if( round != rhs.round || startingRound != rhs.startingRound || maxRound != rhs.maxRound || tourneyState != rhs.tourneyState || byePlayer != rhs.byePlayer ) {
+	if( round != rhs.round || startingRound != rhs.startingRound || maxRound != rhs.maxRound || tourneyState != rhs.tourneyState ) {
 		return false;
 	}
 
@@ -2165,7 +2376,7 @@ rvTourneyGameState::operator=
 ================
 */
 rvTourneyGameState& rvTourneyGameState::operator=( const rvTourneyGameState& rhs ) {
-	assert( type == GS_TOURNEY && rhs.type == GS_TOURNEY );
+	assert( IsType( rvTourneyGameState::GetClassType() ) && rhs.IsType( rvTourneyGameState::GetClassType() ) );
 
 	(rvGameState&)(*this) = (rvGameState&)rhs;
 
@@ -2173,8 +2384,6 @@ rvTourneyGameState& rvTourneyGameState::operator=( const rvTourneyGameState& rhs
 	startingRound = rhs.startingRound;
 	maxRound = rhs.maxRound;
 	tourneyState = rhs.tourneyState;
-
-	byePlayer = rhs.byePlayer;
 
 	for( int i = 0; i < MAX_ARENAS; i++ ) {
 		arenas[ i ] = rhs.arenas[ i ];
@@ -2190,7 +2399,7 @@ Returns number of active arenas
 ================
 */
 int rvTourneyGameState::GetNumArenas( void ) const {
-	assert( type == GS_TOURNEY );
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
 
 	int num = 0;
 	
@@ -2202,6 +2411,7 @@ int rvTourneyGameState::GetNumArenas( void ) const {
 
 	return num;
 }
+
 /*
 ================
 rvTourneyGameState::SetupInitialBrackets
@@ -2209,13 +2419,13 @@ rvTourneyGameState::SetupInitialBrackets
 Sets up the brackets for a new match.  fragCount in playerstate is the player's
 persistant frag count over an entire level.  In teamFragCount we store this
 rounds score.
+
+Initial bracket seeds are random
 ================
 */
 void rvTourneyGameState::SetupInitialBrackets( void ) {
-	// re-rank players based on frags for bracket calculations
-	gameLocal.mpGame.UpdatePlayerRanks( PRM_SCORE );
-
-	// setup pairwise brackets (best versus worst)
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
+	idList<idPlayer*> unseededPlayers;
 	int numRankedPlayers = gameLocal.mpGame.GetNumRankedPlayers();
 
 	// all this crazy math does is figure out: 
@@ -2233,21 +2443,27 @@ void rvTourneyGameState::SetupInitialBrackets( void ) {
 	maxRound = newMaxRound;
 	startingRound = round;
 
-	for( int i = 0, j = numRankedPlayers - 1; i < (numRankedPlayers / 2); i++, j-- ) {	
-		if( i >= MAX_ARENAS ) {
-			// the rest of players will have to spectate
-			break;
-		}
-		idPlayer* playerOne = gameLocal.mpGame.GetRankedPlayer( i );
-		idPlayer* playerTwo = gameLocal.mpGame.GetRankedPlayer( j );
+	for( int i = 0; i < numRankedPlayers; i++ ) {
+		unseededPlayers.Append( gameLocal.mpGame.GetRankedPlayer( i ) );
+	}
 
-		playerOne->SetTourneyStatus( PTS_PLAYING );
-		playerTwo->SetTourneyStatus( PTS_PLAYING );
+	int numArenas = 0;
 
-		rvTourneyArena& arena = arenas[ i ];
+	while( unseededPlayers.Num() > 1 ) {
+		idPlayer* playerOne = unseededPlayers[ gameLocal.random.RandomInt( unseededPlayers.Num() ) ];
+		unseededPlayers.Remove( playerOne );
+
+		idPlayer* playerTwo = unseededPlayers[ gameLocal.random.RandomInt( unseededPlayers.Num() ) ];
+		unseededPlayers.Remove( playerTwo );
+
+		rvTourneyArena& arena = arenas[ numArenas ];
 
 		arena.Clear();
 		arena.AddPlayers( playerOne, playerTwo );
+
+		// place the players in the correct instance
+		playerOne->JoinInstance( numArenas );
+		playerTwo->JoinInstance( numArenas );
 
 		playerOne->ServerSpectate( false );
 		playerTwo->ServerSpectate( false );
@@ -2255,23 +2471,29 @@ void rvTourneyGameState::SetupInitialBrackets( void ) {
 		gameLocal.mpGame.SetPlayerTeamScore( playerOne, 0 );
 		gameLocal.mpGame.SetPlayerTeamScore( playerTwo, 0 );
 
-		// place the players in the correct instance
-		playerOne->JoinInstance( i );
-		playerTwo->JoinInstance( i );
-
-		gameLocal.Printf( "rvTourneyGameState::SetupInitialBrackets() - %s will face %s in arena %d\n", playerOne->GetUserInfo()->GetString( "ui_name" ), playerTwo->GetUserInfo()->GetString( "ui_name" ), i );
+		gameLocal.Printf( "rvTourneyGameState::SetupInitialBrackets() - %s will face %s in arena %d\n", playerOne->GetUserInfo()->GetString( "ui_name" ), playerTwo->GetUserInfo()->GetString( "ui_name" ), numArenas );
 
 		// this arena is ready to play
 		arena.Ready();
+
+		numArenas++;
 	}
 
-	if( (numRankedPlayers % 2) ) {
+	assert( unseededPlayers.Num() == 0 || unseededPlayers.Num() == 1 );
+
+	if( unseededPlayers.Num() ) {
+		assert( unseededPlayers[ 0 ] );
 		// the mid player gets a bye
-		byePlayer = gameLocal.mpGame.GetRankedPlayer( numRankedPlayers / 2 );
-		byePlayer->SetTourneyStatus( PTS_UNKNOWN );
-		gameLocal.mpGame.GetRankedPlayer( numRankedPlayers / 2 )->ServerSpectate( true );
+		unseededPlayers[ 0 ]->SetTourneyStatus( PTS_UNKNOWN );
+		unseededPlayers[ 0 ]->ServerSpectate( true );
+
+		arenas[ numArenas ].AddPlayers( unseededPlayers[ 0 ], NULL );
+		arenas[ numArenas ].Ready();
+
+		// mark the ancestor arena of the bye player
+		byeArena = numArenas * startingRound;
 	} else {
-		byePlayer = NULL;
+		byeArena = -1;
 	}
 }
 
@@ -2282,7 +2504,8 @@ A player has disconnected from the server
 ================
 */
 void rvTourneyGameState::ClientDisconnect( idPlayer* player ) {
-	if( gameLocal.isClient || gameLocal.GameState() == GAMESTATE_SHUTDOWN ) {  // rj 9557
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
+	if( gameLocal.isClient ) {
 		return;
 	}
 	
@@ -2300,20 +2523,39 @@ void rvTourneyGameState::ClientDisconnect( idPlayer* player ) {
 			}
 		}
 
+		// copy over the current rounds info if the player is playing
+		for( int i = 0; i < MAX_ARENAS; i++ ) {
+			if( arenas[ i ].GetPlayers()[ 0 ] == player ) {
+				tourneyHistory[ round - 1 ][ i ].playerOneNum = -1;
+				idStr::Copynz( tourneyHistory[ round - 1 ][ i ].playerOne, player->GetUserInfo()->GetString( "ui_name" ), MAX_TOURNEY_HISTORY_NAME_LEN );
+				tourneyHistory[ round - 1 ][ i ].playerOneScore = gameLocal.mpGame.GetTeamScore( player );
+			} else if( arenas[ i ].GetPlayers()[ 1 ] == player ) {
+				tourneyHistory[ round - 1 ][ i ].playerTwoNum = -1;
+				idStr::Copynz( tourneyHistory[ round - 1 ][ i ].playerTwo, player->GetUserInfo()->GetString( "ui_name" ), MAX_TOURNEY_HISTORY_NAME_LEN );
+				tourneyHistory[ round - 1 ][ i ].playerTwoScore = gameLocal.mpGame.GetTeamScore( player );
+			}
+		}
+
 		// retransmit tourney history to everyone
 		packTourneyHistory = true;
+	}
+
+	RemovePlayer( player );
+	
+	// give RemovePlayer() a chance to update tourney history if needed
+	if( packTourneyHistory ) {
 		for( int i = 0; i < gameLocal.numClients; i++ ) {
 			if( i == player->entityNumber ) {
 				continue;
 			}
 
 			if( gameLocal.entities[ i ] ) {
+				packTourneyHistory = true;
 				SendState( i );
 			}
 		}
+		packTourneyHistory = false;
 	}
-
-	RemovePlayer( player, true );
 }
 
 /*
@@ -2322,10 +2564,11 @@ rvTourneyGameState::Spectate
 ================
 */
 void rvTourneyGameState::Spectate( idPlayer* player ) {
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
 	assert( gameLocal.isServer );
 
 	if( player->spectating && player->wantSpectate ) {
-		RemovePlayer( player, false );
+		RemovePlayer( player );
 	}
 }
 
@@ -2335,10 +2578,10 @@ rvTourneyGameState::RemovePlayer
 Removes the specified player from the arena
 ================
 */
-void rvTourneyGameState::RemovePlayer( idPlayer* player, bool disconnecting ) {
-	// if we were the byeplayer and we dropped, just set the byeplayer to null
-	if( player == byePlayer ) {
-		byePlayer = NULL;
+void rvTourneyGameState::RemovePlayer( idPlayer* player ) {
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
+
+	if( round < 1 || round > maxRound ) {
 		return;
 	}
 
@@ -2350,13 +2593,42 @@ void rvTourneyGameState::RemovePlayer( idPlayer* player, bool disconnecting ) {
 
 			idPlayer* remainingPlayer = players[ 0 ] == player ? players[ 1 ] : players[ 0 ];
 
+			bool arenaInProgress = arena.GetState() == AS_ROUND || arena.GetState() == AS_WARMUP;		
+			bool remainingIsWinner = (remainingPlayer == arena.GetWinner());
+			int remainingIndex = (remainingPlayer == arena.GetPlayers()[ 0 ]) ? 0 : 1;
+
+			arena.RemovePlayer( player );
+
+			// both players have disconnected from this arena, or the winner has disconnected, just return
+			if( (!arena.GetPlayers()[ 0 ] && !arena.GetPlayers()[ 1 ]) || (!arenaInProgress && remainingPlayer && !remainingIsWinner) ) {
+				arena.Clear();
+				tourneyHistory[ round - 1 ][ i ].playerOneNum = -1;
+				tourneyHistory[ round - 1 ][ i ].playerOne[ 0 ] = '\0';
+				tourneyHistory[ round - 1 ][ i ].playerTwoNum = -1;
+				tourneyHistory[ round - 1 ][ i ].playerTwo[ 0 ] = '\0';
+				return;
+			}
+
 			assert( remainingPlayer );
 
-			arena.RemovePlayer( player, disconnecting );
+			// if this arena is in progress, try restarting
+			if( arenaInProgress && byeArena >= 0 && arenas[ byeArena / round ].GetWinner() ) {
+				idPlayer* byePlayer = arenas[ byeArena / round ].GetWinner();
 
-			// reassign remaining player
-			if( byePlayer ) {
+				// reset history for this new round
+				tourneyHistory[ round - 1 ][ i ].playerOneNum = -1;
+				tourneyHistory[ round - 1 ][ i ].playerOne[ 0 ] = '\0';
+				tourneyHistory[ round - 1 ][ i ].playerTwoNum = -1;
+				tourneyHistory[ round - 1 ][ i ].playerTwo[ 0 ] = '\0';
+
+				arena.Clear();
+				arenas[ byeArena / round ].Clear();
+
 				arena.AddPlayers( remainingPlayer, byePlayer );
+
+				// place the players in the correct instance
+				remainingPlayer->JoinInstance( i );
+				byePlayer->JoinInstance( i );
 
 				remainingPlayer->ServerSpectate( false );
 				byePlayer->ServerSpectate( false );
@@ -2364,20 +2636,34 @@ void rvTourneyGameState::RemovePlayer( idPlayer* player, bool disconnecting ) {
 				gameLocal.mpGame.SetPlayerTeamScore( remainingPlayer, 0 );
 				gameLocal.mpGame.SetPlayerTeamScore( byePlayer, 0 );
 
-				// place the players in the correct instance
-				remainingPlayer->JoinInstance( i );
-				byePlayer->JoinInstance( i );
-
 				gameLocal.Printf( "rvTourneyManager::RemovePlayer() - %s will face %s in arena %d\n", remainingPlayer->GetUserInfo()->GetString( "ui_name" ), byePlayer->GetUserInfo()->GetString( "ui_name" ), i );
 
-				byePlayer = NULL;
-
+				byeArena = -1;
 				// this arena is ready to play
 				arena.Ready();
 			} else {
-				// set bye player and move them to the next available arena
-				byePlayer = remainingPlayer;
-				byePlayer->JoinInstance( GetNextActiveArena( arena.GetArenaID() ) );
+				// if the arena was in progress and didn't get a bye player to step in, this becomes a bye
+				// arena - clear the tourney history
+				if( arenaInProgress ) {
+					tourneyHistory[ round - 1 ][ i ].playerOneNum = -1;
+					tourneyHistory[ round - 1 ][ i ].playerOne[ 0 ] = '\0';
+					tourneyHistory[ round - 1 ][ i ].playerOneScore = -1;
+
+					tourneyHistory[ round - 1 ][ i ].playerTwoNum = -1;
+					tourneyHistory[ round - 1 ][ i ].playerTwo[ 0 ] = '\0';
+					tourneyHistory[ round - 1 ][ i ].playerTwoScore = -1;
+				} else {
+					// since the player is disconnecting, write the history for this round
+					if( remainingIndex == 0 ) {
+						tourneyHistory[ round - 1 ][ i ].playerOneNum = remainingPlayer->entityNumber;
+						tourneyHistory[ round - 1 ][ i ].playerOne[ 0 ] = '\0';
+						tourneyHistory[ round - 1 ][ i ].playerOneScore = gameLocal.mpGame.GetTeamScore( remainingPlayer );
+					} else {
+						tourneyHistory[ round - 1 ][ i ].playerTwoNum = remainingPlayer->entityNumber;
+						tourneyHistory[ round - 1 ][ i ].playerTwo[ 0 ] = '\0';
+						tourneyHistory[ round - 1 ][ i ].playerTwoScore = gameLocal.mpGame.GetTeamScore( remainingPlayer );
+					}
+				}
 			}
 
 			return;
@@ -2386,7 +2672,7 @@ void rvTourneyGameState::RemovePlayer( idPlayer* player, bool disconnecting ) {
 }
 
 int rvTourneyGameState::GetNextActiveArena( int arena ) {
-	assert( type == GS_TOURNEY );
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
 
 	for( int i = arena + 1; i < MAX_ARENAS; i++ ) {
 		if( arenas[ i ].GetState() != AS_INACTIVE && arenas[ i ].GetState() != AS_DONE ) {
@@ -2404,7 +2690,7 @@ int rvTourneyGameState::GetNextActiveArena( int arena ) {
 }
 
 int rvTourneyGameState::GetPrevActiveArena( int arena ) {
-	assert( type == GS_TOURNEY );
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
 
 	for( int i = arena - 1; i >= 0; i-- ) {
 		if( arenas[ i ].GetState() != AS_INACTIVE && arenas[ i ].GetState() != AS_DONE ) {
@@ -2422,6 +2708,7 @@ int rvTourneyGameState::GetPrevActiveArena( int arena ) {
 }
 
 void rvTourneyGameState::SpectateCycleNext( idPlayer* player ) {
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
 	assert( gameLocal.isServer );
 
 	rvTourneyArena& spectatingArena = arenas[ player->GetArena() ];
@@ -2450,8 +2737,8 @@ void rvTourneyGameState::SpectateCycleNext( idPlayer* player ) {
 		}
 	}
 
-	// this is where the listen server updates it gui spectating elements
-	if( gameLocal.GetLocalPlayer() == player ) {
+	// this is where the listen server updates it's gui spectating elements
+	if ( gameLocal.GetLocalPlayer() == player ) {
 		rvTourneyArena& arena = arenas[ player->GetArena() ];
 
 		if( arena.GetPlayers()[ 0 ] == NULL || arena.GetPlayers()[ 1 ] == NULL || (player->spectating && player->spectator != arena.GetPlayers()[ 0 ]->entityNumber && player->spectator != arena.GetPlayers()[ 1 ]->entityNumber) ) {
@@ -2467,6 +2754,7 @@ void rvTourneyGameState::SpectateCycleNext( idPlayer* player ) {
 }
 
 void rvTourneyGameState::SpectateCyclePrev( idPlayer* player ) {
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
 	assert( gameLocal.isServer );
 
 	rvTourneyArena& spectatingArena = arenas[ player->GetArena() ];
@@ -2523,5 +2811,140 @@ void rvTourneyGameState::SpectateCyclePrev( idPlayer* player ) {
 }
 
 void rvTourneyGameState::UpdateTourneyBrackets( void ) {
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
+
 	gameLocal.mpGame.tourneyGUI.SetupTourneyHistory( startingRound, round - 1, tourneyHistory );
+}
+
+void rvTourneyGameState::UpdateTourneyHistory( int round ) {
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
+
+	for( int i = 0; i < MAX_ARENAS; i++ ) {
+		// sometimes tourney history might have been updated for the current
+		// round, so don't clobber any data
+
+		if( (tourneyHistory[ round ][ i ].playerOne[ 0 ] != '\0' || tourneyHistory[ round ][ i ].playerOneNum != -1) ||
+			(tourneyHistory[ round ][ i ].playerTwo[ 0 ] != '\0' || tourneyHistory[ round ][ i ].playerTwoNum != -1) ) {
+			continue;
+		}
+		
+		tourneyHistory[ round ][ i ].playerOne[ 0 ] = '\0';
+		tourneyHistory[ round ][ i ].playerOneNum = -1;
+		tourneyHistory[ round ][ i ].playerOneScore = 0;
+
+		tourneyHistory[ round ][ i ].playerTwo[ 0 ] = '\0';
+		tourneyHistory[ round ][ i ].playerTwoNum = -1;
+		tourneyHistory[ round ][ i ].playerTwoScore = 0;
+
+		if( arenas[ i ].GetState() == AS_DONE ) {
+			idPlayer* playerOne = arenas[ i ].GetPlayers()[ 0 ];
+			idPlayer* playerTwo = arenas[ i ].GetPlayers()[ 1 ];
+
+			if( playerOne ) {
+				tourneyHistory[ round ][ i ].playerOneNum = playerOne->entityNumber;
+				tourneyHistory[ round ][ i ].playerOne[ MAX_TOURNEY_HISTORY_NAME_LEN - 1 ] = '\0';
+				tourneyHistory[ round ][ i ].playerOneScore = gameLocal.mpGame.GetTeamScore( playerOne );
+			}
+
+			if( playerTwo ) {
+				tourneyHistory[ round ][ i ].playerTwoNum = playerTwo->entityNumber;
+				tourneyHistory[ round ][ i ].playerTwo[ MAX_TOURNEY_HISTORY_NAME_LEN - 1 ] = '\0';
+				tourneyHistory[ round ][ i ].playerTwoScore = gameLocal.mpGame.GetTeamScore( playerTwo );
+			}
+		} 
+	}
+}
+
+
+/*
+================
+rvTourneyGameState::FirstAvailableArena
+Returns the first non-WARMUP arena available for use in the next round
+================
+*/
+int rvTourneyGameState::FirstAvailableArena( void ) {
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
+
+	for( int i = 0; i < MAX_ARENAS; i++ ) {
+		if( arenas[ i ].GetState() != AS_WARMUP ) {
+			return i;
+		}
+	}
+
+	// no available arenas
+	assert( 0 );
+	return 0;
+}
+
+arenaOutcome_t* rvTourneyGameState::GetArenaOutcome( int arena ) {
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
+
+	if( arenas[ arena ].GetState() != AS_DONE || (arenas[ arena ].GetPlayers()[ 0 ] && arenas[ arena ].GetPlayers()[ 1 ]) ) {
+		return NULL;
+	}
+
+	return &(tourneyHistory[ round - 1 ][ arena ]);
+}
+
+bool rvTourneyGameState::HasBye( idPlayer* player ) {
+	assert( IsType( rvTourneyGameState::GetClassType() ) );
+
+	if( player == NULL || player->GetArena() < 0 || player->GetArena() >= MAX_ARENAS ) {
+		return false;
+	}
+
+	// if we're one of the players in the arena we're in, and the other player is NULL, we have a bye
+	if( (arenas[ player->GetArena() ].GetPlayers()[ 0 ] == player || arenas[ player->GetArena() ].GetPlayers()[ 1 ] == player) &&
+		(arenas[ player->GetArena() ].GetPlayers()[ 0 ] == NULL || arenas[ player->GetArena() ].GetPlayers()[ 1 ] == NULL) ) {
+		return true;
+	}
+
+	return false;
+}
+
+// simple RTTI
+gameStateType_t rvGameState::type = GS_BASE;
+gameStateType_t rvDMGameState::type = GS_DM;
+gameStateType_t rvTeamDMGameState::type = GS_TEAMDM;
+gameStateType_t rvCTFGameState::type = GS_CTF;
+gameStateType_t rvTourneyGameState::type = GS_TOURNEY;
+
+bool rvGameState::IsType( gameStateType_t type ) const {
+	return ( type == rvGameState::type );
+}
+
+bool rvDMGameState::IsType( gameStateType_t type ) const {
+	return ( type == rvDMGameState::type );
+}
+
+bool rvTeamDMGameState::IsType( gameStateType_t type ) const {
+	return ( type == rvTeamDMGameState::type );
+}
+
+bool rvCTFGameState::IsType( gameStateType_t type ) const {
+	return ( type == rvCTFGameState::type );
+}
+
+bool rvTourneyGameState::IsType( gameStateType_t type ) const {
+	return ( type == rvTourneyGameState::type );
+}
+
+gameStateType_t rvGameState::GetClassType( void ) {
+	return rvGameState::type;
+}
+
+gameStateType_t rvDMGameState::GetClassType( void ) {
+	return rvDMGameState::type;
+}
+
+gameStateType_t rvTeamDMGameState::GetClassType( void ) {
+	return rvTeamDMGameState::type;
+}
+
+gameStateType_t rvCTFGameState::GetClassType( void ) {
+	return rvCTFGameState::type;
+}
+
+gameStateType_t rvTourneyGameState::GetClassType( void ) {
+	return rvTourneyGameState::type;
 }

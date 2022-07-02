@@ -5,6 +5,8 @@ import SCons
 # need an Environment and a matching buffered_spawn API .. encapsulate
 class idBuffering:
 
+	silent = False
+
 	def buffered_spawn( self, sh, escape, cmd, args, env ):
 		stderr = StringIO.StringIO()
 		stdout = StringIO.StringIO()
@@ -21,8 +23,9 @@ class idBuffering:
 			print 'OSError ignored on command: %s' % command_string
 			retval = 0
 		print command_string
-		sys.stdout.write( stdout.getvalue() )
-		sys.stderr.write( stderr.getvalue() )
+		if ( retval != 0 or not self.silent ):
+			sys.stdout.write( stdout.getvalue() )
+			sys.stderr.write( stderr.getvalue() )
 		return retval		
 
 class idSetupBase:
@@ -136,8 +139,9 @@ def NotImplementedStub( *whatever ):
 # --------------------------------------------------------------------
 
 # get a clean error output when running multiple jobs
-def SetupBufferedOutput( env ):
+def SetupBufferedOutput( env, silent ):
 	buf = idBuffering()
+	buf.silent = silent
 	buf.env = env
 	env['SPAWN'] = buf.buffered_spawn
 

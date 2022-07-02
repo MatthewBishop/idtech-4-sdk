@@ -47,7 +47,7 @@ public:
 // RAVEN END
 
 	bool					LoadModel( const char *name );
-	void					LoadModel( const idTraceModel &trm, const idMaterial *material );
+	void					LoadModel( const idTraceModel &trm, const idMaterial *material, bool notHashed = false );
 	void					LoadModel( const int renderModelHandle );
 
 	void					Save( idSaveGame *savefile ) const;
@@ -114,7 +114,8 @@ private:
 	void					Link_r( struct clipSector_s *node );
 
 	static void				CacheCollisionModels( void );
-	static int				AllocTraceModel( const idTraceModel &trm, const idMaterial *material );
+	static int				AllocTraceModel( const idTraceModel &trm, const idMaterial *material, bool notHashed = false );
+	static void				ReplaceTraceModel( int index, const idTraceModel &trm, const idMaterial *material, bool notHashed = false );
 	static void				FreeTraceModel( int traceModelIndex );
 	static int				CopyTraceModel( const int traceModelIndex );
 	static idTraceModel *	GetCachedTraceModel( int traceModelIndex );
@@ -369,7 +370,7 @@ ID_INLINE bool idClip::TracePoint( trace_t &results, const idVec3 &start, const 
 }
 
 ID_INLINE bool idClip::TraceBounds( trace_t &results, const idVec3 &start, const idVec3 &end, const idBounds &bounds, int contentMask, const idEntity *passEntity ) {
-	temporaryClipModel.LoadModel( idTraceModel( bounds ), NULL );
+	temporaryClipModel.LoadModel( idTraceModel( bounds ), NULL, true );
 	Translation( results, start, end, &temporaryClipModel, mat3_identity, contentMask, passEntity );
 	return ( results.fraction < 1.0f );
 }

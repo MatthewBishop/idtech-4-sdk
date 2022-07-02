@@ -3179,6 +3179,22 @@ void VPCALL idSIMD_Generic::MixSoundTwoSpeakerMono( float * RESTRICT mixBuffer, 
 
 /*
 ============
+idSIMD_Generic::MixSoundTwoSpeakerMonoSimple
+============
+*/
+void VPCALL idSIMD_Generic::MixSoundTwoSpeakerMonoSimple( float * RESTRICT mixBuffer, const float * RESTRICT samples, const int numSamples ) {
+	TIME_THIS_SCOPE("SIMD MixSoundTwoSpeakerMonoSimple");
+
+	assert( numSamples == MIXBUFFER_SAMPLES );
+
+	for( int j = 0; j < MIXBUFFER_SAMPLES; j++ ) {
+		mixBuffer[j*2+0] += samples[j];
+		mixBuffer[j*2+1] += samples[j];
+	}
+}
+
+/*
+============
 idSIMD_Generic::MixSoundTwoSpeakerStereo
 ============
 */
@@ -3235,6 +3251,23 @@ void VPCALL idSIMD_Generic::MixSoundSixSpeakerMono( float * RESTRICT mixBuffer, 
 		sL3 += incL3;
 		sL4 += incL4;
 		sL5 += incL5;
+	}
+}
+
+/*
+============
+idSIMD_Generic::MixSoundSixSpeakerMonoSimple
+============
+*/
+void VPCALL idSIMD_Generic::MixSoundSixSpeakerMonoSimple( float * RESTRICT mixBuffer, const float * RESTRICT samples, const int numSamples ) {
+	TIME_THIS_SCOPE("SIMD MixSoundSixSpeakerMono");
+
+	assert( numSamples == MIXBUFFER_SAMPLES );
+
+	// Just mix the front 2 speakers - the others are unchanged
+	for( int i = 0; i < MIXBUFFER_SAMPLES; i++ ) {
+		mixBuffer[i*6+0] += samples[i];
+		mixBuffer[i*6+1] += samples[i];
 	}
 }
 

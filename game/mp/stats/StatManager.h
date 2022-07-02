@@ -76,6 +76,14 @@ enum inGameAward_t {
 	IGA_NUM_AWARDS
 };
 
+enum comboKillState_t {
+	CKS_NONE,
+	CKS_ROCKET_FIRED,
+	CKS_ROCKET_HIT,
+	CKS_RAIL_FIRED,
+	CKS_RAIL_HIT,
+};
+
 /*
 ================
 inGameAwardInfo_t
@@ -171,6 +179,7 @@ class rvPlayerStat {
 public:
 	rvPlayerStat();
 
+	void Clear( void );
 	void CalculateStats( int p, const idList<rvStat*>& playerStats );
 
 	void PackStats( idBitMsg& msg );
@@ -279,10 +288,18 @@ public:
 	int							GetSelectedClientNum( int* selectionIndexOut = NULL, int* selectionTeamOut = NULL );
 
 	//asalmon: Sends all stats to all clients.  For Xenon periodic update of stats.
-	void						SendAllStats();
+	void						SendAllStats( int clientNum = -1, bool full = true );
 	void						ReceiveAllStats( const idBitMsg& msg );
 
+	void						SetDamageGiven(int client, int damage) { playerStats[client].damageGiven = damage; }
+	void						SetDamageTaken(int client, int damage) { playerStats[client].damageTaken = damage; }
+
 	int							FreeEvents( int blockNum );
+
+	static comboKillState_t		comboKillState[ MAX_CLIENTS ];
+	static int					lastRailShot[ MAX_CLIENTS ];
+	static int					lastRailShotHits[ MAX_CLIENTS ];
+
 private:
 	idList<rvPair<rvStat*, int> >	statQueue;
 	idList<rvPair<int, bool> >		awardQueue;
@@ -302,6 +319,10 @@ private:
 
 	// shouchard:  stat allocator to avoid lots of little news
 	rvStatAllocator				statAllocator;
+
+#ifdef _XENON
+	int							lastFullUpdate;
+#endif
 
 #if ID_TRAFFICSTATS
 	int							startSent;

@@ -211,7 +211,7 @@ bool idPhysics_Player::SlideMove( bool gravity, bool stepUp, bool stepDown, bool
 		stepped = pushed = false;
 
 		// if we are allowed to step up
-		if ( stepUp ) {
+		if ( stepUp && ( trace.c.normal * -gravityNormal ) < MIN_WALK_NORMAL ) {
 			nearGround = groundPlane | ladder;
 
 			if ( !nearGround ) {
@@ -301,7 +301,7 @@ bool idPhysics_Player::SlideMove( bool gravity, bool stepUp, bool stepDown, bool
 			}
 		}
 
-		if ( !stepped ) {
+		if ( !stepped && self ) {
 			// let the entity know about the collision
 			self->Collide( trace, current.velocity );
 		}
@@ -314,12 +314,14 @@ bool idPhysics_Player::SlideMove( bool gravity, bool stepUp, bool stepDown, bool
 		}
 
 		//
-		// if this is the same plane we hit before, nudge velocity
-		// out along it, which fixes some epsilon issues with
-		// non-axial planes
+		// if this is the same plane we hit before, nudge velocity out along it,
+		// which fixes some epsilon issues with non-axial planes
 		//
 		for ( i = 0; i < numplanes; i++ ) {
 			if ( ( trace.c.normal * planes[i] ) > 0.999f ) {
+				// clip into the trace normal just in case this normal is almost but not exactly the same as the groundTrace normal
+				current.velocity.ProjectOntoPlane( trace.c.normal, OVERCLIP );
+				// also add the normal to nudge the velocity out
 				current.velocity += trace.c.normal;
 				break;
 			}
@@ -662,7 +664,8 @@ void idPhysics_Player::AirMove( void ) {
 		current.velocity.ProjectOntoPlane( groundTrace.c.normal, OVERCLIP );
 	}
 
-	idPhysics_Player::SlideMove( true, false, false, false );
+	// NOTE: enable stair checking while moving through the air in multiplayer to allow bunny hopping onto stairs
+	idPhysics_Player::SlideMove( true, gameLocal.isMultiplayer, false, false );
 }
 
 /*
@@ -1107,7 +1110,9 @@ void idPhysics_Player::CheckGround( bool checkStuck ) {
 	}
 
 	// let the entity know about the collision
-	self->Collide( groundTrace, current.velocity );
+	if ( self ) {
+		self->Collide( groundTrace, current.velocity );
+	}
 
 	if ( groundEntityPtr.GetEntity() ) {
 		impactInfo_t info;
@@ -1880,6 +1885,8 @@ bool idPhysics_Player::Evaluate( int timeStepMSec, int endTimeMSec ) {
 
 	// if bound to a master
 	if ( masterEntity ) {
+		assert( self );
+
 		self->GetMasterPosition( masterOrigin, masterAxis );
 		current.origin = masterOrigin + current.localOrigin * masterAxis;
 // RAVEN BEGIN
@@ -1898,12 +1905,16 @@ bool idPhysics_Player::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	idPhysics_Player::MovePlayer( timeStepMSec );
 // RAVEN BEGIN
 // ddynerman: multiple clip worlds
-	clipModel->Link( self, 0, current.origin, clipModel->GetAxis() );
-// RAVEN END
+// TTimo: only if tied to an ent
+	if ( self ) {
+		clipModel->Link( self, 0, current.origin, clipModel->GetAxis() );
 
-	if ( IsOutsideWorld() ) {
-		gameLocal.Warning( "clip model outside world bounds for entity '%s' at (%s)", self->name.c_str(), current.origin.ToString(0) );
+		// IsOutsideWorld uses self, so it needs to be non null
+		if ( IsOutsideWorld() ) {
+			gameLocal.Warning( "clip model outside world bounds for entity '%s' at (%s)", self ? "NULL" : self->name.c_str(), current.origin.ToString(0) );
+		}
 	}
+// RAVEN END
 
 	return true; //( current.origin != oldOrigin );
 }
@@ -2001,6 +2012,7 @@ void idPhysics_Player::SetOrigin( const idVec3 &newOrigin, int id ) {
 
 	current.localOrigin = newOrigin;
 	if ( masterEntity ) {
+		assert( self );
 		self->GetMasterPosition( masterOrigin, masterAxis );
 		current.origin = masterOrigin + newOrigin * masterAxis;
 	}
@@ -2009,7 +2021,10 @@ void idPhysics_Player::SetOrigin( const idVec3 &newOrigin, int id ) {
 	}
 // RAVEN BEGIN
 // ddynerman: multiple clip worlds
-	clipModel->Link( self, 0, newOrigin, clipModel->GetAxis() );
+// TTimo: only if tied to an ent
+	if ( self ) {
+		clipModel->Link( self, 0, newOrigin, clipModel->GetAxis() );
+	}
 // RAVEN END
 }
 
@@ -2268,3 +2283,17 @@ void idPhysics_Player::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 // RAVEN END
 }
 
+/*
+===============
+idPhysics_Player::SetClipModelNoLink
+===============
+*/
+void idPhysics_Player::SetClipModelNoLink( idClipModel *model ) {
+	assert( model );
+	assert( model->IsTraceModel() );
+
+	if ( clipModel && clipModel != model ) {
+		delete clipModel;
+	}
+	clipModel = model;
+}

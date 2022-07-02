@@ -72,6 +72,8 @@ typedef enum {
 
 typedef struct urlDownload_s {
 	idStr				url;
+	idStr				urlAuth;
+	idStr				referer;
 	char				dlerror[ MAX_STRING_CHARS ];
 	int					dltotal;
 	int					dlnow;
@@ -84,6 +86,11 @@ typedef struct fileDownload_s {
 	int					length;
 	void *				buffer;
 } fileDownload_t;
+
+typedef struct proxyDownload_s {
+	idStr				proxyUrl;
+	idStr				proxyAuth;
+} proxyDownload_t;
 
 // RAVEN BEGIN
 // mwhitlock: changes for Xenon to enable us to use texture resources from .xpr
@@ -165,6 +172,7 @@ typedef struct backgroundDownload_s {
 	fileDownload_t			file;
 	int						numSegments;
 	urlDownload_t			url;
+	proxyDownload_t			proxy;
 	volatile bool			completed;
 } backgroundDownload_t;
 
@@ -346,16 +354,16 @@ public:
 #ifdef _XENON	
 	virtual bool			AddDownloadedPak( const char *path ) = 0;
 	virtual void			RemoveDownloadedPak( const char *path ) = 0;
-#endif
 
 	virtual bool			AddExplicitPak( const char *path ) = 0;
 	virtual void			RemoveExplicitPak( const char *path ) = 0;
 	virtual bool			IsPakLoaded( const char *path ) = 0;
+#endif
 // RAVEN END
 
 							// look for a file in the loaded paks or the addon paks
 							// if the file is found in addons, FS's internal structures are ready for a reloadEngine
-	virtual findFile_t		FindFile( const char *path ) = 0;
+	virtual findFile_t		FindFile( const char *path, bool scheduleAddons = false ) = 0;
 
 							// get map/addon decls and take into account addon paks that are not on the search list
 							// the decl 'name' is in the "path" entry of the dict

@@ -103,18 +103,29 @@ void rvIconManager::UpdateIcons( void ) {
 
 void rvIconManager::UpdateTeamIcons( void ) {
 	idPlayer* localPlayer = gameLocal.GetLocalPlayer();
-	
+	int localTeam = localPlayer->team;
+	bool spectating = localPlayer->spectating;
+
+	if( localPlayer->spectating ) { 
+		idPlayer* spec = (idPlayer*)gameLocal.entities[ localPlayer->spectator ];
+		if( spec ) {
+			localTeam = spec->team;
+			localPlayer = spec;
+		} else {
+			localTeam = -1;
+		}
+	}
 	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
 		if( gameLocal.localClientNum == i ) {
 			continue;
 		}
 
 		//if entity i is a player, manage his icon.
-		if( gameLocal.entities[ i ] && gameLocal.entities[ i ]->IsType( idPlayer::GetClassType() ) && !gameLocal.entities[ i ]->fl.networkStale ) {
+		if( gameLocal.entities[ i ] && gameLocal.entities[ i ]->IsType( idPlayer::GetClassType() ) && !gameLocal.entities[ i ]->fl.networkStale && !spectating ) {
 			idPlayer* player = static_cast<idPlayer*>(gameLocal.entities[ i ]);
 			
 			//if the player is alive and not hidden, show his icon.
-			if( player->team == localPlayer->team && !player->IsHidden() && !player->pfl.dead && gameLocal.mpGame.IsInGame( i ) ) {
+			if( player->team == localTeam && !player->IsHidden() && !player->pfl.dead && gameLocal.mpGame.IsInGame( i ) ) {
 				if( teamIcons[ i ].GetHandle() < 0 ) {
 					teamIcons[ i ].CreateIcon( player->spawnArgs.GetString( player->team ? "mtr_team_icon_strogg" : "mtr_team_icon_marine" ), (player == localPlayer ? localPlayer->entityNumber + 1 : 0) );
 				}

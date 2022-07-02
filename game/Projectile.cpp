@@ -399,9 +399,14 @@ void idProjectile::Launch( const idVec3 &start, const idVec3 &dir, const idVec3 
 
 	contents = 0;
 	clipMask = spawnArgs.GetBool( "clipmask_rendermodel", "1" ) ? MASK_SHOT_RENDERMODEL : MASK_SHOT_BOUNDINGBOX;
+	
+	// all projectiles are projectileclip
+	clipMask |= CONTENTS_PROJECTILECLIP;
+
 	if ( spawnArgs.GetBool( "clipmask_largeshot", "1" ) ) {
 		clipMask |= CONTENTS_LARGESHOTCLIP;
 	}
+
 	if ( spawnArgs.GetBool( "clipmask_moveable", "0" ) ) {
 		clipMask |= CONTENTS_MOVEABLECLIP;
 	}
@@ -608,28 +613,34 @@ idProjectile::Collide
 =================
 */
 bool idProjectile::Collide( const trace_t &collision, const idVec3 &velocity ) {
+	bool dummy = false;
+	return Collide( collision, velocity, dummy );
+}
+
+bool idProjectile::Collide( const trace_t &collision, const idVec3 &velocity, bool &hitTeleporter ) {
  	idEntity*	ent;
 	idEntity*	actualHitEnt = NULL;
  	idEntity*	ignore;
  	const char*	damageDefName;
  	idVec3		dir;
  	bool		canDamage;
+ 	
+ 	hitTeleporter = false;
 
 	if ( state == EXPLODED || state == FIZZLED ) {
 		return true;
 	}
 
-	if ( gameLocal.isClient ) {
-		// do not try to predict detonates, that causes projectiles disappearing
-		// no bouncing projectiles in MP atm
-		return false;
-	}
-
 	// allow projectiles to hit triggers (teleports)
+	// predict this on a client
 	if( collision.c.contents & CONTENTS_TRIGGER ) {
 		idEntity* trigger = gameLocal.entities[ collision.c.entityNum ];
+		
 		if( trigger ) {
 			if ( trigger->RespondsTo( EV_Touch ) || trigger->HasSignal( SIG_TOUCH ) ) {
+				
+				hitTeleporter = true;
+				
 				trace_t trace;
 				
 				trace.endpos = physicsObj.GetOrigin();
@@ -650,26 +661,37 @@ bool idProjectile::Collide( const trace_t &collision, const idVec3 &velocity ) {
 		}
 
 		// when we hit a trigger, align our velocity to the trigger's coordinate plane
-		idVec3 up( 0.0f, 0.0f, 1.0f );
-		idVec3 right = collision.c.normal.Cross( up );
-		idMat3 mat( collision.c.normal, right, up );
+		if( gameLocal.isServer ) {
+			idVec3 up( 0.0f, 0.0f, 1.0f );
+			idVec3 right = collision.c.normal.Cross( up );
+			idMat3 mat( collision.c.normal, right, up );
 
-		physicsObj.SetLinearVelocity( -1.0f * (physicsObj.GetLinearVelocity() * mat.Transpose()) );
-		physicsObj.SetLinearVelocity( idVec3( physicsObj.GetLinearVelocity()[ 0 ], -1.0 *physicsObj.GetLinearVelocity()[ 1 ], -1.0 * physicsObj.GetLinearVelocity()[ 2 ] ) );
+			physicsObj.SetLinearVelocity( -1.0f * (physicsObj.GetLinearVelocity() * mat.Transpose()) );
+			physicsObj.SetLinearVelocity( idVec3( physicsObj.GetLinearVelocity()[ 0 ], -1.0 *physicsObj.GetLinearVelocity()[ 1 ], -1.0 * physicsObj.GetLinearVelocity()[ 2 ] ) );
 
-		// update the projectile's launchdir and launch origin
-		// this will propagate the change to the clients for prediction
-		// re-launch the projectile
-		idVec3 dir = physicsObj.GetLinearVelocity();
-		dir.Normalize();
-		launchTime = gameLocal.time;
-		launchDir = dir;
-		physicsObj.SetOrigin( physicsObj.GetOrigin() + idVec3( 0.0f, 0.0f, 32.0f ) );
-		launchOrig = physicsObj.GetOrigin();		
+			// update the projectile's launchdir and launch origin
+			// this will propagate the change to the clients for prediction
+			// re-launch the projectile
 
-		if( !(collision.c.contents & CONTENTS_SOLID) ) {
+			idVec3 newDir = physicsObj.GetLinearVelocity();
+			newDir.Normalize();
+			launchTime = gameLocal.time;
+			launchDir = newDir;
+			physicsObj.SetOrigin( physicsObj.GetOrigin() + idVec3( 0.0f, 0.0f, 32.0f ) );
+			physicsObj.SetAxis( newDir.ToMat3() );
+			launchOrig = physicsObj.GetOrigin();
+		}
+
+		if( !(collision.c.contents & CONTENTS_SOLID) || hitTeleporter ) {
 			return false;
 		}
+	}
+
+	// don't predict collisions on projectiles that need their physics synced (e.g. grenades)
+	if ( gameLocal.isClient && (!g_clientProjectileCollision.GetBool() || syncPhysics) ) {
+		// optionally do not try to predict detonates, that causes projectiles disappearing
+		// but most of the time works well to stop projectiles clipping through geometry onc lients
+		return false;
 	}
 
  	// remove projectile when a 'noimpact' surface is hit
@@ -889,6 +911,11 @@ bool idProjectile::Collide( const trace_t &collision, const idVec3 &velocity ) {
 		}
 	}
 */
+
+	// don't predict explosions on clients
+	if( gameLocal.isClient ) {
+		return true;
+	}
 
 	Explode( &collision, false, ignore );
 
@@ -1253,6 +1280,7 @@ void idProjectile::ClientPredictionThink( void ) {
 		origin += ( ( gameLocal.time - launchTime ) / 1000.0f ) * launchSpeed * launchDir;
 		physicsObj.SetAxis( axis );
 		physicsObj.SetOrigin( origin );
+		physicsObj.SetLinearVelocity( launchSpeed * launchDir );
 	}
 	Think();
 }
@@ -1293,7 +1321,7 @@ void idProjectile::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 
 	newState = (projectileState_t) msg.ReadBits( 3 );
 	if ( newState >= LAUNCHED ) {
-		launchTime = msg.ReadLong( );
+		launchTime = msg.ReadLong();
 		launchOrig[ 0 ] = msg.ReadFloat();
 		launchOrig[ 1 ] = msg.ReadFloat();
 		launchOrig[ 2 ] = msg.ReadFloat();
@@ -1324,6 +1352,15 @@ void idProjectile::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 	}
 
 	if ( msg.HasChanged() ) {
+		if( !syncPhysics && state == LAUNCHED ) {
+			idMat3 axis = launchDir.ToMat3();
+			idVec3 origin( launchOrig );
+			origin += ( ( gameLocal.time - launchTime ) / 1000.0f ) * launchSpeed * launchDir;
+			physicsObj.SetAxis( axis );
+			physicsObj.SetOrigin( origin );
+			physicsObj.SetLinearVelocity( launchSpeed * launchDir );
+		}
+	
 		UpdateVisuals();
 	}
 }

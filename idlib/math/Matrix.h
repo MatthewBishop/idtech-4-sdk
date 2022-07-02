@@ -2034,7 +2034,7 @@ private:
 
 // RAVEN BEGIN
 // jscott: avoid pointer hackery pokery and use the compiler
-	ALIGN16( static float tempPtr[MATX_MAX_TEMP]; )
+	ALIGN16( static float tempPtr[MATX_MAX_TEMP] );
 //	static float *	tempPtr;				// pointer to 16 byte aligned temporary memory
 // RAVEN END
 	static int		tempIndex;				// index into memory pool, wraps around

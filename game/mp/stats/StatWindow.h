@@ -18,7 +18,7 @@ Stat selection window
 class rvStatWindow {
 public:
 	rvStatWindow();
-	void						SetupStatWindow( idUserInterface* statHud );
+	void						SetupStatWindow( idUserInterface* statHud, bool useSpectator = false );
 	void						SelectPlayer( int clientNum );
 	int							ClientNumFromSelection( int selectionIndex, int selectionTeam );
 	void						ClearWindow( void );

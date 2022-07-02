@@ -80,6 +80,8 @@ const int C_COLOR_CONSOLE			= ':';
 #define I_FRIEND_DISABLED			"^ifdd"
 #define I_FLAG_MARINE				"^iflm"
 #define I_FLAG_STROGG				"^ifls"
+#define I_READY						"^iyrd"
+#define I_NOT_READY					"^inrd"
 // shouchard:  server browser stuff
 #define I_SERVER_DEDICATED			"^ids0"
 #define I_SERVER_DEDICATED_PB		"^idsp"
@@ -285,8 +287,8 @@ public:
 // RAVEN BEGIN
 // bdube: escape codes
 	static int			IsEscape( const char *s, int* type = NULL );
-	static int			LengthWithoutEscapes ( const char *s );	
-	static char *		RemoveEscapes ( char *s, int escapes = S_ESCAPE_ALL );
+	static int			LengthWithoutEscapes( const char *s );	
+	static char *		RemoveEscapes( char *s, int escapes = S_ESCAPE_ALL );
 // RAVEN END
 	static int			Cmp( const char *s1, const char *s2 );
 	static int			Cmpn( const char *s1, const char *s2, int n );

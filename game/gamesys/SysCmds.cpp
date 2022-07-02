@@ -90,6 +90,50 @@ void Cmd_EntityList_f( const idCmdArgs &args ) {
 
 /*
 ===================
+Cmd_ClientEntityList_f
+===================
+*/
+void Cmd_ClientEntityList_f( const idCmdArgs &args ) {
+	int			e;
+	rvClientEntity	*check;
+	int			count;
+	idStr		match;
+
+	if ( args.Argc() > 1 ) {
+		match = args.Args();
+		match.Replace( " ", "" );
+	} else {
+		match = "";
+	}
+
+	count = 0;
+
+	gameLocal.Printf( "%-4s  %-20s\n", " Num", "Classname" );
+	gameLocal.Printf( "--------------------------------------------------------------------\n" );
+	for( e = 0; e < MAX_CENTITIES; e++ ) {
+		check = gameLocal.clientEntities[ e ];
+
+		idStr name( check->GetClassType().classname );
+
+		if ( !check ) {
+			continue;
+		}
+
+		if ( !name.Filter( match ) ) {
+			continue;
+		}
+				
+		gameLocal.Printf( "%4i: %-20s\n", e, name.c_str() );
+
+		count++;
+	}
+
+	gameLocal.Printf( "...%d entities\n", count );
+}
+
+
+/*
+===================
 Cmd_ActiveEntityList_f
 ===================
 */
@@ -2911,9 +2955,43 @@ void Cmd_FadeSound_f( const idCmdArgs &args )	{
 
 }
 
+void Cmd_TestClientModel_f( const idCmdArgs& args ) {
+	rvClientEntity* face;
+	const idDict* dict = gameLocal.FindEntityDefDict( "player_marine_client", false );
+
+	gameLocal.SpawnClientEntityDef( *dict, &face, false );
+
+//	face = new rvClientAFEntity( *dict );
+//	face->Spawn( dict );
+//	face->SetOrigin( vec3_zero );
+//	face->SetAxis( mat3_identity );
+//	face->SetModel( "model_player_marine" );
+}
+
+
 // RAVEN END
 
 void Cmd_CheckSave_f( const idCmdArgs &args );
+
+void Cmd_ShuffleTeams_f( const idCmdArgs& args ) {
+	gameLocal.mpGame.ShuffleTeams();
+}
+
+#ifndef _FINAL
+void Cmd_ClientOverflowReliable_f( const idCmdArgs& args ) {
+	idBitMsg	outMsg;
+	byte		msgBuf[ 114688 ];
+
+	for( int i = 0; i < 10; i++ ) {
+		outMsg.Init( msgBuf, sizeof( msgBuf ) );
+		outMsg.WriteByte( -1 );
+		for( int j = 0; j < 8190; j++ ) {
+			outMsg.WriteByte( j );
+		}
+		networkSystem->ClientSendReliableMessage( outMsg );
+	}
+}
+#endif
 
 /*
 =================
@@ -2934,6 +3012,7 @@ void idGameLocal::InitConsoleCommands( void ) {
 	cmdSystem->AddCommand( "listClasses",			idClass::ListClasses_f,		CMD_FL_GAME,				"lists game classes" );
 	cmdSystem->AddCommand( "listThreads",			idThread::ListThreads_f,	CMD_FL_GAME|CMD_FL_CHEAT,	"lists script threads" );
 	cmdSystem->AddCommand( "listEntities",			Cmd_EntityList_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"lists game entities" );
+	cmdSystem->AddCommand( "listClientEntities",	Cmd_ClientEntityList_f,		CMD_FL_GAME|CMD_FL_CHEAT,	"lists client entities" );
 	cmdSystem->AddCommand( "listActiveEntities",	Cmd_ActiveEntityList_f,		CMD_FL_GAME|CMD_FL_CHEAT,	"lists active game entities" );
 	cmdSystem->AddCommand( "listMonsters",			idAI::List_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"lists monsters" );
 	cmdSystem->AddCommand( "listSpawnArgs",			Cmd_ListSpawnArgs_f,		CMD_FL_GAME|CMD_FL_CHEAT,	"list the spawn args of an entity", idGameLocal::ArgCompletion_EntityName );
@@ -2966,6 +3045,8 @@ void idGameLocal::InitConsoleCommands( void ) {
 	cmdSystem->AddCommand( "listLines",				Cmd_ListDebugLines_f,		CMD_FL_GAME|CMD_FL_CHEAT,	"lists all debug lines" );
 	cmdSystem->AddCommand( "playerModel",			Cmd_PlayerModel_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"sets the given model on the player", idCmdSystem::ArgCompletion_Decl<DECL_MODELDEF> );
 	cmdSystem->AddCommand( "flashlight",			Cmd_Flashlight_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"toggle actor's flashlight", idGameLocal::ArgCompletion_AIName );
+	
+	cmdSystem->AddCommand( "shuffleTeams",			Cmd_ShuffleTeams_f,			CMD_FL_GAME,				"shuffle teams" );
 // RAVEN BEGIN
 // bdube: not using id effect system
 //	cmdSystem->AddCommand( "testFx",				Cmd_TestFx_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"tests an FX system", idCmdSystem::ArgCompletion_Decl<DECL_FX> );
@@ -3056,6 +3137,8 @@ void idGameLocal::InitConsoleCommands( void ) {
 	cmdSystem->AddCommand( "serverNextMap",			idGameLocal::NextMap_f,		CMD_FL_GAME,				"change to the next map" );
 #endif
 
+	cmdSystem->AddCommand( "CheckTeamBalance", idMultiplayerGame::CheckTeamBalance_f, CMD_FL_GAME, "helper for team switching in the guis - <team to switch to> <named event for yes> <named event for no> <named event for same team>" );
+
 	// localization help commands
 	cmdSystem->AddCommand( "nextGUI",				Cmd_NextGUI_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"teleport the player to the next func_static with a gui" );
 	cmdSystem->AddCommand( "testid",				Cmd_TestId_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"output the string for the specified id." );
@@ -3093,6 +3176,11 @@ void idGameLocal::InitConsoleCommands( void ) {
 
 // mekberg: added.
 	cmdSystem->AddCommand( "setPMCVars",			Cmd_SetPMCVars_f,			CMD_FL_GAME,				"Resets player movement cvars" );
+
+	cmdSystem->AddCommand( "testClientModel",		Cmd_TestClientModel_f,		CMD_FL_GAME,				"" );
+#ifndef _FINAL
+	cmdSystem->AddCommand( "clientOverflowReliable", Cmd_ClientOverflowReliable_f, CMD_FL_GAME,				"" );
+#endif
 // RAVEN END
 }
 

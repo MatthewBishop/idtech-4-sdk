@@ -168,8 +168,8 @@ stateResult_t rvWeaponShotgun::State_Fire( const stateParms_t& parms ) {
 			PlayAnim( ANIMCHANNEL_ALL, "fire", 0 );	
 			return SRESULT_STAGE( STAGE_WAIT );
 	
-		case STAGE_WAIT:		
-			if ( wsfl.lowerWeapon || AnimDone( ANIMCHANNEL_ALL, 0 ) ) {
+		case STAGE_WAIT:
+			if ( (!gameLocal.isMultiplayer && (wsfl.lowerWeapon || AnimDone( ANIMCHANNEL_ALL, 0 )) ) || AnimDone( ANIMCHANNEL_ALL, 0 ) ) {
 				SetState( "Idle", 0 );
 				return SRESULT_DONE;
 			}									

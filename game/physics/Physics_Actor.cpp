@@ -187,7 +187,7 @@ float idPhysics_Actor::GetMass( int id ) const {
 
 /*
 ================
-idPhysics_Actor::SetClipMask
+idPhysics_Actor::SetContents
 ================
 */
 void idPhysics_Actor::SetContents( int contents, int id ) {
@@ -196,7 +196,7 @@ void idPhysics_Actor::SetContents( int contents, int id ) {
 
 /*
 ================
-idPhysics_Actor::SetClipMask
+idPhysics_Actor::GetContents
 ================
 */
 int idPhysics_Actor::GetContents( int id ) const {

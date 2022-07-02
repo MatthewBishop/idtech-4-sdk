@@ -73,6 +73,8 @@ private:
 	float					deathRollRate;
 	float					deathSpeed;
 	float					deathGrav;
+	
+	int						markerCheckTime;
 
 	bool					MarkerPosValid					( void );
 	void					TryStartPursuit					( void );
@@ -174,6 +176,8 @@ rvMonsterStroggHover::rvMonsterStroggHover ( ) {
 	deathRollRate	= 0;
 	deathSpeed	= 0;
 	deathGrav	= 0;
+
+	markerCheckTime = 0;
 
 	marker		= NULL;
 	attackPosOffset.Zero();
@@ -596,6 +600,7 @@ void rvMonsterStroggHover::Save ( idSaveGame *savefile ) const {
 	savefile->WriteFloat ( deathRollRate );
 	savefile->WriteFloat ( deathSpeed );
 	savefile->WriteFloat ( deathGrav );
+	savefile->WriteInt	( markerCheckTime );
 
 	savefile->WriteVec3( attackPosOffset );
 	
@@ -644,7 +649,8 @@ void rvMonsterStroggHover::Restore ( idRestoreGame *savefile ) {
 	savefile->ReadFloat ( deathRollRate );
 	savefile->ReadFloat ( deathSpeed );
 	savefile->ReadFloat ( deathGrav );
-	
+	savefile->ReadInt	( markerCheckTime );
+
 	savefile->ReadVec3( attackPosOffset );
 	
 //	actionRocketAttack.Restore ( savefile );
@@ -687,7 +693,7 @@ rvMonsterStroggHover::Collide
 ================
 */
 bool rvMonsterStroggHover::Collide( const trace_t &collision, const idVec3 &velocity ) {
-	if ( aifl.dead ) {
+	if ( aifl.dead ) { 
 		StopHeadlight();
 		//stop headlight
 		if ( effectHeadlight ) {
@@ -1214,6 +1220,13 @@ stateResult_t rvMonsterStroggHover::State_Torso_CircleStrafe ( const stateParms_
 
 bool rvMonsterStroggHover::MarkerPosValid ( void )
 {
+	//debouncer ftw
+	if( markerCheckTime > gameLocal.GetTime() )	{
+		return true;
+	}
+
+	markerCheckTime = gameLocal.GetTime() + 500 + (gameLocal.random.RandomFloat() * 500);
+
 	trace_t trace;
 	gameLocal.TracePoint( this, trace, marker.GetEntity()->GetPhysics()->GetOrigin(), marker.GetEntity()->GetPhysics()->GetOrigin(), GetPhysics()->GetClipMask(), NULL );
 	if ( !(trace.c.contents&GetPhysics()->GetClipMask()) )

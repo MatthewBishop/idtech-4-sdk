@@ -1,6 +1,6 @@
-
 #ifndef __GAME_LOCAL_H__
 #define	__GAME_LOCAL_H__
+
 // RAVEN BEGIN
 // jsinger: attempt to eliminate cross-DLL allocation issues
 #ifdef RV_UNIFIED_ALLOCATOR
@@ -97,6 +97,8 @@ class idLocationEntity;
 
 //============================================================================
 
+void gameError( const char *fmt, ... );
+
 #include "gamesys/Event.h"
 // RAVEN BEGIN
 // bdube: added
@@ -118,6 +120,8 @@ class idLocationEntity;
 #include "physics/Push.h"
 
 #include "Pvs.h"
+
+#include "FreeView.h"
 
 //============================================================================
 
@@ -188,11 +192,6 @@ enum {
 	GAME_RELIABLE_MESSAGE_ALL_STATS,
 // ddynerman: ingame awards
 	GAME_RELIABLE_MESSAGE_INGAMEAWARD,
-#ifdef _USE_VOICECHAT
-// jscott: for voice comms
-	GAME_RELIABLE_MESSAGE_VOICEDATA_CLIENT,
-	GAME_RELIABLE_MESSAGE_VOICEDATA_CLIENT_ECHO,
-#endif
 // ddynerman: instances
 	GAME_RELIABLE_MESSAGE_SET_INSTANCE,
 // shouchard:  for voicechat
@@ -204,6 +203,14 @@ enum {
 	GAME_RELIABLE_MESSAGE_STARTPACKEDVOTE,
 // mekberg: get ban list for server
 	GAME_RELIABLE_MESSAGE_GETADMINBANLIST,
+	GAME_RELIABLE_MESSAGE_PRINT
+// jscott: for voice comms
+// TTimo: implemented or not by the OS, the network protocol should not be affected
+	,
+	GAME_RELIABLE_MESSAGE_VOICEDATA_CLIENT,
+	GAME_RELIABLE_MESSAGE_VOICEDATA_CLIENT_ECHO,
+	GAME_RELIABLE_MESSAGE_VOICEDATA_CLIENT_TEST,
+	GAME_RELIABLE_MESSAGE_VOICEDATA_CLIENT_ECHO_TEST
 // RAVEN END	
 };
 
@@ -211,9 +218,14 @@ enum {
 	GAME_UNRELIABLE_MESSAGE_EVENT,
 	GAME_UNRELIABLE_MESSAGE_EFFECT,
 	GAME_UNRELIABLE_MESSAGE_HITSCAN,
-#ifdef _USE_VOICECHAT
 	GAME_UNRELIABLE_MESSAGE_VOICEDATA_SERVER
-#endif
+};
+
+enum {
+	GAME_UNRELIABLE_RECORD_CLIENTNUM,
+	GAME_UNRELIABLE_RECORD_AREAS,
+
+	GAME_UNRELIABLE_RECORD_COUNT
 };
 
 typedef enum {
@@ -226,8 +238,8 @@ typedef enum {
 } gameState_t;
 
 typedef struct {
-	idEntity	*ent;
-	int			dist;
+	idPlayerStart	*ent;
+	int				dist;
 } spawnSpot_t;
 
 //============================================================================
@@ -294,75 +306,6 @@ public:
 private:
 	int						spawnId;
 };
-
-template< class type >
-ID_INLINE idEntityPtr<type>::idEntityPtr() {
-	spawnId = 0;
-}
-
-template< class type >
-ID_INLINE void idEntityPtr<type>::Save( idSaveGame *savefile ) const {
-	savefile->WriteInt( spawnId );
-}
-
-template< class type >
-ID_INLINE void idEntityPtr<type>::Restore( idRestoreGame *savefile ) {
-	savefile->ReadInt( spawnId );
-}
-
-template< class type >
-ID_INLINE idEntityPtr<type> &idEntityPtr<type>::operator=( type *ent ) {
-	if ( ent == NULL ) {
-		spawnId = 0;
-	} else {
-		spawnId = ( gameLocal.spawnIds[ent->entityNumber] << GENTITYNUM_BITS ) | ent->entityNumber;
-	}
-	return *this;
-}
-
-template< class type >
-ID_INLINE bool idEntityPtr<type>::SetSpawnId( int id ) {
-	if ( id == spawnId ) {
-		return false;
-	}
-	if ( ( id >> GENTITYNUM_BITS ) == gameLocal.spawnIds[ id & ( ( 1 << GENTITYNUM_BITS ) - 1 ) ] ) {
-		spawnId = id;
-		return true;
-	}
-	return false;
-}
-
-template< class type >
-ID_INLINE bool idEntityPtr<type>::IsValid( void ) const {
-	return ( gameLocal.spawnIds[ spawnId & ( ( 1 << GENTITYNUM_BITS ) - 1 ) ] == ( spawnId >> GENTITYNUM_BITS ) );
-}
-
-template< class type >
-ID_INLINE type *idEntityPtr<type>::GetEntity( void ) const {
-	int entityNum = spawnId & ( ( 1 << GENTITYNUM_BITS ) - 1 );
-	if ( ( gameLocal.spawnIds[ entityNum ] == ( spawnId >> GENTITYNUM_BITS ) ) ) {
-		return static_cast<type *>( gameLocal.entities[ entityNum ] );
-	}
-	return NULL;
-}
-
-template< class type >
-ID_INLINE int idEntityPtr<type>::GetEntityNum( void ) const {
-	return ( spawnId & ( ( 1 << GENTITYNUM_BITS ) - 1 ) );
-}
-
-// RAVEN BEGIN
-// bdube: overloaded operator
-template< class type >
-ID_INLINE type * idEntityPtr<type>::operator->( void ) const {
-	return GetEntity ( );
-}
-
-template< class type >
-ID_INLINE idEntityPtr<type>::operator type * ( void ) const { 
-	return GetEntity(); 
-}
-// RAVEN END
 
 // RAVEN BEGIN
 // abahr: forward declaration
@@ -431,10 +374,6 @@ public:
 
 	idMultiplayerGame		mpGame;					// handles rules for standard dm
 
-// RAVEN BEGIN
-// bdube: not using smoke particles
-//	idSmokeParticles *		smokeParticles;			// global smoke trails
-// RAVEN END
 	idEditEntities *		editEntities;			// in game editing
 
 	int						cinematicSkipTime;		// don't allow skipping cinemetics until this time has passed so player doesn't skip out accidently from a firefight
@@ -468,7 +407,7 @@ public:
 // ddynerman: set if we're a server and not dedicated
 	bool					isListenServer;			
 // RAVEN END
-	int						localClientNum;			// number of the local client. MP: -1 on a dedicated
+	int						localClientNum;			// number of the local client. MP: -1 on a dedicated, MAX_CLIENTS when playing a server demo
 	idLinkList<idEntity>	snapshotEntities;		// entities from the last snapshot
 	int						realClientTime;			// real client time
 	bool					isNewFrame;				// true if this is a new game frame, not a rerun due to prediction
@@ -494,8 +433,7 @@ public:
 
 	const static int		INITIAL_SPAWN_COUNT = 1;
 
-	bool					pendingDisconnect;			// true if we need to disconnect in the next update
-	void					SetPendingDisconnect() { pendingDisconnect = true; }
+	idFreeView				freeView;
 
 // RAVEN END
 
@@ -516,6 +454,7 @@ public:
 	virtual void			ThrottleUserInfo( void );
 	virtual const idDict *	SetUserInfo( int clientNum, const idDict &userInfo, bool isClient );
 	virtual const idDict *	GetUserInfo( int clientNum );
+	virtual bool			IsClientActive( int clientNum );
 	virtual void			SetServerInfo( const idDict &serverInfo );
 
 	virtual const idDict &	GetPersistentPlayerInfo( int clientNum );
@@ -538,7 +477,7 @@ public:
 	virtual idUserInterface	*StartMenu( void );
 	virtual const char *	HandleGuiCommands( const char *menuCommand );
 	virtual void			HandleMainMenuCommands( const char *menuCommand, idUserInterface *gui );
-	virtual allowReply_t	ServerAllowClient( int numClients, const char *IP, const char *guid, const char *password, char reason[MAX_STRING_CHARS] );
+	virtual allowReply_t	ServerAllowClient( int clientId, int numClients, const char *IP, const char *guid, const char *password, const char *privatePassword, char reason[MAX_STRING_CHARS] );
 	virtual void			ServerClientConnect( int clientNum );
 	virtual void			ServerClientBegin( int clientNum );
 	virtual void			ServerClientDisconnect( int clientNum );
@@ -556,6 +495,7 @@ public:
 // RAVEN BEGIN
 // ddynerman: client game frame
 	virtual void			ClientRun( void );
+	virtual void			ClientEndFrame( void );
 
 // jshepard: rcon password check
 	virtual void			ProcessRconReturn( bool success );
@@ -617,10 +557,14 @@ public:
 	virtual void			ListEntityStats( const idCmdArgs &args );
 // RAVEN END
 
-	virtual void			SetDemoState( demoState_t state );
-	virtual void			WriteClientNetworkInfo( idFile* file, int clientNum );
-	virtual void			ReadClientNetworkInfo( int gameTime, idFile* file, int clientNum );
+	virtual void			SetDemoState( demoState_t state, bool serverDemo );
+	virtual void			WriteNetworkInfo( idFile* file, int clientNum );
+	virtual void			ReadNetworkInfo( int gameTime, idFile* file, int clientNum );
 	virtual bool			ValidateDemoProtocol( int minor_ref, int minor );
+
+	virtual void			ServerWriteDemoSnapshot( int sequence, idBitMsg &msg );
+	virtual void			ClientReadDemoSnapshot( int sequence, const int gameFrame, const int gameTime, const idBitMsg &msg );
+
 
 	// ---------------------- Public idGameLocal Interface -------------------
 
@@ -664,6 +608,7 @@ public:
 	void					SetGameState( gameState_t newState ) { gamestate = newState; }
 	idEntity *				SpawnEntityType( const idTypeInfo &classdef, const idDict *args = NULL, bool bIsClientReadSnapshot = false );
 	bool					SpawnEntityDef( const idDict &args, idEntity **ent = NULL, bool setDefaults = true );
+	bool					SpawnClientEntityDef( const idDict &args, rvClientEntity **ent = NULL, bool setDefaults = true, const char* spawn = NULL );
 // abahr:
 	idEntity*				SpawnEntityDef( const char* entityDefName, const idDict* additionalArgs = NULL );
 	template< class type >
@@ -786,6 +731,7 @@ public:
 // bdube: added
 	idLocationEntity*		AddLocation				( const idVec3& point, const char* name );
 // ddynerman: new gametype specific spawn code
+	bool					SpotWouldTelefrag( idPlayer* player, idPlayerStart* spawn );
 	idEntity*				SelectSpawnPoint( idPlayer* player );
 	void					UpdateForwardSpawns( rvCTFAssaultPlayerStart* point, int team );
 	void					ClearForwardSpawns( void );
@@ -894,6 +840,11 @@ public:
 	void					SendUnreliableMessagePVS( const idBitMsg &msg, const idEntity *instanceEnt, int area1 = -1, int area2 = -1 );
 
 	demoState_t				GetDemoState( void ) const { return demoState; }
+	bool					IsServerDemo( void ) const { return serverDemo; }
+	int						GetDemoFollowClient( void ) const { return serverDemo ? followPlayer : -1; }
+	idUserInterface			*GetDemoHud( void );
+	idUserInterface			*GetDemoMphud( void );
+	idUserInterface			*GetDemoCursor( void );
 
 	/*
 	do not synchronize implicit decls over the network
@@ -906,6 +857,8 @@ public:
 	static const idDecl*	ReadDecl( const idBitMsg &msg, declType_t type );
 	static void				WriteDecl( idBitMsgDelta &msg, const idDecl *decl );
 	static const idDecl*	ReadDecl( const idBitMsgDelta &msg, declType_t type );
+
+	idPlayerStart			*RandomSpawn( void );
 
 private:
 // RAVEN BEGIN
@@ -962,9 +915,9 @@ private:
 	bool					influenceActive;		// true when a phantasm is happening
 	int						nextGibTime;
 
-	entityState_t *			clientEntityStates[MAX_CLIENTS][MAX_GENTITIES];
-	int						clientPVS[MAX_CLIENTS][ENTITY_PVS_SIZE];
-	snapshot_t *			clientSnapshots[MAX_CLIENTS];
+	entityState_t *			clientEntityStates[MAX_CLIENTS+1][MAX_GENTITIES];	// MAX_CLIENTS slot is for server demo recordings
+	int						clientPVS[MAX_CLIENTS+1][ENTITY_PVS_SIZE];
+	snapshot_t *			clientSnapshots[MAX_CLIENTS+1];
 // RAVEN BEGIN
 // jnewquist: Mark memory tags for idBlockAlloc
 	idBlockAlloc<entityState_t,256,MA_ENTITY> entityStateAllocator;
@@ -973,11 +926,11 @@ private:
 
 	idEventQueue			eventQueue;
 
-	idList<idPlayerStart*> spawnSpots;
+	idList<idPlayerStart*>	spawnSpots;
 // RAVEN BEGIN
 // ddynerman: two lists to hold team spawn points for team based games
-	idList<idPlayerStart*> teamSpawnSpots[TEAM_MAX];	
-	idList<idPlayerStart*> teamForwardSpawnSpots[TEAM_MAX]; // forward spawn positions, used in CTF
+	idList<idPlayerStart*>	teamSpawnSpots[TEAM_MAX];	
+	idList<idPlayerStart*>	teamForwardSpawnSpots[TEAM_MAX]; // forward spawn positions, used in CTF
 // RAVEN END
 
 	idDict					newInfo;
@@ -986,9 +939,19 @@ private:
 
 	byte					lagometer[ LAGO_IMG_HEIGHT ][ LAGO_IMG_WIDTH ][ 4 ];
 
-	idMsgQueue				unreliableMessages[ MAX_CLIENTS ];
+	idMsgQueue				unreliableMessages[ MAX_CLIENTS+1 ];	// MAX_CLIENTS slot for server demo recording
 
 	demoState_t				demoState;
+	bool					serverDemo;
+
+	// demo interaction usercmds
+	usercmd_t				usercmd, oldUsercmd;
+	int						followPlayer;	// free fly or spectate follow through local interaction during server demo replays
+	idUserInterface			*demo_hud;
+	idUserInterface			*demo_mphud;
+	idUserInterface			*demo_cursor;
+
+private:
 
 	void					Clear( void );
 							// returns true if the entity shouldn't be spawned at all in this game type or difficulty level
@@ -998,12 +961,6 @@ private:
 	void					MapPopulate( int instance = -1 );
 	void					MapClear( bool clearClients, int instance = -1 );
 
-// RAVEN BEGIN
-// jscott: made public
-public:
-	pvsHandle_t				GetClientPVS( idPlayer *player, pvsType_t type );
-
-private:
 	bool					SetupPortalSkyPVS( idPlayer *player );
 // RAVEN END
 	void					SetupPlayerPVS( void );
@@ -1033,7 +990,6 @@ private:
 // ddynerman: gametype specific spawn code
 	void					InitializeSpawns( void );
 	idList<spawnSpot_t>		WeightSpawnSpots( idPlayer* player );
-	idEntity*				SpawnInRange( idList<spawnSpot_t>& spawns, idEntity* player, int lowIndex, int highIndex, int maxIndex );
 // RAVEN END
 	static int				sortSpawnPoints( const void *ptr1, const void *ptr2 );
 
@@ -1055,6 +1011,8 @@ private:
 
 	void					UpdateClientsPVS( void );
 
+	bool					IsDemoReplayInAreas( int area1, int area2 );
+
 public:
 	void					LoadBanList();
 	void					SaveBanList();
@@ -1073,62 +1031,16 @@ public:
 // mekberg: get and send ban list
 	void					ServerSendBanList( int clientNum );
 
-protected:
+// jscott: made public
+	pvsHandle_t				GetClientPVS( idPlayer *player, pvsType_t type );
+
+private:
 	char					clientGuids[ MAX_CLIENTS ][ CLIENT_GUID_LENGTH ];
 	idList<mpBanInfo_t>		banList;
 	bool					banListLoaded;
 	bool					banListChanged;
 // RAVEN END
 };
-
-// RAVEN BEGIN
-// bdube: inlines
-ID_INLINE rvClientEffect* idGameLocal::PlayEffect ( const idDict& args, const char* effectName, const idVec3& origin, const idMat3& axis, bool loop, const idVec3& endOrigin, bool broadcast, effectCategory_t category, const idVec4& effectTint ) {
-	return PlayEffect ( GetEffect ( args, effectName ), origin, axis, loop, endOrigin, broadcast, category, effectTint );
-}
-
-ID_INLINE bool idGameLocal::IsTeamGame ( void ) const {
-	return ( isMultiplayer && ( gameType == GAME_CTF || gameType == GAME_TDM || gameType == GAME_1F_CTF || gameType == GAME_ARENA_CTF ) );
-}
-
-ID_INLINE int idGameLocal::GetNumMapEntities( void ) const {
-	if( mapFile == NULL ) {
-		return -1;
-	} else {
-		return mapFile->GetNumEntities();
-	}
-}
-
-ID_INLINE rvInstance* idGameLocal::GetInstance( int id ) {
-	return instances[ id ];
-}
-
-ID_INLINE int idGameLocal::GetNumInstances( void ) {
-	return instances.Num();
-}
-
-ID_INLINE void idGameLocal::ReceiveRemoteConsoleOutput( const char* output ) {
-	if( isMultiplayer ) {
-		mpGame.ReceiveRemoteConsoleOutput( output );
-	}
-}
-
-// abahr:
-template< class type >
-type* idGameLocal::SpawnSafeEntityDef( const char* entityDefName, const idDict* additionalArgs ) {
-	idEntity* entity = SpawnEntityDef( entityDefName, additionalArgs );
-	if( !entity ) {
-		return NULL;
-	}
-
-	if( !entity->IsType(type::GetClassType()) ) {
-		entity->PostEventMS( &EV_Remove, 0 );
-		return NULL;
-	}
-
-	return static_cast<type*>( entity );
-}
-// RAVEN END
 
 //============================================================================
 
@@ -1269,21 +1181,12 @@ const int	CINEMATIC_SKIP_DELAY	= SEC2MS( 2.0f );
 #include "physics/Physics_AF.h"
 #include "physics/Physics_Particle.h"
 #include "physics/Physics_VehicleMonster.h"
-// RAVEN BEGIN
-// bdube: vehicle include needed for actor
+
 #include "vehicle/VehicleController.h"
 
-// bdube: client entities
 #include "Entity.h"
-#include "client/ClientEntity.h"
-#include "client/ClientEffect.h"
-#include "client/ClientMoveable.h"
-#include "client/ClientModel.h"
-//#include "SmokeParticles.h"
 #include "Game_Debug.h"
-// ddynerman: icons
 #include "IconManager.h"
-// RAVEN END
 #include "GameEdit.h"
 #include "AF.h"
 #include "IK.h"
@@ -1291,16 +1194,16 @@ const int	CINEMATIC_SKIP_DELAY	= SEC2MS( 2.0f );
 #include "Misc.h"
 #include "Actor.h"
 
-// RAVEN BEGIN
-// bdube: included only where needed now
-//#include "Projectile.h"
-#include "Weapon.h"
-// RAVEN END
+// client entities
+#include "client/ClientEntity.h"
+#include "client/ClientEffect.h"
+#include "client/ClientMoveable.h"
+#include "client/ClientModel.h"
+#include "client/ClientAFEntity.h"
 
-// RAVEN BEGIN
-// abahr
+#include "Weapon.h"
+
 #include "script/ScriptFuncUtility.h"
-// RAVEN END
 
 #include "Light.h"
 #include "WorldSpawn.h"
@@ -1349,5 +1252,125 @@ const int	CINEMATIC_SKIP_DELAY	= SEC2MS( 2.0f );
 #else
 #define PACIFIER_UPDATE
 #endif
+
+// RAVEN BEGIN
+// bdube: inlines
+ID_INLINE rvClientEffect* idGameLocal::PlayEffect( const idDict& args, const char* effectName, const idVec3& origin, const idMat3& axis, bool loop, const idVec3& endOrigin, bool broadcast, effectCategory_t category, const idVec4& effectTint ) {
+	return PlayEffect ( GetEffect ( args, effectName ), origin, axis, loop, endOrigin, broadcast, category, effectTint );
+}
+
+ID_INLINE bool idGameLocal::IsTeamGame( void ) const {
+	return ( isMultiplayer && ( gameType == GAME_CTF || gameType == GAME_TDM || gameType == GAME_1F_CTF || gameType == GAME_ARENA_CTF ) );
+}
+
+ID_INLINE int idGameLocal::GetNumMapEntities( void ) const {
+	if( mapFile == NULL ) {
+		return -1;
+	} else {
+		return mapFile->GetNumEntities();
+	}
+}
+
+ID_INLINE rvInstance* idGameLocal::GetInstance( int id ) {
+	return instances[ id ];
+}
+
+ID_INLINE int idGameLocal::GetNumInstances( void ) {
+	return instances.Num();
+}
+
+ID_INLINE void idGameLocal::ReceiveRemoteConsoleOutput( const char* output ) {
+	if( isMultiplayer ) {
+		mpGame.ReceiveRemoteConsoleOutput( output );
+	}
+}
+
+// abahr:
+template< class type >
+type* idGameLocal::SpawnSafeEntityDef( const char* entityDefName, const idDict* additionalArgs ) {
+	idEntity* entity = SpawnEntityDef( entityDefName, additionalArgs );
+	if( !entity ) {
+		return NULL;
+	}
+	
+	if( !entity->IsType(type::GetClassType()) ) {
+		entity->PostEventMS( &EV_Remove, 0 );
+		return NULL;
+	}
+	
+	return static_cast<type*>( entity );
+}
+// RAVEN END
+
+template< class type >
+ID_INLINE idEntityPtr<type>::idEntityPtr() {
+	spawnId = 0;
+}
+
+template< class type >
+ID_INLINE void idEntityPtr<type>::Save( idSaveGame *savefile ) const {
+	savefile->WriteInt( spawnId );
+}
+
+template< class type >
+ID_INLINE void idEntityPtr<type>::Restore( idRestoreGame *savefile ) {
+	savefile->ReadInt( spawnId );
+}
+
+template< class type >
+ID_INLINE idEntityPtr<type> &idEntityPtr<type>::operator=( type *ent ) {
+	if ( ent == NULL ) {
+		spawnId = 0;
+	} else {
+		spawnId = ( gameLocal.spawnIds[ent->entityNumber] << GENTITYNUM_BITS ) | ent->entityNumber;
+	}
+	return *this;
+}
+
+template< class type >
+ID_INLINE bool idEntityPtr<type>::SetSpawnId( int id ) {
+	if ( id == spawnId ) {
+		return false;
+	}
+	if ( ( id >> GENTITYNUM_BITS ) == gameLocal.spawnIds[ id & ( ( 1 << GENTITYNUM_BITS ) - 1 ) ] ) {
+		spawnId = id;
+		return true;
+	}
+	return false;
+}
+
+template< class type >
+ID_INLINE bool idEntityPtr<type>::IsValid( void ) const {
+	return ( gameLocal.spawnIds[ spawnId & ( ( 1 << GENTITYNUM_BITS ) - 1 ) ] == ( spawnId >> GENTITYNUM_BITS ) );
+}
+
+template< class type >
+ID_INLINE type *idEntityPtr<type>::GetEntity( void ) const {
+	int entityNum = spawnId & ( ( 1 << GENTITYNUM_BITS ) - 1 );
+	if ( ( gameLocal.spawnIds[ entityNum ] == ( spawnId >> GENTITYNUM_BITS ) ) ) {
+		return static_cast<type *>( gameLocal.entities[ entityNum ] );
+	}
+	return NULL;
+}
+
+template< class type >
+ID_INLINE int idEntityPtr<type>::GetEntityNum( void ) const {
+	return ( spawnId & ( ( 1 << GENTITYNUM_BITS ) - 1 ) );
+}
+
+// RAVEN BEGIN
+// bdube: overloaded operator
+template< class type >
+ID_INLINE type * idEntityPtr<type>::operator->( void ) const {
+	return GetEntity ( );
+}
+
+template< class type >
+ID_INLINE idEntityPtr<type>::operator type * ( void ) const { 
+	return GetEntity(); 
+}
+// RAVEN END
+
+#include "../idlib/containers/ListGame.h"
 
 #endif	/* !__GAME_LOCAL_H__ */

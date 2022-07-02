@@ -102,7 +102,7 @@ void idBitMsg::WriteBits( int value, int numBits ) {
 				numValueOverflows++;
 			}
 		} else {
-			int r = 1 << ( numBits - 1 );
+			int r = 1 << ( - 1 - numBits );
 			if ( value > r - 1 ) {
 				numValueOverflows++;
 			} else if ( value < -r ) {
@@ -273,7 +273,7 @@ bool idBitMsg::WriteDeltaDict( const idDict &dict, const idDict *base ) {
 		for ( i = 0; i < dict.GetNumKeyVals(); i++ ) {
 			kv = dict.GetKeyVal( i );
 			basekv = base->FindKey( kv->GetKey() );
-			if ( basekv == NULL || basekv->GetValue().Icmp( kv->GetValue() ) != 0 ) {
+			if ( basekv == NULL || basekv->GetValue().Cmp( kv->GetValue() ) != 0 ) {
 				WriteString( kv->GetKey() );
 				WriteString( kv->GetValue() );
 				changed = true;
@@ -1067,6 +1067,28 @@ bool idMsgQueue::Add( const byte *data, const int size, bool sequencing ) {
 	}
 	last++;
 	WriteData( data, size );
+	return true;
+}
+
+/*
+===============
+idMsgQueue::AddConcat
+===============
+*/
+bool idMsgQueue::AddConcat( const byte *data1, const int size1, const byte *data2, const int size2, bool sequencing ) {
+	if ( GetSpaceLeft() < size1 + size2 + 8 ) {
+		return false;
+	}
+
+	assert( size1 && size2 );
+	
+	WriteShort( size1 + size2 );
+	if ( sequencing ) {
+		WriteLong( last );
+	}
+	last++;
+	WriteData( data1, size1 );
+	WriteData( data2, size2 );
 	return true;
 }
 

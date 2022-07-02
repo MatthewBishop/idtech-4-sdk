@@ -28,10 +28,12 @@ rvClientEffect::rvClientEffect
 */
 rvClientEffect::rvClientEffect ( void ) {
 	Init ( NULL );
+	Spawn();
 }
 
 rvClientEffect::rvClientEffect ( const idDecl *effect ) {
 	Init ( effect );
+	Spawn();
 }
 
 void rvClientEffect::Init ( const idDecl *effect ) {
@@ -39,6 +41,7 @@ void rvClientEffect::Init ( const idDecl *effect ) {
 	
 	renderEffect.declEffect	= effect;
 	renderEffect.startTime	= -1.0f;
+	renderEffect.referenceSoundHandle = -1;
 	effectDefHandle = -1;
 	endOriginJoint	= INVALID_JOINT;
 }
@@ -50,6 +53,16 @@ rvClientEffect::~rvClientEffect
 */
 rvClientEffect::~rvClientEffect( void ) {
 	FreeEffectDef( );
+	// Prevent a double free of a SoundEmitter resulting in broken in-game sounds, when
+	// the second free releases a emitter that was reallocated to another sound. rvBSE caches
+	// this referenceSoundHandle and rvBSE::Destroy also frees the sound. rvBSE::Destroy
+	// is triggered by FreeEffectDef. Disable this free and let rvBSE do the releasing 
+	
+	// Actually, the freeing should be done here and not in BSE. The client effect allocates and 
+	// maintains the handle. Handling this here also allows emitters to be recycled for sparse
+	// looping effects.
+	soundSystem->FreeSoundEmitter( SOUNDWORLD_GAME, renderEffect.referenceSoundHandle, true );
+	renderEffect.referenceSoundHandle = -1;
 }
 
 /*
@@ -176,6 +189,12 @@ void rvClientEffect::Think ( void ) {
 	// Dont do anything else if its not a new client frame
 	if( !gameLocal.isNewFrame ) {
 		return;
+	}
+
+	// Check to see if the player can possibly see the effect or not
+	renderEffect.inConnectedArea = true;
+	if( bindMaster ) {
+		renderEffect.inConnectedArea = gameLocal.InPlayerConnectedArea( bindMaster );
 	}
 
 	// Update the bind	

@@ -22,6 +22,8 @@ if ( local_demo == 1 ):
 if ( local_gamedll == 1 ):
 	local_env.Append( CPPDEFINES = 'GAME_DLL' )
 	ret = local_env.SharedLibrarySafe( local_env, 'game', proj_list + idlib_objects )
+	if ( OSX_BUILDSTYLE == '2' ):
+		local_env.Append( CPPFLAGS = '-fvisibility=hidden' )
 	Return( 'ret' )
 else:
 	local_env.Append( CPPDEFINES = 'GAME_MONO' )

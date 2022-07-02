@@ -1,4 +1,3 @@
-
 #include "../precompiled.h"
 #pragma hdrstop
 
@@ -354,6 +353,8 @@ idCQuat idMat3::ToCQuat( void ) const {
 	return idCQuat( q.x, q.y, q.z );
 }
 
+#if !defined( __linux__ )
+
 /*
 ============
 idMat3::ToRotation
@@ -416,6 +417,8 @@ idRotation idMat3::ToRotation( void ) const {
 	r.axisValid = true;
 	return r;
 }
+
+#endif
 
 /*
 =================

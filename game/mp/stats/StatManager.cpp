@@ -16,6 +16,10 @@
 rvStatManager	statManagerLocal;
 rvStatManager*	statManager = &statManagerLocal;
 
+comboKillState_t rvStatManager::comboKillState[ MAX_CLIENTS ] = { CKS_NONE };
+int				rvStatManager::lastRailShot[ MAX_CLIENTS ] = { -2 };
+int				rvStatManager::lastRailShotHits[ MAX_CLIENTS ] = { 0 };
+
 inGameAwardInfo_t inGameAwardInfo[ IGA_NUM_AWARDS ] = {
 	//IGA_INVALID
 	{ 
@@ -339,6 +343,12 @@ void rvStatManager::Shutdown( void ) {
 	for( int i = 0; i < MAX_CLIENTS; i++ ) {
 		playerStats[ i ] = rvPlayerStat();
 	}
+
+	for ( int q = 0; q < MAX_CLIENTS; ++q ) {
+		comboKillState[ q ] = CKS_NONE;
+		lastRailShot[ q ] = -2;
+		lastRailShotHits[ q ] = 0;
+	}
 }
 
 void rvStatManager::BeginGame( void ) {
@@ -350,6 +360,12 @@ void rvStatManager::BeginGame( void ) {
 	startTime = gameLocal.time;
 	networkSystem->GetTrafficStats( startSent, startPacketsSent, startReceived, startPacketsReceived );
 #endif
+
+	for ( int q = 0; q < MAX_CLIENTS; ++q ) {
+		comboKillState[ q ] = CKS_NONE;
+		lastRailShot[ q ] = -2;
+		lastRailShotHits[ q ] = 0;
+	}
 }
 
 void rvStatManager::EndGame( void ) {
@@ -392,14 +408,17 @@ void rvStatManager::ClientDisconnect( int clientNum ) {
 }
 
 void rvStatManager::Kill( const idPlayer* victim, const idEntity* killer, int methodOfDeath ) {
-	int deathBlock;
+	int deathBlock, killBlock;
 	rvStatDeath* statDeath = statAllocator.AllocStatDeath( gameLocal.time, victim->entityNumber, methodOfDeath, &deathBlock );
 	
 	statQueue.Append( rvPair<rvStat*, int>( (rvStat*)statDeath, deathBlock ) );
+	
 	if( killer && killer->IsType( idPlayer::GetClassType() ) ) {
-		int killBlock;
 		rvStatKill* statKill = statAllocator.AllocStatKill( gameLocal.time, killer->entityNumber, victim->entityNumber, victim->IsGibbed(), methodOfDeath, &killBlock );
-
+		statQueue.Append( rvPair<rvStat*, int>( (rvStat*)statKill, killBlock ) );
+	} else if( !killer ) {
+		// basically a suicide
+		rvStatKill* statKill = statAllocator.AllocStatKill( gameLocal.time, victim->entityNumber, victim->entityNumber, victim->IsGibbed(), methodOfDeath, &killBlock );
 		statQueue.Append( rvPair<rvStat*, int>( (rvStat*)statKill, killBlock ) );
 	}
 }
@@ -412,6 +431,21 @@ void rvStatManager::FlagCaptured( const idPlayer* player, int flagTeam ) {
 
 void rvStatManager::WeaponFired( const idPlayer* player, int weapon, int num ) {
 	playerStats[ player->entityNumber ].weaponShots[ weapon ] += num;
+	lastRailShotHits[ player->entityNumber ] = 0;
+	
+	comboKillState_t cks = comboKillState[ player->entityNumber ];
+	comboKillState[ player->entityNumber ] = CKS_NONE;
+	if ( player->GetWeaponIndex( "weapon_rocketlauncher" ) == weapon ) {
+		if ( cks == CKS_NONE ) {
+			comboKillState[ player->entityNumber ] = CKS_ROCKET_FIRED;
+		}
+	} else if ( player->GetWeaponIndex( "weapon_railgun" ) == weapon ) {
+		// apparently it processes hits before it does the fire....
+		if ( cks == CKS_RAIL_HIT ) {
+			comboKillState[ player->entityNumber ] = CKS_RAIL_FIRED;
+		}
+	}
+	
 }
 
 void rvStatManager::WeaponHit( const idActor* attacker, const idEntity* victim, int weapon, bool countForAccuracy ) {
@@ -540,6 +574,7 @@ void rvStatManager::SendInGameAward( inGameAward_t award, int clientNum ) {
 
 void rvStatManager::ReceiveInGameAward( const idBitMsg& msg ) {
 	assert( gameLocal.isClient || gameLocal.isListenServer );
+	int numAwards = 0;
 
 	inGameAward_t award = (inGameAward_t)msg.ReadByte();
 	int client = msg.ReadByte();
@@ -552,10 +587,8 @@ void rvStatManager::ReceiveInGameAward( const idBitMsg& msg ) {
 		justSound = true;
 	}
 
-	if((gameLocal.time - inGameAwardHudTime) < 3000 || awardQueue.Num() > 0)
-	{
-		if (player->GetInstance() == remote->GetInstance())
-		{
+	if ( ( gameLocal.time - inGameAwardHudTime ) < 3000 || awardQueue.Num() > 0 ) {
+		if ( gameLocal.GetDemoFollowClient() == client || ( player && player->GetInstance() == remote->GetInstance() ) ) {
 			rvPair<int,bool> awardPair(award, justSound);
 			awardQueue.StackAdd(awardPair);
 			return;
@@ -563,21 +596,27 @@ void rvStatManager::ReceiveInGameAward( const idBitMsg& msg ) {
 	}
 	
 	if( client == gameLocal.localClientNum ) {
+		// don't count awards during warmup
 
-		localInGameAwards[ award ]++;
+		if( !player || (gameLocal.mpGame.GetGameState()->GetMPGameState() != WARMUP && 
+			(gameLocal.gameType != GAME_TOURNEY || ((rvTourneyGameState*)gameLocal.mpGame.GetGameState())->GetArena( player->GetArena() ).GetState() != AS_WARMUP )) ) {
+			localInGameAwards[ award ]++;
+			numAwards = localInGameAwards[ award ];
+		} else {
+			numAwards = 1;
+		}
+
 		if( player && player->mphud ) {
 			player->mphud->HandleNamedEvent( "clearIGA" );
-			player->mphud->SetStateInt( "ig_awards", idMath::ClampInt( 0, 10, localInGameAwards[ award ] ) );
+			player->mphud->SetStateInt( "ig_awards", idMath::ClampInt( 0, 10, numAwards ) );
 			player->mphud->SetStateString( "ig_award", va( "gfx/mp/awards/%s", inGameAwardInfo[ award ].name ) );	
-			if(localInGameAwards[ award ] < 10) {
+			if( numAwards < 10 ) {
 				player->mphud->SetStateString( "ig_award_num", "");
-				for( int i = 0; i < idMath::ClampInt( 0, 10, localInGameAwards[ award ] ); i++ )  {
+				for( int i = 0; i < idMath::ClampInt( 0, 10, numAwards ); i++ )  {
 					player->mphud->SetStateInt( va( "ig_awards_%d", i + 1 ), 1 );
 				}
-				
-			}
-			else {
-				player->mphud->SetStateInt( "ig_award_num", localInGameAwards[ award ]);
+			} else {
+				player->mphud->SetStateInt( "ig_award_num", numAwards );
 				player->mphud->SetStateInt( "ig_awards", 1  );
 				player->mphud->SetStateInt( va( "ig_awards_%d", 1 ), 1 );
 			}
@@ -587,18 +626,18 @@ void rvStatManager::ReceiveInGameAward( const idBitMsg& msg ) {
 
 		}
 
-		player->StartSound( va( "snd_award_%s", inGameAwardInfo[ award ].name ), SND_CHANNEL_ANY, 0, false, NULL );
+		if ( player ) {
+			player->StartSound( va( "snd_award_%s", inGameAwardInfo[ award ].name ), SND_CHANNEL_ANY, 0, false, NULL );
+		}
 	}
 	else if ( player && remote && (player->GetInstance() == remote->GetInstance())  && (award == IGA_HOLY_SHIT || award == IGA_CAPTURE)) {
 			player->StartSound( va( "snd_award_%s", inGameAwardInfo[ award ].name ), SND_CHANNEL_ANY, 0, false, NULL );
 	}
 	inGameAwardHudTime = gameLocal.time;
 
-	idPlayer* awardee = gameLocal.GetClientByNum(client);
-	if(awardee)
-	{
-		if(player->GetInstance() == awardee->GetInstance())
-		{
+	idPlayer* awardee = gameLocal.GetClientByNum( client );
+	if ( awardee ) {
+		if ( player && player->GetInstance() == awardee->GetInstance() ) {
 			iconManager->AddIcon( client, va( "mtr_award_%s", inGameAwardInfo[ award ].name ) );
 		}
 	}
@@ -651,15 +690,15 @@ void rvStatManager::CheckAwardQueue() {
 }
 
 void rvStatManager::GiveInGameAward( inGameAward_t award, int clientNum ) {
-	if(gameLocal.isMultiplayer)
-	{
-		playerStats[ clientNum ].inGameAwards[ award ]++;
-		SendInGameAward( award, clientNum );
-		
-		//idPlayer* player = (idPlayer*)gameLocal.entities[ clientNum ];
-		//if ( player && gameLocal.GetLocalPlayer( ) && (player->GetInstance() == gameLocal.GetLocalPlayer()->GetInstance()) ) {
-		//	player->StartSound( va( "snd_award_%s", inGameAwardInfo[ award ].name ), SND_CHANNEL_ANY, 0, true, NULL );
-		//}
+	idPlayer* player = (idPlayer*)gameLocal.entities[ clientNum ];
+
+	if( gameLocal.isMultiplayer ) {
+		// show in-game awards during warmup, but don't actually let players accumulate them
+		if( !player || (gameLocal.mpGame.GetGameState()->GetMPGameState() != WARMUP && 
+			(gameLocal.gameType != GAME_TOURNEY || ((rvTourneyGameState*)gameLocal.mpGame.GetGameState())->GetArena( player->GetArena() ).GetState() != AS_WARMUP )) ) {
+			playerStats[ clientNum ].inGameAwards[ award ]++;
+		}
+		SendInGameAward( award, clientNum );	
 	}
 }
 
@@ -676,9 +715,9 @@ int rvStatManager::GetSelectedClientNum( int* selectionIndexOut, int* selectionT
 }
 
 void rvStatManager::UpdateInGameHud( idUserInterface* statHud, bool visible ) {
-	idPlayer* player;
+	idPlayer* player = NULL;
 
-	if( gameLocal.GetLocalPlayer() )	{
+	if( gameLocal.GetLocalPlayer() ) {
 		player = gameLocal.GetLocalPlayer();
 		player->GetHud()->SetStateInt( "stat_visible", visible? 1 : 0);
 	}
@@ -689,7 +728,24 @@ void rvStatManager::UpdateInGameHud( idUserInterface* statHud, bool visible ) {
 	} else {
 		statHud->SetStateInt( "stat_visible", 1 );
 	}
-	statWindow.SetupStatWindow( statHud );
+
+#ifdef _XENON
+	if ( !gameLocal.isListenServer && abs( lastFullUpdate - gameLocal.time ) > 5000 ) {
+		lastFullUpdate = gameLocal.time + 5000;
+
+		idBitMsg	outMsg;
+		byte		msgBuf[ MAX_GAME_MESSAGE_SIZE ];
+
+		outMsg.Init( msgBuf, sizeof( msgBuf ) );
+		outMsg.WriteByte( GAME_RELIABLE_MESSAGE_ALL_STATS );
+		
+		networkSystem->ClientSendReliableMessage( outMsg );
+	}
+#endif
+
+	if( player ) {
+		statWindow.SetupStatWindow( statHud, player->spectating );
+	}
 }
 
 void rvStatManager::SendStat( int toClient, int statClient ) {
@@ -729,7 +785,7 @@ void rvStatManager::ReceiveStat( const idBitMsg& msg ) {
 	}
 }
 
-void rvStatManager::SendAllStats(  ) {
+void rvStatManager::SendAllStats( int clientNum, bool full ) {
 	
 	assert( gameLocal.isServer );
 
@@ -739,12 +795,26 @@ void rvStatManager::SendAllStats(  ) {
 	outMsg.Init( msgBuf, sizeof( msgBuf ) );
 	outMsg.WriteByte( GAME_RELIABLE_MESSAGE_ALL_STATS );
 
+	assert( MAX_CLIENTS <= 32 );
+
+	unsigned	sentClients = 0;
 	for(int i=0; i < MAX_CLIENTS; i++)
 	{
-		playerStats[ i ].PackStats( outMsg );
+		if ( gameLocal.entities[ i ] ) {
+			sentClients |= 1 << i;
+		}
 	}
 
-	networkSystem->ServerSendReliableMessage( -1, outMsg );
+	outMsg.WriteBits( sentClients, MAX_CLIENTS );
+
+	for(int i=0; i < MAX_CLIENTS; i++)
+	{
+		if ( sentClients & ( 1 << i ) ) {
+			playerStats[ i ].PackStats( outMsg );
+		}
+	}
+
+	networkSystem->ServerSendReliableMessage( clientNum, outMsg );
 
 	//common->Printf("SENT ALL STATS %i\n", Sys_Milliseconds());
 	
@@ -754,17 +824,31 @@ void rvStatManager::SendAllStats(  ) {
 void rvStatManager::ReceiveAllStats( const idBitMsg& msg ) {
 	assert( gameLocal.isClient );
 
+#ifdef _XENON
+	lastFullUpdate = gameLocal.time + 5000;
+#endif
+
+	assert( MAX_CLIENTS <= 32 );
+
+	unsigned	sentClients = msg.ReadBits( MAX_CLIENTS );
 
 	for(int i=0; i < MAX_CLIENTS; i++)
 	{
-		playerStats[ i ].UnpackStats( msg );
+		if ( sentClients & ( 1 << i ) ) {
+			playerStats[ i ].UnpackStats( msg );
+		} else {
+			playerStats[ i ].Clear();
+		}
+
 		playerStats[ i ].lastUpdateTime = gameLocal.time;
 	}
 	//common->Printf("RECV ALL STATS\n", Sys_Milliseconds());
+#ifndef _XENON
 	if(gameLocal.mpGame.GetGameState()->GetMPGameState() == GAMEREVIEW)
 	{
 		gameLocal.mpGame.ShowStatSummary();
 	}
+#endif
 
 }
 
@@ -774,6 +858,14 @@ void rvStatManager::ClearStats( void ) {
 	for( int i = 0; i < MAX_CLIENTS; i++ ) {
 		playerStats[ i ] = rvPlayerStat();
 	}
+
+	for ( int q = 0; q < MAX_CLIENTS; ++q ) {
+		lastRailShot[ q ] = -2;
+		lastRailShotHits[ q ] = 0;
+	}
+#ifdef _XENON
+	lastFullUpdate = -50000;
+#endif
 }
 
 void rvStatManager::CalculateEndGameStats( void ) {
@@ -932,6 +1024,17 @@ void rvStatManager::CalculateEndGameStats( void ) {
 			toFile = "\n";
 			log->Write(toFile.c_str(), toFile.Length());
 		}
+
+
+//asalmon: hack to test certain achievement awards.
+#ifdef _XENON
+		if(cvarSystem->GetCVarInteger("si_overrideFrags"))
+		{
+			common->Printf("Overriding Frags to: %i for player %i\n", cvarSystem->GetCVarInteger("si_overrideFrags"), i);
+			playerStats[i].kills = cvarSystem->GetCVarInteger("si_overrideFrags");
+		}
+#endif
+
 	}
 
 
@@ -1176,6 +1279,10 @@ void rvStatManager::UpdateEndGameHud( idUserInterface* statHud, int clientNum ) 
 ===============================================================================
 */
 rvPlayerStat::rvPlayerStat() {
+	Clear();
+}
+
+void rvPlayerStat::Clear( void ) {
 	memset( weaponShots, 0, sizeof(int) * MAX_WEAPONS );
 	memset( weaponHits, 0, sizeof(int) * MAX_WEAPONS );
 	memset( weaponKills, 0, sizeof(int) * MAX_WEAPONS );
@@ -1204,8 +1311,8 @@ void rvPlayerStat::PackStats( idBitMsg& msg ) {
 		msg.WriteByte( endGameAwards[ i ] );
 	}
 
-	msg.WriteByte( deaths );
-	msg.WriteByte( kills );
+	msg.WriteBits( idMath::ClampInt( 0, MP_PLAYER_MAXDEATHS, deaths ), ASYNC_PLAYER_DEATH_BITS );
+	msg.WriteBits( idMath::ClampInt( 0, MP_PLAYER_MAXKILLS, kills ), ASYNC_PLAYER_KILL_BITS );
 }
 
 void rvPlayerStat::UnpackStats( const idBitMsg& msg ) {
@@ -1226,6 +1333,6 @@ void rvPlayerStat::UnpackStats( const idBitMsg& msg ) {
 		endGameAwards[ i ] = (endGameAward_t)msg.ReadByte();
 	}
 
-	deaths = msg.ReadByte();
-	kills = msg.ReadByte();
+	deaths = msg.ReadBits( ASYNC_PLAYER_DEATH_BITS );
+	kills = msg.ReadBits( ASYNC_PLAYER_KILL_BITS );
 }

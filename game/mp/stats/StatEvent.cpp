@@ -26,6 +26,26 @@ void rvStatHit::RegisterInGame( rvPlayerStat* stats ) {
 	}
 	idPlayer* player = (idPlayer*)gameLocal.entities[ playerClientNum ];
 	if( !idStr::Icmp( player->spawnArgs.GetString( va( "def_weapon%d", weapon ) ), "weapon_railgun" ) ) {
+	
+		// Apparently it does the rail hit event before the rail fired event, so this is backwards for a reason
+		if ( rvStatManager::comboKillState[ playerClientNum ] == CKS_ROCKET_HIT ) {
+			rvStatManager::comboKillState[ playerClientNum ] = CKS_RAIL_HIT;
+		}
+		
+		if ( rvStatManager::lastRailShot[ playerClientNum ] < stats[ playerClientNum ].weaponShots[ weapon ] - 1 ) {
+			rvStatManager::lastRailShot[ playerClientNum ] = stats[ playerClientNum ].weaponShots[ weapon ];
+		} else {
+			if ( rvStatManager::lastRailShot[ playerClientNum ] >= stats[ playerClientNum ].weaponShots[ weapon ] - 1 ) {
+				if ( (rvStatManager::lastRailShotHits[ playerClientNum ] % 2) == 0 ) {
+					statManager->GiveInGameAward( IGA_IMPRESSIVE, playerClientNum );
+				}
+				++rvStatManager::lastRailShotHits[ playerClientNum ];
+			} else {
+				rvStatManager::lastRailShot[ playerClientNum ] = stats[ playerClientNum ].weaponShots[ weapon ];
+			}
+		}
+		
+/*		
 		rvStatHit* lastHits[ 2 ] = { NULL, NULL };
 		statManager->GetLastClientStats( playerClientNum, ST_HIT, gameLocal.time - 8000, 2, (rvStat**)lastHits );
 		if( lastHits[0] ) {
@@ -44,6 +64,13 @@ void rvStatHit::RegisterInGame( rvPlayerStat* stats ) {
 				}
 			}
 		}
+*/	
+	} else if( !idStr::Icmp( player->spawnArgs.GetString( va( "def_weapon%d", weapon ) ), "weapon_rocketlauncher" ) ) {
+		
+		if ( rvStatManager::comboKillState[ playerClientNum ] == CKS_ROCKET_FIRED ) {
+			rvStatManager::comboKillState[ playerClientNum ] = CKS_ROCKET_HIT;
+		}
+		
 	}
 }
 
@@ -57,20 +84,37 @@ rvStatKill::rvStatKill( int t, int p, int v, bool g, int mod ) : rvStat( t ) {
 }
 
 void rvStatKill::RegisterInGame( rvPlayerStat* stats ) {
-	if( playerClientNum >= 0 && playerClientNum < MAX_CLIENTS ) {
+	if( playerClientNum < 0 || playerClientNum >= MAX_CLIENTS || victimClientNum < 0 || victimClientNum >= MAX_CLIENTS ) {
+		return;
+	}
+
+	idPlayer* player = (idPlayer*)gameLocal.entities[ playerClientNum ];
+	idPlayer* victim = (idPlayer*)gameLocal.entities[ victimClientNum ];
+
+	// no award processing for suicides
+	if( victimClientNum == playerClientNum ) {
+		stats[ playerClientNum ].suicides++;		
+		return;
+	}
+
+	bool teamKill = false;
+
+	// don't track team kills
+	if( !gameLocal.IsTeamGame() || player->team != victim->team ) {
 		stats[ playerClientNum ].kills++;
+
 		if( methodOfDeath >= 0 && methodOfDeath < MAX_WEAPONS ) {
 			stats[ playerClientNum ].weaponKills[ methodOfDeath ]++;
 		}
-		if( victimClientNum == playerClientNum ) {
-			stats[ playerClientNum ].suicides++;
-		}
 	}
 
+	if( gameLocal.IsTeamGame() && player->team == victim->team ) {
+		teamKill = true;
+	}
+
+
 	// check for humiliation award
-	idPlayer* player = (idPlayer*)gameLocal.entities[ playerClientNum ];
-	idPlayer* victim = (idPlayer*)gameLocal.entities[ victimClientNum ];
-	if( !idStr::Icmp( player->spawnArgs.GetString( va( "def_weapon%d", methodOfDeath ) ), "weapon_gauntlet" ) ) {
+	if( !teamKill && !idStr::Icmp( player->spawnArgs.GetString( va( "def_weapon%d", methodOfDeath ) ), "weapon_gauntlet" ) ) {
 		statManager->GiveInGameAward( IGA_HUMILIATION, playerClientNum );
 	}
 
@@ -79,12 +123,12 @@ void rvStatKill::RegisterInGame( rvPlayerStat* stats ) {
 	statManager->GetLastClientStats( playerClientNum, ST_KILL, gameLocal.time - 5000, 2, (rvStat**)lastKills );
 
 	// check for excellent award
-	if( lastKills[ 0 ] && lastKills[ 0 ]->GetTimeStamp() >= (gameLocal.time - 2000) && lastKills[ 0 ]->victimClientNum != playerClientNum && victimClientNum != playerClientNum ) {
+	if( !teamKill && lastKills[ 0 ] && lastKills[ 0 ]->GetTimeStamp() >= (gameLocal.time - 2000) && lastKills[ 0 ]->victimClientNum != playerClientNum && victimClientNum != playerClientNum ) {
 		statManager->GiveInGameAward( IGA_EXCELLENT, playerClientNum );
 	}
 
 	// check for rampage award
-	if( ( gibbed && victimClientNum != playerClientNum ) && 
+	if( !teamKill && ( gibbed && victimClientNum != playerClientNum ) && 
 		( lastKills[ 0 ] && lastKills[ 0 ]->gibbed && lastKills[ 0 ]->victimClientNum != playerClientNum ) && 
 		( lastKills[ 1 ] && lastKills[ 1 ]->gibbed && lastKills[ 1 ]->victimClientNum != playerClientNum ) ) {
 			statManager->GiveInGameAward( IGA_RAMPAGE, playerClientNum );
@@ -99,18 +143,53 @@ void rvStatKill::RegisterInGame( rvPlayerStat* stats ) {
 		statManager->GetLastClientStats( playerClientNum, ST_HIT, gameLocal.time - 3000, 2, (rvStat**)lastHits );
 
 		if( lastHits[ 1 ] && lastHits[ 1 ]->GetVictimClientNum() != playerClientNum && !idStr::Icmp( player->spawnArgs.GetString( va( "def_weapon%d", lastHits[ 1 ]->GetWeapon() ) ), "weapon_rocketlauncher" )  ) {
-			statManager->GiveInGameAward( IGA_COMBO_KILL, playerClientNum );
+			if ( rvStatManager::comboKillState[ playerClientNum ] == CKS_RAIL_HIT ) {
+				statManager->GiveInGameAward( IGA_COMBO_KILL, playerClientNum );
+			}
 		}
 	}
+	
+	rvStatManager::comboKillState[ playerClientNum ] = CKS_NONE;
 
 
 	// check for defense award
 	if( gameLocal.IsFlagGameType() && player->team != victim->team && player != victim ) {
-		if( ((rvCTFGameState*)gameLocal.mpGame.GetGameState())->GetFlagState( player->team ) == FS_AT_BASE ) {
-			if( ( gameLocal.mpGame.flagBaseLocation[ player->team ] - player->GetPhysics()->GetOrigin() ).LengthSqr() < 250000 ) {
-				statManager->GiveInGameAward( IGA_DEFENSE, playerClientNum );
-			} else if ( victim->team != player->team && ( gameLocal.mpGame.flagBaseLocation[ player->team ] - victim->GetPhysics()->GetOrigin() ).LengthSqr() < 250000 ) {
-				statManager->GiveInGameAward( IGA_DEFENSE, playerClientNum );
+		// defense is given for two conditions
+//		assert( gameLocal.mpGame.GetFlagEntity( TEAM_STROGG ) && gameLocal.mpGame.GetFlagEntity( TEAM_MARINE ) );
+		assert( player->team >= 0 && player->team < TEAM_MAX );
+		assert( gameLocal.mpGame.GetGameState()->IsType( rvCTFGameState::GetClassType() ) );
+
+		if ( gameLocal.mpGame.GetFlagEntity( player->team ) ) {		
+			// defending your flag
+			if( ((rvCTFGameState*)gameLocal.mpGame.GetGameState())->GetFlagState( player->team ) == FS_AT_BASE || ((rvCTFGameState*)gameLocal.mpGame.GetGameState())->GetFlagState( player->team ) == FS_DROPPED ) {
+				if( ( gameLocal.mpGame.GetFlagEntity( player->team )->GetPhysics()->GetOrigin() - player->GetPhysics()->GetOrigin() ).LengthSqr() < 250000 ) {
+					// give award if you're close to flag and you kill an enemy
+					statManager->GiveInGameAward( IGA_DEFENSE, playerClientNum );
+				} else if ( ( gameLocal.mpGame.GetFlagEntity( player->team )->GetPhysics()->GetOrigin() - victim->GetPhysics()->GetOrigin() ).LengthSqr() < 250000 ) {
+					// give award if enemy is close to flag and you kill them
+					statManager->GiveInGameAward( IGA_DEFENSE, playerClientNum );
+				}
+			} 
+		}
+		
+		// defending your teammate carrying the enemy flag
+		if( ((rvCTFGameState*)gameLocal.mpGame.GetGameState())->GetFlagState( gameLocal.mpGame.OpposingTeam( player->team ) ) == FS_TAKEN ) {
+			int clientNum = ((rvCTFGameState*)gameLocal.mpGame.GetGameState())->GetFlagCarrier( gameLocal.mpGame.OpposingTeam( player->team ) );
+
+			idPlayer* flagCarrier = NULL;
+
+			if( clientNum >= 0 && clientNum < MAX_CLIENTS ) {
+				flagCarrier = (idPlayer*)gameLocal.entities[ clientNum ];
+			}
+
+			if( flagCarrier ) {
+				if( (flagCarrier->GetPhysics()->GetOrigin() - player->GetPhysics()->GetOrigin()).LengthSqr() < 250000 ) {
+					// killed enemy while close to the flag carrier
+					statManager->GiveInGameAward( IGA_DEFENSE, playerClientNum );
+				} else if( (flagCarrier->GetPhysics()->GetOrigin() - victim->GetPhysics()->GetOrigin()).LengthSqr() < 250000 ) {
+					// killed an enemy who was close to teh flag carrier
+					statManager->GiveInGameAward( IGA_DEFENSE, playerClientNum );
+				}
 			}
 		}
 	}
@@ -120,8 +199,12 @@ void rvStatKill::RegisterInGame( rvPlayerStat* stats ) {
 		if( (player->team == TEAM_MARINE && victim->PowerUpActive( POWERUP_CTF_MARINEFLAG )) ||
 			(player->team == TEAM_STROGG && victim->PowerUpActive( POWERUP_CTF_STROGGFLAG )) ) {
 			if( ((rvCTFGameState*)gameLocal.mpGame.GetGameState())->GetFlagState( victim->team ) == FS_AT_BASE ) {
-				if( (gameLocal.mpGame.flagBaseLocation[ victim->team ] - victim->GetPhysics()->GetOrigin()).LengthSqr() < 40000 ) {
-					statManager->GiveInGameAward( IGA_HOLY_SHIT, playerClientNum );					
+				
+				// fixme: something is broken with the mpgame state
+				if ( gameLocal.mpGame.GetFlagEntity( victim->team ) ) {
+					if( (gameLocal.mpGame.GetFlagEntity( victim->team )->GetPhysics()->GetOrigin() - victim->GetPhysics()->GetOrigin()).LengthSqr() < 40000 ) {
+						statManager->GiveInGameAward( IGA_HOLY_SHIT, playerClientNum );					
+					}
 				}
 			}
 		}

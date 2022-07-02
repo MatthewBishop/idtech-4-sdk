@@ -872,8 +872,10 @@ bool rvPhysics_Particle::SlideMove( idVec3 &start, idVec3 &velocity, const idVec
 			return true;
 		}
 		
+		bool hitTeleporter = false;
+		
 		// let the entity know about the collision
-		collide = self->Collide( tr, current.velocity );
+		collide = self->Collide( tr, current.velocity, hitTeleporter );
 		
 		idEntity* ent;
 		ent = gameLocal.entities[tr.c.entityNum];
@@ -895,10 +897,12 @@ bool rvPhysics_Particle::SlideMove( idVec3 &start, idVec3 &velocity, const idVec
 			continue;
 		// bounce the projectile
 		} else if ( !current.inWater && allowBounce && bouncyness ) {
-			float dot;
-			move = tr.endpos;
-			dot = DotProduct( velocity, tr.c.normal );
-			velocity  = ( velocity - ( 2.0f * dot * tr.c.normal ) ) * bouncyness;
+			if ( !hitTeleporter ) {
+				float dot;
+				move = tr.endpos;
+				dot = DotProduct( velocity, tr.c.normal );
+				velocity  = ( velocity - ( 2.0f * dot * tr.c.normal ) ) * bouncyness;
+			}
 			return true;
 //RAVEN BEGIN
 //jshepard: tr.c.material can (did) crash here if null

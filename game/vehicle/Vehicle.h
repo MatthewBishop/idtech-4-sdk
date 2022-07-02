@@ -300,8 +300,10 @@ protected:
 
 	bool						alwaysImpactDamage;
 
-	idList< idEntityPtr< idGuidedProjectile > >	incomingProjectiles;
 	void					UpdateIncomingProjectiles( void );
+	
+public:
+	idList< idEntityPtr< idGuidedProjectile > >	incomingProjectiles;
 private:
 	
 	void					Event_Lock				( bool locked );

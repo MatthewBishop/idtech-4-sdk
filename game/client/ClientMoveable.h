@@ -15,7 +15,7 @@ public:
 	rvClientMoveable ( void );
 	virtual ~rvClientMoveable ( void );
 	
-	virtual void			Spawn			( const idDict* spawnArgs, idEntity* owner = NULL );
+	virtual void			Spawn			( void );
 	virtual void			Think			( void );
 	virtual idPhysics*		GetPhysics		( void ) const;	
 	virtual bool			Collide			( const trace_t &collision, const idVec3 &velocity );
@@ -27,8 +27,12 @@ public:
 	
 	static void				SpawnClientMoveables ( idEntity* ent, const char *type, idList<rvClientMoveable *>* list );
 
-	virtual void			FreeEntityDef	 ( void );
+	virtual void			FreeEntityDef	( void );
 
+	void					SetOwner		( idEntity* ent );
+
+	void					SetOrigin		( const idVec3& origin );
+	void					SetAxis			( const idMat3& axis );
 protected:
 	renderEntity_t			renderEntity;
 	int						entityDefHandle;

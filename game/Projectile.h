@@ -40,6 +40,7 @@ public :
 	virtual bool			GetPhysicsToVisualTransform( idVec3 &origin, idMat3 &axis );
 
 	virtual bool			Collide( const trace_t &collision, const idVec3 &velocity );
+	virtual bool			Collide( const trace_t &collision, const idVec3 &velocity, bool &hitTeleporter );
 	virtual void			Explode( const trace_t *collision, const bool showExplodeFX, idEntity *ignore = NULL, const char *sndExplode = "snd_explode" );
 	void					Fizzle( void );
 

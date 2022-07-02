@@ -70,6 +70,35 @@ const int SHADERPARM_BRIGHTNESS		= 6;	// for the overall brightness of effects
 #define DEFAULT_LIGHT_DETAIL_LEVEL	10.f
 // RAVEN END 
 
+enum {
+	RD_MISC = 0,
+	RD_RENDERVIEW,
+	RD_RENDER_STATE,
+
+	RD_RENDERENT_UPDATE,
+	RD_RENDERENT_FREE,
+	RD_RENDERENT_ADD,
+	RD_RENDERENT,
+
+	RD_RENDERLIGHT_UPDATE,
+	RD_RENDERLIGHT_FREE,
+	RD_RENDERLIGHT_ADD,
+	RD_RENDERLIGHT,
+
+	RD_RENDEREFFECT_UPDATE,
+	RD_RENDEREFFECT_FREE,
+	RD_RENDEREFFECT_STOP,
+	RD_RENDEREFFECT_ADD,
+	RD_RENDEREFFECT,
+
+	RD_SOUND_STATE,
+	RD_SOUND,
+
+	RD_HUD,
+
+	RD_MAX_STATS
+};
+
 typedef bool(*deferredEntityCallback_t)( renderEntity_s *, const renderView_s * );
 
 
@@ -269,6 +298,7 @@ typedef struct renderEffect_s {
 	bool					hasEndOrigin;
 	bool					loop;						// effect is looping
 	bool					ambient;					// effect is from an entity
+	bool					inConnectedArea;
 	int						weaponDepthHackInViewID;	// squash depth range so view weapons don't poke into walls
 	float					modelDepthHack;	
 
@@ -390,7 +420,7 @@ enum
 
 class idRenderWorld {
 public:
-	virtual					~idRenderWorld() {};
+	virtual					~idRenderWorld( void ) {};
 
 	// The same render world can be reinitialized as often as desired
 	// a NULL or empty mapName will create an empty, single area world
@@ -418,6 +448,9 @@ public:
 	virtual	void			FreeLightDef( qhandle_t lightHandle ) = 0;
 	virtual const renderLight_t *GetRenderLight( qhandle_t lightHandle ) const = 0;
 // RAVEN BEGIN
+	virtual void			WriteRenderLight( idDemoFile *writeDemo, const renderLight_t *light ) = 0;
+	virtual void			ReadRenderLight( idDemoFile *readDemo, renderLight_t &light ) = 0;
+
 // jscott: handling of effects
 	virtual qhandle_t		AddEffectDef( const renderEffect_t *reffect, int time ) = 0;
 	virtual bool			UpdateEffectDef( qhandle_t effectHandle, const renderEffect_t *reffect, int time ) = 0;
@@ -443,7 +476,7 @@ public:
 
 	// Force the generation of all light / surface interactions at the start of a level
 	// If this isn't called, they will all be dynamically generated
-	virtual	void			GenerateAllInteractions() = 0;
+	virtual	void			GenerateAllInteractions( void ) = 0;
 
 	//-------------- Decals and Overlays  -----------------
 
@@ -559,7 +592,7 @@ public:
 
 	// this is used to regenerate all interactions ( which is currently only done during influences ), there may be a less 
 	// expensive way to do it
-	virtual void			RegenerateWorld() = 0;
+	virtual void			RegenerateWorld( void ) = 0;
 
 	//-------------- Debug Visualization  -----------------
 

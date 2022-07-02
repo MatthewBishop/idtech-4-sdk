@@ -220,6 +220,37 @@ void UnpackColor( const dword color, idVec3 &unpackedColor ) {
 // RAVEN END
 }
 
+/*
+===============
+idLib::Error
+===============
+*/
+void idLib::Error( const char *fmt, ... ) {
+	va_list		argptr;
+	char		text[MAX_STRING_CHARS];
+
+	va_start( argptr, fmt );
+	idStr::vsnPrintf( text, sizeof( text ), fmt, argptr );
+	va_end( argptr );
+
+	common->Error( "%s", text );
+}
+
+/*
+===============
+idLib::Warning
+===============
+*/
+void idLib::Warning( const char *fmt, ... ) {
+	va_list		argptr;
+	char		text[MAX_STRING_CHARS];
+
+	va_start( argptr, fmt );
+	idStr::vsnPrintf( text, sizeof( text ), fmt, argptr );
+	va_end( argptr );
+
+	common->Warning( "%s", text );
+}
 
 /*
 ===============================================================================
@@ -241,14 +272,32 @@ static void		(*_LittleRevBytes)( void *bp, int elsize, int elcount );
 static void		(*_SixtetsForInt)( byte *out, int src );
 static int		(*_IntForSixtets)( byte *in );
 
+#ifdef _LITTLE_ENDIAN
+
+short	LittleShort( short l ) { return l; }
+int		LittleLong( int l ) { return l; }
+float	LittleFloat( float l ) { return l; }
+void	LittleRevBytes( void *bp, int elsize, int elcount ) {}
+
 short	BigShort( short l ) { return _BigShort( l ); }
-short	LittleShort( short l ) { return _LittleShort( l ); }
 int		BigLong( int l ) { return _BigLong( l ); }
-int		LittleLong( int l ) { return _LittleLong( l ); }
 float	BigFloat( float l ) { return _BigFloat( l ); }
-float	LittleFloat( float l ) { return _LittleFloat( l ); }
 void	BigRevBytes( void *bp, int elsize, int elcount ) { _BigRevBytes( bp, elsize, elcount ); }
-void	LittleRevBytes( void *bp, int elsize, int elcount ){ _LittleRevBytes( bp, elsize, elcount ); }
+
+#else
+
+short	LittleShort( short l ) { return _LittleShort( l ); }
+int		LittleLong( int l ) { return _LittleLong( l ); }
+float	LittleFloat( float l ) { return _LittleFloat( l ); }
+void	LittleRevBytes( void *bp, int elsize, int elcount ) { _LittleRevBytes( bp, elsize, elcount ); }
+
+short	BigShort( short l ) { return l; }
+int		BigLong( int l ) { return l; }
+float	BigFloat( float l ) { return l; }
+void	BigRevBytes( void *bp, int elsize, int elcount ) {}
+
+#endif
+
 
 void	SixtetsForInt( byte *out, int src) { _SixtetsForInt( out, src ); }
 int		IntForSixtets( byte *in ) { return _IntForSixtets( in ); }

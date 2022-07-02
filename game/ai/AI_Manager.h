@@ -94,6 +94,7 @@ class rvAIManager {
 public:
 
 	rvAIManager ( void );
+	~rvAIManager ( void ) {}
 
 	/*
 	===============================================================================

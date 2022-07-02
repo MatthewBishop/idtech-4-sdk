@@ -66,9 +66,10 @@ public:
 	void			PackState( idBitMsg& outMsg );
 	void			UnpackState( const idBitMsg& inMsg );
 
-	void			RemovePlayer( idPlayer* player, bool disconnecting );
+	void			RemovePlayer( idPlayer* player );
 	bool			TimeLimitHit( void );
 	bool			IsPlaying( idPlayer* player ) { return ( arenaState != AS_INACTIVE && arenaState != AS_DONE && ( player == players[ 0 ] || player == players[ 1 ] ) ); }
+	bool			IsPlaying( void ) { return ( arenaState != AS_INACTIVE && arenaState != AS_DONE ); }
 
 	const char*		GetPlayerName( int player );
 	int				GetPlayerScore( int player );
@@ -143,7 +144,7 @@ public:
 	void	UpdateScores( void );
 	void	PreTourney( void );
 	void	TourneyStart( void );
-	void	UpdateByePlayer( void );
+	//void	UpdateByePlayer( void );
 	void	SetupTourneyHistory( int startHistory, int endHistory, arenaOutcome_t tourneyHistory[ MAX_ROUNDS ][ MAX_ARENAS ] );
 
 private:

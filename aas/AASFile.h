@@ -110,8 +110,6 @@ public:
 	idReachability *			next;				// next reachability in list
 	idReachability *			rev_next;			// next reachability in reversed list
 	unsigned short *			areaTravelTimes;	// travel times within the fromAreaNum from reachabilities that lead towards this area
-public:
-	void						CopyBase( idReachability &reach );
 };
 
 class idReachability_Walk : public idReachability {
@@ -133,7 +131,8 @@ class idReachability_Fly : public idReachability {
 };
 
 class idReachability_Special : public idReachability {
-public:
+	friend class idAASFileLocal;
+private:
 	idDict						dict;
 };
 
@@ -257,6 +256,8 @@ public:
 	bool						allowSwimReachabilities;
 	bool						allowFlyReachabilities;
 // RAVEN BEGIN
+// bkreimeier
+	bool						generateAllFaces;
 // cdr: AASTactical
 	bool						generateTacticalFeatures;
 // scork: AASOnly numbers
@@ -428,36 +429,39 @@ public:
 	virtual void					RemoveAreaTravelFlag( int index, int flag ) = 0;
 // RAVEN END
 
-	virtual idVec3				EdgeCenter( int edgeNum ) const = 0;
-	virtual idVec3				FaceCenter( int faceNum ) const = 0;
-	virtual idVec3				AreaCenter( int areaNum ) const = 0;
+	virtual idVec3					EdgeCenter( int edgeNum ) const = 0;
+	virtual idVec3					FaceCenter( int faceNum ) const = 0;
+	virtual idVec3					AreaCenter( int areaNum ) const = 0;
 
-	virtual idBounds			EdgeBounds( int edgeNum ) const = 0;
-	virtual idBounds			FaceBounds( int faceNum ) const = 0;
-	virtual idBounds			AreaBounds( int areaNum ) const = 0;
+	virtual idBounds				EdgeBounds( int edgeNum ) const = 0;
+	virtual idBounds				FaceBounds( int faceNum ) const = 0;
+	virtual idBounds				AreaBounds( int areaNum ) const = 0;
 
-	virtual int					PointAreaNum( const idVec3 &origin ) const = 0;
-	virtual int					PointReachableAreaNum( const idVec3 &origin, const idBounds &searchBounds, const int areaFlags, const int excludeTravelFlags ) const = 0;
-	virtual int					BoundsReachableAreaNum( const idBounds &bounds, const int areaFlags, const int excludeTravelFlags ) const = 0;
-	virtual void				PushPointIntoAreaNum( int areaNum, idVec3 &point ) const = 0;
-	virtual bool				Trace( aasTrace_t &trace, const idVec3 &start, const idVec3 &end ) const = 0;
-	virtual void				PrintInfo( void ) const = 0;
+	virtual int						PointAreaNum( const idVec3 &origin ) const = 0;
+	virtual int						PointReachableAreaNum( const idVec3 &origin, const idBounds &searchBounds, const int areaFlags, const int excludeTravelFlags ) const = 0;
+	virtual int						BoundsReachableAreaNum( const idBounds &bounds, const int areaFlags, const int excludeTravelFlags ) const = 0;
+	virtual void					PushPointIntoAreaNum( int areaNum, idVec3 &point ) const = 0;
+	virtual bool					Trace( aasTrace_t &trace, const idVec3 &start, const idVec3 &end ) const = 0;
+	virtual void					PrintInfo( void ) const = 0;
 // RAVEN BEGIN
 // jscott: added
-	virtual size_t				GetMemorySize( void ) = 0;
+	virtual size_t					GetMemorySize( void ) = 0;
 
-	virtual	void				Init( void ) = 0;
-	virtual bool				Load( const idStr &fileName, unsigned int mapFileCRC ) = 0;
-	virtual	bool				Write( const idStr &fileName, unsigned int mapFileCRC ) = 0;
-	virtual	void				Clear( void ) = 0;
-	virtual	void				FinishAreas( void ) = 0;
-	virtual	void				ReportRoutingEfficiency( void ) const = 0;
-	virtual	void				LinkReversedReachability( void ) = 0;
-	virtual	void				DeleteReachabilities( void ) = 0;
-	virtual	void				DeleteClusters( void ) = 0;
-	virtual	void				Optimize( void ) = 0;
-	virtual bool				IsDummyFile( unsigned int mapFileCRC ) = 0;
+	virtual	void					Init( void ) = 0;
+	virtual bool					Load( const idStr &fileName, unsigned int mapFileCRC ) = 0;
+	virtual	bool					Write( const idStr &fileName, unsigned int mapFileCRC ) = 0;
+	virtual	void					Clear( void ) = 0;
+	virtual	void					FinishAreas( void ) = 0;
+	virtual	void					ReportRoutingEfficiency( void ) const = 0;
+	virtual	void					LinkReversedReachability( void ) = 0;
+	virtual	void					DeleteReachabilities( void ) = 0;
+	virtual	void					DeleteClusters( void ) = 0;
+	virtual	void					Optimize( void ) = 0;
+	virtual bool					IsDummyFile( unsigned int mapFileCRC ) = 0;
 // RAVEN END
+
+	virtual const idDict &			GetReachabilitySpecialDict( idReachability *reach ) const = 0;
+	virtual void					SetReachabilitySpecialDictKeyValue( idReachability *reach, const char *key, const char *value ) = 0;
 };
 
 // RAVEN BEGIN

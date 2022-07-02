@@ -124,12 +124,14 @@ bool rvWeaponBlaster::UpdateAttack ( void ) {
 		// release the shot.
 		if ( !wsfl.attack ) {
 			idPlayer * player = gameLocal.GetLocalPlayer();
+			if( player )	{
 			
-			if( player && player->GuiActive() )	{
-				//make sure the player isn't looking at a gui first
-				SetState ( "Lower", 0 );
-			} else {
-				SetState ( "Fire", 0 );
+				if( player->GuiActive())	{
+					//make sure the player isn't looking at a gui first
+					SetState ( "Lower", 0 );
+				} else {
+					SetState ( "Fire", 0 );
+				}
 			}
 			return true;
 		}
@@ -415,6 +417,14 @@ stateResult_t rvWeaponBlaster::State_Fire ( const stateParms_t& parms ) {
 				SetState ( "Lower", 0 );
 				return SRESULT_DONE;
 			}
+
+			if( player && !player->CanFire() )	{
+				fireHeldTime = 0;
+				SetState ( "Idle", 4 );
+				return SRESULT_DONE;
+			}
+
+
 	
 			if ( gameLocal.time - fireHeldTime > chargeTime ) {	
 				Attack ( true, 1, spread, 0, 1.0f );

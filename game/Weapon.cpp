@@ -134,13 +134,6 @@ void rvViewWeapon::Clear( void ) {
 	// typically, client side instance join in tourney mode just wipes all ents
 	StopSound( SND_CHANNEL_ANY, false );
 
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-	renderEntity.allMaterials.Clear();
-#endif
-// RAVEN END
-
 	memset( &renderEntity, 0, sizeof( renderEntity ) );
 	renderEntity.entityNum	= entityNumber;
 
@@ -485,11 +478,17 @@ rvWeapon::rvWeapon ( void ) {
 	worldModel	= NULL;
 	weaponDef	= NULL;
 
+#ifdef _XENON
+	aimAssistFOV = 10.0f;
+#endif	
+
 	memset ( &animDoneTime, 0, sizeof(animDoneTime) );
 	memset ( &wsfl, 0, sizeof(wsfl) );
 	memset ( &wfl, 0, sizeof(wfl) );
 
 	hitscanAttackDef = -1;
+	
+	forceGUIReload = false;
 }
 
 /*
@@ -529,6 +528,10 @@ void rvWeapon::Init( idPlayer* _owner, const idDeclEntityDef* def, int _weaponIn
 	isStrogg		= _isStrogg;
 	
 	spawnArgs = weaponDef->dict;
+
+#ifdef _XENON
+	aimAssistFOV = spawnArgs.GetFloat( "aimAssistFOV", "10.0f" );
+#endif	
 
 	// Apply the mod dictionaries
 	for ( i = 0; i < MAX_WEAPONMODS; i ++ ) {		
@@ -584,10 +587,9 @@ void rvWeapon::Spawn ( void ) {
 	memset ( &wfl, 0, sizeof(wfl) );
 
 // RAVEN BEGIN
-// mwhitlock: Xenon texture streaming.
+// nrausch:
 #if defined(_XENON)
-	viewModel->renderEntity.allMaterials.Clear();
-	declManager->SetEntityMaterialList(&viewModel->renderEntity.allMaterials);
+	aimAssistFOV = spawnArgs.GetFloat( "aimAssistFOV", "10.0f" );
 #endif
 // RAVEN END
 
@@ -688,17 +690,8 @@ void rvWeapon::Spawn ( void ) {
 
 	stateThread.SetName( va("%s_%s_%s", owner->GetName(), viewModel->GetName ( ), spawnArgs.GetString("classname") ) );
 	stateThread.SetOwner( this );
-
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming.
-#if defined(_XENON)
-	declManager->SetEntityMaterialList(0);
-	for(int i=0;i<viewModel->renderEntity.hModel->allMaterials.Num();i++)
-	{
-		viewModel->renderEntity.allMaterials.Append(viewModel->renderEntity.hModel->allMaterials[i]);
-	}
-#endif
-// RAVEN END
+	
+	forceGUIReload = true;
 }
 
 /*
@@ -983,6 +976,8 @@ void rvWeapon::InitDefs( void ) {
 			gameLocal.Warning( "Unknown brass def '%s' for weapon '%s'", name, weaponDef->GetName() );
 		} else {
 			brassDict = def->dict;
+			// force any brass to spawn as client moveable
+			brassDict.Set( "spawnclass", "rvClientMoveable" );
 		}
 	}
 }
@@ -1581,6 +1576,9 @@ void rvWeapon::Restore ( idRestoreGame *savefile ) {
 	
 	savefile->ReadInt		( methodOfDeath );	// cnicholson: Added unrestored var
 
+#ifdef _XENON
+	aimAssistFOV = spawnArgs.GetFloat( "aimAssistFOV", "10.0f" );
+#endif	
 }
 
 /***********************************************************************
@@ -1686,6 +1684,27 @@ void rvWeapon::RaiseWeapon( void ) {
 	}
 	
 	viewModel->Show();
+
+	if ( forceGUIReload ) {
+ 		forceGUIReload = false;
+ 		int ammo = AmmoInClip();
+ 		for ( int g = 0; g < MAX_RENDERENTITY_GUI && viewModel->GetRenderEntity()->gui[g]; g ++ ) {
+			idUserInterface* gui = viewModel->GetRenderEntity()->gui[g];
+ 			if ( gui ) {
+				gui->SetStateInt ( "player_ammo", ammo );
+				
+				if ( ClipSize ( ) ) {
+					gui->SetStateFloat ( "player_ammopct", (float)ammo / (float)ClipSize() );
+					gui->SetStateInt ( "player_clip_size", ClipSize() );
+				} else { 
+					gui->SetStateFloat ( "player_ammopct", (float)ammo / (float)maxAmmo );
+					gui->SetStateInt ( "player_clip_size", maxAmmo );
+				}
+				gui->SetStateInt ( "player_cachedammo", ammo );
+				gui->HandleNamedEvent ( "weapon_ammo" );
+ 			}
+ 		}
+	}
 
 	if ( wfl.hide ) {
  		hideStart	= hideDistance;
@@ -1955,7 +1974,12 @@ rvViewWeapon::CanZoom
 =====================
 */
 bool rvWeapon::CanZoom( void ) const {
+#ifdef _XENON
+	// apparently a xenon specific bug in medlabs.
+	return zoomFov != -1 && !IsHidden();
+#else
 	return zoomFov != -1;
+#endif
 }
 
 /***********************************************************************
@@ -2100,7 +2124,7 @@ void rvWeapon::MuzzleFlash ( void ) {
 rvWeapon::UpdateGUI
 ================
 */
-void rvWeapon::UpdateGUI ( void ) {
+void rvWeapon::UpdateGUI( void ) {
 	idUserInterface* gui;
 	
 	if ( !viewModel ) {
@@ -2118,12 +2142,11 @@ for ( g = 0; g < MAX_RENDERENTITY_GUI && viewModel->GetRenderEntity()->gui[g]; g
 
    	if ( gameLocal.localClientNum != owner->entityNumber ) {
 		// if updating the hud for a followed client
-		if ( gameLocal.localClientNum >= 0 && gameLocal.entities[ gameLocal.localClientNum ] && gameLocal.entities[ gameLocal.localClientNum ]->IsType( idPlayer::GetClassType() ) ) {
-			idPlayer *p = static_cast< idPlayer * >( gameLocal.entities[ gameLocal.localClientNum ] );
-			if ( !p->spectating || p->spectator != owner->entityNumber ) {
-				return;
-			}
-		} else {
+		idPlayer *p = gameLocal.GetLocalPlayer();
+		if ( !p ) {
+			return;
+		}
+		if ( !p->spectating || p->spectator != owner->entityNumber ) {
 			return;
 		}
 	}
@@ -2166,8 +2189,18 @@ void rvWeapon::UpdateCrosshairGUI( idUserInterface* gui ) const {
 	// COMMENTED OUT until Custom crosshair GUI is implemented.
 	if ( g_crosshairCustom.GetBool() ) {										// If there's a custom crosshair, use it.
 		gui->SetStateString( "crossImage", g_crosshairCustomFile.GetString());
+
+		const idMaterial *material = declManager->FindMaterial( g_crosshairCustomFile.GetString() );
+		if ( material ) {
+			material->SetSort( SS_GUI );
+		}			
 	} else {
 		gui->SetStateString( "crossImage", spawnArgs.GetString( "mtr_crosshair" ) );
+
+		const idMaterial *material = declManager->FindMaterial( spawnArgs.GetString( "mtr_crosshair" ) );
+		if ( material ) {
+			material->SetSort( SS_GUI );
+		}			
 	}
 
 // Original Block
@@ -2463,6 +2496,7 @@ void rvWeapon::AddToClip ( int amount ) {
 
 ***********************************************************************/
 
+
 /*
 ================
 rvWeapon::Attack
@@ -2526,7 +2560,7 @@ void rvWeapon::Attack( bool altAttack, int num_attacks, float spread, float fuse
 //asalmon: auto-aim for Xenon
 #ifdef _XENON
 	
-	if ( AllowAutoAim() && (!session->IsMultiplayer() || gameLocal.isServer) ) {
+	if ( AllowAutoAim() ) {
 	
 		idPlayer *player = GetOwner();
 		
@@ -2574,23 +2608,28 @@ void rvWeapon::Attack( bool altAttack, int num_attacks, float spread, float fuse
 					if ( nearJoint > 0 ) {
 						idMat3 dummy;
 						player->bestEnemy->GetJointWorldTransform( nearJoint, gameLocal.time, end, dummy );
+					} else {
+						end = player->bestEnemy->GetRenderEntity()->origin;
+						end[2]+=32.0f;
 					}
 				}
 				
 				// Convert the vector in world space to the muzzle orientation
+				// FOV alone controls aim assist, the threshold is just confusing.
 				idVec3 toTarget = end - muzzleOrigin;
-				float distance = toTarget.NormalizeFast();
-				
-				float threshold = (1.0f - DotProduct( toTarget, playerFwd )) * distance;
-				
-				float aimThreshold = cvarSystem->GetCVarFloat("pm_AimAssistThreshold");
-				
-				if ( threshold <= aimThreshold ) {
 					muzzleAxis = toTarget.ToAngles().ToMat3();
 				}
 			}
 		}
+
+/* disabled per Eric's request
+	if ( !gameLocal.IsMultiplayer() || (gameLocal.localClientNum == owner->entityNumber) ) {
+		extern void IN_RumblePlayer( int player, int leftSpeed, int rightSpeed, int rumbleTime );
+		int leftSpeed, rightSpeed, rumbleTime;
+		GetRumbleParms( leftSpeed, rightSpeed, rumbleTime );
+		IN_RumblePlayer( 0, leftSpeed, rightSpeed, rumbleTime );
 	}
+*/
 
 #endif
 //RAVEN END
@@ -2954,17 +2993,17 @@ void rvWeapon::EjectBrass ( void ) {
 	}
 
 	// Spawn the client side moveable for the brass
-	rvClientMoveable* cent;
-// RAVEN BEGIN
-// mwhitlock: Dynamic memory consolidation
-	{
-		RV_PUSH_HEAP_MEM_AUTO(p0,this);
-		cent = new rvClientMoveable;	
+	rvClientMoveable* cent = NULL;
+
+	gameLocal.SpawnClientEntityDef( brassDict, (rvClientEntity**)(&cent), false );
+
+	if( !cent ) {
+		return;
 	}
-// RAVEN END
+
+	cent->SetOwner( GetOwner() );
 	cent->SetOrigin ( origin + playerViewAxis * ejectOffset );
 	cent->SetAxis ( playerViewAxis );	
-	cent->Spawn ( &brassDict, GetOwner() );
 	
 	// Depth hack the brass to make sure it clips in front of view weapon properly
 	cent->GetRenderEntity()->weaponDepthHackInViewID = GetOwner()->entityNumber + 1;

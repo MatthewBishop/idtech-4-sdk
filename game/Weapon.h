@@ -31,6 +31,7 @@ class idPlayer;
 class idItem;
 class idAnimatedEntity;
 class idProjectile;
+class rvWeapon;
 
 class rvViewWeapon : public idAnimatedEntity {
 public:
@@ -137,6 +138,7 @@ public:
 	virtual void		ReadFromSnapshot			( const idBitMsgDelta &msg );
 	virtual bool		ClientReceiveEvent			( int event, int time, const idBitMsg &msg );
 	virtual void		ClientStale					( void );
+	virtual void		ClientUnstale				( void ) { }
 	virtual void		Attack						( bool altFire, int num_attacks, float spread, float fuseOffset, float power );
 	virtual void		GetDebugInfo				( debugInfoProc_t proc, void* userData );
 
@@ -393,6 +395,8 @@ public:
 	// General
 	idStr							icon;
 	bool							isStrogg;
+	
+	bool							forceGUIReload;
 
 public:
 

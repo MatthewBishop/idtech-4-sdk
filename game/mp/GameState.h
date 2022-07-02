@@ -68,6 +68,9 @@ public:
 
 	virtual void	Clear( void );
 
+	virtual	bool	IsType( gameStateType_t type ) const;
+	static gameStateType_t GetClassType( void );
+
 	mpGameState_t	GetMPGameState( void ) { return currentState; }
 
 	mpGameState_t	GetNextMPGameState( void ) { return nextState; }
@@ -79,11 +82,11 @@ public:
 	bool			operator!=( const rvGameState& rhs ) const;
 	rvGameState&	operator=( const rvGameState& rhs );
 
-	void			WriteClientNetworkInfo( idFile *file, int clientNum );
-	void			ReadClientNetworkInfo( idFile *file, int clientNum );
+	void			WriteNetworkInfo( idFile *file, int clientNum );
+	void			ReadNetworkInfo( idFile *file, int clientNum );
 
 protected:
-	gameStateType_t	type;
+	static gameStateType_t type;
 	rvGameState*	previousGameState;
 	bool			trackPrevious;
 
@@ -92,12 +95,6 @@ protected:
 	int				nextStateTime;
 
 	int				fragLimitTimeout;
-
-	// asalmon: update stats for Xenon
-#ifdef _XENON
-	int				lastStatUpdate;
-#endif
-
 };
 
 /*
@@ -114,6 +111,12 @@ public:
 					rvDMGameState( bool allocPrevious = true );
 
 	virtual void	Run( void );
+
+	virtual	bool	IsType( gameStateType_t type ) const;
+	static gameStateType_t GetClassType( void );
+
+private:
+	static gameStateType_t type;
 };
 
 /*
@@ -130,6 +133,12 @@ public:
 					rvTeamDMGameState( bool allocPrevious = true );
 
 	virtual void	Run( void );
+
+	virtual	bool	IsType( gameStateType_t type ) const;
+	static gameStateType_t GetClassType( void );
+
+private:
+	static gameStateType_t type;
 };
 
 /*
@@ -188,15 +197,20 @@ public:
 	
 	void			SetFlagState( int flag, flagState_t newState );
 	flagState_t		GetFlagState( int flag );
+	int				GetFlagCarrier( int flag );
 
 	void			SetFlagCarrier( int flag, int clientNum );
 
 	bool			operator==( const rvCTFGameState& rhs ) const;
 	rvCTFGameState&	operator=( const rvCTFGameState& rhs );
 
+	virtual	bool	IsType( gameStateType_t type ) const;
+	static gameStateType_t GetClassType( void );
 private:
 	flagStatus_t	flagStatus[ TEAM_MAX ];	
 	apState_t		apState[ MAX_AP ];
+
+	static gameStateType_t type;
 };
 
 ID_INLINE void rvCTFGameState::SetAPOwner( int ap, int owner ) {
@@ -213,6 +227,12 @@ ID_INLINE flagState_t rvCTFGameState::GetFlagState( int flag ) {
 	assert( flag >= 0 && flag < TEAM_MAX );
 
 	return flagStatus[ flag ].state;
+}
+
+ID_INLINE int rvCTFGameState::GetFlagCarrier( int flag ) {
+	assert( flag >= 0 && flag < TEAM_MAX );
+
+	return flagStatus[ flag ].clientNum;
 }
 
 ID_INLINE bool operator==( const flagStatus_t& lhs, const flagStatus_t rhs ) {
@@ -266,13 +286,13 @@ public:
 	virtual void	ClientDisconnect( idPlayer* player );
 	virtual void	Spectate( idPlayer* player );
 
-	void			RemovePlayer( idPlayer* player, bool disconnecting );
+	void			RemovePlayer( idPlayer* player );
 
 	bool				operator==( const rvTourneyGameState& rhs ) const;
 	rvTourneyGameState&	operator=( const rvTourneyGameState& rhs );
 
 	int				GetNumArenas( void ) const;
-	idPlayer*		GetByePlayer( void );
+	bool			HasBye( idPlayer* player );
 
 	int				GetMaxRound( void ) const;
 	int				GetRound( void ) const;
@@ -291,37 +311,43 @@ public:
 	int				GetTourneyCount( void );
 	void			SetTourneyCount( int count ) { tourneyCount = count; }
 
-	void			UpdateTourneyBrackets( void );
+	void			UpdateTourneyBrackets( void ); 
+
+	void			UpdateTourneyHistory( int round );
+	int				FirstAvailableArena( void );
+
+	arenaOutcome_t*	GetArenaOutcome( int arena );
+
+	virtual	bool	IsType( gameStateType_t type ) const;
+	static gameStateType_t GetClassType( void );
 private:
 	void			SetupInitialBrackets( void );
 
-
-	tourneyState_t		tourneyState;
+	tourneyState_t			tourneyState;
 
 	// startingRound		- The starting round, with the current # of players
-	int					startingRound;
+	int						startingRound;
 	// round				- current round ( 1-indexed )
-	int					round;
+	int						round;
 	// maxRound				- the most rounds we'll run (based on MAX_ARENAS)
-	int					maxRound;
-	// byePlayer			- a player who has received a bye
-	idPlayer*			byePlayer;
+	int						maxRound;
 	// arenas				- current brackets, an extra arena to serve as the waiting room
-	rvTourneyArena		arenas[ MAX_ARENAS + 1 ];
+	rvTourneyArena			arenas[ MAX_ARENAS + 1 ];
 	// tourneyHistory		- past winners
-	arenaOutcome_t		tourneyHistory[ MAX_ROUNDS ][ MAX_ARENAS ];
-	// packTourneyHistory	- whether or not we should transmit tourney history
-	bool				packTourneyHistory;
+	arenaOutcome_t			tourneyHistory[ MAX_ROUNDS ][ MAX_ARENAS ];
+	// byeArena				- the arena that natural (non disconnection) bye players go in
+	int						byeArena;
+	// packTourneyHistory	- whether or not we should transmit tourney history to one client through SendState
+	bool					packTourneyHistory;
+	// forceTourneyHistory	- if true will sync down tourney history for all clients
+	bool					forceTourneyHistory;
 	// tourneyCount			- how many tourneys to run per map
-	int					tourneyCount;
+	int						tourneyCount;
 	// roundTimeout			- a delay between all arenas finishing and starting the next round
-	int					roundTimeout;
-};
+	int						roundTimeout;
 
-ID_INLINE idPlayer* rvTourneyGameState::GetByePlayer( void ) {
-	assert( type == GS_TOURNEY );
-	return byePlayer;
-}
+	static gameStateType_t type;
+};
 
 ID_INLINE int rvTourneyGameState::GetMaxRound( void ) const {
 	assert( type == GS_TOURNEY );

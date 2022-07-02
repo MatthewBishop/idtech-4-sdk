@@ -174,9 +174,6 @@ typedef struct srfTriangles_s {
 // RAVEN BEGIN
 // jscott: for modview
 	bool						modviewSelected;
-#ifdef _BSE_FRAME_ALLOC
-	bool						frameAlloced;			// the verts and indices are frame alloced, so don't free them
-#endif
 // jscott: for security
 	int							numAllocedVerts;
 	int							numAllocedIndices;
@@ -186,6 +183,10 @@ typedef struct srfTriangles_s {
 	int							myID;
 	bool						noAmbientSurfaces;
 	bool						didSilPremultiply;
+	bool						tempAmbientCache;
+#ifdef _DEBUG
+	char						description[64];
+#endif
 // RAVEN END
 } srfTriangles_t;
 
@@ -414,7 +415,7 @@ public:
 	// Creates the duplicated back side geometry for two sided, alpha tested, lit materials
 	// This does not need to be called if none of the surfaces added with AddSurface require
 	// light interaction, and all the triangles are already well formed.
-	virtual void				FinishSurfaces() = 0;
+	virtual void				FinishSurfaces( void ) = 0;
 
 	// frees all the data, but leaves the class around for dangling references,
 	// which can regenerate the data with LoadModel()
@@ -478,27 +479,27 @@ public:
 	// the maximum number of edges.  This may be incorrect if a skin file
 	// remaps surfaces between shadow casting and non-shadow casting, or
 	// if some surfaces are noSelfShadow and others aren't
-	virtual srfTriangles_t	*	ShadowHull() const = 0;
+	virtual srfTriangles_t	*	ShadowHull( void ) const = 0;
 
 	// models of the form "_area*" may have a prelight shadow model associated with it
-	virtual bool				IsStaticWorldModel() const = 0;
+	virtual bool				IsStaticWorldModel( void ) const = 0;
 
 	// models parsed from inside map files or dynamically created cannot be reloaded by
 	// reloadmodels
-	virtual bool				IsReloadable() const = 0;
+	virtual bool				IsReloadable( void ) const = 0;
 
 	// md3, md5, particles, etc
-	virtual dynamicModel_t		IsDynamicModel() const = 0;
+	virtual dynamicModel_t		IsDynamicModel( void ) const = 0;
 
 	// if the load failed for any reason, this will return true
-	virtual bool				IsDefaultModel() const = 0;
+	virtual bool				IsDefaultModel( void ) const = 0;
 
 	// dynamic models should return a fast, conservative approximation
 	// static models should usually return the exact value
 	virtual idBounds			Bounds( const struct renderEntity_s *ent = NULL ) const = 0;
 
 	// returns value != 0.0f if the model requires the depth hack
-	virtual float				DepthHack() const = 0;
+	virtual float				DepthHack( void ) const = 0;
 
 // RAVEN BEGIN
 // dluetscher: added call to determine if a collision surface exists within this model
@@ -536,8 +537,8 @@ public:
 	virtual int					NearestJoint( int surfaceNum, int a, int c, int b ) const = 0;
 
 	// Writing to and reading from a demo file.
-	virtual void				ReadFromDemoFile( class idDemoFile *f ) = 0;
-	virtual void				WriteToDemoFile( class idDemoFile *f ) = 0;
+	virtual void				ReadFromDemo( class idDemoFile *f ) = 0;
+	virtual void				WriteToDemo( class idDemoFile *f ) = 0;
 
 // RAVEN BEGIN
 // bdube: surface flag manipulation
@@ -556,7 +557,7 @@ public:
 //			   for traces and silhouette determination) that are separate from pairs of video-memory 
 //			   meshes - one used for shadow volume drawing and one used for normal interaction drawing
 //			   NOTE: currently, only MD5R models return true, all others return false
-	virtual bool				HasSeparateSilTraceMeshes() const;		
+	virtual bool				HasSeparateSilTraceMeshes( void ) const;		
 #endif
 // RAVEN END
 

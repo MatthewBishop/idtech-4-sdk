@@ -14,8 +14,8 @@ conf_filename='site.conf'
 # ( we handle all those as strings )
 serialized=['CC', 'CXX', 'JOBS', 'BUILD', 'IDNET_HOST', 'GL_HARDLINK', 'DEDICATED',
 	'DEBUG_MEMORY', 'LIBC_MALLOC', 'ID_NOLANADDRESS', 'ID_MCHECK',
-	'TARGET_CORE', 'TARGET_GAME', 'TARGET_MONO', 'TARGET_DEMO', 'NOCURL',
-	'BUILD_ROOT', 'Q4TEST', 'TARGET_GAMEPAK', 'PATCHLEVEL' ]
+	'TARGET_CORE', 'TARGET_CORE_SMP', 'TARGET_GAME', 'TARGET_MONO', 'TARGET_DEMO', 'NOCURL',
+	'BUILD_ROOT', 'Q4TEST', 'TARGET_GAMEPAK', 'PATCHLEVEL', 'OSX_BUILDSTYLE', 'SILENT' ]
 
 # global build mode ------------------------------
 
@@ -56,6 +56,9 @@ BUILD_ROOT (default 'build')
 
 NOCONF (default 0, not saved)
 	ignore site configuration and use defaults + command line only
+
+SILENT ( default 0, saved )
+	hide the compiler output, unless error
 """
 
 if ( not g_sdk ):
@@ -68,6 +71,9 @@ DEDICATED (default 0)
 
 TARGET_CORE (default 1)
 	Build the core
+
+TARGET_CORE_SMP (default 0)
+	Build an SMP-enabled core
 
 TARGET_GAME (default 1)
 	Build the game code
@@ -146,6 +152,12 @@ Q4TEST (default 0)
 
 ASSETS (optional, not saved)
 	point to the setup assets directory
+
+OSX_BUILDSTYLE (default 0)
+	Styles 1 & 2 will override CC and CXX only if they are left to the defaults
+	0 - Uses the system gcc/include/libs
+	1 - Uses GCC 3.3 + 10.3.9 SDK
+	2 - Uses GCC 4.0 + 10.4u SDK
 """
 
 Help( help_string )
@@ -205,13 +217,15 @@ SETUP_FULL = '0'
 SETUP = '0'	# no cmdline control, will be set to 1 if any form of setup is requested
 SDK = '0'
 NOCONF = '0'
-# TMP - off till patch 1
-NOCURL = '1'
+NOCURL = '0'
 FIX_INCLUDES = '0'
 FIX_SUPER = '0'
 Q4TEST = '0'
 ASSETS = ''
 PATCHLEVEL = '0'
+OSX_BUILDSTYLE = '0'
+SILENT = '0'
+TARGET_CORE_SMP = '0'
 
 # end default settings ---------------------------
 
@@ -267,7 +281,7 @@ if ( SETUP_TAGGED != '0' or SETUP_DEDICATED != '0' or SETUP_DEMO != '0' or SETUP
 	SETUP		= '1'
 	TARGET_GAME = '1'
 	TARGET_CORE = '1'
-	TARGET_GAMEPAK = '1'
+	TARGET_GAMEPAK = '0'
 
 if ( SETUP != '0' ):
 	if ( SETUP_TAGGED != '0' ):
@@ -330,6 +344,10 @@ BASECPPFLAGS.append( '-Wall' )
 # don't wrap gcc messages
 BASECPPFLAGS.append( '-fmessage-length=0' )
 
+if ( OS == 'Linux' ):
+	# gcc 4.x option only - only export what we mean to from the game SO
+	BASECPPFLAGS.append( '-fvisibility=hidden' )
+
 if ( g_sdk or SDK != '0' ):
 	BASECPPFLAGS.append( '-DQ4SDK' )
 
@@ -343,6 +361,39 @@ if ( OS == 'Darwin' ):
 	BASECPPFLAGS += [ '-Wno-long-double', '-arch', 'ppc', '-fasm-blocks', '-fpascal-strings', '-faltivec', '-mcpu=G5', '-mtune=G5' ]
 	BASECPPFLAGS += [ '-DMACOS_X' ]
 	BASECPPFLAGS += [ '-Wno-unknown-pragmas' ]
+	BASECPPFLAGS += [ '-DMAC_OS_X_VERSION_MIN_REQUIRED=1030' ]
+	# Override CC & CXX only if they contain the default values. Allows for distcc invocations
+	if ( OSX_BUILDSTYLE == '1' ):
+		if ( CC == 'gcc' ):
+			CC = [ '/usr/bin/gcc-3.3' ]
+		if ( CXX == 'g++' ):
+			CXX = [ '/usr/bin/g++-3.3' ]
+
+		BASECPPFLAGS += [ '-isystem', '/Developer/SDKs/MacOSX10.3.9.sdk/usr/include/gcc/darwin/3.3' ]
+		BASECPPFLAGS += [ '-I/Developer/SDKs/MacOSX10.3.9.sdk/usr/include/gcc/darwin/3.3/c++' ]
+		BASECPPFLAGS += [ '-I/Developer/SDKs/MacOSX10.3.9.sdk/usr/include/gcc/darwin/3.3/c++/ppc-darwin' ]
+		BASECPPFLAGS += [ '-isystem', '/Developer/SDKs/MacOSX10.3.9.sdk/usr/include' ]
+		BASELINKFLAGS += [ '-Wl,-syslibroot,/Developer/SDKs/MacOSX10.3.9.sdk' ] 
+		CORELIBPATH += [ '/Developer/SDKs/MacOSX10.3.9.sdk/usr/lib' ]
+		os.environ['NEXT_ROOT'] = '/Developer/SDKs/MacOSX10.3.9.sdk'
+		os.environ['MACOSX_DEPLOYMENT_TARGET'] = '10.3' 
+	elif ( OSX_BUILDSTYLE == '2' ):
+		if ( CC == 'gcc' ):
+			CC = [ '/usr/bin/gcc-4.0' ]
+		if ( CXX == 'g++' ):
+			CXX = [ '/usr/bin/g++-4.0' ]
+
+		BASECPPFLAGS += [ '-isystem', '/Developer/SDKs/MacOSX10.4u.sdk/usr/include/gcc/darwin/4.0' ]
+		BASECPPFLAGS += [ '-mone-byte-bool' ]
+		BASECPPFLAGS += [ '-fvisibility-inlines-hidden' ]
+		BASECPPFLAGS += [ '-fpermissive' ]
+		BASECPPFLAGS += [ '-I/Developer/SDKs/MacOSX10.4u.sdk/usr/include/gcc/darwin/4.0/c++' ]
+		BASECPPFLAGS += [ '-I/Developer/SDKs/MacOSX10.4u.sdk/usr/include/gcc/darwin/4.0/c++/ppc-darwin' ]
+		BASECPPFLAGS += [ '-isystem', '/Developer/SDKs/MacOSX10.4u.sdk/usr/include' ]
+		BASELINKFLAGS += [ '-Wl,-syslibroot,/Developer/SDKs/MacOSX10.4u.sdk' ] 
+		CORELIBPATH += [ '/Developer/SDKs/MacOSX10.4u.sdk/usr/lib' ]
+		os.environ['NEXT_ROOT'] = '/Developer/SDKs/MacOSX10.4u.sdk'
+		os.environ['MACOSX_DEPLOYMENT_TARGET'] = '10.3' 
 
 if ( BUILD == 'debug-all' ):
 	BASECPPFLAGS.append( '-g' )
@@ -436,8 +487,11 @@ g_game_env.Append( CPPFLAGS = '-fno-strict-aliasing' )
 
 if ( int(JOBS) > 1 ):
 	print 'Using buffered process output'
-	scons_utils.SetupBufferedOutput( g_env )
-	scons_utils.SetupBufferedOutput( g_game_env )
+	silent = False
+	if ( SILENT == '1' ):
+		silent = True
+	scons_utils.SetupBufferedOutput( g_env, silent )
+	scons_utils.SetupBufferedOutput( g_game_env, silent )
 
 # mark the globals
 
@@ -454,8 +508,11 @@ curl_lib = []
 # if idlib should produce PIC objects ( depending on core or game inclusion )
 local_idlibpic = 0
 eventdefs = None
+# compile for SMP ( affects idlib and core )
+local_smp = 0
+idsdl_info = []
 
-GLOBALS = 'g_env g_env_noopt g_game_env OS ID_MCHECK idlib_objects game_objects local_dedicated local_gamedll local_demo local_idlibpic curl_lib local_curl eventdefs GL_HARDLINK NOCURL Q4TEST'
+GLOBALS = 'g_env g_env_noopt g_game_env OS ID_MCHECK idlib_objects game_objects local_dedicated local_gamedll local_demo local_idlibpic curl_lib local_curl local_smp idsdl_info eventdefs GL_HARDLINK NOCURL Q4TEST OSX_BUILDSTYLE TARGET_CORE_SMP BUILD'
 
 # end general configuration ----------------------
 
@@ -480,10 +537,34 @@ if ( NOCURL == '0' and ( TARGET_CORE == '1' or TARGET_MONO == '1' ) ):
 	Export( 'GLOBALS ' + GLOBALS )
 	curl_lib = SConscript( 'sys/scons/SConscript.curl' )
 
+# build our custom SDL library if needed
+if ( TARGET_CORE_SMP == '1' ):
+	Export( 'GLOBALS ' + GLOBALS )
+	BuildDir( g_build + '/sdl', '.', duplicate = 0 )
+	idsdl_info = SConscript( 'sys/scons/SConscript.idsdl' )
+
+if ( TARGET_CORE_SMP == '1' ):
+	local_gamedll = 1
+	local_demo = 0
+	local_idlibpic = 0
+	local_dedicated = 0
+	local_smp = 1
+	Export( 'GLOBALS ' + GLOBALS )
+	BuildDir( g_build + '/core-smp/glimp', '.', duplicate = 1 )
+	SConscript( g_build + '/core-smp/glimp/sys/scons/SConscript.gl' )
+	BuildDir( g_build + '/core-smp', '.', duplicate = 0 )
+	idlib_objects = SConscript( g_build + '/core-smp/sys/scons/SConscript.idlib' )
+	Export( 'GLOBALS ' + GLOBALS ) # update idlib_objects
+	quake4smp = SConscript( g_build + '/core-smp/sys/scons/SConscript.core' )
+
+	if ( OS == 'Linux' ):
+		Default( InstallAs( '#quake4smp.%s' % cpu, quake4smp ) )	
+	
 if ( TARGET_CORE == '1' ):
 	local_gamedll = 1
 	local_demo = 0
 	local_idlibpic = 0
+	local_smp = 0
 	if ( DEDICATED == '0' or DEDICATED == '2' ):
 		local_dedicated = 0
 		Export( 'GLOBALS ' + GLOBALS )
@@ -529,7 +610,10 @@ if ( TARGET_GAME == '1' ):
 	Export( 'GLOBALS ' + GLOBALS )
 	game = SConscript( g_build + '/game/sys/scons/SConscript.game' )
 
-	Default( InstallAs( '#game%s.so' % cpu, game ) )
+	if ( OS == 'Darwin' ):
+		Default( InstallAs( '#game.so' , game ) )
+	else:
+		Default( InstallAs( '#game%s.so' % cpu, game ) )
 	
 if ( TARGET_MONO == '1' ):
 	# the game in a single piece

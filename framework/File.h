@@ -71,6 +71,7 @@ public:
 	virtual int				ReadVec5( idVec5 &vec ) = 0;
 	virtual int				ReadVec6( idVec6 &vec ) = 0;
 	virtual int				ReadMat3( idMat3 &mat ) = 0;
+	virtual int				ReadBounds( idBounds &bounds ) = 0;
 	
 	// Endian portable alternatives to Write(...)
 	virtual int				WriteInt( const int value ) = 0;
@@ -88,6 +89,7 @@ public:
 	virtual int				WriteVec5( const idVec5 &vec ) = 0;
 	virtual int				WriteVec6( const idVec6 &vec ) = 0;
 	virtual int				WriteMat3( const idMat3 &mat ) = 0;
+	virtual int				WriteBounds( const idBounds &bounds ) = 0;
 
 	// dluetscher: added method to write a structure array that is made up of numerics (floats, ints) from the given storage
 	virtual void			WriteNumericStructArray( int numStructElements, int tokenSubTypeStructElements[], int arrayCount, byte *arrayStorage, const char *prepend ) = 0;
@@ -146,6 +148,7 @@ public:
 	virtual int				ReadVec5( idVec5 &vec );
 	virtual int				ReadVec6( idVec6 &vec );
 	virtual int				ReadMat3( idMat3 &mat );
+	virtual int				ReadBounds( idBounds &bounds );
 	
 	// Endian portable alternatives to Write(...)
 	virtual int				WriteInt( const int value );
@@ -163,6 +166,7 @@ public:
 	virtual int				WriteVec5( const idVec5 &vec );
 	virtual int				WriteVec6( const idVec6 &vec );
 	virtual int				WriteMat3( const idMat3 &mat );
+	virtual int				WriteBounds( const idBounds &bounds );
 
 	// dluetscher: added method to write a structure array that is made up of numerics (floats, ints) from the given storage
 	virtual void			WriteNumericStructArray( int numStructElements, int tokenSubTypeStructElements[], int arrayCount, byte *arrayStorage, const char *prepend );

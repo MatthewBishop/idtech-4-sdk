@@ -48,6 +48,9 @@ const char *units[2][4] =
 	{ "B/s", "KB/s", "MB/s", "GB/s" }
 };
 
+// P means the character is Polish
+// C means the character is Czech
+
 const bool idStr::printableCharacter[256] =
 {
 //
@@ -66,21 +69,21 @@ const bool idStr::printableCharacter[256] =
 	true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
 //  p      q      r      s      t      u      v      w      x      y      z      {      |      }      ~
 	true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  false,
-//  €             X                                                                                                                                                        Œ
-	true,  true,  false, false, false, false, false, false, false, false, false, false, true,  false, false, false,
-//                                                                 ™                    œ
-	false, false, false, false, false, false, false, false, false, true,  false, false, true,  false, false, false,
-//         ¡             £      ¤      ¥             §             ©             «                    ®
-	false, true,  false, true,  true,  true,  false, true,  false, true,  false, true,  false, false, true,  false,
-//  °                           ´      µ             ·                           »                           ¿
-	true,  false, false, false, true,  true,  false, true,  false, false, false, true,  false, false, false, true,
-//  À      Á      Â      Ã      Ä      Å      Æ      Ç      È      É      Ê      Ë      Ì      Í      Î      Ï
+//  €             X                                                                                                                            S  C                      Œ P         T C         Z C          Z P
+	true,  true,  false, false, false, false, false, false, false, false, true,  false, true,  true,  true,  true,
+//                                                                 ™      s C           œ P    t C    z C    z P 
+	false, false, false, false, false, false, false, false, false, true,  true,  false, true,  true,  true,  true,
+//         ¡             £ P    ¤      ¥ P           §             ©             «                    ®        P
+	false, true,  false, true,  true,  true,  false, true,  false, true,  false, true,  false, false, true,  true,
+//  °                    £ P    ´      µ             ·               P           »                           ¿ P
+	true,  false, false, true,  true,  true,  false, true,  false, true,  false, true,  false, false, false, true,
+//  À      Á C    Â      Ã      Ä      Å      Æ P    Ç      È C    É C    Ê P    Ë      Ì C    Í C    Î      Ï C
 	true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
-//  Ğ      Ñ      Ò      Ó      Ô      Õ      Ö      ×      Ø      Ù      Ú      Û      Ü      İ      Ş      ß
+//  Ğ      Ñ P    Ò C    Ó PC   Ô      Õ      Ö      ×      Ø C    Ù C    Ú C    Û      Ü      İ C    Ş      ß
 	true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
-//  à      á      â      ã      ä      å      æ      ç      è      é      ê      ë      ì      í      î      ï
+//  à      á C    â      ã      ä      å      æ P    ç      è C    é C    ê P    ë      ì C    í C    î      ï C
 	true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
-//  ğ      ñ      ò      ó      ô      õ      ö      ÷      ø      ù      ú      û      ü      ı      ş      ÿ
+//  ğ      ñ P    ò C    ó PC   ô      õ      ö      ÷      ø C    ù C    ú C    û      ü      ı C    ş      ÿ
 	true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
 };
 
@@ -102,14 +105,14 @@ const char idStr::upperCaseCharacter[256] =
 	0,   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O',
 //  p    q    r    s    t    u    v    w    x    y    z    {    |    }    ~
 	'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 0,   0,   0,   0,   0,
-//  €         X                                                                                                             Œ
-	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   'Œ', 0,   0,   0,
-//                                               TM             œ
-	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   'Œ', 0,   0,   0,
+//  €         X                                                                                        S                   Œ      T        Z
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   'Š', 0,   'Œ', '', '', '',
+//                                               TM   s         œ    t    z 
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   'Š', 0,   'Œ', '', '', '',
 //       ¡         £    ¤    ¥         §         ©         «              ®
-	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+	0,   0,   0,   '£', 0,   '¥', 0,   0,   0,   0,   0,   0,   0,   0,   0,   '¿',
 //  °                   ´    µ         ·                   »                   ¿
-	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+	0,   0,   0,   '£', 0,   0,   0,   0,   0,   '¥', 0,   0,   0,   0,   0,   '¿',
 //  À    Á    Â    Ã    Ä    Å    Æ    Ç    È    É    Ê    Ë    Ì    Í    Î    Ï
 	'À', 'Á', 'Â', 'Ã', 'Ä', 'Å', 'Æ', 'Ç', 'È', 'É', 'Ê', 'Ë', 'Ì', 'Í', 'Î', 'Ï',
 //  Ğ    Ñ    Ò    Ó    Ô    Õ    Ö    ×    Ø    Ù    Ú    Û    Ü    İ    Ş    ß
@@ -138,14 +141,14 @@ const char idStr::lowerCaseCharacter[256] =
 	0,   'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o',
 //  p    q    r    s    t    u    v    w    x    y    z    {    |    }    ~
 	'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 0,   0,   0,   0,   0,
-//  €         X                                                                                                             Œ
-	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   'œ', 0,   0,   0,
-//                                               TM             œ
-	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   'œ', 0,   0,   0,
+//  €         X                                                                                        S                   Œ      T        Z
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   'š', 0,   'œ', '', '', 'Ÿ',
+//                                               TM   s         œ    t    z 
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   'š', 0,   'œ', '', '', 'Ÿ',
 //       ¡         £    ¤    ¥         §         ©         «              ®
-	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+	0,   0,   0,   '³', 0,   '¹', 0,   0,   0,   0,   0,   0,   0,   0,   0,   '¯',
 //  °                   ´    µ         ·                   »                   ¿
-	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+	0,   0,   0,   '³', 0,   0,   0,   0,   0,   '¹', 0,   0,   0,   0,   0,   '¯',
 //  À    Á    Â    Ã    Ä    Å    Æ    Ç    È    É    Ê    Ë    Ì    Í    Î    Ï
 	'à', 'á', 'â', 'ã', 'ä', 'å', 'æ', 'ç', 'è', 'é', 'ê', 'ë', 'ì', 'í', 'î', 'ï',
 //  Ğ    Ñ    Ò    Ó    Ô    Õ    Ö    ×    Ø    Ù    Ú    Û    Ü    İ    Ş    ß
@@ -1768,7 +1771,7 @@ char *idStr::RemoveEscapes( char *string, int escapes ) {
 idStr::IsEscape
 ================
 */
-int idStr::IsEscape ( const char *s, int* type )  {
+int idStr::IsEscape( const char *s, int* type )  {
 	if ( !s || *s != C_COLOR_ESCAPE || *(s+1) == C_COLOR_ESCAPE ) {
 		return 0;
 	}

@@ -314,21 +314,7 @@ void idLight::Restore( idRestoreGame *savefile ) {
 
 	bool hadPrelightModel;
 
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-	declManager->SetLightMaterialList(&renderLight.allMaterials);
-#endif
-// RAVEN END
-
 	savefile->ReadRenderLight( renderLight );
-
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-	declManager->SetLightMaterialList(0);
-#endif
-// RAVEN END
 
 	savefile->ReadBool( hadPrelightModel );
 	renderLight.prelightModel = renderModelManager->CheckModel( va( "_prelight_%s", name.c_str() ) );
@@ -381,13 +367,6 @@ void idLight::Spawn( void ) {
 	bool start_off;
 	bool needBroken;
 	const char *demonic_shader;
-
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-	declManager->SetLightMaterialList(&renderLight.allMaterials);
-#endif
-// RAVEN END
 
 	// do the parsing the same way dmap and the editor do
 	if ( !gameEdit->ParseSpawnArgsToRenderLight( &spawnArgs, &renderLight ) ) {
@@ -518,13 +497,6 @@ void idLight::Spawn( void ) {
  		}
  		fl.networkSync = false; // don't transmit ambient lights
  	}
-// RAVEN END
-
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-	declManager->SetLightMaterialList(0);
-#endif
 // RAVEN END
 }
 

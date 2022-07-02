@@ -10,8 +10,6 @@
 ===============================================================================
 */
 
-#define idQueue( type, next )		idQueueTemplate<type, (int)&(((type*)NULL)->next)>
-
 template< class type, int nextOffset >
 class idQueueTemplate {
 public:
@@ -106,7 +104,7 @@ class rvBits
 		BITS_INT_SIZE	= 32,										// Size Of A Single Word
 		BITS_AND		= (BITS_INT_SIZE - 1),						// Used For And Operation
 		ARRAY_SIZE		= ((CAPACITY + BITS_AND)/(BITS_INT_SIZE)),	// Num Words Used
-		BYTE_SIZE		= (ARRAY_SIZE*sizeof(unsigned int)),		// Num Bytes Used
+		DATA_BYTE_SIZE	= (ARRAY_SIZE*sizeof(unsigned int)),		// Num Bytes Used
 	};
 
 	unsigned int	mData[ARRAY_SIZE];

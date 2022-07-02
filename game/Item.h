@@ -8,6 +8,7 @@
 
 extern const int ARENA_POWERUP_MASK;
 extern const idEventDef EV_ResetFlag;
+extern const idEventDef EV_SetGravity;
 
 /*
 ===============================================================================
@@ -61,6 +62,11 @@ public:
 	virtual bool			ClientStale( void );
 	virtual void			ClientUnstale( void );
 
+	rvClientEntityPtr<rvClientEffect>	effectIdle;
+	bool					simpleItem;
+	bool					pickedUp;
+	const idDeclSkin*		pickupSkin;
+	void					Event_DropToFloor	( void );
 protected:
 
 	void					UpdateTrigger( void );
@@ -73,9 +79,7 @@ protected:
 
 	bool					pulse;
 	bool					canPickUp;
-
 	const idDeclSkin*		skin;
-	const idDeclSkin*		pickupSkin;
 
 private:
 	idVec3					orgOrigin;
@@ -85,7 +89,6 @@ private:
 	// for item pulse effect
 	int						itemShellHandle;
 	const idMaterial *		shellMaterial;
-	rvClientEntityPtr<rvClientEffect>	effectIdle;
 
 	// used to update the item pulse effect
 	mutable bool			inView;
@@ -103,7 +106,7 @@ private:
 	bool					UpdateRenderEntity	( renderEntity_s *renderEntity, const renderView_t *renderView ) const;
 	static bool				ModelCallback		( renderEntity_s *renderEntity, const renderView_t *renderView );
 
-	void					Event_DropToFloor	( void );
+
 	void					Event_Touch			( idEntity *other, trace_t *trace );
 	void					Event_Trigger		( idEntity *activator );
 	void					Event_Respawn		( void );

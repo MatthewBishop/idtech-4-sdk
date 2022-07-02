@@ -672,6 +672,12 @@ idAI::State_Killed
 stateResult_t idAI::State_Killed ( const stateParms_t& parms ) {
 	disablePain = true;
 
+	//quickburning subjects skip all this jazz
+	if( fl.quickBurn )	{
+		PostState ( "State_Dead" );
+		return SRESULT_DONE;
+	}
+
 	// Make sure all animation stops
 	StopAnimState ( ANIMCHANNEL_TORSO );
 	StopAnimState ( ANIMCHANNEL_LEGS );
@@ -701,12 +707,14 @@ stateResult_t idAI::State_Dead ( const stateParms_t& parms ) {
 	if ( !fl.hidden ) {
 		float burnDelay = spawnArgs.GetFloat ( "burnaway" );
 		if ( burnDelay > 0.0f ) {
-			if ( spawnArgs.GetString( "fx_burn_lightning", NULL ) ) {
+			if( fl.quickBurn )	{
+				StopRagdoll();
+				PostState ( "State_Burn", SEC2MS(0.05f) );
+			} else if ( spawnArgs.GetString( "fx_burn_lightning", NULL ) ) {
 				lightningNextTime = 0;
 				lightningEffects = 0;
 				PostState ( "State_LightningDeath", SEC2MS(burnDelay) );
-			}
-			else {
+			} else {
 				PostState ( "State_Burn", SEC2MS(burnDelay) );
 			}
 		}

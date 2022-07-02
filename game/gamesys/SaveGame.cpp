@@ -667,6 +667,7 @@ void idSaveGame::WriteRenderEffect( const renderEffect_t &renderEffect ) {
 	WriteBool( renderEffect.hasEndOrigin );
 	WriteBool( renderEffect.loop );
 	WriteBool( renderEffect.ambient );
+	WriteBool( renderEffect.inConnectedArea );
 	WriteInt( renderEffect.weaponDepthHackInViewID );
 	WriteFloat( renderEffect.modelDepthHack );
 
@@ -1400,7 +1401,7 @@ void idRestoreGame::ReadTable  ( const idDeclTable* &table ) {
 	if ( !name.Length() ) {
 		table = NULL;
 	} else {
-		table = static_cast<const idDeclTable *>(declManager->FindType ( DECL_TABLE, name ));
+		table = declManager->FindTable( name );
 	}
 }
 
@@ -1741,6 +1742,7 @@ void idRestoreGame::ReadRenderEffect( renderEffect_t &renderEffect ) {
 	ReadBool( renderEffect.hasEndOrigin );
 	ReadBool( renderEffect.loop );
 	ReadBool( renderEffect.ambient );
+	ReadBool( renderEffect.inConnectedArea );
 	ReadInt( renderEffect.weaponDepthHackInViewID );
 	ReadFloat( renderEffect.modelDepthHack );
 

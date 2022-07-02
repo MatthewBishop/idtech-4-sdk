@@ -1104,6 +1104,8 @@
 
 
 
+
+
 #define glAccum use_qglAccum
 #define glAlphaFunc use_qglAlphaFunc
 #define glAreTexturesResident use_qglAreTexturesResident
@@ -1447,5 +1449,6 @@
 #define glMakeCurrent use_qglMakeCurrent
 #define glSwapBuffers use_qglSwapBuffers
 #define glGetProcAddressARB use_qglGetProcAddressARB
+#define glGetCurrentContext use_qglGetCurrentContext
 
 

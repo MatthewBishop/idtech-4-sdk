@@ -10,6 +10,8 @@
 ===============================================================================
 */
 
+class idStrPool;
+
 class idPoolStr : public idStr {
 	friend class idStrPool;
 

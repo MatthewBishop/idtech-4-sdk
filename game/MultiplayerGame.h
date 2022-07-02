@@ -70,7 +70,7 @@ typedef enum {
 	VOTEFLAG_RESTART		= 0x0001,
 	VOTEFLAG_MIN_PLAYERS	= 0x0002,
 	VOTEFLAG_TEAMBALANCE	= 0x0004,
-	VOTEFLAG_NEXTMAP		= 0x0008,
+	VOTEFLAG_SHUFFLE		= 0x0008,
 	VOTEFLAG_KICK			= 0x0010,
 	VOTEFLAG_MAP			= 0x0020,
 	VOTEFLAG_GAMETYPE		= 0x0040,
@@ -79,6 +79,9 @@ typedef enum {
 	VOTEFLAG_CAPTURELIMIT	= 0x0200,
 	VOTEFLAG_FRAGLIMIT		= 0x0400,
 } voteFlag_t;
+
+#define NUM_VOTES			11
+#define MAX_PRINT_LEN 128
 
 // more compact than a chat line
 typedef enum {
@@ -202,6 +205,9 @@ const int MP_PLAYER_MAXFRAGS = 999;
 const int MP_PLAYER_MAXWINS	= 100;
 const int MP_PLAYER_MAXPING	= 999;
 
+const int MP_PLAYER_MAXKILLS = 999;
+const int MP_PLAYER_MAXDEATHS = 999;
+
 const int MAX_AP = 5;
 
 const int CHAT_HISTORY_SIZE = 2048;
@@ -218,6 +224,8 @@ const int ASYNC_PLAYER_FRAG_BITS = -idMath::BitsForInteger( MP_PLAYER_MAXFRAGS -
 const int ASYNC_PLAYER_WINS_BITS = idMath::BitsForInteger( MP_PLAYER_MAXWINS );
 const int ASYNC_PLAYER_PING_BITS = idMath::BitsForInteger( MP_PLAYER_MAXPING );
 const int ASYNC_PLAYER_INSTANCE_BITS = idMath::BitsForInteger( MAX_INSTANCES );
+const int ASYNC_PLAYER_DEATH_BITS = idMath::BitsForInteger( MP_PLAYER_MAXDEATHS );
+const int ASYNC_PLAYER_KILL_BITS = idMath::BitsForInteger( MP_PLAYER_MAXKILLS );
 //RAVEN END
 
 // ddynerman: game state
@@ -233,6 +241,8 @@ typedef struct mpBanInfo_s {
 	char			guid[ CLIENT_GUID_LENGTH ];
 //	unsigned char	ip[ 15 ];
 } mpBanInfo_t;
+
+class idPhysics_Player;
 
 class idMultiplayerGame {
 
@@ -262,6 +272,7 @@ public:
 
 	// Run the local client
 	void			ClientRun( void );
+	void			ClientEndFrame( void );
 
 	// Run common code (client & server)
 	void			CommonRun( void );
@@ -284,11 +295,12 @@ public:
 	// Global item acquire sounds 
 	void			PlayGlobalItemAcquireSound ( int entityDefIndex );
 
+	bool			CanTalk( idPlayer *from, idPlayer *to, bool echo );
+	void			ReceiveAndForwardVoiceData( int clientNum, const idBitMsg &inMsg, int messageType );
+
 #ifdef _USE_VOICECHAT
 // jscott: game side voice comms
-	bool			CanTalk( idPlayer *from, idPlayer *to, bool echo );
 	void			XmitVoiceData( void );
-	void			ReceiveAndForwardVoiceData( int clientNum, const idBitMsg &inMsg, bool echo );
 	void			ReceiveAndPlayVoiceData( const idBitMsg &inMsg );
 #endif
 
@@ -316,6 +328,7 @@ public:
 
 
 	void			PrintMessageEvent( int to, msg_evt_t evt, int parm1 = -1, int parm2 = -1 );
+	void			PrintMessage( int to, const char* message );
 
 	void			DisconnectClient( int clientNum );
 	static void		ForceReady_f( const idCmdArgs &args );
@@ -333,6 +346,9 @@ public:
 // jshepard: command wrappers
 	static void		ForceTeamChange_f( const idCmdArgs& args );
 	static void		RemoveClientFromBanList_f( const idCmdArgs& args );
+	
+// autobalance helper for the guis
+	static void		CheckTeamBalance_f( const idCmdArgs &args );
 
 // activates the admin console when a rcon password challenge returns.
 	void			ProcessRconReturn( bool success );
@@ -397,6 +413,7 @@ public:
 	void			ClientStartPackedVote( int clientNum, const voteStruct_t &voteData );
 	void			ServerStartPackedVote( int clientNum, const voteStruct_t &voteData );
 	void			ExecutePackedVote( void );
+	const char *	LocalizeGametype( void );
 // RAVEN END
 
 	void			WantKilled( int clientNum );
@@ -417,7 +434,7 @@ public:
 	void			ServerHandleVoiceMuting( int clientSrc, int clientDest, bool mute );
 // shouchard:  fixing a bug in multiplayer where round timer sounds (5 minute
 //             warning, etc.) don't go away at the end of the round.
-	void			ClearAnnouncerSounds();
+	void			ClearAnnouncerSounds( void );
 // shouchard:  server admin stuff
 	typedef struct 
 	{
@@ -430,6 +447,7 @@ public:
 		int			timeLimit;
 		int			minPlayers;
 		bool		autoBalance;
+		bool		shuffleTeams;
 	} serverAdminData_t;
 
 	void			HandleServerAdminBanPlayer( int clientNum );
@@ -494,6 +512,7 @@ public:
 	int				GetScoreForTeam( int i );
 	int				GetTeamsTotalFrags( int i );
 	int				GetTeamsTotalScore( int i );
+	idUserInterface *GetMainGUI() {return mainGui;}
 
 	int				TeamLeader( void );
 
@@ -507,14 +526,23 @@ public:
 	void			ClientSetInstance( const idBitMsg& msg );
 	void			ServerSetInstance( int instance );
 
+	void			AddPrivatePlayer( int clientId );
+	void			RemovePrivatePlayer( int clientId );
+
 //RAVEN BEGIN
 //asalmon: Xenon scoreboard update
 #ifdef _XENON
 	void			UpdateXenonScoreboard( idUserInterface *scoreBoard );
+	int				lastScoreUpdate;
+// mekberg: for selecting local player
+	void			SelectLocalPlayer( idUserInterface *scoreBoard );
 #endif
 //RAVEN END
+	int				VerifyTeamSwitch( int wantTeam, idPlayer *player );
 
-	void			ScheduleAnnouncerSound ( announcerSound_t sound, float time, int arena = -1, bool allowOverride = false );
+	void			RemoveAnnouncerSound( int type );
+	void			RemoveAnnouncerSoundRange( int startType, int endType );
+	void			ScheduleAnnouncerSound ( announcerSound_t sound, float time, int instance = -1, bool allowOverride = false );
 	void			ScheduleTimeAnnouncements( void );
 // RAVEN END
 
@@ -525,8 +553,6 @@ public:
 	int						OpposingTeam( int team );
 
 	idList<idEntityPtr<rvCTF_AssaultPoint> > assaultPoints;
-
-	idVec3			flagBaseLocation[ TEAM_MAX ];
 
 	idUserInterface* statSummary;			// stat summary
 	rvTourneyGUI	tourneyGUI;
@@ -543,9 +569,14 @@ public:
 	bool			TimeLimitHit( void );
 	int				GetCurrentMenu( void ) { return currentMenu; }
 
-	void			WriteClientNetworkInfo( idFile *file, int clientNum );
-	void			ReadClientNetworkInfo( idFile* file, int clientNum );
+	void			SetFlagEntity( idEntity* ent, int team );
+	idEntity*		GetFlagEntity( int team );
 
+	void			WriteNetworkInfo( idFile *file, int clientNum );
+	void			ReadNetworkInfo( idFile* file, int clientNum );
+
+	void			SetShaderParms( renderView_t *view );
+	
 	static const char*	teamNames[ TEAM_MAX ];
 
 private:
@@ -567,8 +598,8 @@ private:
 	vote_flags_t	vote;					// active vote or VOTE_NONE
 	int				voteTimeOut;			// when the current vote expires
 	int				voteExecTime;			// delay between vote passed msg and execute
-	float			yesVotes;				// counter for yes votes
-	float			noVotes;				// and for no votes
+	int				yesVotes;				// counter for yes votes
+	int				noVotes;				// and for no votes
 	idStr			voteValue;				// the data voted upon ( server )
 	idStr			voteString;				// the vote string ( client )
 	bool			voted;					// hide vote box ( client )
@@ -578,6 +609,8 @@ private:
 	idStr			kickVoteMapNames[ MAX_CLIENTS ];
 	voteStruct_t	currentVoteData;		// used for multi-field votes
 // RAVEN END
+
+	idStr			localisedGametype;
 
 	// time related
 	int				matchStartedTime;		// time current match started
@@ -625,10 +658,20 @@ public:
 
 private:
 
+	int				lastReadyToggleTime;
 	bool			pureReady;				// defaults to false, set to true once server game is running with pure checksums
 	bool			currentSoundOverride;
 	int				switchThrottle[ 3 ];
 	int				voiceChatThrottle;
+
+	idList<int>		privateClientIds;
+	int				privatePlayers;
+
+	// player who's rank info we're displaying
+	idEntityPtr<idPlayer>		rankTextPlayer;
+
+	idEntityPtr<idEntity>		flagEntities[ TEAM_MAX ];	
+	idEntityPtr<idPlayer>		flagCarriers[ TEAM_MAX ];
 
 	// updates the passed gui with current score information
 	void			UpdateRankColor( idUserInterface *gui, const char *mask, int i, const idVec3 &vec );	
@@ -644,28 +687,29 @@ private:
 	void			UpdateSummaryBoard( idUserInterface *scoreBoard );
 
 	int				GetPlayerRank( idPlayer* player, bool& isTied );
-	int				GetAdjustedPlayerRank( idPlayer* player, int adjust, bool& isTied );
 	char*			GetPlayerRankText( idPlayer* player );
 	char*			GetPlayerRankText( int rank, bool tied, int score );
 
 	const char*		BuildSummaryListString( idPlayer* player, int rankedScore );
 
+	void			UpdatePrivatePlayerCount( void );
+
 	typedef struct announcerSoundNode_s {
-		announcerSound_t soundShader;
-		float time;
-		idLinkList<announcerSoundNode_s> announcerSoundNode;
-		int arena;
-		bool allowOverride;
+		announcerSound_t					soundShader;
+		float								time;
+		idLinkList<announcerSoundNode_s>	announcerSoundNode;
+		int									instance;
+		bool								allowOverride;
 	} announcerSoundNode_t;
 
-	idLinkList<announcerSoundNode_t> announcerSoundQueue;
+	idLinkList<announcerSoundNode_t>	announcerSoundQueue;
+	announcerSound_t					lastAnnouncerSound;
 
 	static const char* announcerSoundDefs[ AS_NUM_SOUNDS ];
 
 	float			announcerPlayTime;
 
 	void			PlayAnnouncerSounds ( void );
-
 
 	int				teamScore[ TEAM_MAX ];
 	void			ClearTeamScores ( void );
@@ -703,8 +747,7 @@ private:
 	void			UpdateMPSettingsModel( idUserInterface* currentGui );
 // RAVEN END
 
-	void			ServerWriteStartState( int clientNum, idBitMsg &msg, bool withLocalClient );
-
+	void			WriteStartState( int clientNum, idBitMsg &msg, bool withLocalClient );
 };
 
 ID_INLINE bool idMultiplayerGame::IsPureReady( void ) const {

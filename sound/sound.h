@@ -4,7 +4,6 @@
 
 // Resolution of sound shakes in fps
 #define SHAKE_FPS			30
-#define SHAKE_MS			( 1000 / SHAKE_FPS )
 
 /*
 ===============================================================================
@@ -38,6 +37,7 @@ public:
 
 	virtual const byte		*GetSampleData( void ) const { return( NULL ); }
 	virtual int				GetNumChannels( void ) const { return( 0 ); }
+	virtual int				GetNumSamples( void ) const { return( 0 ); }
 	virtual int				GetSampleRate( void ) const { return( 0 ); }
 	virtual int				GetMemoryUsed( void ) const { return( 0 ); }
 	virtual	int				GetDurationMS( void ) const { return( 0 ); }
@@ -76,11 +76,13 @@ static const int	SSF_UNCLAMPED =			BIT(7);		// don't clamp calculated volumes at
 static const int	SSF_NO_FLICKER =		BIT(8);		// always return 1.0 for volume queries
 static const int	SSF_NO_DUPS =			BIT(9);		// try not to play the same sound twice in a row
 // RAVEN BEGIN
-static const int	SSF_USEDOPPLER =		BIT(10);	// try not to play the same sound twice in a row
+static const int	SSF_USEDOPPLER =		BIT(10);	// allow doppler pitch shifting effects
 static const int	SSF_NO_RANDOMSTART =	BIT(11);	// don't offset the start position for looping sounds
 static const int	SSF_VO_FOR_PLAYER =		BIT(12);	// Notifies a funcRadioChatter that this shader is directed at the player
 static const int	SSF_IS_VO =				BIT(13);	// this sound is VO
-static const int	SSF_HILITE =			BIT(21);	// display debug info for this emitter
+static const int	SSF_CAUSE_RUMBLE =		BIT(14);	// causes joystick rumble
+static const int	SSF_CENTER =			BIT(15);	// sound through center channel only
+static const int	SSF_HILITE =			BIT(16);	// display debug info for this emitter
 // RAVEN END
 
 // these options can be overriden from sound shader defaults on a per-emitter and per-channel basis
@@ -159,8 +161,12 @@ public:
 			bool			IsUnclamped( void ) const { return( !!( parms.soundShaderFlags & SSF_UNCLAMPED ) ); }
 			bool			IsNoFlicker( void ) const { return( !!( parms.soundShaderFlags & SSF_NO_FLICKER ) ); }
 			bool			IsNoDupes( void ) const { return( !!( parms.soundShaderFlags & SSF_NO_DUPS ) ); }
+			bool			IsDoppler( void ) const { return( !!( parms.soundShaderFlags & SSF_USEDOPPLER ) ); }
 			bool			IsNoRandomStart( void ) const { return( !!( parms.soundShaderFlags & SSF_NO_RANDOMSTART ) ); }
 			bool			IsVO_ForPlayer( void ) const { return( !!( parms.soundShaderFlags & SSF_VO_FOR_PLAYER ) ); }
+			bool			IsVO( void ) const { return( !!( parms.soundShaderFlags & SSF_IS_VO ) ); }
+			bool			IsCauseRumble( void ) const { return( !!( parms.soundShaderFlags & SSF_CAUSE_RUMBLE ) ); }
+			bool			IsCenter( void ) const { return( !!( parms.soundShaderFlags & SSF_CENTER ) ); }
 
 			float			GetVolume( void ) const { return( parms.volume ); }
 			float			GetShakes( void ) const { return( parms.shakes ); }
@@ -185,6 +191,7 @@ public:
 			const char *	GetSampleName( int index ) const;
 			int				GetSamplesPerSec( int index ) const;
 			int				GetNumChannels( int index ) const;
+			int				GetNumSamples( int index ) const;
 			int				GetMemorySize( int index ) const;
 			const byte *	GetNonCacheData( int index ) const;
 
@@ -247,6 +254,7 @@ public:
 	virtual	const char *	GetSampleName( const idSoundShader *sound, int index ) const = 0;
 	virtual	int				GetSamplesPerSec( const idSoundShader *sound, int index ) const = 0;
 	virtual	int				GetNumChannels( const idSoundShader *sound, int index ) const = 0;
+	virtual	int				GetNumSamples( const idSoundShader *sound, int index ) const = 0;
 	virtual	int				GetMemorySize( const idSoundShader *sound, int index ) const = 0;
 	virtual	const byte *	GetNonCacheData( const idSoundShader *sound, int index ) const = 0;
 	virtual void			LoadSampleData( idSoundShader *sound, int langIndex = -1 ) = 0;
@@ -298,7 +306,7 @@ public:
 	// returns a 0.0 to 1.0 value based on the current sound amplitude, allowing
 	// graphic effects to be modified in time with the audio.
 	// just samples the raw wav file, it doesn't account for volume overrides in the
-	virtual	float			CurrentAmplitude( void ) = 0;
+	virtual	float			CurrentAmplitude( int channelFlags = -1, bool factorDistance = false ) = 0;
 
 	// Returns true if the emitter is in the passed in world
 	virtual bool			AttachedToWorld( int id ) const = 0;
@@ -500,6 +508,8 @@ public:
 	virtual	bool			EnableRecording( bool enable, bool test, float &micLevel ) = 0;
 	virtual int				GetVoiceData( byte *buffer, int maxSize ) = 0;
 	virtual void			PlayVoiceData( int clientNum, const byte *buffer, int bytes ) = 0;
+	virtual void			BufferVoiceData( void ) = 0;
+	virtual void			MixVoiceData( float *finalMixBuffer, int numSpeakers, int newTime ) = 0;
 // ddynerman: voice comm utility
 	virtual	int				GetCommClientNum( int channel ) const = 0;
 	virtual int				GetNumVoiceChannels( void ) const = 0;
@@ -509,6 +519,9 @@ public:
 	virtual	int				GetNumAreas( void ) = 0;
 	virtual	int				GetReverb( int area ) = 0;
 	virtual	bool			SetReverb( int area, const char *reverbName, const char *fileName ) = 0;
+	
+	virtual void			EndCinematic() = 0;
+	
 // RAVEN END
 };
 

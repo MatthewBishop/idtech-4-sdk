@@ -30,26 +30,14 @@ typedef enum {
 							// but I don't want to risk changing it right now
 	TR_CLAMP_TO_ZERO,		// guarantee 0,0,0,255 edge for projected textures,
 	// set AFTER image format selection
-	TR_CLAMP_TO_ZERO_ALPHA	// guarantee 0 alpha edge for projected textures,
+	TR_CLAMP_TO_ZERO_ALPHA,	// guarantee 0 alpha edge for projected textures,
 	// set AFTER image format selection
-// RAVEN BEGIN
-// AReis: Needed for mirrored repeating of tiling images.
-	, TR_MIRRORED_REPEAT,
-// RAVEN END
+	TR_MIRRORED_REPEAT,
 } textureRepeat_t;
 
 typedef struct {
 	int		stayTime;		// msec for no change
 	float	maxAngle;		// maximum dot product to reject projection angles
-
-// RAVEN BEGIN
-// rjohnson: added new decal support
-/*
-	int		fadeTime;		// msec to fade vertex colors over
-	float	start[4];		// vertex color at spawn (possibly out of 0.0 - 1.0 range, will clamp after calc)
-	float	end[4];			// vertex color at fade-out (possibly out of 0.0 - 1.0 range, will clamp after calc)
-*/
-// RAVEN END
 } decalInfo_t;
 
 typedef enum {
@@ -60,12 +48,6 @@ typedef enum {
 	DFRM_EXPAND,
 	DFRM_MOVE,
 	DFRM_EYEBALL,
-// RAVEN BEGIN
-// jscott: unused
-/*
-	DFRM_PARTICLE,
-	DFRM_PARTICLE2,
-*/
 // ddynerman: rectangular sprites
 	DFRM_RECTSPRITE,
 // RAVEN END
@@ -106,6 +88,8 @@ typedef enum {
 // rjohnson: new shader stage system
 	,
 	OP_TYPE_GLSL_ENABLED,
+	OP_TYPE_POT_X,
+	OP_TYPE_POT_Y,
 // RAVEN END
 } expOpType_t;
 
@@ -167,13 +151,7 @@ typedef enum {
 	TG_REFLECT_CUBE,
 	TG_SKYBOX_CUBE,
 	TG_WOBBLESKY_CUBE,
-	TG_SCREEN,			// screen aligned, for mirrorRenders and screen space temporaries
-	TG_SCREEN2,
-	TG_GLASSWARP
-// RAVEN BEGIN
-// AReis: New power-of-two correction texgen.
-	, TG_POT_CORRECTION,
-// RAVEN END
+	TG_SCREEN			// screen aligned, for mirrorRenders and screen space temporaries
 } texgen_t;
 
 typedef struct {
@@ -376,6 +354,7 @@ typedef enum {
 
 // mekberg: added
 	CONTENTS_ITEMCLIP			= BIT(23),	// so items can collide
+	CONTENTS_PROJECTILECLIP		= BIT(24),  // unlike contents_projectile, projectiles only NOT hitscans
 // RAVEN END
 
 	CONTENTS_REMOVE_UTIL		= ~(CONTENTS_AREAPORTAL|CONTENTS_NOCSG)

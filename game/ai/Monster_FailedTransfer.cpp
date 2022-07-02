@@ -100,7 +100,7 @@ rvMonsterFailedTransfer::Killed
 ================
 */
 void rvMonsterFailedTransfer::Killed( idEntity *inflictor, idEntity *attacker, int damage, const idVec3 &dir, int location ) {
-	if ( !idStr::Icmp ( GetDamageGroup( location ), "legs" ) ) {
+	if ( !idStr::Icmp ( GetDamageGroup( location ), "legs" ) && damage < 999 ) {
 		allowSplit = true;
 	} else {
 		allowSplit = false;

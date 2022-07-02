@@ -141,6 +141,7 @@ void rvMonsterBossBuddy::Save( idSaveGame *savefile ) const
 	mActionDarkMatterAttack.Save( savefile );
 	mActionMeleeMoveAttack.Save( savefile );
 	mActionMeleeAttack.Save( savefile );
+	mActionSlashMoveAttack.Save( savefile );
 
 	mRequestRecharge.Save( savefile );
 	mRequestZoneMove.Save( savefile );
@@ -164,6 +165,7 @@ void rvMonsterBossBuddy::Restore( idRestoreGame *savefile )
 	mActionDarkMatterAttack.Restore( savefile );
 	mActionMeleeMoveAttack.Restore( savefile );
 	mActionMeleeAttack.Restore( savefile );
+	mActionSlashMoveAttack.Restore( savefile );
 
 	mRequestRecharge.Restore( savefile );
 	mRequestZoneMove.Restore( savefile );

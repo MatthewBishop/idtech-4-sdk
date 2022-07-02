@@ -599,6 +599,7 @@ extern void (*qglXDestroyContext)( Display * RESTRICT dpy, GLXContext ctx );
 extern Bool (*qglXMakeCurrent)( Display * RESTRICT dpy, GLXDrawable drawable, GLXContext ctx);
 extern void (*qglXSwapBuffers)( Display * RESTRICT dpy, GLXDrawable drawable );
 extern GLExtension_t (*qglXGetProcAddressARB)( const GLubyte * RESTRICT procname );
+extern GLXContext (*qglXGetCurrentContext)( void );
 
 // make sure the code is correctly using qgl everywhere
 // don't enable that when building glimp itself obviously..

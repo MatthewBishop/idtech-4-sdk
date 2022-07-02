@@ -198,6 +198,8 @@ private:
 	void						Event_ToInt( float val );
 // jdischler: send named event string to specified gui
 	void						Event_SendNamedEvent( int guiEnum, const char *namedEvent );
+	void						Event_BeginManualStreaming( void );
+	void						Event_EndManualStreaming( void );
 	void						Event_SetMatSort( const char *name, const char *val ) const;
 // RAVEN END
 
@@ -234,10 +236,10 @@ public:
 
 // RAVEN BEGIN
 // bgeisler: added way to list functions
-	void						ListStates(void);
+	void						ListStates( void );
 
 // abahr: added helper functions for pushing parms onto stack
-	void						ClearStack();
+	void						ClearStack( void );
 	void						PushInt( int value );
 	void						PushFloat( float value );
 	void						PushVec3( const idVec3& value );
@@ -246,16 +248,16 @@ public:
 	void						PushBool( bool value );
 // RAVEN END
 
-	void						DisplayInfo();
+	void						DisplayInfo( void );
 	static idThread				*GetThread( int num );
 	static void					ListThreads_f( const idCmdArgs &args );
 	static void					Restart( void );
 	static void					ObjectMoveDone( int threadnum, idEntity *obj );
 									
-	static idList<idThread*>&	GetThreads ( void );
+	static idList<idThread*>&	GetThreads( void );
 	
-	bool						IsDoneProcessing ( void );
-	bool						IsDying			 ( void );	
+	bool						IsDoneProcessing( void );
+	bool						IsDying ( void );	
 								
 	void						End( void );
 	static void					KillThread( const char *name );

@@ -112,6 +112,9 @@ const idEventDef EV_Thread_Floor( "floor", "f", 'f' );
 const idEventDef EV_Thread_ToInt( "intVal", "f", 'f' );
 // jdischler: send named event string to specified gui
 const idEventDef EV_Thread_SendNamedEvent( "sendNamedEvent", "ds" );
+// material streaming
+const idEventDef EV_Thread_BeginManualStreaming( "beginManualStreaming" );
+const idEventDef EV_Thread_EndManualStreaming( "endManualStreaming" );
 
 // nrausch: change material sort order on the fly
 const idEventDef EV_Thread_SetMatSort( "setMatSort", "ss", 0 );
@@ -225,11 +228,11 @@ CLASS_DECLARATION( idClass, idThread )
 	EVENT( EV_Thread_ToInt,					idThread::Event_ToInt )
 // jdischler: send named event string to specified gui
 	EVENT( EV_Thread_SendNamedEvent,		idThread::Event_SendNamedEvent )
-	
+// manual streaming
+	EVENT( EV_Thread_BeginManualStreaming,	idThread::Event_BeginManualStreaming )
+	EVENT( EV_Thread_EndManualStreaming,	idThread::Event_EndManualStreaming )	
 	EVENT( EV_Thread_SetMatSort,				idThread::Event_SetMatSort )
-	
 // RAVEN END
-
 END_CLASS
 
 idThread			*idThread::currentThread = NULL;
@@ -2285,5 +2288,22 @@ void idThread::Event_SetMatSort( const char *name, const char *val ) const {
 	}
 }
 
+// jdischler: Adding ability to create texture streams from scripts
+/*
+================
+idThread::Event_BeginManualStreaming
+================
+*/
+void idThread::Event_BeginManualStreaming()
+{
+}
 
+/*
+================
+idThread::Event_EndManualStreaming
+================
+*/
+void idThread::Event_EndManualStreaming()
+{
+}
 // RAVEN END

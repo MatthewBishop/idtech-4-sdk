@@ -167,6 +167,12 @@ public:
 	// Continuously modified, never reset. For full screen guis.
 	virtual void		MouseState( int *x, int *y, int *button, bool *down ) = 0;
 
+	// Directly sample a button.
+	virtual int			ButtonState( int key ) = 0;
+
+	// Directly sample a keystate.
+	virtual int			KeyState( int key ) = 0;
+
 	// Directly sample a usercmd.
 	virtual usercmd_t	GetDirectUsercmd( void ) = 0;
 
@@ -176,6 +182,8 @@ public:
 
 // nrausch: Stuff an arbitrary impulse in, which will override any other impulse this cycle
 	virtual void		StuffImpulse( int impulse ) = 0;
+	
+	virtual void		StuffKey( const char *keyName, bool down ) = 0;
 
 #ifdef _XENON	
 	virtual void		GetInputs( int &y, int &p, int &r, int &f ) = 0;

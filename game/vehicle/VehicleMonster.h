@@ -11,6 +11,8 @@
 #include "Vehicle.h"
 #endif
 
+class rvVehicleAI;
+
 class rvVehicleMonster : public rvVehicle {
 	friend class rvVehicleAI;
 public:

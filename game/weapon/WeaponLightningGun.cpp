@@ -10,6 +10,8 @@
 const int	LIGHTNINGGUN_NUM_TUBES	=	3;
 const int	LIGHTNINGGUN_MAX_PATHS  =	3;
 
+const idEventDef EV_Lightninggun_RestoreHum( "<lightninggunRestoreHum>", "" );
+
 class rvLightningPath {
 public:
 	idEntityPtr<idEntity>	target;
@@ -83,11 +85,14 @@ private:
 	stateResult_t		State_Lower				( const stateParms_t& parms );
 	stateResult_t		State_Idle				( const stateParms_t& parms );
 	stateResult_t		State_Fire				( const stateParms_t& parms );
-	
+
+	void				Event_RestoreHum	( void );
+
 	CLASS_STATES_PROTOTYPE ( rvWeaponLightningGun );
 };
 
 CLASS_DECLARATION( rvWeapon, rvWeaponLightningGun )
+EVENT( EV_Lightninggun_RestoreHum,			rvWeaponLightningGun::Event_RestoreHum )
 END_CLASS
 
 /*
@@ -588,6 +593,7 @@ void rvWeaponLightningGun::PreSave( void ) {
 	StopSound( SND_CHANNEL_WEAPON, 0);
 	StopSound( SND_CHANNEL_BODY, 0);
 	StopSound( SND_CHANNEL_BODY2, 0);
+	StopSound( SND_CHANNEL_BODY3, 0);
 	StopSound( SND_CHANNEL_ITEM, 0);
 	StopSound( SND_CHANNEL_ANY, false );
 	
@@ -618,6 +624,8 @@ rvWeaponLightningGun::PostSave
 ================
 */
 void rvWeaponLightningGun::PostSave( void ) {
+	//restore the humming
+	PostEventMS( &EV_Lightninggun_RestoreHum, 10 );
 }
 
 /*
@@ -715,6 +723,7 @@ stateResult_t rvWeaponLightningGun::State_Raise( const stateParms_t& parms ) {
 				return SRESULT_DONE;
 			}
 			if ( wsfl.lowerWeapon ) {
+				StopSound( SND_CHANNEL_BODY3, false );
 				SetState ( "Lower", 4 );
 				return SRESULT_DONE;
 			}
@@ -771,10 +780,14 @@ stateResult_t rvWeaponLightningGun::State_Idle( const stateParms_t& parms ) {
 		case STAGE_INIT:
 			SetStatus ( WP_READY );
 			PlayCycle ( ANIMCHANNEL_ALL, "idle", parms.blendFrames );
+			StopSound( SND_CHANNEL_BODY3, false );
+			StartSound( "snd_idle_hum", SND_CHANNEL_BODY3, 0, false, NULL );
+
 			return SRESULT_STAGE ( STAGE_WAIT );
 		
 		case STAGE_WAIT:
 			if ( wsfl.lowerWeapon ) {
+				StopSound( SND_CHANNEL_BODY3, false );
 				SetState ( "Lower", 4 );
 				return SRESULT_DONE;
 			}
@@ -855,6 +868,17 @@ stateResult_t rvWeaponLightningGun::State_Fire( const stateParms_t& parms ) {
 			return SRESULT_WAIT;
 	}
 	return SRESULT_ERROR;
+}
+
+
+/*
+================
+rvWeaponLightningGun::Event_RestoreHum
+================
+*/
+void rvWeaponLightningGun::Event_RestoreHum ( void ) {
+	StopSound( SND_CHANNEL_BODY3, false );
+	StartSound( "snd_idle_hum", SND_CHANNEL_BODY3, 0, false, NULL );
 }
 
 /*

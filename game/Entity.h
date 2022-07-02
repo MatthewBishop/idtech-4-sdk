@@ -179,6 +179,9 @@ public:
 		bool				exitedVehicle			:1;
 // twhitaker: blinking
 		bool				allowAutoBlink			:1;
+// jshepard: instant burnout when destroyed
+		bool				quickBurn				:1;
+
 // RAVEN END
 	} fl;
 
@@ -340,11 +343,8 @@ public:
 	idVec3					GetLocalCoordinates( const idVec3 &vec ) const;
 	idVec3					GetWorldVector( const idVec3 &vec ) const;
 	idVec3					GetWorldCoordinates( const idVec3 &vec ) const;
-// RAVEN BEGIN
-// abahr: made virtual
-	virtual
-// RAVEN END
-	bool					GetMasterPosition( idVec3 &masterOrigin, idMat3 &masterAxis ) const;
+
+	virtual	bool			GetMasterPosition( idVec3 &masterOrigin, idMat3 &masterAxis ) const;
 	void					GetWorldVelocities( idVec3 &linearVelocity, idVec3 &angularVelocity ) const;
 
 	// physics
@@ -370,6 +370,7 @@ public:
 	virtual bool			GetPhysicsToSoundTransform( idVec3 &origin, idMat3 &axis );
 							// called from the physics object when colliding, should return true if the physics simulation should stop
 	virtual bool			Collide( const trace_t &collision, const idVec3 &velocity );
+	virtual bool			Collide( const trace_t &collision, const idVec3 &velocity, bool &hitTeleporter ) { hitTeleporter = false; return Collide(collision, velocity); }
 							// retrieves impact information, 'ent' is the entity retrieving the info
 	virtual void			GetImpactInfo( idEntity *ent, int id, const idVec3 &point, impactInfo_t *info );
 							// apply an impulse to the physics object, 'ent' is the entity applying the impulse
@@ -462,7 +463,7 @@ public:
 
 	// misc
 	virtual void			Teleport( const idVec3 &origin, const idAngles &angles, idEntity *destination );
-	bool					TouchTriggers( void ) const;
+	bool					TouchTriggers( const idTypeInfo* ownerType = NULL ) const;
 	idCurve_Spline<idVec3> *GetSpline( void ) const;
 	virtual void			ShowEditingDialog( void );
 
@@ -526,11 +527,11 @@ protected:
 	int						modelDefHandle;						// handle to static renderer model
 	refSound_t				refSound;							// used to present sound to the audio engine
 	idEntityPtr< idEntity >	forwardDamageEnt;					// damage applied to the invoking object will be forwarded to this entity
+	idEntityPtr< idEntity > bindMaster;							// entity bound to if unequal NULL
+	jointHandle_t			bindJoint;							// joint bound to if unequal INVALID_JOINT
 private:
 	idPhysics_Static		defaultPhysicsObj;					// default physics object
 	idPhysics *				physics;							// physics used for this entity
-	idEntity *				bindMaster;							// entity bound to if unequal NULL
-	jointHandle_t			bindJoint;							// joint bound to if unequal INVALID_JOINT
 	int						bindBody;							// body bound to if unequal -1
 	idEntity *				teamMaster;							// master of the physics team
 	idEntity *				teamChain;							// next entity in physics team
@@ -763,6 +764,7 @@ public:
 
 	virtual int				GetDefaultSurfaceType( void ) const;
 	virtual void			AddDamageEffect( const trace_t &collision, const idVec3 &velocity, const char *damageDefName, idEntity* inflictor );
+	virtual void			ProjectHeadOverlay( const idVec3 &point, const idVec3 &dir, float size, const char *decal ) {}
 
 	virtual bool			ClientReceiveEvent( int event, int time, const idBitMsg &msg );
 

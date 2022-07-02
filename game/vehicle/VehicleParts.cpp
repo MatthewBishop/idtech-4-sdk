@@ -449,6 +449,9 @@ void rvVehicleLight::UpdateLightDef ( void ) {
 	renderLight.origin = worldOrigin;
 	renderLight.axis   = worldAxis;	
 	
+	if ( lightHandle == -1 ) {
+		return;
+	}
 	gameRenderWorld->UpdateLightDef( lightHandle, &renderLight );	
 }
 
@@ -970,6 +973,11 @@ void rvVehicleWeapon::UpdateCursorGUI ( idUserInterface* gui ) const {
 	// So I commented the if part out. 
 	//if ( spawnArgs.GetBool( "hide_crosshair", "0" ) ) {
 		gui->SetStateString ( "crossImage", spawnArgs.GetString ( "mtr_crosshair" ) );
+		const idMaterial *material = declManager->FindMaterial( spawnArgs.GetString ( "mtr_crosshair" ) );
+		if ( material ) {
+			material->SetSort( SS_GUI );
+		}			
+		
 		gui->SetStateString ( "crossColor", g_crosshairColor.GetString() );
 		gui->SetStateInt ( "crossOffsetX", spawnArgs.GetInt ( "crosshairOffsetX", "0" ) );
 		gui->SetStateInt ( "crossOffsetY", spawnArgs.GetInt ( "crosshairOffsetY", "0" ) ); 			
@@ -1135,7 +1143,7 @@ bool rvVehicleWeapon::Fire() {
 		if ( currentAmmo <= 0 ) {
 			currentAmmo = 0;
 			if ( chargeTime ) {
-				parent->StartSoundShader( shaderReload, SND_CHANNEL_WEAPON, 0, false, NULL );
+				parent->StartSoundShader( shaderReload, SND_CHANNEL_ANY, 0, false, NULL );
 				currentCharge.Init ( gameLocal.time, chargeTime, 0.0f, 1.0f );
 			}			
 		}
@@ -1453,11 +1461,16 @@ void rvVehicleWeapon::EjectBrass ( void ) {
 	idVec3 offset;
 	idMat3 playerViewAxis;
 	gameLocal.GetPlayerView( offset, playerViewAxis );
-	rvClientMoveable* cent;
-	cent = new rvClientMoveable;	
+	rvClientMoveable* cent = NULL;
+	gameLocal.SpawnClientEntityDef( *brassDict, (rvClientEntity**)(&cent), false );
+
+	if( !cent ) {
+		return;
+	}
+
 	cent->SetOrigin ( origin + axis * brassEjectOffset );
 	cent->SetAxis ( playerViewAxis );	
-	cent->Spawn ( brassDict, position->GetDriver() );
+	cent->SetOwner ( position->GetDriver() );
 	
 	// Depth hack the brass to make sure it clips in front of view weapon properly
 	cent->GetRenderEntity()->weaponDepthHackInViewID = position->GetDriver()->entityNumber + 1;
@@ -1813,7 +1826,7 @@ void rvVehicleHoverpad::Spawn ( void ) {
 	force = spawnArgs.GetFloat ( "force", "1066" );
 	forceUpTime   = SEC2MS ( spawnArgs.GetFloat ( "forceUpTime", "1" ) );
 	forceDownTime = SEC2MS ( spawnArgs.GetFloat ( "forceDownTime", "1" ) );
-	forceTable = static_cast<const idDeclTable *>( declManager->FindType( DECL_TABLE, spawnArgs.GetString ( "forceTable", "linear" ), false ) );
+	forceTable = declManager->FindTable( spawnArgs.GetString ( "forceTable", "linear" ), false );
 
 	currentForce.Init ( 0, 0, 0, 0 );				
 	

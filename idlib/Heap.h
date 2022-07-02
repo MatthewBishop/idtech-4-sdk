@@ -226,8 +226,12 @@ void		Mem_Free16( void *ptr );
 
 // jscott: standardised stack allocation
 inline void *Mem_StackAlloc( const int size ) { return( _alloca( size ) ); }
+inline void *Mem_StackAlloc16( const int size ) { 
+	byte *addr = ( byte * )_alloca( size + 15 );
+	addr = ( byte * )( ( int )( addr + 15 ) & 0xfffffff0 );
+	return( ( void * )addr ); 
+}
 
-// RAVEN BEGIN
 // dluetscher: moved the inline new/delete operators to sys_local.cpp and Game_local.cpp so that
 //			   Tools.dll will link.
 #if defined(_XBOX) || defined(ID_REDIRECT_NEWDELETE) || defined(_RV_MEM_SYS_SUPPORT)
@@ -236,7 +240,6 @@ void *operator new( size_t s );
 void operator delete( void *p );
 void *operator new[]( size_t s );
 void operator delete[]( void *p );
-// RAVEN END
 
 #endif
 // RAVEN END
@@ -255,8 +258,12 @@ void		Mem_Free16( void *ptr, const char *fileName, const int lineNumber );
 
 // jscott: standardised stack allocation
 inline void *Mem_StackAlloc( const int size ) { return( _alloca( size ) ); }
+inline void *Mem_StackAlloc16( const int size ) { 
+	byte *addr = ( byte * )_alloca( size + 15 );
+	addr = ( byte * )( ( int )( addr + 15 ) & 0xfffffff0 );
+	return( ( void * )addr ); 
+}
 
-// RAVEN BEGIN
 // dluetscher: moved the inline new/delete operators to sys_local.cpp and Game_local.cpp so that
 //			   the Tools.dll will link.
 #if defined(_XBOX) || defined(ID_REDIRECT_NEWDELETE) || defined(_RV_MEM_SYS_SUPPORT)
@@ -472,6 +479,8 @@ type *idDynamicAlloc<type, baseBlockSize, minBlockSize, memoryTag>::Alloc( const
 // RAVEN BEGIN
 }
 
+#include "math/Simd.h"
+
 template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
 type *idDynamicAlloc<type, baseBlockSize, minBlockSize, memoryTag>::Resize( type *ptr, const int num ) {
 
@@ -538,10 +547,7 @@ void idDynamicAlloc<type, baseBlockSize, minBlockSize, memoryTag>::Clear( void )
 // jnewquist: Fast sanity checking of idDynamicBlockAlloc
 //#ifdef _DEBUG
 //#define DYNAMIC_BLOCK_ALLOC_CHECK
-// FIXME: doesn't compile right on OSX when enabled. investigate
-#ifndef MACOS_X
 #define DYNAMIC_BLOCK_ALLOC_FASTCHECK
-#endif
 #define DYNAMIC_BLOCK_ALLOC_CHECK_IS_FATAL
 //#endif
 // RAVEN END
@@ -558,7 +564,7 @@ public:
 // jnewquist: Fast sanity checking of idDynamicBlockAlloc
 #if defined(DYNAMIC_BLOCK_ALLOC_CHECK) || defined(DYNAMIC_BLOCK_ALLOC_FASTCHECK)
 // RAVEN END
-	int								id[3];
+	int								identifier[3];
 	void *							allocator;
 #endif
 
@@ -691,7 +697,7 @@ void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::SetFixed
 // jnewquist: Fast sanity checking of idDynamicBlockAlloc
 #if defined(DYNAMIC_BLOCK_ALLOC_CHECK) || defined(DYNAMIC_BLOCK_ALLOC_FASTCHECK)
 // RAVEN END
-		memcpy( block->id, blockId, sizeof( block->id ) );
+		memcpy( block->identifier, blockId, sizeof( block->identifier ) );
 		block->allocator = (void*)this;
 #endif
 		block->SetSize( baseBlockSize - (int)sizeof( idDynamicBlock<type> ), true );
@@ -858,8 +864,8 @@ const char *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::C
 
 #if defined(DYNAMIC_BLOCK_ALLOC_CHECK) || defined(DYNAMIC_BLOCK_ALLOC_FASTCHECK)
 // RAVEN END
-	if ( block->id[0] != 0x11111111 || block->id[1] != 0x22222222 || block->id[2] != 0x33333333 ) {
-		return "memory has invalid id";
+	if ( block->identifier[0] != 0x11111111 || block->identifier[1] != 0x22222222 || block->identifier[2] != 0x33333333 ) {
+		return "memory has invalid identifier";
 	}
 // RAVEN BEGIN
 // jsinger: attempt to eliminate cross-DLL allocation issues
@@ -949,7 +955,7 @@ idDynamicBlock<type> *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, mem
 // jnewquist: Fast sanity checking of idDynamicBlockAlloc
 #if defined(DYNAMIC_BLOCK_ALLOC_CHECK) || defined(DYNAMIC_BLOCK_ALLOC_FASTCHECK)
 // RAVEN END
-		memcpy( block->id, blockId, sizeof( block->id ) );
+		memcpy( block->identifier, blockId, sizeof( block->identifier ) );
 		block->allocator = (void*)this;
 #endif
 		block->SetSize( allocSize - (int)sizeof( idDynamicBlock<type> ), true );
@@ -985,9 +991,9 @@ idDynamicBlock<type> *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, mem
 #endif
 // jsinger: attempt to eliminate cross-DLL allocation issues
 #ifdef RV_UNIFIED_ALLOCATOR
-	assert( block->id[0] == 0x11111111 && block->id[1] == 0x22222222 && block->id[2] == 0x33333333); // && block->allocator == (void*)this );
+	assert( block->identifier[0] == 0x11111111 && block->identifier[1] == 0x22222222 && block->identifier[2] == 0x33333333); // && block->allocator == (void*)this );
 #else
-	assert( block->id[0] == 0x11111111 && block->id[1] == 0x22222222 && block->id[2] == 0x33333333 && block->allocator == (void*)this );
+	assert( block->identifier[0] == 0x11111111 && block->identifier[1] == 0x22222222 && block->identifier[2] == 0x33333333 && block->allocator == (void*)this );
 #endif
 // RAVEN END
 #endif
@@ -1033,7 +1039,7 @@ idDynamicBlock<type> *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, mem
 // jnewquist: Fast sanity checking of idDynamicBlockAlloc
 #if defined(DYNAMIC_BLOCK_ALLOC_CHECK) || defined(DYNAMIC_BLOCK_ALLOC_FASTCHECK)
 // RAVEN END
-	memcpy( newBlock->id, blockId, sizeof( newBlock->id ) );
+	memcpy( newBlock->identifier, blockId, sizeof( newBlock->identifier ) );
 	newBlock->allocator = (void*)this;
 #endif
 	newBlock->SetSize( block->GetSize() - alignedBytes - (int)sizeof( idDynamicBlock<type> ), false );
@@ -1069,9 +1075,9 @@ void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::FreeInte
 #endif
 // jsinger: attempt to eliminate cross-DLL allocation issues
 #ifdef RV_UNIFIED_ALLOCATOR
-	assert( block->id[0] == 0x11111111 && block->id[1] == 0x22222222 && block->id[2] == 0x33333333 );//&& block->allocator == (void*)this );
+	assert( block->identifier[0] == 0x11111111 && block->identifier[1] == 0x22222222 && block->identifier[2] == 0x33333333 );//&& block->allocator == (void*)this );
 #else
-	assert( block->id[0] == 0x11111111 && block->id[1] == 0x22222222 && block->id[2] == 0x33333333 && block->allocator == (void*)this );
+	assert( block->identifier[0] == 0x11111111 && block->identifier[1] == 0x22222222 && block->identifier[2] == 0x33333333 && block->allocator == (void*)this );
 #endif // RV_UNIFIED_ALLOCATOR
 // RAVEN END
 #endif
@@ -1138,9 +1144,9 @@ void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::CheckMem
 #endif
 // jsinger: attempt to eliminate cross-DLL allocation issues
 #ifdef RV_UNIFIED_ALLOCATOR
-		assert( block->id[0] == 0x11111111 && block->id[1] == 0x22222222 && block->id[2] == 0x33333333); // && block->allocator == (void*)this );
+		assert( block->identifier[0] == 0x11111111 && block->identifier[1] == 0x22222222 && block->identifier[2] == 0x33333333); // && block->allocator == (void*)this );
 #else
-		assert( block->id[0] == 0x11111111 && block->id[1] == 0x22222222 && block->id[2] == 0x33333333 && block->allocator == (void*)this );
+		assert( block->identifier[0] == 0x11111111 && block->identifier[1] == 0x22222222 && block->identifier[2] == 0x33333333 && block->allocator == (void*)this );
 #endif
 // RAVEN END
 #endif

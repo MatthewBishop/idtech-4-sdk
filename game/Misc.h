@@ -41,6 +41,7 @@ public:
 
 	enum {
 		EVENT_TELEPORTPLAYER = idEntity::EVENT_MAXEVENTS,
+		EVENT_TELEPORTITEM,
 		EVENT_MAXEVENTS
 	};
 
@@ -56,7 +57,8 @@ public:
 private:
 	int					teleportStage;
 
-	void				Event_TeleportPlayer( idEntity *activator );
+	void				Event_TeleportEntity( idEntity *activator, bool predicted, idVec3& prevOrigin = vec3_origin );
+	void				Event_Teleport( idEntity *activator );
 	void				Teleport( idEntity* other );
 	void				Event_TeleportStage( idPlayer *player );
 	void				Event_ResetCamera( idPlayer *player );

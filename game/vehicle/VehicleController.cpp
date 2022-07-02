@@ -131,7 +131,6 @@ rvVehicleController::DrawHUD
 */
 void rvVehicleController::DrawHUD ( void ) {
 	assert ( mVehicle );
-	mVehicle->DrawHUD ( mPosition );
 
 	if ( GetDriver() && GetDriver()->IsType( idPlayer::GetClassType() ) ) {
 		idPlayer * player = static_cast<idPlayer*>( GetDriver() );
@@ -146,6 +145,8 @@ void rvVehicleController::DrawHUD ( void ) {
 //			}
 		}
 	}
+
+	mVehicle->DrawHUD ( mPosition );
 }
 
 /*

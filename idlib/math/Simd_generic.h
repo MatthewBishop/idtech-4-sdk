@@ -117,8 +117,10 @@ public:
 	VIRTUAL void VPCALL UpSamplePCMTo44kHz( float * RESTRICT dest, const short * RESTRICT pcm, const int numSamples, const int kHz, const int numChannels );
 	VIRTUAL void VPCALL UpSampleOGGTo44kHz( float * RESTRICT dest, const float * const * RESTRICT ogg, const int numSamples, const int kHz, const int numChannels );
 	VIRTUAL void VPCALL MixSoundTwoSpeakerMono( float * RESTRICT mixBuffer, const float * RESTRICT samples, const int numSamples, const float lastV[2], const float currentV[2] );
+	VIRTUAL void VPCALL MixSoundTwoSpeakerMonoSimple( float * RESTRICT mixBuffer, const float * RESTRICT samples, const int numSamples );
 	VIRTUAL void VPCALL MixSoundTwoSpeakerStereo( float * RESTRICT mixBuffer, const float * RESTRICT samples, const int numSamples, const float lastV[2], const float currentV[2] );
 	VIRTUAL void VPCALL MixSoundSixSpeakerMono( float * RESTRICT mixBuffer, const float * RESTRICT samples, const int numSamples, const float lastV[6], const float currentV[6] );
+	VIRTUAL void VPCALL MixSoundSixSpeakerMonoSimple( float * RESTRICT mixBuffer, const float * RESTRICT samples, const int numSamples );
 	VIRTUAL void VPCALL MixSoundSixSpeakerStereo( float * RESTRICT mixBuffer, const float * RESTRICT samples, const int numSamples, const float lastV[6], const float currentV[6] );
 	VIRTUAL void VPCALL MixedSoundToSamples( short * RESTRICT samples, const float * RESTRICT mixBuffer, const int numSamples );
 

@@ -258,6 +258,7 @@ public:
 	CLASS_PROTOTYPE( idTrigger_Touch );
 
 						idTrigger_Touch( void );
+						~idTrigger_Touch( );
 
 	void				Spawn( void );
 	virtual void		Think( void );

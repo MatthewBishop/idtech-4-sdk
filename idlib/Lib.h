@@ -29,6 +29,10 @@ public:
 
 	static void					Init( void );
 	static void					ShutDown( void );
+
+	// wrapper to idCommon functions 
+	static void					Error( const char *fmt, ... );
+	static void					Warning( const char *fmt, ... );
 };
 
 
@@ -177,6 +181,8 @@ int		IntForSixtets( byte *in );
 ===============================================================================
 */
 
+#include "math/Math.h"
+
 // memory management and arrays
 #include "Heap.h"
 
@@ -193,7 +199,6 @@ int		IntForSixtets( byte *in );
 
 // math
 #include "math/Simd.h"
-#include "math/Math.h"
 #include "math/Random.h"
 #include "math/Complex.h"
 #include "math/Vector.h"

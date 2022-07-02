@@ -185,8 +185,7 @@ idMat3 idAngles::ToMat3( void ) const {
 
 // RAVEN BEGIN
 // jscott: slightly quicker version without the copy
-idMat3 &idAngles::ToMat3( idMat3 &mat ) const 
-{
+idMat3 &idAngles::ToMat3( idMat3 &mat ) const {
 	float	sr, sp, sy, cr, cp, cy;
 		
 	idMath::SinCos( DEG2RAD( yaw ), sy, cy );
@@ -197,7 +196,7 @@ idMat3 &idAngles::ToMat3( idMat3 &mat ) const
 	mat[1].Set( sr * sp * cy + cr * -sy, sr * sp * sy + cr * cy, sr * cp );
 	mat[2].Set( cr * sp * cy + -sr * -sy, cr * sp * sy + -sr * cy, cr * cp );
 
-	return( mat );
+	return mat;
 }
 // RAVEN END
 

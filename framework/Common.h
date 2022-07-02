@@ -68,6 +68,7 @@ extern idCVar		com_showMemoryUsage;
 extern idCVar		com_showAsyncStats;
 extern idCVar		com_showSoundDecoders;
 extern idCVar		com_makingBuild;
+extern idCVar		com_skipUltraQuality;
 extern idCVar		com_updateLoadSize;
 extern idCVar		com_videoRam;
 
@@ -324,6 +325,9 @@ public:
 
 								// Returns key bound to the command
 	virtual const char *		KeysFromBinding( const char *bind ) = 0;
+
+								// Returns the binding bound to the key
+	virtual const char *		BindingFromKey( const char *key ) = 0; 
 
 // mekberg: added
 	virtual int					GetRModeForMachineSpec( int machineSpec ) const = 0;

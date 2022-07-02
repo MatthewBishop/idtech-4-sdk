@@ -60,6 +60,8 @@ void MD5_Transform( unsigned int state[4], unsigned int const in[16] ) {
     c = state[2];
     d = state[3];
 
+	LittleRevBytes( const_cast< unsigned int * >( in ), sizeof(unsigned int), 16 );
+
     MD5STEP(F1, a, b, c, d, in[0] + 0xd76aa478, 7);
     MD5STEP(F1, d, a, b, c, in[1] + 0xe8c7b756, 12);
     MD5STEP(F1, c, d, a, b, in[2] + 0x242070db, 17);
@@ -127,6 +129,8 @@ void MD5_Transform( unsigned int state[4], unsigned int const in[16] ) {
     MD5STEP(F4, d, a, b, c, in[11] + 0xbd3af235, 10);
     MD5STEP(F4, c, d, a, b, in[2] + 0x2ad7d2bb, 15);
     MD5STEP(F4, b, c, d, a, in[9] + 0xeb86d391, 21);
+
+	LittleRevBytes( const_cast< unsigned int * >( in ), sizeof(unsigned int), 16 );
 
     state[0] += a;
     state[1] += b;
@@ -237,8 +241,11 @@ void MD5_Final( MD5_CTX *ctx, unsigned char digest[16] ) {
     }
 
     /* Append length in bits and transform */
-    ((unsigned int *) ctx->in)[14] = ctx->bits[0];
-    ((unsigned int *) ctx->in)[15] = ctx->bits[1];
+	unsigned int val0 = ctx->bits[0];
+	unsigned int val1 = ctx->bits[1];
+	
+    ((unsigned int *) ctx->in)[14] = LittleLong( val0 );
+    ((unsigned int *) ctx->in)[15] = LittleLong( val1 );
 
     MD5_Transform( ctx->state, (unsigned int *) ctx->in );
     memcpy( digest, ctx->state, 16 );

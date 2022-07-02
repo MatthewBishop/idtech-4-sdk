@@ -76,9 +76,6 @@ public:
 	void				SetDoubleVisionParms( float time, float scale ) { dvFinishTime = SEC2MS( time ); dvScale = scale; }
 	void				SetShakeParms( float time, float scale ) { shakeFinishTime = SEC2MS( time ); shakeScale = scale; }
 	void				SetTunnelParms( float time, float scale ) { tvStartTime = gameLocal.time; tvFinishTime = tvStartTime + time; tvScale = 1.0f / scale; }
-
-// jnewquist: implement rumble for consoles
-	void				Rumble( int left, int right, int time ) const;
 // RAVEN END
 
 private:

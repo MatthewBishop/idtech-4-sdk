@@ -303,6 +303,12 @@
 				RelativePath="game\Camera.h">
 			</File>
 			<File
+				RelativePath=".\game\client\ClientAFEntity.cpp">
+			</File>
+			<File
+				RelativePath=".\game\client\ClientAFEntity.h">
+			</File>
+			<File
 				RelativePath=".\game\Effect.cpp">
 			</File>
 			<File
@@ -313,6 +319,12 @@
 			</File>
 			<File
 				RelativePath="game\Entity.h">
+			</File>
+			<File
+				RelativePath=".\game\FreeView.cpp">
+			</File>
+			<File
+				RelativePath=".\game\FreeView.h">
 			</File>
 			<File
 				RelativePath=".\game\Fx.h">

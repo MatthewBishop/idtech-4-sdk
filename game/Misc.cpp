@@ -53,7 +53,7 @@ void idSpawnableEntity::Spawn() {
 const idEventDef EV_TeleportStage( "<TeleportStage>", "e" );
 
 CLASS_DECLARATION( idEntity, idPlayerStart )
-	EVENT( EV_Activate,			idPlayerStart::Event_TeleportPlayer )
+	EVENT( EV_Activate,			idPlayerStart::Event_Teleport )
 	EVENT( EV_TeleportStage,	idPlayerStart::Event_TeleportStage )
 END_CLASS
 
@@ -73,30 +73,6 @@ idPlayerStart::Spawn
 */
 void idPlayerStart::Spawn( void ) {
 	teleportStage = 0;
-
-	//HACK: begin "show spawn point" hack for RJ
-	/*if( !spawnArgs.GetInt("text") )	{
-		gameLocal.Warning("texting up spawn point '%s'", GetName());
-		idDict		args;
-		idEntity*	textEntity;
-		idVec3		newOrigin;
-
-		newOrigin = GetPhysics()->GetOrigin();
-		newOrigin.z += 64;
-
-		args.SetVector ( "origin", newOrigin );
-		args.Set ( "text", GetName() );
-		args.SetBool ( "playerOriented", 1 );
-		args.SetBool ( "force", 1 );
-		args.Set ( "target", GetName() );
-		args.Set ( "classname", "text" );
-
-		gameLocal.SpawnEntityDef ( args, &textEntity );
-
-		//mark the spawn point so it doesn't do this again
-		spawnArgs.SetInt("text", 1);
-
-	}*/
 }
 
 /*
@@ -129,14 +105,29 @@ bool idPlayerStart::ClientReceiveEvent( int event, int time, const idBitMsg &msg
 		case EVENT_TELEPORTPLAYER: {
 			entityNumber = msg.ReadBits( GENTITYNUM_BITS );
 			idPlayer *player = static_cast<idPlayer *>( gameLocal.entities[entityNumber] );
+			float x = msg.ReadFloat();
+			float y = msg.ReadFloat();
+			float z = msg.ReadFloat();
+
+			idVec3 prevOrigin( x, y, z );
 // RAVEN BEGIN
 // jnewquist: Use accessor for static class type 
 			if ( player != NULL && player->IsType( idPlayer::GetClassType() ) ) {
 // RAVEN END
-				Event_TeleportPlayer( player );
+				Event_TeleportEntity( player, false, prevOrigin );
 			}
 			return true;
 		}
+		case EVENT_TELEPORTITEM: {
+			entityNumber = msg.ReadBits( GENTITYNUM_BITS );
+			idEntity* activator = gameLocal.entities[ entityNumber ];
+
+			if ( activator != NULL ) {
+				Event_TeleportEntity( activator, false );
+			}
+			return true;
+		}
+
 		default: {
 			return idEntity::ClientReceiveEvent( event, time, msg );
 		}
@@ -160,7 +151,6 @@ void idPlayerStart::Event_TeleportStage( idPlayer *player ) {
 			player->SetInfluenceLevel( INFLUENCE_LEVEL3 );
 			player->SetInfluenceView( spawnArgs.GetString( "mtr_teleportFx" ), NULL, 0.0f, NULL );
 			soundSystem->FadeSoundClasses( SOUNDWORLD_GAME, 0, -20.0f, teleportDelay );
-			player->StartSound( "snd_teleport_start", SND_CHANNEL_BODY2, 0, false, NULL );
 			teleportStage++;
 			PostEventSec( &EV_TeleportStage, teleportDelay, player );
 			break;
@@ -196,7 +186,7 @@ void idPlayerStart::TeleportPlayer( idPlayer *player ) {
 		// place in private camera view for some time
 		// the entity needs to teleport to where the camera view is to have the PVS right
 		player->Teleport( ent->GetPhysics()->GetOrigin(), ang_zero, this );
-		player->StartSound( "snd_teleport_enter", SND_CHANNEL_ANY, 0, false, NULL );
+
 		player->SetPrivateCameraView( static_cast<idCamera*>(ent) );
 		// the player entity knows where to spawn from the previous Teleport call
 		if ( !gameLocal.isClient ) {
@@ -208,9 +198,6 @@ void idPlayerStart::TeleportPlayer( idPlayer *player ) {
 
 		// multiplayer hijacked this entity, so only push the player in multiplayer
 		if ( gameLocal.isMultiplayer ) {
-			//direct teleport, play effect & sound
-			player->StartSound( "snd_teleport_enter", SND_CHANNEL_ANY, 0, false, NULL );
-			gameLocal.PlayEffect( player->spawnArgs, "fx_teleport", player->GetPhysics()->GetOrigin(), idVec3(0,0,1).ToMat3(), false, vec3_origin );
 			//push
 			idVec3 impulse( pushVel, 0, 0 );
 			impulse *= GetPhysics( )->GetAxis ( );
@@ -232,23 +219,40 @@ void idPlayerStart::Teleport( idEntity* other ) {
 	other->GetPhysics()->SetLinearVelocity( vel );
 }
 
-/*
-===============
-idPlayerStart::Event_TeleportPlayer
-================
-*/
-void idPlayerStart::Event_TeleportPlayer( idEntity *activator ) {
+void idPlayerStart::Event_TeleportEntity( idEntity* activator, bool predicted, idVec3& prevOrigin ) {
 	idPlayer *player;
 
-// RAVEN BEGIN
-// jnewquist: Use accessor for static class type 
 	if ( activator->IsType( idPlayer::GetClassType() ) ) {
-// RAVEN END
 		player = static_cast<idPlayer*>( activator );
 	} else {
 		player = NULL;
+
+		if ( gameLocal.isServer ) {
+			idBitMsg	msg;
+			byte		msgBuf[MAX_EVENT_PARAM_SIZE];
+
+			msg.Init( msgBuf, sizeof( msgBuf ) );
+			msg.BeginWriting();
+			msg.WriteBits( activator->entityNumber, GENTITYNUM_BITS );
+			ServerSendInstanceEvent( EVENT_TELEPORTITEM, &msg, false, -1 );
+		}
+
+		idVec3 oldOrigin = activator->GetPhysics()->GetOrigin();
 		Teleport( activator );
+
+		if( gameLocal.isMultiplayer ) {
+			if( gameLocal.isServer ) {
+				gameLocal.PlayEffect( activator->spawnArgs, "fx_teleport_enter", oldOrigin, idVec3(0,0,1).ToMat3(), false, vec3_origin );
+				gameLocal.PlayEffect( activator->spawnArgs, "fx_teleport", activator->GetPhysics()->GetOrigin(), idVec3(0,0,1).ToMat3(), false, vec3_origin );
+			} else if( predicted ) {
+				// only predict teleport enter
+				gameLocal.PlayEffect( activator->spawnArgs, "fx_teleport_enter", oldOrigin, idVec3(0,0,1).ToMat3(), false, vec3_origin );		
+			} else {
+				gameLocal.PlayEffect( activator->spawnArgs, "fx_teleport", oldOrigin, idVec3(0,0,1).ToMat3(), false, vec3_origin );
+			}
+		}
 	}
+
 	if ( player ) {
 		if ( spawnArgs.GetBool( "visualFx" ) ) {
 
@@ -256,6 +260,13 @@ void idPlayerStart::Event_TeleportPlayer( idEntity *activator ) {
 			Event_TeleportStage( player );
 
 		} else {
+			idVec3 oldOrigin;
+			
+			if( gameLocal.isServer || prevOrigin == vec3_zero ) {
+				oldOrigin = activator->GetPhysics()->GetOrigin();
+			} else {
+				oldOrigin = prevOrigin;
+			}
 
 			if ( gameLocal.isServer ) {
 				idBitMsg	msg;
@@ -264,12 +275,30 @@ void idPlayerStart::Event_TeleportPlayer( idEntity *activator ) {
 				msg.Init( msgBuf, sizeof( msgBuf ) );
 				msg.BeginWriting();
 				msg.WriteBits( player->entityNumber, GENTITYNUM_BITS );
+				msg.WriteFloat( oldOrigin.x );
+				msg.WriteFloat( oldOrigin.y );
+				msg.WriteFloat( oldOrigin.z );
 				ServerSendInstanceEvent( EVENT_TELEPORTPLAYER, &msg, false, -1 );
 			}
 
 			TeleportPlayer( player );
+
+			if( gameLocal.isMultiplayer ) {
+				gameLocal.PlayEffect( player->spawnArgs, "fx_teleport_enter", oldOrigin, idVec3(0,0,1).ToMat3(), false, vec3_origin );
+				gameLocal.PlayEffect( player->spawnArgs, "fx_teleport", player->GetPhysics()->GetOrigin(), idVec3(0,0,1).ToMat3(), false, vec3_origin );
+			}
+		}
 		}
 	}
+
+
+/*
+===============
+idPlayerStart::Event_TeleportPlayer
+================
+*/
+void idPlayerStart::Event_Teleport( idEntity *activator ) {
+	Event_TeleportEntity( activator, true );
 }
 
 /*
@@ -815,18 +844,16 @@ void idDamagable::ExecuteStage ( void ) {
 		if ( !args ) {
 			continue;
 		}
-// RAVEN BEGIN
-// mwhitlock: Dynamic memory consolidation
-		RV_PUSH_HEAP_MEM(this);
-// RAVEN END
-		rvClientMoveable* cent = new rvClientMoveable;
-// RAVEN BEGIN
-// mwhitlock: Dynamic memory consolidation
-		RV_POP_HEAP();
-// RAVEN END
+
+		rvClientMoveable* cent = NULL;
+		// force spawnclass to rvClientMoveable
+		gameLocal.SpawnClientEntityDef( *args, (rvClientEntity**)(&cent), false, "rvClientMoveable" );
+
+		if( !cent ) {
+			continue;
+		}
 		cent->SetOrigin ( GetPhysics()->GetOrigin() + GetStageVector ( va("offset_%s", kv->GetKey().c_str()) ) * GetPhysics()->GetAxis() );
 		cent->SetAxis ( GetPhysics()->GetAxis ( ) );
-		cent->Spawn ( args );
 		
 		idVec3 vel;
 		vel = GetStageVector ( va("vel_%s", kv->GetKey().c_str()) ) * GetPhysics()->GetAxis();

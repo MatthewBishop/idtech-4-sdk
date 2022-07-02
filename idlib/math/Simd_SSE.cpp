@@ -17461,6 +17461,68 @@ void VPCALL idSIMD_SSE::MixSoundTwoSpeakerMono( float *mixBuffer, const float *s
 
 /*
 ============
+idSIMD_SSE::MixSoundTwoSpeakerMono
+============
+*/
+void VPCALL idSIMD_SSE::MixSoundTwoSpeakerMonoSimple( float *mixBuffer, const float *samples, const int numSamples ) {
+#if 1
+
+	assert( numSamples == MIXBUFFER_SAMPLES );
+
+	__asm {
+		mov			eax, MIXBUFFER_SAMPLES
+		mov			edi, mixBuffer
+		mov			esi, samples
+		shl			eax, 2
+		add			esi, eax
+		neg			eax
+
+	loop16:
+		add			edi, 4*4*4
+
+		movups		xmm0, [esi+eax+0*4*4]
+		movups		xmm1, xmm0
+		movups		xmm2, [esi+eax+1*4*4]
+		movups		xmm3, xmm2
+
+		shufps		xmm0, xmm0, R_SHUFFLE_PS( 0, 0, 1, 1 )
+		shufps		xmm1, xmm1, R_SHUFFLE_PS( 2, 2, 3, 3 )
+		shufps		xmm2, xmm2, R_SHUFFLE_PS( 0, 0, 1, 1 )
+		shufps		xmm3, xmm3, R_SHUFFLE_PS( 2, 2, 3, 3 )
+
+		addps		xmm0, [edi-4*4*4]
+		addps		xmm1, [edi-3*4*4]
+		addps		xmm2, [edi-2*4*4]
+		addps		xmm3, [edi-1*4*4]
+
+		movaps		[edi-4*4*4], xmm0
+		movaps		[edi-3*4*4], xmm1
+		movaps		[edi-2*4*4], xmm2
+		movaps		[edi-1*4*4], xmm3
+
+		add			eax, 2*4*4
+
+		jl			loop16
+	}
+
+#else
+
+	TIME_THIS_SCOPE("SIMD MixSoundTwoSpeakerMonoSimple");
+
+	assert( numSamples == MIXBUFFER_SAMPLES );
+
+	for( int j = 0; j < MIXBUFFER_SAMPLES; j += 2 ) {
+		mixBuffer[j*2+0] += samples[j];
+		mixBuffer[j*2+1] += samples[j];
+		mixBuffer[j*2+2] += samples[j+1];
+		mixBuffer[j*2+3] += samples[j+1];
+	}
+
+#endif
+}
+
+/*
+============
 idSIMD_SSE::MixSoundTwoSpeakerStereo
 ============
 */

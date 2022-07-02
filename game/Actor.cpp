@@ -622,15 +622,7 @@ void idActor::Spawn( void ) {
 	spawnArgs.GetVector ( "flashlightColor", "1 1 1", color );
 	
 	flashlight.pointLight							= spawnArgs.GetBool( "flashlightPointLight", "1" );
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-	declManager->SetLightMaterialList(&flashlight.allMaterials);
-#endif
 	flashlight.shader								= declManager->FindMaterial( spawnArgs.GetString( "mtr_flashlight", "muzzleflash" ), false );
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-	declManager->SetLightMaterialList(0);
-#endif
 	flashlight.shaderParms[ SHADERPARM_RED ]		= color[0];
 	flashlight.shaderParms[ SHADERPARM_GREEN ]		= color[1];
 	flashlight.shaderParms[ SHADERPARM_BLUE ]		= color[2];
@@ -751,7 +743,7 @@ void idActor::SetupHead( const char* headDefName, idVec3 headOffset ) {
 		}
 
 		headEnt->BindToJoint( this, joint, true );
-		headEnt->GetPhysics()->SetOrigin( vec3_origin + headOffset);		
+		headEnt->GetPhysics()->SetOrigin( vec3_origin + headOffset );		
 		headEnt->GetPhysics()->SetAxis( mat3_identity );
 	} else if ( head ) {
 		head->PostEventMS( &EV_Remove, 0 );
@@ -2496,21 +2488,38 @@ void idActor::Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &dir
 		int oldHealth = health;
 		AdjustHealthByDamage ( damage );
 		if ( health <= 0 ) {
+
+			//allow for quick burning
+			if (damageDef->GetFloat( "quickburn", "0" ) && !spawnArgs.GetFloat("no_quickburn", "0"))	{
+				fl.quickBurn = true;
+			}
+
 			if ( health < -999 ) {
 				health = -999;
 			}
 			//annoying hack for StartRagdoll
 			bool saveGibbed = gibbed;
-			if ( ( health < -20 ) && spawnArgs.GetBool( "gib" ) && damageDef->GetBool( "gib" ) ) {
-				gibbed = true;
+			bool canDMG_Gib = (spawnArgs.GetBool( "gib" ) | spawnArgs.GetBool( "DMG_gib" ));
+			if ( health < -20 )
+			{
+				if ( (spawnArgs.GetBool( "gib" ) && damageDef->GetBool( "gib" )) || 
+					 (canDMG_Gib && damageDef->GetBool( "DMG_gib"))) 
+				{
+					gibbed = true;
+				}
 			}
 			Killed( inflictor, attacker, damage, dir, location );
 			gibbed = saveGibbed;
-			if ( ( health < -20 ) && spawnArgs.GetBool( "gib" ) && damageDef->GetBool( "gib" ) ) {
-				Gib( dir, damageDefName );
+			if ( health < -20 )
+			{
+				if ( (spawnArgs.GetBool( "gib" ) && damageDef->GetBool( "gib" )) || 
+					 (canDMG_Gib && damageDef->GetBool( "DMG_gib"))) 
+				{
+					Gib( dir, damageDefName );
+				}
 			}
 
-			if ( oldHealth > 0 && !gibbed ) {	
+			if ( oldHealth > 0 && !gibbed && !fl.quickBurn) {	
   				float pushScale = 1.0f;
   				if ( inflictor && inflictor->IsType ( idPlayer::GetClassType() ) ) {
   					pushScale = static_cast<idPlayer*>(inflictor)->PowerUpModifier ( PMOD_PROJECTILE_DEATHPUSH );
@@ -2672,14 +2681,18 @@ bool idActor::Pain( idEntity *inflictor, idEntity *attacker, int damage, const i
 	}
 	f = (float)damage / spawnHealth;
 // RAVEN END
-	if ( f > 0.75f ) {
-		StartSound( "snd_pain_huge", SND_CHANNEL_VOICE, 0, false, NULL );
-	} else if ( f > 0.5f ) {
-		StartSound( "snd_pain_large", SND_CHANNEL_VOICE, 0, false, NULL );
-	} else if ( f > 0.25f ) {
-		StartSound( "snd_pain_medium", SND_CHANNEL_VOICE, 0, false, NULL );
+	if( gameLocal.isMultiplayer && IsType( idPlayer::GetClassType() ) && (health < 0.25f * ((idPlayer*)this)->inventory.maxHealth) ) {
+		StartSound( "snd_pain_low_health", SND_CHANNEL_VOICE, 0, false, NULL );
 	} else {
-		StartSound( "snd_pain_small", SND_CHANNEL_VOICE, 0, false, NULL );
+		if ( f > 0.75f ) {
+			StartSound( "snd_pain_huge", SND_CHANNEL_VOICE, 0, false, NULL );
+		} else if ( f > 0.5f ) {
+			StartSound( "snd_pain_large", SND_CHANNEL_VOICE, 0, false, NULL );
+		} else if ( f > 0.25f ) {
+			StartSound( "snd_pain_medium", SND_CHANNEL_VOICE, 0, false, NULL );
+		} else {
+			StartSound( "snd_pain_small", SND_CHANNEL_VOICE, 0, false, NULL );
+		}
 	}
 
 	if ( disablePain || ( gameLocal.time < painTime ) ) {

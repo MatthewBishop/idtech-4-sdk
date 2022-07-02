@@ -12,11 +12,6 @@
 	#define ID_NOLANADDRESS 0
 #endif
 
-#ifndef ID_VERSIONTAG
-	#define ID_VERSIONTAG ""
-	//#define ID_VERSIONTAG ".MP"
-#endif
-
 // let .dds be loaded from FS without altering pure state. only for developement.
 #ifndef ID_PURE_ALLOWDDS
 	#define ID_PURE_ALLOWDDS 0
@@ -28,15 +23,11 @@
 #endif
 
 #ifndef ID_ENABLE_CURL
-// http/ftp and ingame patch download are off until patch 1
-#define ID_ENABLE_CURL 0
-/*
 	#if !defined( _XENON ) && !defined( ID_DEDICATED )
 		#define ID_ENABLE_CURL 1
 	#else
 		#define ID_ENABLE_CURL 0
 	#endif
-*/
 #endif
 
 // fake a pure client. useful to connect an all-debug client to a server
@@ -78,6 +69,7 @@
 //#define ID_DEMO_BUILD
 
 #if !defined( _WIN32 )
+	// DOA? didn't see the pbuffer code used at all through the game
 	#define TMP_PBUFFSTUB
 #endif
 

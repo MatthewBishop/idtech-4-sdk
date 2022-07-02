@@ -28,10 +28,12 @@ rvStatWindow::SetupStatWindow()
 Sets up a selectable window of current stats
 ================
 */
-void rvStatWindow::SetupStatWindow( idUserInterface* hud ) {
-	assert( gameLocal.GetLocalPlayer() );
-
+void rvStatWindow::SetupStatWindow( idUserInterface* hud, bool useSpectator ) {
 	idPlayer* player = gameLocal.GetLocalPlayer();
+	assert( player );
+	if ( !player ) {
+		return;
+	}
 
 // mekberg: added
 	idList<int> marineScores;
@@ -58,7 +60,7 @@ void rvStatWindow::SetupStatWindow( idUserInterface* hud ) {
 			if( player->team == TEAM_MARINE ) {
 				marinePlayers.Append( player );
 				marineScores.Append( gameLocal.mpGame.GetRankedPlayerScore( i ) );
-			} else if( player->team == TEAM_STROGG ) {
+			} else if ( player->team == TEAM_STROGG ) {
 				stroggPlayers.Append( player );
 				stroggScores.Append( gameLocal.mpGame.GetRankedPlayerScore( i ) );
 			}
@@ -72,9 +74,16 @@ void rvStatWindow::SetupStatWindow( idUserInterface* hud ) {
 																	marinePlayers[ i ]->GetUserInfo()->GetString( "ui_name"), 
 																	marineScores[ i ] ) );
 
-				if( marinePlayers[ i ] == player ) {
-					selectionTeam = TEAM_MARINE;
-					selectionIndex = i;
+				if( useSpectator ) { 
+					if( marinePlayers[ i ]->entityNumber == player->spectator ) {
+						selectionTeam = TEAM_MARINE;
+						selectionIndex = i;
+					}
+				} else {
+					if( marinePlayers[ i ] == player ) {
+						selectionTeam = TEAM_MARINE;
+						selectionIndex = i;
+					}
 				}
 			} else {
 				statHud->SetStateString( va( "team_1_names_item_%d", i ), "" );
@@ -88,9 +97,16 @@ void rvStatWindow::SetupStatWindow( idUserInterface* hud ) {
 																	( player->IsPlayerMuted( stroggPlayers[ i ] ) ? I_VOICE_DISABLED : I_VOICE_ENABLED ),
 																	stroggPlayers[ i ]->GetUserInfo()->GetString( "ui_name"), 
 																	stroggScores[ i ] ) );
-				if( stroggPlayers[ i ] == player ) {
-					selectionTeam = TEAM_STROGG;
-					selectionIndex = i;
+				if( useSpectator ) { 
+					if( stroggPlayers[ i ]->entityNumber == player->spectator ) {
+						selectionTeam = TEAM_STROGG;
+						selectionIndex = i;
+					}
+				} else {
+					if( stroggPlayers[ i ] == player ) {
+						selectionTeam = TEAM_STROGG;
+						selectionIndex = i;
+					}
 				}
 			} else {
 				statHud->SetStateString( va( "team_2_names_item_%d", i ), "" );
@@ -116,9 +132,16 @@ void rvStatWindow::SetupStatWindow( idUserInterface* hud ) {
 																	players[ i ]->GetUserInfo()->GetString( "ui_name"), 
 								
 																	gameLocal.mpGame.GetScore( players[ i ] ) ) );
-				if( players[ i ] == player ) {
-					selectionTeam = 0;
-					selectionIndex = i;
+				if( useSpectator ) { 
+					if( players[ i ]->entityNumber == player->spectator ) {
+						selectionTeam = 0;
+						selectionIndex = i;
+					}
+				} else {
+					if( players[ i ] == player ) {
+						selectionTeam = 0;
+						selectionIndex = i;
+					}
 				}
 			} else {
 				statHud->SetStateString( va( "dm_names_item_%d", i ), "" );
@@ -140,9 +163,17 @@ void rvStatWindow::SetupStatWindow( idUserInterface* hud ) {
 									 va( "%s\t%s\t%s\t",	( player->IsFriend( spectators[ i ] ) ? I_FRIEND_ENABLED : I_FRIEND_DISABLED ),
 															( player->IsPlayerMuted( spectators[ i ] ) ? I_VOICE_DISABLED : I_VOICE_ENABLED ),
 															spectators[ i ]->GetUserInfo()->GetString( "ui_name") ) );
-			if( spectators[ i ] == player ) {
-				selectionTeam = TEAM_MAX;
-				selectionIndex = i;
+			
+			if( useSpectator ) { 
+				if( spectators[ i ]->entityNumber == player->spectator ) {
+					selectionTeam = TEAM_MAX;
+					selectionIndex = i;
+				}
+			} else {
+				if( spectators[ i ] == player ) {
+					selectionTeam = TEAM_MAX;
+					selectionIndex = i;
+				}
 			}
 		} else {
 			statHud->SetStateString( va( "spec_names_item_%d", i ), "" );

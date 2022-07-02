@@ -93,6 +93,9 @@ template<class T> ID_INLINE T	SignZero( T f ) { return ( f > 0 ) ? 1 : ( ( f < 0
 template<class T> ID_INLINE T	Square( T x ) { return x * x; }
 template<class T> ID_INLINE T	Cube( T x ) { return x * x * x; }
 
+class idVec2;
+class idVec3;
+
 class idMath {
 public:
 

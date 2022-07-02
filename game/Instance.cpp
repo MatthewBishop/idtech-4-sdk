@@ -26,7 +26,10 @@ rvInstance::rvInstance( int id, bool deferPopulate ) {
 }
 
 rvInstance::~rvInstance() {
-	delete[] mapEntityNumbers;
+	if ( mapEntityNumbers ) {
+		delete[] mapEntityNumbers;
+		mapEntityNumbers = 0;
+	}
 	gameLocal.RemoveClipWorld( instanceID );
 }
 
@@ -43,6 +46,9 @@ void rvInstance::Populate( void ) {
 
 		// mwhitlock: Dynamic memory consolidation
 		RV_PUSH_SYS_HEAP_ID(RV_HEAP_ID_LEVEL);
+		if ( mapEntityNumbers ) {
+			delete[] mapEntityNumbers;
+		}
 		mapEntityNumbers = new unsigned short[ numMapEntities ];
 		RV_POP_HEAP();
 

@@ -204,6 +204,8 @@ extern idCVar	pm_crouchspeed;
 // RAVEN BEGIN
 extern idCVar	pm_speed;
 extern idCVar	pm_walkspeed;
+extern idCVar	pm_zoomedSlow;
+extern idCVar 	pm_isZoomed;
 // RAVEN END
 extern idCVar	pm_noclipspeed;
 extern idCVar	pm_spectatespeed;
@@ -277,6 +279,7 @@ extern idCVar	g_showPlayerShadow;
 extern idCVar	g_skipPlayerShadowsMP;
 extern idCVar	g_skipItemShadowsMP;
 
+extern idCVar	g_simpleItems;
 extern idCVar	g_showHud;
 // RAVEN BEGIN
 extern idCVar	g_crosshairColor;
@@ -329,6 +332,11 @@ extern idCVar	g_testPostProcess;
 extern idCVar	g_testModelRotate;
 extern idCVar	g_testModelAnimate;
 extern idCVar	g_testModelBlend;
+
+extern idCVar	g_forceModel;
+extern idCVar	g_forceStroggModel;
+extern idCVar	g_forceMarineModel;
+
 // RAVEN BEGIN
 // bdube: test scoreboard
 extern idCVar	g_testScoreboard;
@@ -357,7 +365,7 @@ extern idCVar	aas_showRevReach;
 
 extern idCVar	net_clientPredictGUI;
 
-extern idCVar	g_voteFlags;
+extern idCVar	si_voteFlags;
 extern idCVar	g_mapCycle;
 // RAVEN BEGIN
 // shouchard:  g_balanceTDM->g_balanceTeams so we can also use it for CTF
@@ -400,6 +408,8 @@ extern idCVar g_perfTest_noJointTransform;
 extern idCVar g_perfTest_noPlayerFocus;
 extern idCVar g_perfTest_noProjectiles;
 // RAVEN END
+
+extern idCVar g_clientProjectileCollision;
 
 extern idCVar	net_clientLagOMeter;
 

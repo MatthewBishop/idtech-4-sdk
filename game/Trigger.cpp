@@ -1209,6 +1209,19 @@ idTrigger_Touch::idTrigger_Touch( void ) {
 	clipModel = NULL;
 }
 
+
+/*
+================
+idTrigger_Touch::idTrigger_Touch
+================
+*/
+idTrigger_Touch::~idTrigger_Touch( ) {
+	if ( clipModel ) {
+		delete clipModel;
+		clipModel = 0;
+	}
+}
+
 /*
 ================
 idTrigger_Touch::Spawn

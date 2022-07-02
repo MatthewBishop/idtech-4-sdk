@@ -1422,6 +1422,9 @@ void idAFEntity_Gibbable::Restore( idRestoreGame *savefile ) {
 		SetCombatModel();
 		LinkCombat();
 	}
+
+	// precache decls
+	declManager->FindType( DECL_ENTITYDEF, "damage_Gib", false, false );
 }
 
 /*
@@ -1433,6 +1436,9 @@ void idAFEntity_Gibbable::Spawn( void ) {
 	InitSkeletonModel();
 
 	gibbed = false;
+
+	// precache decls
+	declManager->FindType( DECL_ENTITYDEF, "damage_Gib", false, false );
 }
 
 /*
@@ -1614,6 +1620,13 @@ void idAFEntity_Gibbable::Gib( const idVec3 &dir, const char *damageDefName ) {
 
 // RAVEN BEGIN
 // bdube: default is to remove the character immediately
+	// however, this is bad in the case of the player.  What was happening is that the
+	//	player was being removed right away, but the respawn logic runs off of 
+	//  idPlayer::EvaluateControls, which no longer gets run when the player is gibbed and removed.
+	//	So...the game effectively sits locked on a black screen and you never get a menu..
+	if ( !gameLocal.isMultiplayer && this->IsType( idPlayer::GetClassType() )) {
+		return;
+	}
 	PostEventSec( &EV_Gibbed, spawnArgs.GetFloat ( "gibRemoveDelay", "0" ) );
 // RAVEN END
 }
@@ -2338,20 +2351,6 @@ void idAFEntity_VehicleFourWheels::Think( void ) {
 			rotation.SetVec( (wheels[i]->GetWorldAxis() * axis.Transpose())[2] );
 			animator.SetJointAxis( wheelJoints[i], JOINTMOD_WORLD, rotation.ToMat3() );
 		}
-
-/*
-		// spawn dust particle effects
-		if ( force != 0.0f && !( gameLocal.framenum & 7 ) ) {
-			int numContacts;
-			idAFConstraint_Contact *contacts[2];
-			for ( i = 0; i < 4; i++ ) {
-				numContacts = af.GetPhysics()->GetBodyContactConstraints( wheels[i]->GetClipModel()->GetId(), contacts, 2 );
-				for ( int j = 0; j < numContacts; j++ ) {
-					gameLocal.smokeParticles->EmitSmoke( dustSmoke, gameLocal.time, gameLocal.random.RandomFloat(), contacts[j]->GetContact().point, contacts[j]->GetContact().normal.ToMat3() );
-				}
-			}
-		}
-*/
 	}
 
 	UpdateAnimation();
@@ -2533,20 +2532,6 @@ void idAFEntity_VehicleSixWheels::Think( void ) {
 			rotation.SetVec( (wheels[i]->GetWorldAxis() * axis.Transpose())[2] );
 			animator.SetJointAxis( wheelJoints[i], JOINTMOD_WORLD, rotation.ToMat3() );
 		}
-
-/*
-		// spawn dust particle effects
-		if ( force != 0.0f && !( gameLocal.framenum & 7 ) ) {
-			int numContacts;
-			idAFConstraint_Contact *contacts[2];
-			for ( i = 0; i < 6; i++ ) {
-				numContacts = af.GetPhysics()->GetBodyContactConstraints( wheels[i]->GetClipModel()->GetId(), contacts, 2 );
-				for ( int j = 0; j < numContacts; j++ ) {
-					gameLocal.smokeParticles->EmitSmoke( dustSmoke, gameLocal.time, gameLocal.random.RandomFloat(), contacts[j]->GetContact().point, contacts[j]->GetContact().normal.ToMat3() );
-				}
-			}
-		}
-*/
 	}
 
 	UpdateAnimation();

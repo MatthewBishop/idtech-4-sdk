@@ -607,13 +607,19 @@ rvMonsterHarvester::CheckActions
 */
 bool rvMonsterHarvester::CheckActions ( void ) {
 
+	// such a dirty hack... I'm not sure what is actually wrong, but somehow nextTurnTime is getting to be a rediculously high number.
+	// I have some more significant bugs that really need to be solved, so for now, this will have to do.
+	if ( nextTurnTime > gameLocal.time + 500 ) {
+		nextTurnTime = gameLocal.time-1;
+	}
+
 	// If not moving, try turning in place
 	if ( !move.fl.moving && gameLocal.time > nextTurnTime ) {
 		float turnYaw = idMath::AngleNormalize180 ( move.ideal_yaw - move.current_yaw ) ;
-		if ( turnYaw > lookMax[YAW] * 0.8f || (turnYaw > 0 && GetEnemy() && !enemy.fl.inFov) ) {
+		if ( turnYaw > lookMax[YAW] * 0.6f || (turnYaw > 0 && GetEnemy() && !enemy.fl.inFov) ) {
 			PerformAction ( "Torso_TurnLeft90", 4, true );
 			return true;
-		} else if ( turnYaw < -lookMax[YAW] * 0.8f || (turnYaw < 0 && GetEnemy() && !enemy.fl.inFov) ) {
+		} else if ( turnYaw < -lookMax[YAW] * 0.6f || (turnYaw < 0 && GetEnemy() && !enemy.fl.inFov) ) {
 			PerformAction ( "Torso_TurnRight90", 4, true );
 			return true;
 		}

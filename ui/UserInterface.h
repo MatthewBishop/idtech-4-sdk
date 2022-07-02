@@ -28,13 +28,13 @@ class idDemoFile;
 
 class idUserInterface {
 public:
-	virtual						~idUserInterface() {};
+	virtual						~idUserInterface( void ) {}
 
 								// Returns the name of the gui.
-	virtual const char *		Name() const = 0;
+	virtual const char *		Name( void ) const = 0;
 
 								// Returns a comment on the gui.
-	virtual const char *		Comment() const = 0;
+	virtual const char *		Comment( void ) const = 0;
 
 								// Returns true if the gui is interactive.
 	virtual bool				IsInteractive() const = 0;
@@ -62,10 +62,10 @@ public:
 	virtual void				Redraw( int time ) = 0;
 
 								// repaints the cursor
-	virtual void				DrawCursor() = 0;
+	virtual void				DrawCursor( void ) = 0;
 
 								// Provides read access to the idDict that holds this gui's state.
-	virtual const idDict &		State() const = 0;
+	virtual const idDict &		State( void ) const = 0;
 
 								// Removes a gui state variable
 	virtual void				DeleteStateVar( const char *varName ) = 0;
@@ -106,16 +106,16 @@ public:
 								// Triggers the gui and runs the onTrigger scripts.
 	virtual void				Trigger( int time ) = 0;
 
-	virtual	void				ReadFromDemoFile( class idDemoFile *f ) = 0;
-	virtual	void				WriteToDemoFile( class idDemoFile *f ) = 0;
+	virtual	void				ReadFromDemo( class idDemoFile *f ) = 0;
+	virtual	void				WriteToDemo( class idDemoFile *f ) = 0;
 
 	virtual bool				WriteToSaveGame( idFile *savefile ) const = 0;
 	virtual bool				ReadFromSaveGame( idFile *savefile ) = 0;
 	virtual void				SetKeyBindingNames( void ) = 0;
 
 	virtual void				SetCursor( float x, float y ) = 0;
-	virtual float				CursorX() = 0;
-	virtual float				CursorY() = 0;
+	virtual float				CursorX( void ) = 0;
+	virtual float				CursorY( void ) = 0;
 
 // RAVEN BEGIN
 // mekberg: Returns the index of the string where width in pixels <= specified val. Can return index of last whitespace.
@@ -139,18 +139,18 @@ public:
 
 class idUserInterfaceManager {
 public:
-	virtual						~idUserInterfaceManager( void ) {};
+	virtual						~idUserInterfaceManager( void ) {}
 
-	virtual void				Init() = 0;
-	virtual void				Shutdown() = 0;
+	virtual void				Init( void ) = 0;
+	virtual void				Shutdown( void ) = 0;
 	virtual void				Touch( const char *name ) = 0;
 	virtual void				WritePrecacheCommands( idFile *f ) = 0;
 
 								// Sets the size for 640x480 adjustment.
 	virtual void				SetSize( float width, float height ) = 0;
 
-	virtual void				BeginLevelLoad() = 0;
-	virtual void				EndLevelLoad() = 0;
+	virtual void				BeginLevelLoad( void ) = 0;
+	virtual void				EndLevelLoad( void ) = 0;
 // RAVEN BEGIN
 // mwhitlock: Dynamic memory consolidation
 #if defined(_RV_MEM_SYS_SUPPORT)
@@ -162,7 +162,7 @@ public:
 	virtual void				Reload( bool all ) = 0;
 
 								// lists all guis
-	virtual void				ListGuis() const = 0;
+	virtual void				ListGuis( void ) const = 0;
 
 								// Returns true if gui exists.
 	virtual bool				CheckGui( const char *qpath ) const = 0;
@@ -176,8 +176,14 @@ public:
 								// Returns NULL if gui by that name does not exist.
 	virtual idUserInterface *	FindGui( const char *qpath, bool autoLoad = false, bool needUnique = false, bool forceUnique = false ) = 0;
 
-								// Returns NULL if gui by that name does not exist.
-	virtual idUserInterface *	FindDemoGui( const char *qpath ) = 0;
+								// Returns the index into the global gui list
+	virtual int					GuiIndex( idUserInterface *gui ) = 0;
+
+								// Returns the gui at location index, or allocates a new one at location index
+	virtual idUserInterface *	FindGuiByIndex( int index ) = 0;
+
+								// Clears out the in game guis before loading a renderdemo
+	virtual void				ClearGameGuis( void ) = 0;
 
 								// Allocates a new GUI list handler
 	virtual	idListGUI *			AllocListGUI( void ) const = 0;

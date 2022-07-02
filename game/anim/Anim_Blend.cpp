@@ -820,10 +820,16 @@ idAnim::CallFrameCommandSound
 =====================
 */
 void idAnim::CallFrameCommandSound ( const frameCommand_t& command, idEntity* ent, const s_channelType channel ) const {
+
+	int flags = 0;
+	if( channel == ( FC_SOUND_GLOBAL - FC_SOUND ) ) {
+		flags = SSF_PRIVATE_SOUND;
+	}
+	
 	if ( command.string ) {
-		ent->StartSound ( command.string->c_str(), channel, 0, false, NULL );
+		ent->StartSound ( command.string->c_str(), channel, flags, false, NULL );
 	} else {
-		ent->StartSoundShader( command.soundShader, channel, 0, false, NULL );
+		ent->StartSoundShader( command.soundShader, channel, flags, false, NULL );
 	}
 }
 // RAVEN END

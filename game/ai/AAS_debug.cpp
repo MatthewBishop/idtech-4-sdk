@@ -353,7 +353,8 @@ void idAASLocal::DrawSimpleFace( int faceNum, bool visited ) const {
 			color2[3] = 0.05f;
 		}
 		// RAVEN END
-		gameRenderWorld->DebugPolygon( color2, idWinding( sides, numEdges ), 0, true );
+		idWinding winding( sides, numEdges ); 
+		gameRenderWorld->DebugPolygon( color2, winding, 0, true );
 	}
 }
 
@@ -526,7 +527,8 @@ void idAASLocal::ShowProblemEdge( int edgeNum ) const {
 		sides[1] += results.endpos;
 		sides[2] += results.endpos;
 		sides[3] += results.endpos;
-		gameRenderWorld->DebugPolygon( color2, idWinding( sides, 4 ) );
+		idWinding winding( sides, 4 );
+		gameRenderWorld->DebugPolygon( color2, winding );
 	}
 }
 

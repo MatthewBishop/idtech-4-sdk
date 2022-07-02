@@ -5203,7 +5203,9 @@ void idPhysics_AF::AuxiliaryForces( float timeStep ) {
 	}
 
 #ifdef AF_TIMINGS
-	timer_lcp.Start();
+	if ( af_showTimings.GetInteger() != 0 ) {
+		timer_lcp.Start();
+	}
 #endif
 
 	// calculate lagrange multipliers for auxiliary constraints
@@ -5212,7 +5214,9 @@ void idPhysics_AF::AuxiliaryForces( float timeStep ) {
 	}
 
 #ifdef AF_TIMINGS
-	timer_lcp.Stop();
+	if ( af_showTimings.GetInteger() != 0 ) {
+		timer_lcp.Stop();
+	}
 #endif
 
 	// calculate auxiliary constraint forces
@@ -5391,7 +5395,7 @@ bool idPhysics_AF::CollisionImpulse( float timeStep, idAFBody *body, trace_t &co
 	idEntity *ent;
 
 	ent = gameLocal.entities[collision.c.entityNum];
-	if ( ent == self ) {
+	if ( ent == self || !ent ) {
 		return false;
 	}
 
@@ -6260,11 +6264,10 @@ bool idPhysics_AF::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	AddPushVelocity( -current.pushVelocity );
 
 #ifdef AF_TIMINGS
-	timer_total.Start();
-#endif
-
-#ifdef AF_TIMINGS
-	timer_collision.Start();
+	if ( af_showTimings.GetInteger() != 0 ) {
+		timer_total.Start();
+		timer_collision.Start();
+	}
 #endif
 
 	// evaluate contacts
@@ -6274,7 +6277,9 @@ bool idPhysics_AF::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	SetupContactConstraints();
 
 #ifdef AF_TIMINGS
-	timer_collision.Stop();
+	if ( af_showTimings.GetInteger() != 0 ) {
+		timer_collision.Stop();
+	}
 #endif
 
 	// evaluate constraint equations
@@ -6287,14 +6292,17 @@ bool idPhysics_AF::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	AddFrameConstraints();
 
 #ifdef AF_TIMINGS
-	int i, numPrimary = 0, numAuxiliary = 0;
-	for ( i = 0; i < primaryConstraints.Num(); i++ ) {
-		numPrimary += primaryConstraints[i]->J1.GetNumRows();
+	int numPrimary = 0, numAuxiliary = 0;
+	if ( af_showTimings.GetInteger() != 0 ) {
+		int i;
+		for ( i = 0; i < primaryConstraints.Num(); i++ ) {
+			numPrimary += primaryConstraints[i]->J1.GetNumRows();
+		}
+		for ( i = 0; i < auxiliaryConstraints.Num(); i++ ) {
+			numAuxiliary += auxiliaryConstraints[i]->J1.GetNumRows();
+		}
+		timer_pc.Start();
 	}
-	for ( i = 0; i < auxiliaryConstraints.Num(); i++ ) {
-		numAuxiliary += auxiliaryConstraints[i]->J1.GetNumRows();
-	}
-	timer_pc.Start();
 #endif
 
 	// factor matrices for primary constraints
@@ -6304,15 +6312,19 @@ bool idPhysics_AF::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	PrimaryForces( timeStep );
 
 #ifdef AF_TIMINGS
-	timer_pc.Stop();
-	timer_ac.Start();
+	if ( af_showTimings.GetInteger() != 0 ) {
+		timer_pc.Stop();
+		timer_ac.Start();
+	}
 #endif
 
 	// calculate and apply auxiliary constraint forces
 	AuxiliaryForces( timeStep );
 
 #ifdef AF_TIMINGS
-	timer_ac.Stop();
+	if ( af_showTimings.GetInteger() != 0 ) {
+		timer_ac.Stop();
+	}
 #endif
 
 	// evolve current state to next state
@@ -6331,14 +6343,18 @@ bool idPhysics_AF::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	RemoveFrameConstraints();
 
 #ifdef AF_TIMINGS
-	timer_collision.Start();
+	if ( af_showTimings.GetInteger() != 0 ) {
+		timer_collision.Start();
+	}
 #endif
 
 	// check for collisions between current and next state
 	CheckForCollisions( timeStep );
 
 #ifdef AF_TIMINGS
-	timer_collision.Stop();
+	if ( af_showTimings.GetInteger() != 0 ) {
+		timer_collision.Stop();
+	}
 #endif
 
 	// swap the current and next state
@@ -6384,36 +6400,38 @@ bool idPhysics_AF::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	}
 
 #ifdef AF_TIMINGS
-	timer_total.Stop();
+	if ( af_showTimings.GetInteger() != 0 ) {
+		timer_total.Stop();
 
-	if ( af_showTimings.GetInteger() == 1 ) {
-		gameLocal.Printf( "%12s: t %1.4f pc %2d, %1.4f ac %2d %1.4f lcp %1.4f cd %1.4f\n",
-						self->name.c_str(),
-						timer_total.Milliseconds(),
-						numPrimary, timer_pc.Milliseconds(),
-						numAuxiliary, timer_ac.Milliseconds() - timer_lcp.Milliseconds(),
-						timer_lcp.Milliseconds(), timer_collision.Milliseconds() );
-	}
-	else if ( af_showTimings.GetInteger() == 2 ) {
-		numArticulatedFigures++;
-		if ( endTimeMSec > lastTimerReset ) {
-			gameLocal.Printf( "af %d: t %1.4f pc %2d, %1.4f ac %2d %1.4f lcp %1.4f cd %1.4f\n",
-							numArticulatedFigures,
+		if ( af_showTimings.GetInteger() == 1 ) {
+			gameLocal.Printf( "%12s: t %1.4f pc %2d, %1.4f ac %2d %1.4f lcp %1.4f cd %1.4f\n",
+							self->name.c_str(),
 							timer_total.Milliseconds(),
 							numPrimary, timer_pc.Milliseconds(),
 							numAuxiliary, timer_ac.Milliseconds() - timer_lcp.Milliseconds(),
 							timer_lcp.Milliseconds(), timer_collision.Milliseconds() );
 		}
-	}
+		else if ( af_showTimings.GetInteger() == 2 ) {
+			numArticulatedFigures++;
+			if ( endTimeMSec > lastTimerReset ) {
+				gameLocal.Printf( "af %d: t %1.4f pc %2d, %1.4f ac %2d %1.4f lcp %1.4f cd %1.4f\n",
+								numArticulatedFigures,
+								timer_total.Milliseconds(),
+								numPrimary, timer_pc.Milliseconds(),
+								numAuxiliary, timer_ac.Milliseconds() - timer_lcp.Milliseconds(),
+								timer_lcp.Milliseconds(), timer_collision.Milliseconds() );
+			}
+		}
 
-	if ( endTimeMSec > lastTimerReset ) {
-		lastTimerReset = endTimeMSec;
-		numArticulatedFigures = 0;
-		timer_total.Clear();
-		timer_pc.Clear();
-		timer_ac.Clear();
-		timer_collision.Clear();
-		timer_lcp.Clear();
+		if ( endTimeMSec > lastTimerReset ) {
+			lastTimerReset = endTimeMSec;
+			numArticulatedFigures = 0;
+			timer_total.Clear();
+			timer_pc.Clear();
+			timer_ac.Clear();
+			timer_collision.Clear();
+			timer_lcp.Clear();
+		}
 	}
 #endif
 

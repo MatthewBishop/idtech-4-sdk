@@ -57,6 +57,14 @@
 	#define IDNET_MASTER_PORT			"27650"
 #endif
 
+#ifndef MOTD_HOST
+	#define MOTD_HOST					"q4m-test.ravensoft.com"
+#endif
+
+#ifndef MOTD_PORT
+	#define MOTD_PORT					"27700"
+#endif
+
 // default network server port
 #ifndef PORT_SERVER
 //RAVEN BEGIN

@@ -50,6 +50,8 @@ const int	ASYNC_PLAYER_INV_AMMO_BITS = idMath::BitsForInteger( 999 );	// 9 bits 
 const int	ASYNC_PLAYER_INV_CLIP_BITS = -7;								// -7 bits to cover the range [-1, 60]
 const int	ASYNC_PLAYER_INV_WPMOD_BITS = 3;								// 3 bits (max of 3 mods per gun)
 
+#define MAX_CONCURRENT_VOICES	3
+
 // RAVEN BEGIN
 // jnewquist: Xenon weapon combo system
 #ifdef _XENON
@@ -207,7 +209,7 @@ public:
 	void					ClearPowerUps( void );
 	void					GetPersistantData( idDict &dict );
 	void					RestoreInventory( idPlayer *owner, const idDict &dict );
-	bool					Give( idPlayer *owner, const idDict &spawnArgs, const char *statname, const char *value, int *idealWeapon, bool updateHud, bool dropped = false );
+	bool					Give( idPlayer *owner, const idDict &spawnArgs, const char *statname, const char *value, int *idealWeapon, bool updateHud, bool dropped = false, bool checkOnly = false );
 	void					Drop( const idDict &spawnArgs, const char *weapon_classname, int weapon_index );
 	int						AmmoIndexForAmmoClass( const char *ammo_classname ) const;
 	int						MaxAmmoForAmmoClass( idPlayer *owner, const char *ammo_classname ) const;
@@ -241,13 +243,6 @@ public:
 class idPlayer : public idActor {
 public:
 
-// RAVEN BEGIN   
-#ifdef _XENON
- 	int rocketJumpStart;
- 	int rocketJumpEnd;
-#endif
-// RAVEN END
- 	
  	enum {
  		EVENT_IMPULSE = idEntity::EVENT_MAXEVENTS,
  		EVENT_EXIT_TELEPORTER,
@@ -264,6 +259,7 @@ public:
 
 	class idPlayerView		playerView;			// handles damage kicks and effects
 
+	bool					alreadyDidTeamAnnouncerSound;
 	bool					noclip;
 	bool					godmode;
 	int						godmodeDamage;
@@ -273,13 +269,6 @@ public:
 	idAngles				spawnAngles;
 	idAngles				viewAngles;			// player view angles
 	idAngles				cmdAngles;			// player cmd angles
-
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming.
-#if defined(_XENON)
-	bool					streamingPrecache;
-#endif
-// RAVEN END
 
 	int						buttonMask;
 	int						oldButtons;
@@ -366,6 +355,7 @@ public:
 	int						lastSpectateTeleport;
 	int						latchedTeam;			// need to track when team gets changed
  	int						spawnedTime;			// when client first enters the game
+ 	int						hudTeam;
 
  	idEntityPtr<idEntity>	teleportEntity;			// while being teleported, this is set to the entity we'll use for exit
 	int						teleportKiller;			// entity number of an entity killing us at teleporter exit
@@ -390,10 +380,11 @@ public:
 	
 	bool					vsMsgState;
 
+	int						lastPickupTime;
 //RAVEN BEGIN
 // asalmon: the eneny the player is most likely currently aiming at
 #ifdef _XBOX
-	idActor*						bestEnemy;
+	idEntityPtr<idActor>	bestEnemy;
 #endif
 //RAVEN END
 
@@ -458,7 +449,9 @@ public:
 	void					CalcDamagePoints(  idEntity *inflictor, idEntity *attacker, const idDict *damageDef,
 							   const float damageScale, const int location, int *health, int *armor );
 	virtual	void			Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &dir, const char *damageDefName, const float damageScale, const int location );
+	virtual bool			CanPlayImpactEffect ( idEntity* attacker, idEntity* target );
 	virtual void			AddDamageEffect( const trace_t &collision, const idVec3 &velocity, const char *damageDefName, idEntity* inflictor );
+	virtual void			ProjectHeadOverlay( const idVec3 &point, const idVec3 &dir, float size, const char *decal );
  							// use exitEntityNum to specify a teleport with private camera view and delayed exit
  	virtual void			Teleport( const idVec3 &origin, const idAngles &angles, idEntity *destination );
 
@@ -597,14 +590,17 @@ public:
 	idCamera *				GetPrivateCameraView( void ) const { return privateCameraView; }
 	void					StartFxFov( float duration  );
  	void					UpdateHudWeapon( int displayWeapon=-1 );
- 	void					UpdateHudStats( idUserInterface *hud );
+#ifdef _XENON
+	void					ResetHUDWeaponSwitch( void );
+#endif
+	void					UpdateHudStats( idUserInterface *hud );
  	void					UpdateHudAmmo( idUserInterface *hud );
  	void					ShowTip( const char *title, const char *tip, bool autoHide );
  	void					HideTip( void );
  	bool					IsTipVisible( void ) { return tipUp; };
 	void					ShowObjective( const char *obj );
  	void					HideObjective( void );
-	idVec3					GetEyePosition ( void ) const;
+	idVec3					GetEyePosition( void ) const;
 
 	void					LocalClientPredictionThink( void );
 	void					NonLocalClientPredictionThink( void );
@@ -709,7 +705,7 @@ public:
 
 	virtual idEntity*		GetGroundElevator( idEntity* testElevator=NULL ) const;
 	
-	int						GetWeaponIndex( const char* weaponName );
+	int						GetWeaponIndex( const char* weaponName ) const;
 
 	virtual void			SetInstance( int newInstance );
 	void					JoinInstance( int newInstance );
@@ -740,6 +736,10 @@ public:
 	// call only on the local player
 	idUserInterface*		GetCursorGUI( void );
 
+	bool					CanFire( void ) const;
+
+	bool					AllowedVoiceDest( int from );
+
 protected:
 	void					SetupHead( const char* modelKeyName = "", idVec3 headOffset = idVec3(0, 0, 0) );
 
@@ -754,7 +754,7 @@ private:
  	idList<aasLocation_t>	aasLocation;		// for AI tracking the player
 
 	idStr					modelName;			// current model name
-	const idDict*			modelDict;
+	const rvDeclPlayerModel* modelDecl;
 
 	int						bobFoot;
 	float					bobFrac;
@@ -785,9 +785,12 @@ private:
 	bool					weaponEnabled;
  	bool					showWeaponViewModel;
 
+	rvClientEntityPtr<rvClientAFAttachment>	clientHead;
 // RAVEN BEGIN
 // mekberg: allow disabling of objectives during non-cinematic time periods
 	bool					objectivesEnabled;
+// jshepard: false when player is looking at an npc or gui
+	bool					flagCanFire;
 // RAVEN END
 
 	bool					flashlightOn;
@@ -902,6 +905,9 @@ private:
 	int						mutedPlayers;			// bitfield set to which clients this player wants muted
 	int						friendPlayers;			// bitfield set to which clients this player has marked as friends
 	
+	int						voiceDest[MAX_CONCURRENT_VOICES];
+	int						voiceDestTimes[MAX_CONCURRENT_VOICES];
+
 	int						rank;
 
 	int						deathSkinTime;
@@ -915,6 +921,7 @@ private:
 	idList<jointHandle_t>	powerupEffectJoints;
 	rvClientEffectPtr		hasteEffect;
 	rvClientEffectPtr		flagEffect;
+	rvClientEffectPtr		arenaEffect;
 
 	idVec4					hitscanTint;
 	// end mp
@@ -1161,7 +1168,7 @@ ID_INLINE void idPlayer::SetClipWorld( int newCW ) {
 	LinkCombat();
 }
 
-ID_INLINE int idPlayer::GetWeaponIndex( const char* weaponName ) {
+ID_INLINE int idPlayer::GetWeaponIndex( const char* weaponName ) const {
 	for( int i = 0; i < MAX_WEAPONS; i++ ) {
 		if( !idStr::Icmp( spawnArgs.GetString( va( "def_weapon%d", i ), "" ), weaponName ) ) {
 			return i;
@@ -1245,6 +1252,10 @@ ID_INLINE void idPlayer::SetRank( int newRank ) {
 
 ID_INLINE int idPlayer::GetArena( void ) const {
 	return arena;
+}
+
+ID_INLINE bool idPlayer::CanFire( void ) const {
+	return flagCanFire;
 }
 
 #endif /* !__GAME_PLAYER_H__ */

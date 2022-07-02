@@ -143,6 +143,9 @@ void rvSpawner::FindSpawnTypes ( void ){
 	const idKeyValue *kv;	
 	for ( kv = spawnArgs.MatchPrefix( "def_spawn", NULL ); kv; kv = spawnArgs.MatchPrefix( "def_spawn", kv ) ) {
 		spawnTypes.Append ( kv->GetValue ( ) );
+
+		// precache decls
+		declManager->FindType( DECL_AF, kv->GetValue(), true, false );
 	}
 }
 

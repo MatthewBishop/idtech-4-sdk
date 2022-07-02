@@ -48,30 +48,30 @@ assert_offsetof( idJointQuat, t,	JOINTQUAT_T_OFFSET );
 class idJointMat {
 public:
 
-	void			SetRotation( const idMat3 &m );
-	void			SetTranslation( const idVec3 &t );
+	ID_INLINE void			SetRotation( const idMat3 &m );
+	ID_INLINE void			SetTranslation( const idVec3 &t );
 
-	idVec3			operator*( const idVec3 &v ) const;							// only rotate
-	idVec3			operator*( const idVec4 &v ) const;							// rotate and translate
+	ID_INLINE idVec3			operator*( const idVec3 &v ) const;							// only rotate
+	ID_INLINE idVec3			operator*( const idVec4 &v ) const;							// rotate and translate
 
-	idJointMat &	operator*=( const idJointMat &a );							// transform
-	idJointMat &	operator/=( const idJointMat &a );							// untransform
+	ID_INLINE idJointMat &	operator*=( const idJointMat &a );							// transform
+	ID_INLINE idJointMat &	operator/=( const idJointMat &a );							// untransform
 
-	bool			Compare( const idJointMat &a ) const;						// exact compare, no epsilon
-	bool			Compare( const idJointMat &a, const float epsilon ) const;	// compare with epsilon
-	bool			operator==(	const idJointMat &a ) const;					// exact compare, no epsilon
-	bool			operator!=(	const idJointMat &a ) const;					// exact compare, no epsilon
+	ID_INLINE bool			Compare( const idJointMat &a ) const;						// exact compare, no epsilon
+	ID_INLINE bool			Compare( const idJointMat &a, const float epsilon ) const;	// compare with epsilon
+	ID_INLINE bool			operator==(	const idJointMat &a ) const;					// exact compare, no epsilon
+	ID_INLINE bool			operator!=(	const idJointMat &a ) const;					// exact compare, no epsilon
 
-	idMat3			ToMat3( void ) const;
-	idVec3			ToVec3( void ) const;
+	ID_INLINE idMat3			ToMat3( void ) const;
+	ID_INLINE idVec3			ToVec3( void ) const;
 	idJointQuat		ToJointQuat( void ) const;
 	const float *	ToFloatPtr( void ) const;
-	float *			ToFloatPtr( void );
+	ID_INLINE float *			ToFloatPtr( void );
 
-	static void		Mul( idJointMat &result, const idJointMat &mat, const float s );
-	static void		Mad( idJointMat &result, const idJointMat &mat, const float s );
-	static void		Multiply( idJointMat &result, const idJointMat &m1, const idJointMat &m2 );
-	static void		InverseMultiply( idJointMat &result, const idJointMat &m1, const idJointMat &m2 );
+	ID_INLINE static void		Mul( idJointMat &result, const idJointMat &mat, const float s );
+	ID_INLINE static void		Mad( idJointMat &result, const idJointMat &mat, const float s );
+	ID_INLINE static void		Multiply( idJointMat &result, const idJointMat &m1, const idJointMat &m2 );
+	ID_INLINE static void		InverseMultiply( idJointMat &result, const idJointMat &m1, const idJointMat &m2 );
 
 // RAVEN BEGIN
 // dluetscher: added function to quickly invert an idJointMat - assumes rotation-translation only

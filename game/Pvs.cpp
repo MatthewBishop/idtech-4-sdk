@@ -787,14 +787,6 @@ void idPVS::Init( void ) {
 
 	areaVisBytes = ( ((numAreas+31)&~31) >> 3);
 	areaVisLongs = areaVisBytes/sizeof(long);
-
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-	justOutOfViewAreasBits = new byte[areaVisBytes];
-#endif
-// RAVEN END
-
 	areaPVS = new byte[numAreas * areaVisBytes];
 	memset( areaPVS, 0xFF, numAreas * areaVisBytes );
 
@@ -827,6 +819,25 @@ void idPVS::Init( void ) {
 
 	timer.Stop();
 
+#if 0
+	// bkreimeier20060123 - per MrE's recommendation, used this in Wolf
+	// if the PVS is not relexive for (i,j), we assume floating point errors
+	//  and assume a false positive - remove either from either
+	for ( int i=0; i<numAreas; i++ ) {
+		byte* const pvs_i = areaPVS + i * areaVisBytes;
+
+		for ( int j=0; j<numAreas; j++ ) {
+			byte* const pvs_j = areaPVS + j * areaVisBytes;
+			const bool j_in_i = (pvs_i[j>>3] & (1<<(j&7)));
+			const bool i_in_j = (pvs_j[i>>3] & (1<<(i&7)));
+			if ( i_in_j!=j_in_i ) {
+				pvs_i[j>>3] &= ~(1 << (j&7));
+				pvs_j[i>>3] &= ~(1 << (i&7));
+			}
+		}
+	}
+#endif
+
 	gameLocal.Printf( "%5.0f msec to calculate PVS\n", timer.Milliseconds() );
 	gameLocal.Printf( "%5d areas\n", numAreas );
 	gameLocal.Printf( "%5d portals\n", numPortals );
@@ -856,16 +867,6 @@ void idPVS::Shutdown( void ) {
 		delete connectedAreas;
 		connectedAreas = NULL;
 	}
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-	if ( justOutOfViewAreasBits )
-	{
-		delete justOutOfViewAreasBits;
-		justOutOfViewAreasBits = NULL;
-	}
-#endif
-// RAVEN END
 	if ( areaQueue ) {
 		delete areaQueue;
 		areaQueue = NULL;
@@ -931,107 +932,6 @@ void idPVS::GetConnectedAreas( int srcArea, bool *areas ) const {
 		}
 	}
 }
-
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-/*
-================
-idPVS::GetAreasJustOutOfView
-
-assumes the 'areas' array is initialized to -1
-================
-*/
-int idPVS::DetermineAreasJustOutOfView( int srcArea ) {
-	int curArea, nextArea;
-	int queueStart, queueEnd;
-	int i, n;
-	exitPortal_t portal;
-	int numOutOfView=0;
-
-	queueStart = -1;
-	queueEnd = 0;
-	memset( connectedAreas, 0, numAreas * sizeof( *connectedAreas ) );
-	memset( justOutOfViewAreasBits, 0, areaVisBytes );
-	assert(srcArea!=-1);
-	connectedAreas[srcArea] = true;
-
-	for ( curArea = srcArea; queueStart < queueEnd; curArea = areaQueue[++queueStart] ) {
-
-		n = gameRenderWorld->NumPortalsInArea( curArea );
-
-		for ( i = 0; i < n; i++ ) {
-			portal = gameRenderWorld->GetPortal( curArea, i );
-			
-			assert(portal.areas[1]!=-1);
-
-			// If nextArea cannot *ever* be viewed from srcArea, add it to our
-			// list of areas that are just out of view.
-			if(portal.areas[1]!=-1)
-			{
-				byte* pvs = areaPVS +  srcArea * areaVisBytes;
-				if(!pvs[portal.areas[1]>>3] & (1<<(portal.areas[1]&7)))
-				{
-					assert(numOutOfView<4096);
-					justOutOfViewAreasBits[portal.areas[1]>>3] |= 1<<(portal.areas[1]&7);
-					numOutOfView++;
-					continue;
-				}
-			}
-
-			// If nextArea could potentially be viewed from srcArea, but cannot
-			// currently be viewed from srcArea because the portal is closed, add
-			// it to our list of areas that are just out of view.
-			if ( portal.blockingBits & PS_BLOCK_VIEW )
-			{
-				if(portal.areas[1]!=-1)
-				{
-					assert(numOutOfView<4096);
-					justOutOfViewAreasBits[portal.areas[1]>>3] |= 1<<(portal.areas[1]&7);
-					numOutOfView++;
-				}
-				continue;
-			}
-
-			// Area given by portal.area[1] is always the area the portal leads to.
-			nextArea = portal.areas[1];
-
-			// If already visited this area, skip it.
-			if ( connectedAreas[nextArea] ) {
-				continue;
-			}
-		
-			// add area to queue
-			areaQueue[queueEnd++] = nextArea;
-			connectedAreas[nextArea] = true;
-			
-			// Well we got here so remove it from the set of just out of view areas.
-			justOutOfViewAreasBits[nextArea>>3] &= ~(1<<(nextArea&7));
-		}
-	}
-	return numOutOfView;
-}
-
-/*
-================
-idPVS::JustOutOFView
-================
-*/
-bool idPVS::JustOutOfView(const int *targetAreas, int numTargetAreas ) const {
-	int i;
-	
-	for ( i = 0; i < numTargetAreas; i++ ) {
-		if ( targetAreas[i] < 0 || targetAreas[i] >= numAreas ) {
-			continue;
-		}
-		if ( justOutOfViewAreasBits[targetAreas[i]>>3] & (1 << (targetAreas[i]&7)) ) {
-			return true;
-		}
-	}
-	return false;
-}
-#endif
-// RAVEN END
 
 /*
 ================

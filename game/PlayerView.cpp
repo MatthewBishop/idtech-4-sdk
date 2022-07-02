@@ -268,7 +268,12 @@ void idPlayerView::DamageImpulse( idVec3 localKickDir, const idDict *damageDef, 
 	//
 	// head angle kick
 	//
+	const float	modifierScale = 0.25f;
+	const float inverseModifier = ( 1.0f - modifierScale );
+
+	float		modifier = idMath::ClampFloat( 0.0f, inverseModifier, damage / 100.0f * inverseModifier ) + modifierScale;
 	float	kickTime = damageDef->GetFloat( "kick_time" );
+
 	if ( kickTime ) {
 		kickFinishTime = gameLocal.time + g_kickTime.GetFloat() * kickTime;
 
@@ -287,17 +292,14 @@ void idPlayerView::DamageImpulse( idVec3 localKickDir, const idDict *damageDef, 
 		float kickAmplitude = damageDef->GetFloat( "kick_amplitude" );
 		if ( kickAmplitude ) {
 			kickAngles *= kickAmplitude;
+		}
 
-			if (kickAmplitude >= .1f) {
-				static int leftr = 65535, rightr = 65535;	
-				Rumble(kickAmplitude * leftr, kickAmplitude * rightr, kickTime);
-			}
+		if ( modifier < kickAmplitude ) {
+			modifier = kickAmplitude;
 		}
 	}
 	else {
-		float modifier = idMath::ClampFloat( 0.0, 1.0, damage / 100.0 );
-		float amount = modifier * 65535;
-		Rumble( amount, amount, 500 );
+		kickTime = 500;
 	}
 
 	//
@@ -483,14 +485,6 @@ void idPlayerView::ShakeOffsets( idVec3 &shakeOffset, idAngles &shakeAngleOffset
 		shakeAngleOffset[1] = idMath::ClampFloat( -70.0f, 70.0f, rvRandom::flrand( -offset, offset ) );
 		shakeAngleOffset[2] = idMath::ClampFloat( -70.0f, 70.0f, rvRandom::flrand( -offset, offset ) );
 	}
-
-	if( shakeVolume > 0.25 ) {
-		int speed = 32767.0f * shakeVolume + 16385.0f;
-		if ( speed > 65535 ) {
-			speed = 65535;
-		}
-		Rumble(speed, speed, 250);
-	}
 }
 // RAVEN END
 
@@ -513,7 +507,6 @@ void idPlayerView::SingleView( idUserInterface *hud, const renderView_t *view, i
 			portalSky->GetViewParms( &portalSkyView );
 			gameRenderWorld->RenderScene( &portalSkyView, ( renderFlags & ( ~RF_PRIMARY_VIEW ) ) | RF_DEFER_COMMAND_SUBMIT | RF_PORTAL_SKY );
 		}
-
 		gameRenderWorld->RenderScene( view, renderFlags | RF_PENUMBRA_MAP );
 	}
 
@@ -746,12 +739,12 @@ idPlayerView::RenderPlayerView
 ===================
 */
 void idPlayerView::RenderPlayerView( idUserInterface *hud ) {
-	if( !player ) {
+	if ( !player ) {
 		return;
 	}
 
 	const renderView_t *view = player->GetRenderView();
-	if( !view ) {
+	if ( !view ) {
 		return;
 	}
 	
@@ -781,28 +774,11 @@ void idPlayerView::RenderPlayerView( idUserInterface *hud ) {
 		ScreenFade();
 	}
 
-	if ( net_clientLagOMeter.GetBool() && lagoMaterial && gameLocal.isClient ) {
+	if ( net_clientLagOMeter.GetBool() && lagoMaterial && gameLocal.isClient && !( gameLocal.GetDemoState() == DEMO_PLAYING && gameLocal.IsServerDemo() ) ) {
 		renderSystem->SetColor4( 1.0f, 1.0f, 1.0f, 1.0f );
 		renderSystem->DrawStretchPic( 10.0f, 380.0f, 64.0f, 64.0f, 0.0f, 0.0f, 1.0f, 1.0f, lagoMaterial );
 	}
 
-}
-
-// RAVEN BEGIN
-// jnewquist: Controller rumble
-/*
-===================
-idPlayerView::Rumble
-===================
-*/
-void idPlayerView::Rumble( int left, int right, int time ) const {
-#ifdef _XBOX
-	if ( player->entityNumber == gameLocal.localClientNum ) {
-		//VVFIXME  Include sys_public?
-		extern void IN_RumblePlayer(int, int ,int, int);
-		IN_RumblePlayer(0, left, right, time);
-	}
-#endif
 }
 
 // RAVEN END

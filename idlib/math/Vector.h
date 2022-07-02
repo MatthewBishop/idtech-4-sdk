@@ -1978,7 +1978,7 @@ private:
 	float *			p;						// memory the vector is stored
 
 // RAVEN BEGIN
-	ALIGN16( static float tempPtr[VECX_MAX_TEMP]; )	// used to store intermediate results
+	ALIGN16( static float tempPtr[VECX_MAX_TEMP] );	// used to store intermediate results
 //	static float *	tempPtr;				// pointer to 16 byte aligned temporary memory
 // RAVEN END
 	static int		tempIndex;				// index into memory pool, wraps around

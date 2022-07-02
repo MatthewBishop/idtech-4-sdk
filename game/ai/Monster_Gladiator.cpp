@@ -521,7 +521,7 @@ void rvMonsterGladiator::Damage( idEntity *inflictor, idEntity *attacker, const 
 					if ( shieldHealth <= 0 )
 					{//drop it
 						HideShield( gameLocal.random.RandomInt(3000)+2000 );//FIXME: when it does come back on, flicker back on?
-						painAnim = "pain_concussive";
+						painAnim = "pain_con";
 						AnimTurn( 0, true );
 						PerformAction ( "Torso_Pain", 2, true );	
 					}

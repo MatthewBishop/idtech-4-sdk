@@ -208,8 +208,9 @@ void idMover::Save( idSaveGame *savefile ) const {
 		guiTargets[ i ].Save( savefile );
 	}
 
-	if ( splineEnt.GetEntity() && splineEnt.GetEntity()->GetSpline() ) {
+	if ( splineEnt.GetEntity() ) {
 		idCurve_Spline<idVec3> *spline = physicsObj.GetSpline();
+		if (spline) {
 
 		savefile->WriteBool( true );
 		splineEnt.Save( savefile );
@@ -218,6 +219,9 @@ void idMover::Save( idSaveGame *savefile ) const {
 		savefile->WriteInt( physicsObj.GetSplineAcceleration() );
 		savefile->WriteInt( physicsObj.GetSplineDeceleration() );
 		savefile->WriteInt( (int)physicsObj.UsingSplineAngles() );
+		} else {
+			savefile->WriteBool( false );
+		}
 
 	} else {
 		savefile->WriteBool( false );

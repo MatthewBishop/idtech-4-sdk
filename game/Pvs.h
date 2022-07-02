@@ -67,24 +67,10 @@ public:
 	void				ReadPVS( const pvsHandle_t handle, const idBitMsg &msg );
 #endif
 
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-	bool				JustOutOfView(const int *targetAreas, int numTargetAreas ) const;
-	int					DetermineAreasJustOutOfView( int srcArea );
-#endif
-// RAVEN END
-
 private:
 	int					numAreas;
 	int					numPortals;
 	bool *				connectedAreas;
-// RAVEN BEGIN
-// mwhitlock: Xenon texture streaming
-#if defined(_XENON)
-	byte *				justOutOfViewAreasBits;
-#endif
-// RAVEN END
 	int *				areaQueue;
 	byte *				areaPVS;
 

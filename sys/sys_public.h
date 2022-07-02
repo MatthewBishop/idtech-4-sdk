@@ -41,21 +41,21 @@
 // Mac OSX
 #if defined(MACOS_X) || defined(__APPLE__)
 
+#if __GNUC__ < 4
 #include "osx/apple_bool.h"
+#endif
 
+#define BUILD_STRING				"MacOSX-universal"
+#define BUILD_OS_ID					1
 #ifdef __ppc__
-	#define BUILD_STRING				"MacOSX-ppc"
-	#define BUILD_OS_ID					1
 	#define	CPUSTRING					"ppc"
 	#define CPU_EASYARGS				0
 #elif defined(__i386__)
-	#define BUILD_STRING				"MacOSX-x86"
 	#define	CPUSTRING					"x86"
 	#define CPU_EASYARGS				1
 #endif
 
-//#define ALIGN16( x )					( (x) __attribute__ ((aligned (16))) )
-#define ALIGN16( x )					x
+#define ALIGN16( x )					x __attribute__ ((aligned (16))) 
 #ifdef __MWERKS__
 #define PACKED
 #else
@@ -68,7 +68,6 @@
 #define __cdecl
 #define ASSERT							assert
 
-#define ID_INLINE						inline
 #define ID_STATIC_TEMPLATE
 
 #define assertmem( x, y )
@@ -226,7 +225,10 @@ typedef enum {
 	CPUID_FTZ							= 0x04000,	// Flush-To-Zero mode (denormal results are flushed to zero)
 	CPUID_DAZ							= 0x08000,	// Denormals-Are-Zero mode (denormal source operands are set to zero)
 	CPUID_EM64T							= 0x10000,	// 64-bit Memory Extensions
-	CPUID_AMD64							= 0x20000,	// possibly redundant with EM64T, but see comment in Is64BitAMD() to see why I'm not chancing it.
+	CPUID_PENTIUMM						= 0x20000,	// Pentium M technology - high performance per MHz
+#ifdef MACOS_X
+	CPUID_PPC							= 0x40000,	// PowerPC G4/G5
+#endif
 // RAVEN BEGIN
 	CPUID_XENON							= 0x80000	// Xenon PPC processor
 // RAVEN END
@@ -503,16 +505,9 @@ const char *	Sys_EXEPath( void );
 // returns -1 if directory was not found (the list is cleared)
 int				Sys_ListFiles( const char *directory, const char *extension, idList<class idStr> &list );
 
-
 // RAVEN BEGIN
 // rjohnson: added block
 bool			Sys_AppShouldSleep		( void );
-// RAVEN END
-
-// RAVEN BEGIN
-// twhitaker: directx version
-// return NULL if the DirectX 9 or greater is not found.  otherwise returns version in the format "9.0c"
-const char *	Sys_GetDirectXVersion	( void );
 // RAVEN END
 
 /*
@@ -527,10 +522,9 @@ typedef enum {
 	NA_BAD,					// an address lookup failed
 	NA_LOOPBACK,
 	NA_BROADCAST,
-	NA_IP
+	NA_IP,
 // RAVEN BEGIN
 // rjohnson: add fake clients
-	,
 	NA_FAKE
 // RAVEN END
 } netadrtype_t;
@@ -660,6 +654,10 @@ bool			Sys_CompareNetAdrBase( const netadr_t a, const netadr_t b );
 
 void			Sys_InitNetworking( void );
 void			Sys_ShutdownNetworking( void );
+
+// read proxy information from environment
+#define			MAX_PROXY_LENGTH 128
+bool			Sys_GetHTTPProxyAddress( char proxy[ MAX_PROXY_LENGTH ] );
 
 // RAVEN BEGIN
 // ddynerman: utility functions
@@ -799,6 +797,7 @@ public:
 
 	virtual	void			ShowConsole( int visLevel, bool quitOnClose ) = 0;
 	virtual	void			UpdateConsole( void ) = 0;
+	virtual void			SetConsoleName( const char* consoleName ) = 0;
 	virtual bool			IsAppActive( void ) const = 0;
 	virtual	int				Milliseconds( void ) = 0;
 	virtual void			InitInput( void ) = 0;

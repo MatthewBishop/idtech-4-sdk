@@ -594,7 +594,11 @@ void idEvent::ServiceEvents( void ) {
 		// is deleted, the event won't be freed twice
 		event->eventNode.Remove();
 		assert( event->object );
-		event->object->ProcessEventArgPtr( ev, args );
+		
+		// savegames can trash the object, so do this for safety
+		if ( event->object ) {
+			event->object->ProcessEventArgPtr( ev, args );
+		}
 
 #if 0
 		// event functions may never leave return values on the FPU stack

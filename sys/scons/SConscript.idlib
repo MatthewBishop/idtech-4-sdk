@@ -10,10 +10,23 @@ Import( GLOBALS )
 
 idlib_list = scons_utils.ExtractSource( File( '#idlib.vcproj' ).abspath )
 
+local_env = g_env.Copy()
+if ( local_smp == 1 ):
+	local_env.Append( CPPDEFINES = [ 'ENABLE_INTEL_SMP' ] )
+
+no_unsafe_env = local_env.Copy()
+no_unsafe_env.Append( CPPFLAGS = [ '-fno-unsafe-math-optimizations' ] )
+
 ret_list = []
 for f in idlib_list:
 	if ( local_idlibpic == 0 ):
-		ret_list += g_env.StaticObject( source = os.path.join( '../..', f ) )
+		ret_list += local_env.StaticObject( source = os.path.join( '../..', f ) )
 	else:
-		ret_list += g_env.SharedObject( source = os.path.join( '../..', f ) )
+		ret_list += local_env.SharedObject( source = os.path.join( '../..', f ) )
+
+if ( local_idlibpic == 0 ):
+	ret_list += no_unsafe_env.StaticObject( source = '../../idlib/math/Matrix_gcc.cpp' )
+else:
+	ret_list += no_unsafe_env.SharedObject( source = '../../idlib/math/Matrix_gcc.cpp' )
+
 Return( 'ret_list' )
