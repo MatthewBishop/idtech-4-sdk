@@ -1,0 +1,50 @@
+Microsoft Visual Studio Solution File, Format Version 8.00
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Game", "game.vcproj", "{49BEC5C6-B964-417A-851E-808886B57430}"
+	ProjectSection(ProjectDependencies) = postProject
+		{49BEC5C6-B964-417A-851E-808886B57400} = {49BEC5C6-B964-417A-851E-808886B57400}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "idLib", "idlib.vcproj", "{49BEC5C6-B964-417A-851E-808886B57400}"
+	ProjectSection(ProjectDependencies) = postProject
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SourceCodeControl) = preSolution
+		SccNumberOfProjects = 2
+		SccProjectUniqueName0 = game.vcproj
+		SccProjectName0 = Perforce\u0020Project
+		SccLocalPath0 = ..
+		SccProvider0 = MSSCCI:NXN\u0020alienbrain
+		CanCheckoutShared = false
+		SccProjectFilePathRelativizedFromConnection0 = src\\
+		SccProjectUniqueName1 = idlib.vcproj
+		SccProjectName1 = Perforce\u0020Project
+		SccLocalPath1 = ..
+		SccProvider1 = MSSCCI:NXN\u0020alienbrain
+		CanCheckoutShared = false
+		SccProjectFilePathRelativizedFromConnection1 = src\\
+	EndGlobalSection
+	GlobalSection(SolutionConfiguration) = preSolution
+		Debug = Debug
+		DebugInline = DebugInline
+		Release = Release
+	EndGlobalSection
+	GlobalSection(ProjectConfiguration) = postSolution
+		{49BEC5C6-B964-417A-851E-808886B57430}.Debug.ActiveCfg = Debug|Win32
+		{49BEC5C6-B964-417A-851E-808886B57430}.Debug.Build.0 = Debug|Win32
+		{49BEC5C6-B964-417A-851E-808886B57430}.DebugInline.ActiveCfg = DebugInline|Win32
+		{49BEC5C6-B964-417A-851E-808886B57430}.DebugInline.Build.0 = DebugInline|Win32
+		{49BEC5C6-B964-417A-851E-808886B57430}.Release.ActiveCfg = Release|Win32
+		{49BEC5C6-B964-417A-851E-808886B57430}.Release.Build.0 = Release|Win32
+		{49BEC5C6-B964-417A-851E-808886B57400}.Debug.ActiveCfg = Debug|Win32
+		{49BEC5C6-B964-417A-851E-808886B57400}.Debug.Build.0 = Debug|Win32
+		{49BEC5C6-B964-417A-851E-808886B57400}.DebugInline.ActiveCfg = DebugInline|Win32
+		{49BEC5C6-B964-417A-851E-808886B57400}.DebugInline.Build.0 = DebugInline|Win32
+		{49BEC5C6-B964-417A-851E-808886B57400}.Release.ActiveCfg = Release|Win32
+		{49BEC5C6-B964-417A-851E-808886B57400}.Release.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+	EndGlobalSection
+	GlobalSection(ExtensibilityAddIns) = postSolution
+	EndGlobalSection
+EndGlobal

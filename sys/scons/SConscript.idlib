@@ -1,0 +1,19 @@
+# -*- mode: python -*-
+# Quake4 build script
+# TTimo <ttimo@idsoftware.com>
+# http://scons.sourceforge.net
+
+import os.path, scons_utils
+
+Import( 'GLOBALS' )
+Import( GLOBALS )
+
+idlib_list = scons_utils.ExtractSource( File( '#idlib.vcproj' ).abspath )
+
+ret_list = []
+for f in idlib_list:
+	if ( local_idlibpic == 0 ):
+		ret_list += g_env.StaticObject( source = os.path.join( '../..', f ) )
+	else:
+		ret_list += g_env.SharedObject( source = os.path.join( '../..', f ) )
+Return( 'ret_list' )
