@@ -610,7 +610,7 @@ void idPhysics_Player::AirMove( void ) {
 		current.velocity.ProjectOntoPlane( groundTrace.c.normal, OVERCLIP );
 	}
 
-	idPhysics_Player::SlideMove( true, false, false, false );
+	idPhysics_Player::SlideMove( true, gameLocal.isMultiplayer, false, false );
 }
 
 /*

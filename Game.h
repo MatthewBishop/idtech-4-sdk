@@ -119,7 +119,7 @@ public:
 	// Disconnects a client and removes the player entity from the game.
 	virtual void				ServerClientDisconnect( int clientNum ) = 0;
 
-	// Writes initial reliable messages a client needs to recieve when first joining the game.
+	// Writes initial reliable messages a client needs to receive when first joining the game.
 	virtual void				ServerWriteInitialReliableMessages( int clientNum ) = 0;
 
 	// Writes a snapshot of the server game state for the given client.

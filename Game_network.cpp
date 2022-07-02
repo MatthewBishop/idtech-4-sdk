@@ -197,15 +197,15 @@ int idGameLocal::ClientRemapDecl( declType_t type, int index ) {
 
 	// make sure the index is valid
 	if ( clientDeclRemap[localClientNum][(int)type].Num() == 0 ) {
-		gameLocal.Error( "client recieved decl index before %s decl remap was initialized", declManager->GetDeclNameFromType( type ), index );
+		gameLocal.Error( "client received decl index before %s decl remap was initialized", declManager->GetDeclNameFromType( type ), index );
 		return -1;
 	}
 	if ( index >= clientDeclRemap[localClientNum][(int)type].Num() ) {
-		gameLocal.Error( "client recieved unmapped %s decl index %d from server", declManager->GetDeclNameFromType( type ), index );
+		gameLocal.Error( "client received unmapped %s decl index %d from server", declManager->GetDeclNameFromType( type ), index );
 		return -1;
 	}
 	if ( clientDeclRemap[localClientNum][(int)type][index] == -1 ) {
-		gameLocal.Error( "client recieved unmapped %s decl index %d from server", declManager->GetDeclNameFromType( type ), index );
+		gameLocal.Error( "client received unmapped %s decl index %d from server", declManager->GetDeclNameFromType( type ), index );
 		return -1;
 	}
 	return clientDeclRemap[localClientNum][type][index];

@@ -315,6 +315,32 @@ protected:
 /*
 ===============================================================================
 
+idAFEntity_VehicleSimple
+
+===============================================================================
+*/
+
+class idAFEntity_VehicleSimple : public idAFEntity_Vehicle {
+public:
+	CLASS_PROTOTYPE( idAFEntity_VehicleSimple );
+
+							idAFEntity_VehicleSimple( void );
+							~idAFEntity_VehicleSimple( void );
+
+	void					Spawn( void );
+	virtual void			Think( void );
+
+protected:
+	idClipModel *			wheelModel;
+	idAFConstraint_Suspension *	suspension[4];
+	jointHandle_t			wheelJoints[4];
+	float					wheelAngles[4];
+};
+
+
+/*
+===============================================================================
+
 idAFEntity_VehicleFourWheels
 
 ===============================================================================

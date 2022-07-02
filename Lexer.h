@@ -125,7 +125,7 @@ public:
 	int				LoadFile( const char *filename, bool OSPath = false );
 					// load a script from the given memory with the given length and a specified line offset,
 					// so source strings extracted from a file can still refer to proper line numbers in the file
-					// NOTE: the buffer is expect to be a valid C string: ptr[length] == '\0'
+					// NOTE: the ptr is expected to point at a valid C string: ptr[length] == '\0'
 	int				LoadMemory( const char *ptr, int length, const char *name, int startLine = 1 );
 					// free the script
 	void			FreeSource( void );
@@ -143,6 +143,10 @@ public:
 	int				CheckTokenString( const char *string );
 					// returns true an reads the token when a token with the given type is available
 	int				CheckTokenType( int type, int subtype, idToken *token );
+					// returns true if the next token equals the given string but does not remove the token from the source
+	int				PeekTokenString( const char *string );
+					// returns true if the next token equals the given type but does not remove the token from the source
+	int				PeekTokenType( int type, int subtype, idToken *token );
 					// skip tokens until the given token string is read
 	int				SkipUntilString( const char *string );
 					// skip the rest of the current line

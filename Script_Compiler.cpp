@@ -2193,6 +2193,7 @@ void idCompiler::ParseFunctionDef( idTypeDef *returnType, const char *name ) {
 		}
 
 		if ( destructorFunc ) {
+			if ( func->firstStatement < gameLocal.program.NumStatements() ) {
 			// change all returns to point to the call to the destructor
 			pos = &gameLocal.program.GetStatement( func->firstStatement );
 			for( i = func->firstStatement; i < gameLocal.program.NumStatements(); i++, pos++ ) {
@@ -2200,6 +2201,7 @@ void idCompiler::ParseFunctionDef( idTypeDef *returnType, const char *name ) {
 					pos->op = OP_GOTO;
 					pos->a = JumpDef( i, gameLocal.program.NumStatements() );
 				}
+			}
 			}
 
 			// emit the call to the destructor

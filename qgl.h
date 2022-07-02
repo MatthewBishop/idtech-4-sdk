@@ -9,7 +9,6 @@
 
 #if defined( _WIN32 )
 
-//#include <windows.h>		// already included in the precompiled header
 #include <gl/gl.h>
 
 #elif defined( __APPLE__ ) && defined( __MACH__ )
@@ -18,7 +17,7 @@
 
 #elif defined( __linux__ )
 
-// use our local glext.h
+// using our local glext.h
 // http://oss.sgi.com/projects/ogl-sample/ABI/
 #define GL_GLEXT_LEGACY
 #define GLX_GLXEXT_LEGACY
@@ -38,9 +37,6 @@
 #define WINAPI
 #endif
 
-
-//===========================================================================
-
 // only use local glext.h if we are not using the system one already
 // http://oss.sgi.com/projects/ogl-sample/ABI/
 #ifndef GL_GLEXT_VERSION
@@ -48,9 +44,6 @@
 #include "glext.h"
 
 #endif
-
-//===========================================================================
-
 
 typedef void (*GLExtension_t)(void);
 
@@ -532,9 +525,16 @@ extern GLXContext (*qglXCreateContext)( Display *dpy, XVisualInfo *vis, GLXConte
 extern void (*qglXDestroyContext)( Display *dpy, GLXContext ctx );
 extern Bool (*qglXMakeCurrent)( Display *dpy, GLXDrawable drawable, GLXContext ctx);
 extern void (*qglXSwapBuffers)( Display *dpy, GLXDrawable drawable );
+extern GLExtension_t (*qglXGetProcAddressARB)( const GLubyte *procname );
+
+// make sure the code is correctly using qgl everywhere
+// don't enable that when building glimp itself obviously..
+#if !defined( GLIMP )
+	#include "../sys/linux/qgl_enforce.h"
+#endif
 
 #endif // __linux__
 
-#endif	// _WIN32 && __linux__
+#endif	// hardlinlk vs dlopen
 
 #endif

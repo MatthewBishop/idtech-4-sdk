@@ -523,7 +523,7 @@ void idPlayerView::DoubleVision( idUserInterface *hud, const renderView_t *view,
 	if ( scale > 0.5f ) {
 		scale = 0.5f;
 	}
-	float shift = scale * sin( sqrt( offset ) * g_dvFrequency.GetFloat() );
+	float shift = scale * sin( sqrtf( offset ) * g_dvFrequency.GetFloat() ); 
 	shift = fabs( shift );
 
 	// if double vision, render to a texture
@@ -659,7 +659,7 @@ void idPlayerView::InfluenceVision( idUserInterface *hud, const renderView_t *vi
 		SingleView( hud, view );
 		return;
 	} else {
-		int offset =  25 + sin( gameLocal.time );
+		int offset =  25 + sinf( gameLocal.time );
 		DoubleVision( hud, view, pct * offset );
 	}
 }

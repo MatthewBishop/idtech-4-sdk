@@ -154,6 +154,6 @@ public:
 
 };
 
-extern idCommon *		common;
+extern idCommon *				common;
 
 #endif /* !__COMMON_H__ */

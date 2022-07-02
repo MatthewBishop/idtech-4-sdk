@@ -1096,7 +1096,7 @@ void idAI::Think( void ) {
 			}
 		}
 
-		// clear pain flag so that we recieve any damage between now and the next time we run the script
+		// clear pain flag so that we receive any damage between now and the next time we run the script
 		AI_PAIN = false;
 		AI_SPECIAL_DAMAGE = 0;
 		AI_PUSHED = false;
@@ -4178,7 +4178,7 @@ idProjectile *idAI::LaunchProjectile( const char *jointname, idEntity *target, b
 ================
 idAI::DamageFeedback
 
-callback function for when another entity recieved damage from this entity.  damage can be adjusted and returned to the caller.
+callback function for when another entity received damage from this entity.  damage can be adjusted and returned to the caller.
 
 FIXME: This gets called when we call idPlayer::CalcDamagePoints from idAI::AttackMelee, which then checks for a saving throw,
 possibly forcing a miss.  This is harmless behavior ATM, but is not intuitive.

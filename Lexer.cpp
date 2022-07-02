@@ -976,16 +976,16 @@ idLexer::CheckTokenString
 int idLexer::CheckTokenString( const char *string ) {
 	idToken tok;
 
-	if (!idLexer::ReadToken( &tok )) {
+	if ( !ReadToken( &tok ) ) {
 		return 0;
 	}
-	// if the token is available
+	// if the given string is available
 	if ( tok == string ) {
 		return 1;
 	}
-	// token not available
-	idLexer::script_p = lastScript_p;
-	idLexer::line = lastline;
+	// unread token
+	script_p = lastScript_p;
+	line = lastline;
 	return 0;
 }
 
@@ -997,7 +997,7 @@ idLexer::CheckTokenType
 int idLexer::CheckTokenType( int type, int subtype, idToken *token ) {
 	idToken tok;
 
-	if (!idLexer::ReadToken( &tok )) {
+	if ( !ReadToken( &tok ) ) {
 		return 0;
 	}
 	// if the type matches
@@ -1005,9 +1005,56 @@ int idLexer::CheckTokenType( int type, int subtype, idToken *token ) {
 		*token = tok;
 		return 1;
 	}
-	// token is not available
-	idLexer::script_p = lastScript_p;
-	idLexer::line = lastline;
+	// unread token
+	script_p = lastScript_p;
+	line = lastline;
+	return 0;
+}
+
+/*
+================
+idLexer::PeekTokenString
+================
+*/
+int idLexer::PeekTokenString( const char *string ) {
+	idToken tok;
+
+	if ( !ReadToken( &tok ) ) {
+		return 0;
+	}
+
+	// unread token
+	script_p = lastScript_p;
+	line = lastline;
+
+	// if the given string is available
+	if ( tok == string ) {
+		return 1;
+	}
+	return 0;
+}
+
+/*
+================
+idLexer::PeekTokenType
+================
+*/
+int idLexer::PeekTokenType( int type, int subtype, idToken *token ) {
+	idToken tok;
+
+	if ( !ReadToken( &tok ) ) {
+		return 0;
+	}
+
+	// unread token
+	script_p = lastScript_p;
+	line = lastline;
+
+	// if the type matches
+	if ( tok.type == type && ( tok.subtype & subtype ) == subtype ) {
+		*token = tok;
+		return 1;
+	}
 	return 0;
 }
 
