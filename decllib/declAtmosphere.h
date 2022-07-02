@@ -182,11 +182,7 @@ public:
 	// Misc
 	void								SetAtmosphereMaterial( const idMaterial* material ) { atmosphereMaterial = material; modified = true; }
 	void								SetAmbientCubeMap( const sdDeclAmbientCubeMap* ambientCubeMap ) { this->ambientCubeMap = ambientCubeMap; modified = true; }
-	void								SetSkyGradientImage( const char* imageName ) {
-											imageParams_t ip( TF_DEFAULT, false, 0, -1.0f, TR_CLAMP, TD_HIGH_QUALITY, CF_HALFSPHERE );
-											skyGradientImage = globalImages->ImageFromFile( imageName, ip );
-											modified = true; 
-										}
+	bool								SetSkyGradientImage( const char* imageName );
 
 	void								SetFarClip( const float farClip ) { this->farClip = farClip; modified = true; }
 

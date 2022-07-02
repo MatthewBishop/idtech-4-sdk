@@ -608,8 +608,8 @@ void sdScriptExporter::WriteClass( const namespaceDef_t* ns, objectDef_t& cls ) 
 	generatedCppFiles.Alloc() = filenameCPP;
 	generatedHFiles.Alloc() = filenameH;
 
-	idFile* cppFile		= fileSystem->OpenFileWrite( filenameCPP.c_str() );
-	idFile* headerFile	= fileSystem->OpenFileWrite( filenameH.c_str() );
+	idFile* cppFile		= fileSystem->OpenFileWrite( filenameCPP.c_str(), "fs_devpath" );
+	idFile* headerFile	= fileSystem->OpenFileWrite( filenameH.c_str(), "fs_devpath" );
 
 	idStr className		= BuildClassName( cls.type );
 
@@ -1073,7 +1073,7 @@ void sdScriptExporter::FindGlobalVariablesDependencies( namespaceDef_t* ns, idLi
 }
 
 void sdScriptExporter::WriteGlobalVariables( void ) {
-	idFile* headerFile = fileSystem->OpenFileWrite( g_fixedHFileName[ CS_FFH_GLOBALVARIABLES ] );
+	idFile* headerFile = fileSystem->OpenFileWrite( g_fixedHFileName[ CS_FFH_GLOBALVARIABLES ], "fs_devpath" );
 
 	headerFile->Printf( "#ifndef __GENERATED_GLOBALVARIABLES_H__\r\n" );
 	headerFile->Printf( "#define __GENERATED_GLOBALVARIABLES_H__\r\n" );
@@ -1118,7 +1118,7 @@ void sdScriptExporter::WriteGlobalVariables( void ) {
 
 
 
-	idFile* cppFile = fileSystem->OpenFileWrite( g_fixedCppFileName[ CS_FFC_GLOBALVARIABLES ] );
+	idFile* cppFile = fileSystem->OpenFileWrite( g_fixedCppFileName[ CS_FFC_GLOBALVARIABLES ], "fs_devpath" );
 
 	cppFile->Printf( "\r\n" );
 	cppFile->Printf( "#include \"Precompiled.h\"\r\n" );
@@ -1158,7 +1158,7 @@ void sdScriptExporter::WriteGlobalVariables( void ) {
 }
 
 void sdScriptExporter::WriteNamespaceFunctions( const namespaceDef_t* ns ) {
-	idFile* headerFile = fileSystem->OpenFileWrite( g_fixedHFileName[ CS_FFH_GLOBALFUNCTIONS ] );
+	idFile* headerFile = fileSystem->OpenFileWrite( g_fixedHFileName[ CS_FFH_GLOBALFUNCTIONS ], "fs_devpath" );
 	headerFile->Printf( "#ifndef __GENERATED_GLOBALFUNCTIONS_H__\r\n" );
 	headerFile->Printf( "#define __GENERATED_GLOBALFUNCTIONS_H__\r\n" );
 	headerFile->Printf( "\r\n" );
@@ -1179,7 +1179,7 @@ void sdScriptExporter::WriteNamespaceFunctions( const namespaceDef_t* ns ) {
 		headerFile->Printf( "\r\n" );
 	}
 
-	idFile* cppFile = fileSystem->OpenFileWrite( g_fixedCppFileName[ CS_FFC_GLOBALFUNCTIONS ] );
+	idFile* cppFile = fileSystem->OpenFileWrite( g_fixedCppFileName[ CS_FFC_GLOBALFUNCTIONS ], "fs_devpath" );
 	cppFile->Printf( "\r\n" );
 	cppFile->Printf( "#include \"Precompiled.h\"\r\n" );
 	cppFile->Printf( "#pragma hdrstop\r\n\r\n" );
@@ -1384,7 +1384,7 @@ void sdScriptExporter::RegisterClassThreadCall( idTypeDef* type, const function_
 void sdScriptExporter::Finish( void ) {
 	idFile* file;
 	
-	file = fileSystem->OpenFileWrite( g_fixedCppFileName[ CS_FFC_EVENTS ] );
+	file = fileSystem->OpenFileWrite( g_fixedCppFileName[ CS_FFC_EVENTS ], "fs_devpath" );
 	if ( file != NULL ) {
 		file->Printf( "\r\n" );
 		file->Printf( "#include \"Precompiled.h\"\r\n" );
@@ -1403,7 +1403,7 @@ void sdScriptExporter::Finish( void ) {
 		file = NULL;
 	}
 
-	file = fileSystem->OpenFileWrite( g_fixedHFileName[ CS_FFH_EVENTS ] );
+	file = fileSystem->OpenFileWrite( g_fixedHFileName[ CS_FFH_EVENTS ], "fs_devpath" );
 	if ( file != NULL ) {
 		file->Printf( "\r\n" );
 		file->Printf( "#ifndef __GENERATED_EVENTS_H__\r\n" );
@@ -1440,7 +1440,7 @@ extern int ENGINE_SRC_REVISION;
 extern int ENGINE_MEDIA_REVISION;
 
 void sdScriptExporter::WriteBuildVersion( void ) {
-	idFile* buildVersionFile = fileSystem->OpenFileWrite( "src/base/BuildVersion.cpp" );
+	idFile* buildVersionFile = fileSystem->OpenFileWrite( "src/base/BuildVersion.cpp", "fs_devpath" );
 	if ( buildVersionFile == NULL ) {
 		gameLocal.Warning( "Failed To Write Version File" );
 		return;
@@ -1561,7 +1561,7 @@ void sdScriptExporter::WriteProjectFile( void ) {
 
 	temp.Replace( "$INSERTTEXTHERE$", replaceBlock.c_str() );
 
-	idFile* projectBaseOutput = fileSystem->OpenFileWrite( "src/base/CompiledScript.vcproj" );
+	idFile* projectBaseOutput = fileSystem->OpenFileWrite( "src/base/CompiledScript.vcproj", "fs_devpath" );
 	if ( projectBaseOutput == NULL ) {
 		return;
 	}
@@ -1569,6 +1569,22 @@ void sdScriptExporter::WriteProjectFile( void ) {
 	projectBaseOutput->Write( temp.c_str(), temp.Length() );
 
 	fileSystem->CloseFile( projectBaseOutput );
+
+	sdStringBuilder_Heap src;
+	sdStringBuilder_Heap dest;
+
+	idFileList* dependencies = fileSystem->ListFiles( "src/base", ".*" );
+	for( int i = 0; i < dependencies->GetNumFiles(); i++ ) {
+		src = fileSystem->BuildOSPath( fileSystem->GetBasePath(), fileSystem->GetGamePath(),dependencies->GetFile( i ) );
+		dest = fileSystem->BuildOSPath( cvarSystem->GetCVarString( "fs_devpath" ), fileSystem->GetGamePath(), dependencies->GetFile( i ) );
+
+		if( idStr::Cmp( src.c_str(), dest.c_str() ) == 0 ) {
+			continue;
+		}
+		fileSystem->CopyFile( src.c_str(), dest.c_str() );
+	}
+	fileSystem->FreeFileList( dependencies );
+
 #else
     const char *project_basename = "src/CompiledScript.xcodeproj/project.pbxproj.base";
 	idFile* projectBaseFile = fileSystem->OpenFileRead( project_basename );
@@ -1653,7 +1669,7 @@ void sdScriptExporter::WriteProjectFile( void ) {
     temp.Replace( "$INSERTBUILDPHASEHERE$", PBXBuildPhase.c_str() );
     
     fileSystem->CreateOSPath( "src/CompiledScript.xcodeproj/" );
-    idFile* projectBaseOutput = fileSystem->OpenFileWrite( "src/CompiledScript.xcodeproj/project.pbxproj" );
+    idFile* projectBaseOutput = fileSystem->OpenFileWrite( "src/CompiledScript.xcodeproj/project.pbxproj", "fs_devpath" );
 	if ( projectBaseOutput == NULL ) {
 		return;
 	}
@@ -1677,7 +1693,7 @@ void sdScriptExporter::WriteProjectFile( void ) {
     
 	fileSystem->CloseFile( plistBaseFile );
     
-    idFile* plistBaseOutput = fileSystem->OpenFileWrite( "src/compiledscript.so-Info.plist" );
+    idFile* plistBaseOutput = fileSystem->OpenFileWrite( "src/compiledscript.so-Info.plist", "fs_devpath" );
 	if ( plistBaseOutput == NULL ) {
 		return;
 	}
@@ -1708,7 +1724,7 @@ void sdScriptExporter::WriteProjectFile( void ) {
 void sdScriptExporter::WriteSysCalls( void ) {
 	idList< const idTypeDef* > dependencies;
 
-	idFile* headerFile = fileSystem->OpenFileWrite( g_fixedHFileName[ CS_FFH_SYSCALLS ] );
+	idFile* headerFile = fileSystem->OpenFileWrite( g_fixedHFileName[ CS_FFH_SYSCALLS ], "fs_devpath" );
 
 	headerFile->Printf( "#ifndef __GENERATED_SYSCALLS_H__\r\n" );
 	headerFile->Printf( "#define __GENERATED_SYSCALLS_H__\r\n\r\n" );
@@ -1739,7 +1755,7 @@ void sdScriptExporter::WriteSysCalls( void ) {
 
 	fileSystem->CloseFile( headerFile );
 
-	idFile* cppFile = fileSystem->OpenFileWrite( g_fixedCppFileName[ CS_FFC_SYSCALLS ] );
+	idFile* cppFile = fileSystem->OpenFileWrite( g_fixedCppFileName[ CS_FFC_SYSCALLS ], "fs_devpath" );
 
 	cppFile->Printf( "#include \"Precompiled.h\"\r\n" );
 	cppFile->Printf( "#pragma hdrstop\r\n\r\n" );
@@ -1891,7 +1907,7 @@ void sdScriptExporter::WriteSysCalls( void ) {
 void sdScriptExporter::WriteEventCalls( void ) {
 	idList< const idTypeDef* > dependencies;
 
-	idFile* headerFile = fileSystem->OpenFileWrite( g_fixedHFileName[ CS_FFH_EVENTCALLS ] );
+	idFile* headerFile = fileSystem->OpenFileWrite( g_fixedHFileName[ CS_FFH_EVENTCALLS ], "fs_devpath" );
 
 	headerFile->Printf( "#ifndef __GENERATED_EVENTCALLS_H__\r\n" );
 	headerFile->Printf( "#define __GENERATED_EVENTCALLS_H__\r\n\r\n" );
@@ -1922,7 +1938,7 @@ void sdScriptExporter::WriteEventCalls( void ) {
 
 	fileSystem->CloseFile( headerFile );
 
-	idFile* cppFile = fileSystem->OpenFileWrite( g_fixedCppFileName[ CS_FFC_EVENTCALLS ] );
+	idFile* cppFile = fileSystem->OpenFileWrite( g_fixedCppFileName[ CS_FFC_EVENTCALLS ], "fs_devpath" );
 
 	cppFile->Printf( "#include \"Precompiled.h\"\r\n" );
 	cppFile->Printf( "#pragma hdrstop\r\n\r\n" );
@@ -2074,7 +2090,7 @@ void sdScriptExporter::WriteEventCalls( void ) {
 void sdScriptExporter::WriteClassFunctionWrappers( void ) {
 	idList< const idTypeDef* > dependencies;
 
-	idFile* headerFile = fileSystem->OpenFileWrite( g_fixedHFileName[ CS_FFH_FUNCTIONWRAPPERS ] );
+	idFile* headerFile = fileSystem->OpenFileWrite( g_fixedHFileName[ CS_FFH_FUNCTIONWRAPPERS ], "fs_devpath" );
 
 	headerFile->Printf( "#ifndef __GENERATED_CLASSFUNCTIONWRAPPERS_H__\r\n" );
 	headerFile->Printf( "#define __GENERATED_CLASSFUNCTIONWRAPPERS_H__\r\n\r\n" );
@@ -2093,7 +2109,7 @@ void sdScriptExporter::WriteClassFunctionWrappers( void ) {
 
 	fileSystem->CloseFile( headerFile );
 
-	idFile* cppFile = fileSystem->OpenFileWrite( g_fixedCppFileName[ CS_FFC_FUNCTIONWRAPPERS ] );
+	idFile* cppFile = fileSystem->OpenFileWrite( g_fixedCppFileName[ CS_FFC_FUNCTIONWRAPPERS ], "fs_devpath" );
 
 	cppFile->Printf( "#include \"Precompiled.h\"\r\n" );
 	cppFile->Printf( "#pragma hdrstop\r\n\r\n" );
@@ -2284,7 +2300,7 @@ void sdScriptExporter::WriteFunctionWrappers( idFile* cppFile ) {
 void sdScriptExporter::WriteVirtualFunctions( void ) {
 	idFile* headerFile;
 	
-	headerFile = fileSystem->OpenFileWrite( g_fixedHFileName[ CS_FFH_VIRTUALFUNCTIONS ] );
+	headerFile = fileSystem->OpenFileWrite( g_fixedHFileName[ CS_FFH_VIRTUALFUNCTIONS ], "fs_devpath" );
 
 	idList< const idTypeDef* > dependencies;
 
@@ -2305,7 +2321,7 @@ void sdScriptExporter::WriteVirtualFunctions( void ) {
 
 	fileSystem->CloseFile( headerFile );
 
-	headerFile = fileSystem->OpenFileWrite( g_fixedHFileName[ CS_FFH_VIRTUALFUNCTIONDEPENDANCIES ] );
+	headerFile = fileSystem->OpenFileWrite( g_fixedHFileName[ CS_FFH_VIRTUALFUNCTIONDEPENDANCIES ], "fs_devpath" );
 
 	if ( dependencies.Num() > 0 ) {
 		headerFile->Printf( "// dependencies\r\n" );

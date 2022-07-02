@@ -442,6 +442,7 @@ sdUILayout_Vertical::sdUILayout_Vertical
 */
 sdUILayout_Vertical::sdUILayout_Vertical() {
 	GetScope().GetProperties().RegisterProperty( "verticalSize",			verticalSize );
+	verticalSize = 0.0f;
 	verticalSize.SetReadOnly( true );
 }
 /*

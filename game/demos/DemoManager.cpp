@@ -241,7 +241,7 @@ void sdDemoManagerLocal::StartDemo() {
 		}
 
 		melDataFileName.SetFileExtension( "mdf" );
-		melDataFile = fileSystem->OpenFileWrite( melDataFileName );
+		melDataFile = fileSystem->OpenFileWrite( melDataFileName, "fs_devpath" );
 		melFrames = 0;
 
 		if ( melDataFile ) {
