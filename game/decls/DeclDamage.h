@@ -11,9 +11,11 @@ class sdPlayerStatEntry;
 class sdDeclDamage : public idDecl {
 public:
 	struct stats_t {
+		sdPlayerStatEntry*	damage;
 		sdPlayerStatEntry*	shotsHit;
 		sdPlayerStatEntry*	shotsHitTorso;
 		sdPlayerStatEntry*	shotsHitHead;
+		sdPlayerStatEntry*	headshotKills;
 		sdPlayerStatEntry*	xp;
 
 		// players
@@ -22,6 +24,7 @@ public:
 		sdPlayerStatEntry*	teamKills;
 
 		sdPlayerStatEntry*	totalKills;
+		sdPlayerStatEntry*	totalHeadshotKills;
 		sdPlayerStatEntry*	totalDeaths;
 		sdPlayerStatEntry*	totalTeamKills;
 		sdPlayerStatEntry*	totalDamage;

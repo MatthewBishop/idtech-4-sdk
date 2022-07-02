@@ -13,13 +13,48 @@
 struct sdNetStatKeyValue {
 	enum statValueType {
 		SVT_INT,
-		SVT_FLOAT
+		SVT_FLOAT,
+		SVT_INT_MAX,
+		SVT_FLOAT_MAX,
 	};
 
 	union valueData_t {
 		int		i;
 		float	f;
 	};
+
+	sdNetStatKeyValue( void ) {
+		key = NULL;
+	}
+
+	sdNetStatKeyValue( const sdNetStatKeyValue& rhs ) {
+		key = NULL;
+		*this = rhs;
+	}
+
+	void operator=( const sdNetStatKeyValue& rhs ) {
+		ClearString();
+
+		if ( rhs.key != NULL ) {
+			key = rhs.key->GetPool()->AllocString( rhs.key->c_str() );
+		} else {
+			key = NULL;
+		}
+
+		type = rhs.type;
+		val = rhs.val;
+	}
+
+	~sdNetStatKeyValue( void ) {
+		ClearString();
+	}
+
+	void ClearString( void ) {
+		if ( key != NULL ) {
+			key->GetPool()->FreeString( key );
+		}
+		key = NULL;
+	}
 
 	const idPoolStr*	key;
 	statValueType		type;

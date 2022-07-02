@@ -39,6 +39,9 @@ static char THIS_FILE[] = __FILE__;
 #include "../proficiency/StatsTracker.h"
 #include "../script/Script_Program.h"
 
+#include "../../sdnet/SDNetUser.h"
+#include "../../sdnet/SDNetAccount.h"
+
 #include "../docs/wiki.h"
 
 //#include "TypeInfo.h"
@@ -716,6 +719,10 @@ Cmd_Say
 ============
 */
 void Cmd_DoSay( idWStr& text, gameReliableClientMessage_t mode ) {
+	if( text.LengthWithoutColors() == 0 ) {
+		return;
+	}
+
 	if ( text[ text.Length() - 1 ] == '\n' ) {
 		text[ text.Length() - 1 ] = '\0';
 	}
@@ -745,9 +752,6 @@ void Cmd_Say( const idCmdArgs &args, gameReliableClientMessage_t mode ) {
 	}
 
 	text = va( L"%hs", args.Args() );
-	if ( text.Length() == 0 ) {
-		return;
-	}
 	Cmd_DoSay( text, mode );
 }
 
@@ -820,7 +824,7 @@ void Cmd_GetViewpos_f( const idCmdArgs &args ) {
 	idStr output;
 	idStr clipOutput;
 	const renderView_t *view = player->GetRenderView();
-	if ( view ) {
+	if ( view != NULL ) {
 		idAngles angles = view->viewaxis[0].ToAngles();
 		output = va( "(%s) %.2f %.2f %.2f", view->vieworg.ToString(), angles.yaw, angles.pitch, angles.roll );
 		clipOutput = va( "%s %.2f %.2f %.2f\n", view->vieworg.ToString(), angles.yaw, angles.pitch, angles.roll );
@@ -2579,6 +2583,98 @@ static void Cmd_GameCrash_f( const idCmdArgs &args ) {
 }
 
 /*
+===============
+Cmd_PauseGame_f
+===============
+*/
+static void Cmd_PauseGame_f( const idCmdArgs &args ) {
+	if ( gameLocal.isClient ) {
+		return;
+	}
+
+	gameLocal.SetPaused( true );
+}
+
+/*
+===============
+Cmd_UnPauseGame_f
+===============
+*/
+static void Cmd_UnPauseGame_f( const idCmdArgs &args ) {
+	if ( gameLocal.isClient ) {
+		return;
+	}
+
+	gameLocal.SetPaused( false );
+}
+
+#if !defined( SD_DEMO_BUILD )
+/*
+===============
+Cmd_PrintUserGUID_f
+===============
+*/
+static void Cmd_PrintUserGUID_f( const idCmdArgs &args ) {
+	sdNetUser* user = networkService->GetActiveUser();
+	if ( user == NULL ) {
+		gameLocal.Printf( "No Active User Account\n" );
+		return;
+	}
+
+	if ( user->GetState() != sdNetUser::US_ONLINE ) {
+		gameLocal.Printf( "User Not Logged In or is an Offline Account\n" );
+		return;
+	}
+
+	sdNetClientId clientId;
+	sdNetAccount& account = user->GetAccount();
+	account.GetNetClientId( clientId );
+
+	const char* guid = va( "%u.%u", clientId.id[ 0 ], clientId.id[ 1 ] );
+	gameLocal.Printf( "User Id: '%s'\n", guid );
+	sys->SetClipboardData( va( L"%hs", guid ) );
+}
+#endif /* SD_DEMO_BUILD */
+
+/*
+===============
+Cmd_SetSpectateClient_f
+===============
+*/
+static void Cmd_SetSpectateClient_f( const idCmdArgs &args ) {
+	if ( args.Argc() != 2 ) {
+		gameLocal.Printf( "Invalid number of arguments, specify the client name or index\n" );
+		return;
+	}
+
+	int spectateeNum = -1;
+
+	const char* name = args.Argv( 1 );
+	if ( idStr::IsNumeric( name ) ) {
+		spectateeNum = atoi( name );
+		if ( spectateeNum < 0 || spectateeNum >= MAX_CLIENTS ) {
+			spectateeNum = -1;
+		} else {
+			if ( gameLocal.GetClient( spectateeNum ) == NULL ) {
+				spectateeNum = -1;
+			}
+		}
+	} else {
+		idPlayer* other = gameLocal.GetClientByName( name );
+		if ( other != NULL ) {
+			spectateeNum = other->entityNumber;
+		}
+	}
+
+	if ( spectateeNum == -1 ) {
+		gameLocal.Printf( "Could not find client %s\n", name );
+		return;
+	}
+
+	gameLocal.ChangeLocalSpectateClient( spectateeNum );
+}
+
+/*
 =================
 idGameLocal::InitConsoleCommands
 
@@ -2644,6 +2740,9 @@ void idGameLocal::InitConsoleCommands( void ) {
 	cmdSystem->AddCommand( "popLight",				Cmd_PopLight_f,				CMD_FL_GAME|CMD_FL_CHEAT,	"removes the last created light" );
 	cmdSystem->AddCommand( "testDeath",				Cmd_TestDeath_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"tests death" );
 	cmdSystem->AddCommand( "testModel",				idTestModel::TestModel_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"tests a model", idTestModel::ArgCompletion_TestModel );
+	cmdSystem->AddCommand( "hideSurface",	idTestModel::TestModelHideSurfaceID_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"hides surface for testmodel" );
+	cmdSystem->AddCommand( "showSurface",				idTestModel::TestModelShowSurfaceID_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"show surface for testmodel" );
+	cmdSystem->AddCommand( "resetSurfaces",				idTestModel::TestModelResetSurfaceID_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"shows all surfaces for testmodel" );
 	cmdSystem->AddCommand( "testSkin",				idTestModel::TestSkin_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"tests a skin on an existing testModel", idArgCompletionDecl_f< DECLTYPE_SKIN > );
 	cmdSystem->AddCommand( "testShaderParm",		idTestModel::TestShaderParm_f,		CMD_FL_GAME|CMD_FL_CHEAT,	"sets a shaderParm on an existing testModel" );
 	cmdSystem->AddCommand( "keepTestModel",			idTestModel::KeepTestModel_f,		CMD_FL_GAME|CMD_FL_CHEAT,	"keeps the last test model in the game" );
@@ -2754,6 +2853,15 @@ void idGameLocal::InitConsoleCommands( void ) {
 #endif // CLIP_DEBUG_EXTREME
 
 	cmdSystem->AddCommand( "gameCrash",					Cmd_GameCrash_f,				CMD_FL_GAME,		"cause a crash in the game module (dev purposes)" );
+
+	cmdSystem->AddCommand( "pauseGame",					Cmd_PauseGame_f,				CMD_FL_GAME,		"pauses the game" );
+	cmdSystem->AddCommand( "unPauseGame",				Cmd_UnPauseGame_f,				CMD_FL_GAME,		"unpauses the game" );
+
+#if !defined( SD_DEMO_BUILD )
+	cmdSystem->AddCommand( "printUserGUID",				Cmd_PrintUserGUID_f,			CMD_FL_GAME,		"prints the guid of the currently logged in user" );
+#endif /* !SD_DEMO_BUILD */
+
+	cmdSystem->AddCommand( "setSpectateClient",			Cmd_SetSpectateClient_f,		CMD_FL_GAME,		"switches to spectating the client specified, either by name or index" );
 }
 
 /*

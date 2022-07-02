@@ -60,7 +60,9 @@ public:
 
 	virtual void			DrawWindingMaterial( const idWinding2D& winding, const idMaterial* material, const idVec4& color ) = 0;
 
+	virtual void			DrawRect( float x, float y, float w, float h, const idVec4 &color ) = 0;
 	virtual void			DrawClippedRect( float x, float y, float w, float h, const idVec4 &color ) = 0;
+	virtual void			DrawBox( float x, float y, float w, float h, float size, const idVec4 &color ) = 0;
 	virtual void			DrawClippedBox( float x, float y, float w, float h, float size, const idVec4 &color ) = 0;
 
 	virtual void			DrawCircleMaterial( const float x, const float y, const idVec2& radius, const int numSides, const idVec4& tcInfo, const idMaterial* material, const idVec4& color, float rotation ) = 0;

@@ -496,10 +496,6 @@
 				>
 			</File>
 			<File
-				RelativePath=".\idlib\containers\NonBlockingQueue.h"
-				>
-			</File>
-			<File
 				RelativePath=".\idlib\containers\ObjArray.h"
 				>
 			</File>

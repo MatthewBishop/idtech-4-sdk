@@ -197,7 +197,7 @@ void sdVehiclePosition::LoadData( const idDict& dict ) {
 	if ( *statName ) {
 		sdStatsTracker& tracker = sdGlobalStatsTracker::GetInstance();
 
-		statTimeSpent = tracker.GetStat( tracker.AllocStat( va( "%s_time_spent", statName ), "int" ) );
+		statTimeSpent = tracker.GetStat( tracker.AllocStat( va( "%s_time_spent", statName ), sdNetStatKeyValue::SVT_INT ) );
 	} else {
 		gameLocal.Warning( "Missing Stat Name on '%s'", name.c_str() );
 	}
@@ -319,7 +319,7 @@ sdVehiclePosition::SetPlayer
 void sdVehiclePosition::SetPlayer( idPlayer* _player ) {
 	idPlayer* p = player;
 	if ( p && statTimeSpent ) {
-		statTimeSpent->IncreaseInteger( p->entityNumber, MS2SEC( gameLocal.time - playerEnteredTime ) );
+		statTimeSpent->IncreaseValue( p->entityNumber, ( int )MS2SEC( gameLocal.time - playerEnteredTime ) );
 	}
 
 	player = _player;
@@ -830,6 +830,8 @@ bool sdTransportPositionManager::EjectPlayer( sdVehiclePosition& position, bool 
 				selectedOrg = traceFromPoint;
 				selectedAxes;
 
+				const idClipModel* playerClip = player->GetPlayerPhysics().GetNormalClipModel();
+
 				for ( int i = 0; i < sortedExitJoints.Num(); i++ ) {
 					idVec3 org = sortedExitJoints[ i ].origin;
 					idMat3 axes = sortedExitJoints[ i ].axis;
@@ -840,7 +842,7 @@ bool sdTransportPositionManager::EjectPlayer( sdVehiclePosition& position, bool 
 					}
 
 					// check that the point is clear
-					int contents = gameLocal.clip.Contents( CLIP_DEBUG_PARMS org, player->GetPhysics()->GetClipModel(), mat3_identity, MASK_PLAYERSOLID, NULL );
+					int contents = gameLocal.clip.Contents( CLIP_DEBUG_PARMS org, playerClip, mat3_identity, MASK_PLAYERSOLID, NULL );
 					if( !contents ) {
 						// check that theres nothing in between the vehicle and the exit point
 						trace_t trace;
@@ -858,7 +860,7 @@ bool sdTransportPositionManager::EjectPlayer( sdVehiclePosition& position, bool 
 					for ( int i = 0; i < sortedExitJoints.Num(); i++ ) {
 						idVec3 orgBase = sortedExitJoints[ i ].origin;
 						idMat3 axes = sortedExitJoints[ i ].axis;
-						const int size = player->GetPhysics()->GetClipModel()->GetBounds().GetSize().x;
+						const int size = playerClip->GetBounds().GetSize().x;
 						const int spacing = 8;
 
 						for ( int j = -1; j < 2 && !foundOrg; j++ ) {
@@ -875,7 +877,7 @@ bool sdTransportPositionManager::EjectPlayer( sdVehiclePosition& position, bool 
 								}
 
 								// check that the point is clear
-								int contents = gameLocal.clip.Contents( CLIP_DEBUG_PARMS org, player->GetPhysics()->GetClipModel(), mat3_identity, MASK_PLAYERSOLID, NULL );
+								int contents = gameLocal.clip.Contents( CLIP_DEBUG_PARMS org, playerClip, mat3_identity, MASK_PLAYERSOLID, NULL );
 								if( !contents ) {
 									// check that theres nothing in between the vehicle and the exit point
 									trace_t trace;

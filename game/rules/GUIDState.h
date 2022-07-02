@@ -11,6 +11,8 @@ struct clientGUIDLookup_t {
 	int				ip;
 	int				pbid;
 	sdNetClientId	clientId;
+
+	idStr			name;
 };
 
 class sdGUIDInfo {
@@ -26,7 +28,9 @@ public:
 
 	matchType_t					GetMatchType( void ) const { return matchType; }
 	int							GetBanEndTime( void ) const { return banTime; }
-	const char*					GetAuthGroup( void ) const { return authGroup; }
+	const char*					GetAuthGroup( void ) const { return authGroup.c_str(); }
+	const char*					GetUserName( void ) const { return userName.c_str(); }
+	const char*					GetPrintableName( void ) const;
 	bool						IsBanned( void );
 
 	void						SetGUID( sdNetClientId guid ) { matchType = MT_GUID; id.clientId = guid; }
@@ -34,13 +38,14 @@ public:
 	void						SetPBID( int pbid ) { matchType = MT_PB; id.pbid = pbid; }
 	void						SetAuthGroup( const char* group ) { authGroup = group; }
 	void						SetMatch( const clientGUIDLookup_t& lookup );
+	void						SetUserName( const char* name ) { userName = name; }
 
 	void						SetBanTime( int t ) { banTime = t; }
 	void						BanForever( void ) { banTime = -1; }
 	void						Ban( int length );
 	void						UnBan( void ) { banTime = 0; }
 
-	int							CurrentTime( void );
+	time_t						CurrentTime( void );
 
 	bool						Match( const clientGUIDLookup_t& lookup );
 
@@ -51,6 +56,7 @@ private:
 	clientGUIDLookup_t			id;
 	time_t						banTime;
 	idStr						authGroup;
+	idStr						userName;
 };
 
 class sdGUIDFile {
@@ -70,6 +76,11 @@ public:
 	void						BanUser( const clientGUIDLookup_t& lookup, int length );
 	banState_t					CheckForBan( const clientGUIDLookup_t& lookup );
 	void						WriteGUIDFile( void );
+
+	void						ListBans( void );
+	static void					ListBans( const idBitMsg& msg );
+	bool						WriteBans( int& startIndex, idBitMsg& msg );
+	void						UnBan( int index );
 
 	static int					IPForString( const char* text );
 	static sdNetClientId		GUIDForString( const char* text );

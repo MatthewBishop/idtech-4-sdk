@@ -31,7 +31,7 @@ private:
 	sector_t*		GetSector( const idVec3& origin );
 
 private:
-	static idCVar	g_demoAnalyzationSectorSize;
+	static idCVar	g_demoAnalysisSectorSize;
 
 	sector_t*		sectors;
 	float			sectorSize;

@@ -303,20 +303,17 @@ void sdDemoManagerLocal::EndDemo() {
 sdDemoManagerLocal::RunDemoFrame
 ================
 */
-void sdDemoManagerLocal::RunDemoFrame( int clientNum, const usercmd_t* demoCmd  ) {
+void sdDemoManagerLocal::RunDemoFrame( const usercmd_t* demoCmd ) {
 
 	if ( demoCmd ) {
 		this->demoCmd = *demoCmd;
 	} else {
-		memset( &(this->demoCmd), 0, sizeof(usercmd_t) );
-		for( int i = 0; i < 3; i++ ) {
-			this->demoCmd.angles[ i ] = gameLocal.usercmds[ clientNum ].angles[ i ];
+		memset( &( this->demoCmd ), 0, sizeof( usercmd_t ) );
+		if ( gameLocal.localClientNum >= 0 && gameLocal.localClientNum < MAX_CLIENTS ) {
+			for( int i = 0; i < 3; i++ ) {
+				this->demoCmd.angles[ i ] = gameLocal.usercmds[ gameLocal.localClientNum ].angles[ i ];
+			}
 		}
-	}
-
-	idPlayer* player = NULL;
-	if ( clientNum != ASYNC_DEMO_CLIENT_INDEX ) {
-		player = gameLocal.GetClient( clientNum );
 	}
 
 	// update demo state
@@ -328,7 +325,8 @@ void sdDemoManagerLocal::RunDemoFrame( int clientNum, const usercmd_t* demoCmd  
 	case DS_PAUSED:
 		if ( oldState != DS_PAUSED ) {
 			if ( !demo_noclip.GetBool() ) {
-				if ( player ) {
+				idPlayer* player = gameLocal.GetLocalViewPlayer();
+				if ( player != NULL ) {
 					viewOrigin = player->firstPersonViewOrigin;
 					viewAngles = player->viewAngles;
 				}

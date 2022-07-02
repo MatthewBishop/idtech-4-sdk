@@ -132,6 +132,7 @@ public:
 	virtual const char*						GetScopeClassName() const { return "sdUIWindow"; }
 
 	virtual void							Draw();
+	virtual void							FinalDraw();
 
 	virtual void							InitProperties();
 	virtual void							EnumerateEvents( const char* name, const idList<unsigned short>& flags, idList< sdUIEventInfo >& events, const idTokenCache& tokenCache );

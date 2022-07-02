@@ -134,7 +134,7 @@ void idItem::OnPickup( idPlayer *player ) {
 	if ( gameLocal.isServer ) {
 		sdEntityBroadcastEvent msg( this, EVENT_PICKUP );
 		msg.WriteLong( gameLocal.GetSpawnId( player ) );
-		msg.Send( false, false );
+		msg.Send( false, sdReliableMessageClientInfoAll() );
 	}
 
 	int length = 0;

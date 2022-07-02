@@ -49,7 +49,7 @@ public:
 		int								GetMask( void ) const { return mask; }
 		const idVec2&					GetOrigin( void ) const { return origin; }
 		const idVec2&					GetDirection( void ) const { return direction; }
-		idEntity*						GetOwner( void ) const { return owner; }
+		idEntity*						GetOwner( void ) const { return owner; }		
 
 	private:
 		float							maxAngle;
@@ -97,6 +97,8 @@ public:
 	sdRadarLayer*						AllocRadarLayer( void );
 	sdRadarLayer*						AllocJammerLayer( void );
 	void								FreeRadarLayer( sdRadarLayer* layer );
+
+	const sdDeclLocStr*					GetLifeStatTitle( void ) const;
 
 	sdFireTeam&							GetFireTeam( int index );
 	int									GetFireTeamIndex( sdFireTeam* fireTeam ) const;
@@ -267,6 +269,8 @@ private:
 	sdFireTeam*							fireTeams;
 
 	const sdDeclToolTip*				playZoneExitToolTip;
+
+	const sdDeclLocStr*					lifeStatTitle;
 };
 
 class sdTeamManagerGameState : public sdEntityStateNetworkData {

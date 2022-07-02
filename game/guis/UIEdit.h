@@ -96,7 +96,8 @@ protected:
 
 private:
 	void									ClearText();
-	static bool								CharIsPrintable( char c ) { return c > 0x20; }
+	static bool								CharIsPrintable( char c ) { return idStr::CharIsPrintable( c ); }
+	const wchar_t*							GetCursorText() const { return L""; }
 
 	void									OnEditTextChanged( const idStr& oldValue, const idStr& newValue );
 	void									OnReadOnlyChanged( const float oldValue, const float newValue );

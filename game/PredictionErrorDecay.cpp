@@ -354,7 +354,7 @@ void sdPredictionErrorDecay_Origin::Decay( idVec3& renderOrigin, const sdPredict
 		return;
 	}
 
-	if ( gameLocal.time <= lastDecayTime || !gameLocal.isNewFrame || !owner->fl.allowPredictionErrorDecay ) {
+	if ( gameLocal.time <= lastDecayTime || !gameLocal.isNewFrame || gameLocal.msec == 0 || !owner->fl.allowPredictionErrorDecay ) {
 		renderOrigin = lastReturnedOrigin;
 		return;
 	}
@@ -943,7 +943,7 @@ void sdPredictionErrorDecay_Angles::Decay( idMat3& renderAxis, bool yawOnly ) {
 		return;
 	}
 
-	if ( gameLocal.time <= lastDecayTime || !gameLocal.isNewFrame || !owner->fl.allowPredictionErrorDecay ) {
+	if ( gameLocal.time <= lastDecayTime || !gameLocal.isNewFrame || gameLocal.msec == 0 || !owner->fl.allowPredictionErrorDecay ) {
 		renderAxis = lastReturnedAngles.ToMat3();
 		return;
 	}

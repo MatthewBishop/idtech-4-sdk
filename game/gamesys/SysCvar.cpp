@@ -44,7 +44,7 @@ idCVar gamedate(					"gamedate",					__DATE__,		CVAR_GAME | CVAR_ROM, "" );
 
 // server info
 idCVar si_name(						"si_name",					GAME_NAME " Server",	CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE, "name of the server" );
-idCVar si_maxPlayers(				"si_maxPlayers",			"24",					CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_INTEGER, "max number of players allowed on the server", 1, static_cast< float >( MAX_CLIENTS ) );
+idCVar si_maxPlayers(				"si_maxPlayers",			"16",					CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_INTEGER, "max number of players allowed on the server", 1, static_cast< float >( MAX_CLIENTS ) );
 idCVar si_privateClients(			"si_privateClients",		"0",					CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_INTEGER, "max number of private players allowed on the server", 0, static_cast< float >( MAX_CLIENTS ) );
 idCVar si_teamDamage(				"si_teamDamage",			"1",					CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_BOOL | CVAR_RANKLOCKED, "enable team damage" );
 idCVar si_needPass(					"si_needPass",				"0",					CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_BOOL | CVAR_RANKLOCKED, "enable client password checking" );
@@ -72,6 +72,7 @@ idCVar si_allowLateJoin(			"si_allowLateJoin",			"1",					CVAR_GAME | CVAR_SERVE
 idCVar si_noProficiency(			"si_noProficiency",			"0",					CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_BOOL | CVAR_RANKLOCKED, "enable/disable XP" );
 idCVar si_disableGlobalChat(		"si_disableGlobalChat",		"0",					CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_BOOL | CVAR_RANKLOCKED, "disable global text communication" );
 idCVar si_gameReviewReadyWait(		"si_gameReviewReadyWait",	"0",					CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE | CVAR_BOOL,		"wait for players to ready up before going to the next map" );
+idCVar si_serverURL(				"si_serverURL",				"",						CVAR_GAME | CVAR_SERVERINFO | CVAR_ARCHIVE, "server information page" );
 
 
 idCVar* si_motd_cvars[] = {
@@ -132,7 +133,7 @@ idCVar g_debugMask(					"g_debugMask",				"",				CVAR_GAME, "debugs a deployment
 idCVar g_debugLocations(			"g_debugLocations",			"0",			CVAR_GAME | CVAR_BOOL, "" );
 idCVar g_showActiveDeployZones(		"g_showActiveDeployZones",	"0",			CVAR_GAME | CVAR_BOOL, "" );
 
-idCVar g_disableVehicleSpawns(		"g_disableVehicleSpawns",	"0",			CVAR_GAME, "disables vehicles spawning from construction pads" );
+idCVar g_disableVehicleSpawns(		"g_disableVehicleSpawns",	"0",			CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT | CVAR_RANKLOCKED, "disables vehicles spawning from construction pads" );
 
 idCVar g_frametime(					"g_frametime",				"0",			CVAR_GAME | CVAR_BOOL, "displays timing information for each game frame" );
 //idCVar g_timeentities(				"g_timeEntities",			"0",			CVAR_GAME | CVAR_FLOAT, "when non-zero, shows entities whose think functions exceeded the # of milliseconds specified" );
@@ -233,7 +234,7 @@ idCVar pm_sprintspeedstrafe(		"pm_sprintspeedstrafe",		"176",			CVAR_GAME | CVAR
 idCVar pm_noclipspeed(				"pm_noclipspeed",			"480",			CVAR_GAME | CVAR_NETWORKSYNC | CVAR_FLOAT, "speed the player can move while in noclip" );
 idCVar pm_noclipspeedsprint(		"pm_noclipspeedsprint",		"960",			CVAR_GAME | CVAR_NETWORKSYNC | CVAR_FLOAT, "speed the player can move while in noclip and sprinting" );
 idCVar pm_noclipspeedwalk(			"pm_noclipspeedwalk",		"256",			CVAR_GAME | CVAR_NETWORKSYNC | CVAR_FLOAT, "speed the player can move while in noclip and walking" );
-idCVar pm_democamspeed(				"pm_democamspeed",			"200",			CVAR_GAME | CVAR_FLOAT, "speed the player can move while flying around in a demo" );
+idCVar pm_democamspeed(				"pm_democamspeed",			"200",			CVAR_GAME | CVAR_FLOAT | CVAR_NOCHEAT, "speed the player can move while flying around in a demo" );
 idCVar pm_spectatespeed(			"pm_spectatespeed",			"450",			CVAR_GAME | CVAR_NETWORKSYNC | CVAR_FLOAT, "speed the player can move while spectating" );
 idCVar pm_spectatespeedsprint(		"pm_spectatespeedsprint",	"1024",			CVAR_GAME | CVAR_NETWORKSYNC | CVAR_FLOAT, "speed the player can move while spectating and sprinting" );
 idCVar pm_spectatespeedwalk(		"pm_spectatespeedwalk",		"256",			CVAR_GAME | CVAR_NETWORKSYNC | CVAR_FLOAT, "speed the player can move while spectating and walking" );
@@ -283,9 +284,11 @@ idCVar pm_slidevelocity(			"pm_slidevelocity",			"1",			CVAR_GAME | CVAR_BOOL | 
 idCVar pm_powerslide(				"pm_powerslide",			"0.09",			CVAR_GAME | CVAR_FLOAT | CVAR_NETWORKSYNC, "adjust the push when pm_slidevelocity == 1, set power < 1 -> more speed, > 1 -> closer to pm_slidevelocity 0", 0, 4 );
 
 idCVar g_showPlayerArrows(			"g_showPlayerArrows",		"1",			CVAR_GAME | CVAR_INTEGER | CVAR_NETWORKSYNC, "enable/disable arrows above the heads of players (0=off,1=all,2=friendly only)" );
+idCVar g_showPlayerClassIcon(		"g_showPlayerClassIcon",	"0",			CVAR_GAME | CVAR_BOOL | CVAR_ARCHIVE, "Force drawing of player class icon above players in the fireteam." );
 
 idCVar g_showPlayerShadow(			"g_showPlayerShadow",		"1",			CVAR_GAME | CVAR_PROFILE | CVAR_ARCHIVE | CVAR_BOOL, "enables shadow of player model" );
 idCVar g_showHud(					"g_showHud",				"1",			CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT, "draw the hud gui" );
+idCVar g_advancedHud(				"g_advancedHud",			"0",			CVAR_GAME | CVAR_BOOL | CVAR_ARCHIVE | CVAR_PROFILE, "Draw advanced HUD" );
 idCVar g_skipPostProcess(			"g_skipPostProcess",		"0",			CVAR_GAME | CVAR_BOOL, "draw the post process gui" );
 idCVar g_gun_x(						"g_gunX",					"0",			CVAR_GAME | CVAR_FLOAT, "" );
 idCVar g_gun_y(						"g_gunY",					"0",			CVAR_GAME | CVAR_FLOAT, "" );
@@ -404,7 +407,7 @@ idCVar bot_useUniforms(				"bot_useUniforms",				"1",		CVAR_GAME | CVAR_BOOL | C
 idCVar bot_noChat(					"bot_noChat",					"0",		CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT,		"0 = bots chat, 1 = bots never chat" );
 idCVar bot_noTaunt(					"bot_noTaunt",					"1",		CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT,		"0 = bots taunt, 1 = bots never taunt" );
 idCVar bot_aimSkill(				"bot_aimSkill",					"1",		CVAR_GAME | CVAR_INTEGER | CVAR_NETWORKSYNC | CVAR_NOCHEAT,	"Sets the bot's default aiming skill. 0 = EASY, 1 = MEDIUM, 2 = EXPERT, 3 = MASTER", 0, 3, idCmdSystem::ArgCompletion_Integer<0,3> );
-idCVar bot_skill(					"bot_skill",					"1",		CVAR_GAME | CVAR_INTEGER | CVAR_NETWORKSYNC | CVAR_NOCHEAT,	"Sets the bot's default AI skill. 0 = EASY, 1 = NORMAL, 2 = EXPERT", 0, 2, idCmdSystem::ArgCompletion_Integer<0,2> );
+idCVar bot_skill(					"bot_skill",					"3",		CVAR_GAME | CVAR_INTEGER | CVAR_NETWORKSYNC | CVAR_NOCHEAT,	"Sets the bot's default AI skill. 0 = EASY, 1 = NORMAL, 2 = EXPERT, 3 = TRAINING MODE - this mode is useful for learning about the game", 0, 3, idCmdSystem::ArgCompletion_Integer<0,3> );
 idCVar bot_knifeOnly(				"bot_knifeOnly",				"0",		CVAR_GAME | CVAR_BOOL,						"goofy mode where the bots only use their knifes in combat." );
 idCVar bot_ignoreEnemies(			"bot_ignoreEnemies",			"0",		CVAR_GAME | CVAR_INTEGER,					"If set to 1, bots will ignore all enemies. Useful for debugging bot behavior" );
 idCVar bot_debug(					"bot_debug",					"0",		CVAR_GAME | CVAR_BOOL,						"Debug various bot subsystems. Many bot debugging features are disabled if this is not set to 1" );
@@ -424,7 +427,7 @@ idCVar bot_debugPersonalVehicles(	"bot_debugPersonalVehicles",	"0",		CVAR_GAME |
 idCVar bot_debugWeapons(			"bot_debugWeapons",				"0",		CVAR_GAME | CVAR_BOOL,						"Only used for debugging bots weapons." );
 idCVar bot_uiNumStrogg(				"bot_uiNumStrogg",				"-1",		CVAR_GAME | CVAR_INTEGER | CVAR_NETWORKSYNC | CVAR_NOCHEAT,	"The number of strogg bots to add to the server. -1 to disable" );
 idCVar bot_uiNumGDF(				"bot_uiNumGDF",					"-1",		CVAR_GAME | CVAR_INTEGER | CVAR_NETWORKSYNC | CVAR_NOCHEAT,	"The number of gdf bots to add to the server. -1 to disable" );
-idCVar bot_uiSkill(					"bot_uiSkill",					"1",		CVAR_GAME | CVAR_INTEGER | CVAR_NETWORKSYNC | CVAR_NOCHEAT,	"The overall skill the bots should play at in the game. 0 = EASY, 1 = MEDIUM, 2 = EXPERT, 3 = MASTER" );
+idCVar bot_uiSkill(					"bot_uiSkill",					"5",		CVAR_GAME | CVAR_INTEGER | CVAR_NETWORKSYNC | CVAR_NOCHEAT,	"The overall skill the bots should play at in the game. 0 = EASY, 1 = MEDIUM, 2 = EXPERT, 3 = MASTER, 4 = CUSTOM, 5 = TRAINING" );
 idCVar bot_showPath(				"bot_showPath",					"-1",		CVAR_GAME | CVAR_INTEGER,					"Show the path for the bot's client number. -1 = disable." );
 idCVar bot_skipThinkClient(			"bot_skipThinkClient",			"-1",		CVAR_GAME | CVAR_INTEGER,					"A debug only cvar that skips thinking for a particular bot with the client number entered. -1 = disabled." );
 idCVar bot_debugMapScript(			"bot_debugMapScript",			"0",		CVAR_GAME | CVAR_BOOL,						"Allows you to debug the bot script." );
@@ -437,8 +440,11 @@ idCVar bot_godMode(					"bot_godMode",					"-1",		CVAR_GAME | CVAR_INTEGER,					
 idCVar bot_useRearSpawn(			"bot_useRearSpawn",				"1",		CVAR_BOOL | CVAR_GAME,						"debug bots using rear spawn points" );
 idCVar bot_sleepWhenServerEmpty(	"bot_sleepWhenServerEmpty",		"1",		CVAR_BOOL | CVAR_GAME | CVAR_NOCHEAT,		"has the bots stop thinking when the server is idle and there are no humans playing, to conserve CPU." );
 idCVar bot_allowObstacleDecay(		"bot_allowObstacleDecay",		"1",		CVAR_BOOL | CVAR_GAME,						"0 = dont allow obstacle decay. 1 = allow obstacle decay." );
-idCVar bot_allowClassChanges(		"bot_allowClassChanges",		"1",		CVAR_GAME | CVAR_BOOL,						"0 = bots won't ever change their class. 1 = Bots can change their class thru script/code." );
+idCVar bot_allowClassChanges(		"bot_allowClassChanges",		"1",		CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT,		"0 = bots won't ever change their class. 1 = Bots can change their class thru script/code." );
 idCVar bot_testPathToBotAction(		"bot_testPathToBotAction",		"-1",		CVAR_GAME | CVAR_INTEGER,					"based on which aas type aas_test is set to, will test to see if a path is available from the players current origin, to the bot action in question. You need to join a team for this to work properly! -1 = disabled." );
+idCVar bot_pauseInVehicleTime(		"bot_pauseInVehicleTime",		"7",		CVAR_GAME | CVAR_INTEGER,					"Time the bots will pause when first enter a vehicle ( in seconds ) to allow others to jump in. Default is 7 seconds." );
+idCVar bot_doObjsInTrainingMode(	"bot_doObjsInTrainingMode",		"1",		CVAR_GAME | CVAR_BOOL,						"Controls whether or not bots will do objectives in training mode, if the human isn't the correct class to do the objective. 0 = bots won't do primary or secondary objecitives in training mode. 1 = bots will do objectives. Default = 1. " );
+idCVar bot_doObjsDelayTimeInMins(	"bot_doObjsDelayTimeInMins",	"3",		CVAR_GAME | CVAR_INTEGER,					"How long of a delay in time the bots will have before they start considering objectives while in Training mode. Default is 3 minutes. " );
 
 idCVar g_showCrosshairInfo(			"g_showCrosshairInfo",			"1",		CVAR_INTEGER | CVAR_GAME,					"shows information about the entity under your crosshair" );
 
@@ -482,7 +488,7 @@ idCVar g_muteSpecs(					"g_muteSpecs",					"0",		CVAR_GAME | CVAR_ARCHIVE | CVAR
 idCVar g_warmup(					"g_warmup",						"0.5",		CVAR_GAME | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_RANKLOCKED,		"Length (in minutes) of warmup period" );
 idCVar g_gameReviewPause(			"g_gameReviewPause",			"0.5",		CVAR_GAME | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_RANKLOCKED,		"Time (in minutes) for scores review time" );
 idCVar g_password(					"g_password",					"",			CVAR_GAME | CVAR_ARCHIVE | CVAR_RANKLOCKED,	"game password" );
-idCVar g_privatePassword(			"g_privatePassword",			"",			CVAR_GAME | CVAR_ARCHIVE | CVAR_RANKLOCKED,	"game password for private slots" );
+idCVar g_privatePassword(			"g_privatePassword",			"",			CVAR_GAME | CVAR_ARCHIVE, "game password for private slots" );
 idCVar g_xpSave(					"g_xpSave",						"1",		CVAR_GAME | CVAR_ARCHIVE | CVAR_BOOL | CVAR_RANKLOCKED,		"stores xp for disconnected players which will be given back if they reconnect" );
 idCVar g_kickBanLength(				"g_kickBanLength",				"2",		CVAR_GAME | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_RANKLOCKED,		"length of time a kicked player will be banned for" );
 idCVar g_maxSpectateTime(			"g_maxSpectateTime",			"0",		CVAR_GAME | CVAR_ARCHIVE | CVAR_FLOAT | CVAR_RANKLOCKED,		"maximum length of time a player may spectate for" );
@@ -509,5 +515,48 @@ idCVar g_autoReadyWait(				"g_autoReadyWait",				"1",		CVAR_GAME | CVAR_FLOAT | 
 
 idCVar g_useBotsInPlayerTotal(		"g_useBotsInPlayerTotal",		"1",		CVAR_GAME | CVAR_BOOL | CVAR_ARCHIVE,		"Should bots count towards the number of players required to start the game?" );
 
-idCVar g_playTooltipSound(			"g_playTooltipSound",			"1",		CVAR_BOOL | CVAR_GAME | CVAR_ARCHIVE | CVAR_PROFILE, "Play the sound attached to a tooltip when it is shown" );
-idCVar g_tooltipTimeScale(			"g_tooltipTimeScale",			"1",		CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE | CVAR_PROFILE, "Scale the amount of time that a tooltip is visible. 0 will disable all tooltips." );
+idCVar g_playTooltipSound(			"g_playTooltipSound",			"2",		CVAR_GAME | CVAR_INTEGER | CVAR_ARCHIVE | CVAR_PROFILE, "0: no sound 1: play tooltip sound in single player only 2: Always play tooltip sound" );
+idCVar g_tooltipTimeScale(			"g_tooltipTimeScale",			"1",		CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE | CVAR_PROFILE, "Scale the amount of time that a tooltip is visible. 0 will disable all tooltips." );
+idCVar g_tooltipVolumeScale(		"g_tooltipVolumeScale",			"-20",		CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE | CVAR_PROFILE, "Change the game volume while playing a tooltip with VO." );
+idCVar g_allowSpecPauseFreeFly(		"g_allowSpecPauseFreeFly",		"1",		CVAR_GAME | CVAR_BOOL | CVAR_NETWORKSYNC,	"Allow spectators to free fly when the game is paused" );
+idCVar g_smartTeamBalance(			"g_smartTeamBalance",			"1",		CVAR_GAME | CVAR_BOOL | CVAR_RANKLOCKED,	"Encourages players to balance teams themselves by giving rewards." );
+idCVar g_smartTeamBalanceReward(	"g_smartTeamBalanceReward",		"10",		CVAR_GAME | CVAR_INTEGER | CVAR_RANKLOCKED,	"The amount of XP to give people who switch teams when asked to." );
+
+idCVar g_keepFireTeamList(			"g_keepFireTeamList",			"0",		CVAR_GAME | CVAR_BOOL | CVAR_ARCHIVE | CVAR_PROFILE, "Always show the fireteam list on the HUD." );
+
+idCVar net_serverDownload(			"net_serverDownload",			"0",		CVAR_GAME | CVAR_INTEGER | CVAR_ARCHIVE, "enable server download redirects. 0: off 1: client exits and opens si_serverURL in web browser 2: client downloads pak files from an URL and connects again. See net_serverDl* cvars for configuration" );
+idCVar net_serverDlBaseURL(			"net_serverDlBaseURL",			"",			CVAR_GAME | CVAR_ARCHIVE, "base URL for the download redirection" );
+idCVar net_serverDlTable(			"net_serverDlTable",			"",			CVAR_GAME | CVAR_ARCHIVE, "pak names for which download is provided, seperated by ; - use a * to mark all paks" );
+
+idCVar g_drawMineIcons(				"g_drawMineIcons",				"1",		CVAR_GAME | CVAR_BOOL | CVAR_ARCHIVE | CVAR_PROFILE,		"Draw icons on the HUD for mines." );
+idCVar g_allowMineIcons(			"g_allowMineIcons",				"1",		CVAR_GAME | CVAR_BOOL | CVAR_NETWORKSYNC | CVAR_RANKLOCKED, "Allow clients to draw icons on the HUD for mines." );
+idCVar g_mineIconSize(				"g_mineIconSize",				"10",		CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE | CVAR_PROFILE,		"Size of the screen space mine icons. NOTE: Will only take effect for new mines, not those already existing." );
+idCVar g_mineIconAlphaScale(		"g_mineIconAlphaScale",			"1",		CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE | CVAR_PROFILE,		"Alpha scale to apply to mine icons. NOTE: Will only take effect for new mines, not those already existing." );
+
+idCVar g_drawVehicleIcons(			"g_drawVehicleIcons",			"1",		CVAR_GAME | CVAR_BOOL | CVAR_ARCHIVE | CVAR_PROFILE,		"Draw icons on the HUD for vehicles (eg spawn invulnerability)." );
+
+#ifdef SD_SUPPORT_REPEATER
+
+idCVar ri_useViewerPass(			"ri_useViewerPass",				"0",		CVAR_GAME | CVAR_ARCHIVE | CVAR_REPEATERINFO | CVAR_BOOL, "use g_viewerPassword for viewers/repeaters" );
+idCVar g_viewerPassword(			"g_viewerPassword",				"",			CVAR_GAME | CVAR_ARCHIVE, "password for viewers" );
+idCVar g_repeaterPassword(			"g_repeaterPassword",			"",			CVAR_GAME | CVAR_ARCHIVE, "password for repeaters" );
+
+idCVar ri_privateViewers(			"ri_privateViewers",			"0",		CVAR_GAME | CVAR_ARCHIVE | CVAR_REPEATERINFO | CVAR_INTEGER, "number of private viewer slots" );
+idCVar g_privateViewerPassword(		"g_privateViewerPassword",		"",			CVAR_GAME | CVAR_ARCHIVE, "privatePassword for private viewer slots" );
+
+idCVar ri_name(						"ri_name",						"",			CVAR_GAME | CVAR_ARCHIVE | CVAR_REPEATERINFO, "override the server's si_name with this for relays" );
+
+idCVar g_noTVChat(					"g_noTVChat",					"0",		CVAR_GAME | CVAR_ARCHIVE | CVAR_BOOL, "Server enable/disable flag for viewer chat on ETQW:TV" );
+
+#endif // SD_SUPPORT_REPEATER
+
+idCVar g_drawHudMessages(			"g_drawHudMessages",			"1",		CVAR_GAME | CVAR_INTEGER | CVAR_ARCHIVE | CVAR_PROFILE,		"Draw task, task success and objective text on HUD." );
+idCVar g_mineTriggerWarning(		"g_mineTriggerWarning",			"1",		CVAR_GAME | CVAR_BOOL | CVAR_ARCHIVE | CVAR_PROFILE,		"Show warning message on HUD when triggering a proximity mine." );
+
+idCVar g_trainingMode(				"g_trainingMode",				"0",		CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT,						"whether the game is in training mode or not" );
+
+idCVar g_objectiveDecayTime(		"g_objectiveDecayTime",			"5",		CVAR_GAME | CVAR_FLOAT | CVAR_RANKLOCKED,					"Length of time in seconds that it takes a construct/hack objective to decay once after the initial timeout is complete" );
+
+idCVar g_noQuickChats(				"g_noQuickChats",				"0",		CVAR_GAME | CVAR_BOOL | CVAR_ARCHIVE | CVAR_PROFILE,		"disables sound and text of quickchats" );
+
+idCVar g_maxProficiency(			"g_maxProficiency",				"0",		CVAR_GAME | CVAR_BOOL | CVAR_RANKLOCKED, "" );

@@ -628,15 +628,13 @@ sdClientScriptEntity::UpdateScript
 =====================
 */
 void sdClientScriptEntity::UpdateScript( void ) {
-	int	i;
-
-	if ( !baseScriptThread ) {
+	if ( !baseScriptThread || gameLocal.IsPaused() ) {
 		return;
 	}
 
 	// a series of state changes can happen in a single frame.
 	// this loop limits them in case we've entered an infinite loop.
-	for( i = 0; i < 20; i++ ) {
+	for( int i = 0; i < 20; i++ ) {
 		if ( scriptIdealState != scriptState ) {
 			SetState( scriptIdealState );
 		}

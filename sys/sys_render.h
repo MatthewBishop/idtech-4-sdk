@@ -20,6 +20,30 @@
 	typedef void*	wndHandle_t;
 #endif
 
+struct multiSampleParms {
+	int multi;
+	int coverage;
+
+	explicit multiSampleParms() : multi(0), coverage(0) {
+	}
+
+	explicit multiSampleParms( int ms ) : multi(ms), coverage(0) {
+	}
+
+	explicit multiSampleParms( int ms, int cv ) : multi(ms), coverage(cv) {
+	}
+
+	bool operator==( multiSampleParms const &other ) const {
+		return multi == other.multi && coverage == other.coverage;
+	}
+
+	bool operator!=( multiSampleParms const &other ) const {
+		return !(*this == other);
+	}
+
+};
+
+
 
 struct glimpParms_t	{
 	int			width;
@@ -27,7 +51,7 @@ struct glimpParms_t	{
 	bool		fullScreen;
 	bool		stereo;
 	int			displayHz;
-	int			multiSamples;
+	multiSampleParms			multiSamples;
 	float		pixelAspect;		// pixel width / height, should be 1.0 in most cases
 	bool		fullscreenAvail;
 
@@ -54,7 +78,7 @@ public:
 	int			alphaBits;
 	int			depthBits;
 	int			stencilBits;
-	int			multiSamples;
+	multiSampleParms	multiSamples;
 	bool		forceUnique;
 	bool		offscreen;
 	bool		doubleBuffer;
@@ -90,6 +114,32 @@ public:
 						  int redBits, int greenBits, int blueBits,
 						  int alphaBits, int depthBits, int stencilBits,
 						  int multiSamples, bool forceUnique,
+						  bool offscreen, bool doubleBuffer, 
+						  bool floatingPoint, bool bindToTexture, 
+						  bool generateMipMaps, bool isGameContext ) 
+	:	width( width ),
+		height( height ),
+		redBits( redBits ),
+		greenBits( greenBits ),
+		blueBits( blueBits ),
+		alphaBits( alphaBits ),
+		depthBits( depthBits ),
+		stencilBits( stencilBits ),
+		multiSamples( multiSamples ),
+		forceUnique( forceUnique ),
+		offscreen( offscreen ),
+		doubleBuffer( doubleBuffer ),
+		floatingPoint( floatingPoint ),
+		bindToTexture( bindToTexture ),
+		generateMipMaps( generateMipMaps ),
+		windowDC( NULL ),
+		isGameContext( isGameContext ) {
+	}
+
+	idRenderContextParms( int width, int height,
+						  int redBits, int greenBits, int blueBits,
+						  int alphaBits, int depthBits, int stencilBits,
+						  multiSampleParms multiSamples, bool forceUnique,
 						  bool offscreen, bool doubleBuffer, 
 						  bool floatingPoint, bool bindToTexture, 
 						  bool generateMipMaps, bool isGameContext ) 
@@ -223,14 +273,6 @@ public:
 	// adjust the game window glimpParms_t as a result of window size dragging
 	virtual void					WindowSizeDragged( int width, int height ) = 0;
 
-	// convenience function to keep the same glimpParms_t except for
-	// the fullscreen flag, used by all the edit dialogs to make sure
-	// they can be used.  No effect if already windowed.
-	virtual void					GoWindowed( void ) = 0;
-
-	// go fullscreen if windowed. No effect if already fullscreen
-	virtual void					GoFullScreen( void ) = 0;
-
 	// associates the rendering context with the device context.
 	// NULL can be passed to disable the context for performance testing
 	virtual bool					MakeCurrent( dcHandle_t windowDC ) = 0;
@@ -251,6 +293,8 @@ public:
 	virtual void					SetGamma( unsigned short red[256], unsigned short green[256], unsigned short blue[256] ) = 0;
 
 	virtual bool					IsDisplayModeAvailable( int width, int height ) = 0;
+	virtual int						GetNumMSAAModes( void ) const = 0;
+	virtual const char *			GetMSAAMode( int idx, int &val ) const = 0;
 	virtual bool					IsMSAACountAvailable( int msaa ) const = 0;
 	// returns the number of available monitors 
 	virtual int						GetNumMonitors() const = 0;

@@ -154,13 +154,13 @@ void sdCommandMapInfo::Flash( const idMaterial* material, int msec, int setFlags
 	}
 
 	if ( setFlags != -1 ) {
-		if ( gameLocal.time > _flashEndTime ) {
+		if ( gameLocal.ToGuiTime( gameLocal.time ) > _flashEndTime ) {
 			_flagsBackup = _flags;
 		}
 		_flags = setFlags;
 	}
 
-	_flashEndTime = gameLocal.time + msec;
+	_flashEndTime = gameLocal.ToGuiTime( gameLocal.time ) + msec;
 }
 
 /*
@@ -198,7 +198,7 @@ sdCommandMapInfo::Draw
 */
 void sdCommandMapInfo::Draw( idPlayer* player, const idVec2& position, const idVec2& screenPos, const idVec2& screenSize, const idVec2& mapScale, bool known, float sizeScale, const idMat2& rotation, float angle_, bool fullSize ) {
 
-	bool flashing = gameLocal.time > _flashEndTime ? false : true;
+	bool flashing = gameLocal.ToGuiTime( gameLocal.time ) > _flashEndTime ? false : true;
 
 	// restore original flags after we're done with flashing
 	if ( !flashing && _flagsBackup != -1 ) {
@@ -267,7 +267,7 @@ void sdCommandMapInfo::Draw( idPlayer* player, const idVec2& position, const idV
 	static idVec4 drawColor;
 	switch ( _colorMode ) {
 		case CM_FRIENDLY:
-			if ( !player->GetGameTeam() ) {
+			if ( player == NULL || !player->GetGameTeam() ) {
 				drawColor = idEntity::GetColorForAllegiance( TA_NEUTRAL );
 			} else {
 				if ( _flags & CMF_FIRETEAMCOLORING && sameFireTeam ) {
@@ -291,7 +291,7 @@ void sdCommandMapInfo::Draw( idPlayer* player, const idVec2& position, const idV
 	}
 
 	if ( flashing ) { 
-		drawColor.w = idMath::Cos( gameLocal.time * 0.02f ) * 0.5f + 0.5f;
+		drawColor.w = idMath::Cos( gameLocal.ToGuiTime( gameLocal.time ) * 0.02f ) * 0.5f + 0.5f;
 	}
 
 	idVec2 drawSize = known ? _size : _unknownSize;
@@ -346,33 +346,37 @@ void sdCommandMapInfo::Draw( idPlayer* player, const idVec2& position, const idV
 		}
 		case DM_ROTATED_MATERIAL: {
 			if ( material != NULL ) {
-				float angle;
+				float angle = 270.f;
 				if ( _flags & CMF_FOLLOWROTATION ) {
-					idPlayer* player = _owner->Cast< idPlayer >();				
-					if ( player == gameLocal.GetLocalPlayer() ) {
-						if( !sdCommandMapInfo::g_rotateCommandMap.GetBool() || fullSize ) {
-							idMat3 pAxis;
-							if ( _flags & CMF_PLAYERROTATIONONLY && player->GetRemoteCamera() != NULL ) {
-								pAxis = player->viewAxis;
+					idPlayer* localPlayer = gameLocal.GetLocalPlayer();
+					if ( localPlayer != NULL ) {
+						if ( localPlayer == _owner ) {
+							if( !sdCommandMapInfo::g_rotateCommandMap.GetBool() || fullSize ) {
+								idMat3 pAxis;
+								if ( _flags & CMF_PLAYERROTATIONONLY && localPlayer->GetRemoteCamera() != NULL ) {
+									pAxis = player->viewAxis;
+								} else {
+									localPlayer->GetRenderViewAxis( pAxis );
+								}
+								angle = -pAxis.ToAngles().yaw;
 							} else {
-								player->GetRenderViewAxis( pAxis );
+								angle = 270.0f;
 							}
-							angle = -pAxis.ToAngles().yaw;
 						} else {
-							angle = 270.0f;
-						}
-					} else if( idPlayer* player = gameLocal.GetLocalPlayer() ) {
-						if( !sdCommandMapInfo::g_rotateCommandMap.GetBool() || fullSize ) {
-							angle = -_owner->GetRenderEntity()->axis.ToAngles().yaw;
-						} else {
-							idMat3 pAxis;
-							if ( _flags & CMF_PLAYERROTATIONONLY && player->GetRemoteCamera() != NULL ) {
-								pAxis = player->viewAxis;
+							if( !sdCommandMapInfo::g_rotateCommandMap.GetBool() || fullSize ) {
+								angle = -_owner->GetRenderEntity()->axis.ToAngles().yaw;
 							} else {
-								player->GetRenderViewAxis( pAxis );
+								idMat3 pAxis;
+								if ( _flags & CMF_PLAYERROTATIONONLY && localPlayer->GetRemoteCamera() != NULL ) {
+									pAxis = localPlayer->viewAxis;
+								} else {
+									localPlayer->GetRenderViewAxis( pAxis );
+								}
+								angle = -_owner->GetRenderEntity()->axis.ToAngles().yaw + pAxis.ToAngles().yaw - 90.0f;
 							}
-							angle = -_owner->GetRenderEntity()->axis.ToAngles().yaw + pAxis.ToAngles().yaw - 90.0f;
 						}
+					} else if ( gameLocal.serverIsRepeater ) {
+						// FIXME: ETQWTV
 					}
 				} else {
 					angle = _angle;
@@ -389,33 +393,37 @@ void sdCommandMapInfo::Draw( idPlayer* player, const idVec2& position, const idV
 		}
 		case DM_ARC:
 			if ( material != NULL ) {
-				float angle;
+				float angle = 270.f;
 				if ( _flags & CMF_FOLLOWROTATION ) {
-					idPlayer* player = _owner->Cast< idPlayer >();				
-					if ( player == gameLocal.GetLocalPlayer() ) {
-						if( !sdCommandMapInfo::g_rotateCommandMap.GetBool() || fullSize ) {
-							idMat3 pAxis;
-							if ( _flags & CMF_PLAYERROTATIONONLY && player->GetRemoteCamera() != NULL ) {
-								pAxis = player->viewAxis;
+					idPlayer* localPlayer = gameLocal.GetLocalPlayer();
+					if ( localPlayer != NULL ) {
+						if ( _owner == localPlayer ) {
+							if( !sdCommandMapInfo::g_rotateCommandMap.GetBool() || fullSize ) {
+								idMat3 pAxis;
+								if ( _flags & CMF_PLAYERROTATIONONLY && localPlayer->GetRemoteCamera() != NULL ) {
+									pAxis = localPlayer->viewAxis;
+								} else {
+									localPlayer->GetRenderViewAxis( pAxis );
+								}
+								angle = -pAxis.ToAngles().yaw;
 							} else {
-								player->GetRenderViewAxis( pAxis );
+								angle = 270.0f;
 							}
-							angle = -pAxis.ToAngles().yaw;
 						} else {
-							angle = 270.0f;
-						}
-					} else if( idPlayer* player = gameLocal.GetLocalPlayer() ) {
-						if( !sdCommandMapInfo::g_rotateCommandMap.GetBool() || fullSize ) {
-							angle = -_owner->GetRenderEntity()->axis.ToAngles().yaw;
-						} else {
-							idMat3 pAxis;
-							if ( _flags & CMF_PLAYERROTATIONONLY && player->GetRemoteCamera() != NULL ) {
-								pAxis = player->viewAxis;
+							if( !sdCommandMapInfo::g_rotateCommandMap.GetBool() || fullSize ) {
+								angle = -_owner->GetRenderEntity()->axis.ToAngles().yaw;
 							} else {
-								player->GetRenderViewAxis( pAxis );
+								idMat3 pAxis;
+								if ( _flags & CMF_PLAYERROTATIONONLY && localPlayer->GetRemoteCamera() != NULL ) {
+									pAxis = player->viewAxis;
+								} else {
+									localPlayer->GetRenderViewAxis( pAxis );
+								}
+								angle = -_owner->GetRenderEntity()->axis.ToAngles().yaw + pAxis.ToAngles().yaw - 90.0f;
 							}
-							angle = -_owner->GetRenderEntity()->axis.ToAngles().yaw + pAxis.ToAngles().yaw - 90.0f;
 						}
+					} else {
+						// FIXME: ETQWTV
 					}
 				} else {
 					angle = _angle;

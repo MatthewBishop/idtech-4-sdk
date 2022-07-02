@@ -72,6 +72,7 @@ void sdUpdateManager::Init( void ) {
 	properties.RegisterProperty( "progress",				progress );
 	properties.RegisterProperty( "state",					state );
 	properties.RegisterProperty( "message",					message );
+	properties.RegisterProperty( "fromserver",				fromServer );
 
 	sdDeclGUI::AddDefine( va( "UPDATE_AVAIL_UNKNOWN %i",			UPDATE_AVAIL_UNKNOWN ) );
 	sdDeclGUI::AddDefine( va( "UPDATE_AVAIL_NOREPLY %i",			UPDATE_AVAIL_NOREPLY ) );

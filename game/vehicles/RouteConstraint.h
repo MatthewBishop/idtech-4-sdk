@@ -118,6 +118,7 @@ public:
 	bool										GetPositionWarning( void ) const { return positionWarning; }
 	bool										GetMaskWarning( void ) const { return maskWarning; }
 	bool										GetKickPlayer( void ) const { return kickPlayer; }
+	float										GetKickDistance( void ) const { return kickDistance; }
 	sdRoutePoint::renderList_t&					GetRenderList( void ) { return markers; }
 	idEntity*									GetTrackerEntity( void ) const { return controller; }
 
@@ -128,6 +129,7 @@ public:
 	void										SetPositionWarning( bool value ) { positionWarning = value; }
 	void										SetMaskWarning( bool value ) { maskWarning = value; }
 	void										SetKickPlayer( bool value ) { kickPlayer = value; }
+	void										SetKickDistance( int value ) { kickDistance = value; }
 
 	void										GetDropLocation( idVec3& position, idAngles& angles ) const;
 
@@ -143,6 +145,7 @@ private:
 	bool										positionWarning;
 	bool										maskWarning;
 	bool										kickPlayer;
+	int											kickDistance;
 	sdRoutePoint::renderList_t					markers;
 };
 

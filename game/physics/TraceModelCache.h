@@ -13,7 +13,8 @@
 ===============================================================
 */
 
-#define MAX_TRACEMODEL_WATER_POINTS	64
+#define MAX_TRACEMODEL_WATER_POINTS			64
+#define MAX_TRACEMODEL_WATER_POINTS_POOL	( MAX_TRACEMODEL_WATER_POINTS * 3 )
 
 struct traceModelWater_t {
 	idVec3				xyz;
@@ -47,6 +48,26 @@ public:
 private:
 	void							AllocFileEntry( const char* fileName, int traceModelIndex );
 	int								FindFileEntry( const char* fileName, bool includeBrushes );
+
+	// stuff for figuring out the water points
+	struct polyPoint_t {
+		idVec3						xyz;
+		float						weight;
+		float						squareWeight;
+		idLinkList< polyPoint_t >	node;
+	};
+
+	typedef polyPoint_t*			polyPointPtr_t;
+
+	static polyPoint_t				polyPointPool[ MAX_TRACEMODEL_WATER_POINTS_POOL ];
+	static polyPoint_t*				freePolyPoints[ MAX_TRACEMODEL_WATER_POINTS_POOL ];
+	static int						numFreePolyPoints;
+	static bool						polyPointPoolValid;
+
+	static polyPoint_t*				NewPolyPoint( void );
+	static void						DeletePolyPoint( polyPoint_t* point );
+	static void						DeletePointList( idLinkList< polyPoint_t >& points );
+	static void						FindClosestPoints( idLinkList< polyPoint_t >& points, polyPointPtr_t& closePoint1, polyPointPtr_t& closePoint2 );
 
 	struct trmCache_t {
 		idTraceModel				trm;

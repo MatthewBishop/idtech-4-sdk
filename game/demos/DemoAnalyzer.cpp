@@ -15,7 +15,7 @@ static char THIS_FILE[] = __FILE__;
 #include "../Player.h"
 #include "../vehicles/Transport.h"
 
-idCVar sdDemoAnalyzer::g_demoAnalyzationSectorSize( "g_demoAnalyzationSectorSize", "64", CVAR_SYSTEM | CVAR_INTEGER, "sector size for stat generation" );	
+idCVar sdDemoAnalyzer::g_demoAnalysisSectorSize( "g_demoAnalysisSectorSize", "64", CVAR_SYSTEM | CVAR_INTEGER, "sector size for stat generation" );	
 
 /*
 ================
@@ -70,7 +70,7 @@ void sdDemoAnalyzer::Start() {
 	}
 
 	// generate grid
-	sectorSize = g_demoAnalyzationSectorSize.GetInteger();
+	sectorSize = g_demoAnalysisSectorSize.GetInteger();
 	sectorDimX = ( gameLocal.clip.GetWorldBounds().GetMaxs().x - gameLocal.clip.GetWorldBounds().GetMins().x ) / sectorSize;
 	sectorDimY = ( gameLocal.clip.GetWorldBounds().GetMaxs().y - gameLocal.clip.GetWorldBounds().GetMins().y ) / sectorSize;
 
@@ -159,9 +159,9 @@ void sdDemoAnalyzer::Stop() {
 				}
 			}
 
-			fileSystem->WriteTGA( va( "imagedump/demo_analyzation/%s/loc_%s_%s.tga",
+			fileSystem->WriteTGA( va( "imagedump/demo_analysis/%s/loc_%s_%s.tga",
 										networkSystem->GetDemoName(),
-										manager.GetTeamByIndex( i ).GetName(),
+										manager.GetTeamByIndex( i ).GetLookupName(),
 										gameLocal.declPlayerClassType[ teamClassIndexToClassIndex[ i ][ j ] ]->GetName() ),
 									pic, sectorDimX, sectorDimY );
 		}

@@ -25,6 +25,7 @@ static char THIS_FILE[] = __FILE__;
 #include "roles/WayPointManager.h"
 #include "Atmosphere.h"
 #include "client/ClientEffect.h"
+#include "ContentMask.h"
 
 const int IMPULSE_DELAY = 150;
 
@@ -49,6 +50,7 @@ idPlayerView::idPlayerView( void ) {
 	lastSpectateUpdateTime = 0;
 
 	ClearEffects();
+	ClearRepeaterView();
 }
 
 /*
@@ -153,7 +155,7 @@ void idPlayerView::SetActiveProxyView( idEntity* other, idPlayer* player ) {
 		gameLocal.localPlayerProperties.OnActiveViewProxyChanged( NULL );
 	}
 
-	if ( other ) {
+	if ( other != NULL ) {
 		other->GetUsableInterface()->BecomeActiveViewProxy( player );
 		activeViewProxy = other;
 
@@ -167,7 +169,7 @@ idPlayerView::UpdateProxyView
 ===================
 */
 void idPlayerView::UpdateProxyView( idPlayer* player, bool force ) {
-	idEntity* proxy = player->GetProxyEntity();
+	idEntity* proxy = player != NULL ? player->GetProxyEntity() : NULL;
 
 	if ( activeViewProxy != proxy || force ) {
 		SetActiveProxyView( proxy, player );
@@ -269,7 +271,7 @@ bool idPlayerView::SkipWorldRender( void ) {
 				break;
 			}			
 		}
-		if ( sdUserInterfaceLocal* scoreboardUI = gameLocal.GetUserInterface( gameLocal.GetScoreBoardGui() ) ) {
+		if ( sdUserInterfaceLocal* scoreboardUI = gameLocal.GetUserInterface( gameLocal.localPlayerProperties.GetScoreBoard() ) ) {
 			skipWorldRender |= scoreboardUI->TestGUIFlag( sdUserInterfaceLocal::GUI_INHIBIT_GAME_WORLD );
 		}
 	}
@@ -289,9 +291,8 @@ void idPlayerView::SingleView( idPlayer* viewPlayer, const renderView_t* view ) 
 	}
 
 	bool runEffect = false;
-	idVec3 const &viewOrg = viewPlayer->GetRenderView()->vieworg;
-	if ( !g_skipLocalizedPrecipitation.GetBool() ) {
-
+	idVec3 const &viewOrg = view->vieworg;
+	if ( !g_skipLocalizedPrecipitation.GetBool() && gameLocal.GetLocalPlayer() != NULL ) {
 		idBounds checkBounds( viewOrg );
 		checkBounds.ExpandSelf( 8.0f );
 		const idClipModel* waterModel;
@@ -370,12 +371,19 @@ void idPlayerView::SingleView2D( idPlayer* viewPlayer ) {
 	}	
 
 	idPlayer* localPlayer = gameLocal.GetLocalPlayer();
-	if ( localPlayer != NULL ) {
-		bool drawHud = !localPlayer->InhibitHud();
+	if ( localPlayer != NULL || gameLocal.serverIsRepeater ) {
+		bool drawHud;
+		if ( gameLocal.serverIsRepeater ) {
+			drawHud = true;
+		} else {
+			drawHud = !localPlayer->InhibitHud();
+		}
 
-		idEntity* proxy = viewPlayer->GetProxyEntity();
-		if ( proxy != NULL ) {
-			drawHud &= !proxy->GetUsableInterface()->GetHideHud( viewPlayer );
+		if ( viewPlayer != NULL ) {
+			idEntity* proxy = viewPlayer->GetProxyEntity();
+			if ( proxy != NULL ) {
+				drawHud &= !proxy->GetUsableInterface()->GetHideHud( viewPlayer );
+			}
 		}
 		
 		sdHudModule* module = NULL;		
@@ -388,7 +396,7 @@ void idPlayerView::SingleView2D( idPlayer* viewPlayer ) {
 			}			
 		}
 			// jrad - the scoreboard should top everything
-		if( drawHud ) {
+		if ( drawHud ) {
 			DrawScoreBoard( localPlayer );
 		}		
 	}
@@ -492,14 +500,24 @@ idPlayerView::DrawScoreBoard
 ================
 */
 void idPlayerView::DrawScoreBoard( idPlayer* player ) {
-	sdUserInterfaceLocal* scoreboardUI = gameLocal.GetUserInterface( gameLocal.GetScoreBoardGui() );
-	if ( !scoreboardUI ) {
+	sdUserInterfaceLocal* scoreboardUI = gameLocal.GetUserInterface( gameLocal.localPlayerProperties.GetScoreBoard() );
+	if ( scoreboardUI == NULL ) {
 		return;
 	}
 
 	bool skipWorldRender = SkipWorldRender();
-	bool showScores = sdDemoManager::GetInstance().InPlayBack() ? sdDemoManager::GetInstance().GetDemoCommand().clientButtons.showScores : player->usercmd.clientButtons.showScores;
-	
+
+	bool showScores;
+	if ( sdDemoManager::GetInstance().InPlayBack() ) {
+		showScores = sdDemoManager::GetInstance().GetDemoCommand().clientButtons.showScores;
+	} else if ( player != NULL ) {
+		showScores = player->usercmd.clientButtons.showScores;
+	} else if ( gameLocal.serverIsRepeater ) {
+		showScores = gameLocal.playerView.GetRepeaterUserCmd().clientButtons.showScores;
+	} else {
+		showScores = false;
+	}
+
 	if ( ( showScores && !skipWorldRender ) || gameLocal.localPlayerProperties.ShouldShowEndGame() ) {
 		if( !scoreboardUI->IsActive() ) {
 			scoreboardUI->Activate();
@@ -522,16 +540,298 @@ void idPlayerView::DrawScoreBoard( idPlayer* player ) {
 
 /*
 ===================
+idPlayerView::ClearRepeaterView
+===================
+*/
+void idPlayerView::ClearRepeaterView( void ) {
+	repeaterViewInfo.deltaViewAngles.Zero();
+	repeaterViewInfo.viewAngles.Zero();
+	repeaterViewInfo.origin.Zero();
+	repeaterViewInfo.velocity.Zero();
+	repeaterViewInfo.foundSpawn = false;
+	repeaterCrosshairInfo.Invalidate();
+}
+
+/*
+===================
+idPlayerView::CalcRepeaterCrosshairInfo
+===================
+*/
+const sdCrosshairInfo& idPlayerView::CalcRepeaterCrosshairInfo( void ) {
+	idPlayer* viewer = gameLocal.GetActiveViewer();
+
+	float range = 8192;
+	float radius = 8.f;
+
+	idEntity* proxy = NULL;
+	if ( viewer != NULL ) {
+		proxy = viewer->GetProxyEntity();
+	}
+	if ( proxy != NULL ) {
+		proxy->DisableClip( false );
+	}
+
+	idVec3 vieworg	= repeaterViewInfo.origin;
+	idMat3 viewaxes	= repeaterViewInfo.viewAngles.ToMat3();
+
+	trace_t trace;
+	memset( &trace, 0, sizeof( trace ) );
+	idVec3 end = vieworg + ( viewaxes[ 0 ] * range );
+
+	bool retVal = gameLocal.clip.TracePoint( CLIP_DEBUG_PARMS trace, vieworg, end, MASK_SHOT_RENDERMODEL | CONTENTS_SHADOWCOLLISION | CONTENTS_SLIDEMOVER | CONTENTS_BODY | CONTENTS_PROJECTILE | CONTENTS_CROSSHAIRSOLID, viewer, TM_CROSSHAIR_INFO, radius );
+
+	// set up approximate distance
+	if ( trace.c.material != NULL && trace.c.material->GetSurfaceFlags() & SURF_NOIMPACT ) {
+		repeaterCrosshairInfo.SetDistance( range );
+	} else {
+		repeaterCrosshairInfo.SetDistance( range * trace.fraction );
+	}
+
+	if ( retVal ) {
+		if ( trace.c.entityNum != ENTITYNUM_NONE && trace.c.entityNum != ENTITYNUM_WORLD ) {
+
+			idEntity* traceEnt = gameLocal.entities[ trace.c.entityNum ];
+
+			if ( repeaterCrosshairInfo.GetEntity() != traceEnt || !repeaterCrosshairInfo.IsValid() ) {
+				repeaterCrosshairInfo.SetEntity( traceEnt );
+				repeaterCrosshairInfo.SetStartTime( gameLocal.time );
+			}
+
+			if ( traceEnt != NULL ) {
+				if ( traceEnt->UpdateCrosshairInfo( viewer, repeaterCrosshairInfo ) ) {
+					repeaterCrosshairInfo.Validate();
+				}
+			}
+		}
+	}
+
+	if ( proxy != NULL ) {
+		proxy->EnableClip();
+	}
+
+	repeaterCrosshairInfo.SetTrace( trace );
+	return repeaterCrosshairInfo;
+}
+
+/*
+===================
+idPlayerView::SetRepeaterUserCmd
+===================
+*/
+void idPlayerView::SetRepeaterUserCmd( const usercmd_t& usercmd ) {
+	if ( ( usercmd.buttons.btn.altAttack ) != ( repeaterUserCmd.buttons.btn.altAttack ) ) {
+		if ( usercmd.buttons.btn.altAttack ) {
+			gameLocal.ChangeLocalSpectateClient( -1 );
+		}
+	}
+	if ( ( usercmd.buttons.btn.attack ) != ( repeaterUserCmd.buttons.btn.attack ) ) {
+		if ( usercmd.buttons.btn.attack ) {
+			int followIndex = gameLocal.GetRepeaterFollowClientIndex();
+
+			int index = followIndex;
+			int count = MAX_ASYNC_CLIENTS;
+			while ( count > 0 ) {
+				count--;
+				index++;
+				if ( index >= MAX_ASYNC_CLIENTS ) {
+					index = 0;
+				}
+
+				if ( gameLocal.GetClient( index ) != NULL ) {
+					break;
+				}
+			}
+			if ( count != 0 ) {
+				if ( index != followIndex ) {
+					gameLocal.ChangeLocalSpectateClient( index );
+				}
+			}
+		}
+	}
+	repeaterUserCmd = usercmd;
+}
+
+/*
+===================
+idPlayerView::UpdateRepeaterView
+===================
+*/
+void idPlayerView::UpdateRepeaterView( void ) {
+	repeaterUserOrigin_t userOrigin;
+	userOrigin.followClient = gameLocal.GetRepeaterFollowClientIndex();
+
+	if ( userOrigin.followClient != -1 ) {
+		idPlayer* player = gameLocal.GetClient( userOrigin.followClient );
+		assert( player != NULL );
+
+		renderView_t* view = player->GetRenderView();
+
+		repeaterViewInfo.origin = view->vieworg;
+		repeaterViewInfo.velocity.Zero();
+		repeaterViewInfo.viewAngles = view->viewaxis.ToAngles();
+	} else {
+		// update camera origin
+		for( int i = 0; i < 3; i++ ) {
+			repeaterViewInfo.viewAngles[ i ] = idMath::AngleNormalize180( SHORT2ANGLE( repeaterUserCmd.angles[ i ] ) + repeaterViewInfo.deltaViewAngles[ i ] );
+		}
+
+		repeaterViewInfo.viewAngles.pitch = idMath::ClampFloat( -89.f, 89.f, repeaterViewInfo.viewAngles.pitch );
+		repeaterViewInfo.viewAngles.roll = 0.f;
+
+		if ( !repeaterViewInfo.foundSpawn ) {
+			if ( gameLocal.SelectInitialSpawnPointForRepeaterClient( repeaterViewInfo.origin, repeaterViewInfo.viewAngles ) ) {
+				repeaterViewInfo.velocity.Zero();
+				repeaterViewInfo.foundSpawn = true;
+			}
+		}
+
+		// calculate vectors
+		idVec3 gravityNormal = gameLocal.GetGravity();
+		gravityNormal.Normalize();
+
+		idVec3 viewForward = repeaterViewInfo.viewAngles.ToForward();
+		viewForward.Normalize();
+		idVec3 viewRight = gravityNormal.Cross( viewForward );
+		viewRight.Normalize();
+
+		// scale user command
+		int		max;
+		float	scale;
+
+		int forwardmove = repeaterUserCmd.forwardmove;
+		int rightmove = repeaterUserCmd.rightmove;
+		int upmove = repeaterUserCmd.upmove;
+
+		max = abs( forwardmove );
+		if ( abs( rightmove ) > max ) {
+			max = abs( rightmove );
+		}
+		if ( abs( upmove ) > max ) {
+			max = abs( upmove );
+		}
+
+		if ( !max ) {
+			scale = 0.0f;
+		} else {
+			float total = idMath::Sqrt( (float) forwardmove * forwardmove + rightmove * rightmove + upmove * upmove );
+			scale = pm_democamspeed.GetFloat() * max / ( 127.0f * total );
+		}
+
+		// move
+		float	frametime = MS2SEC( USERCMD_MSEC );
+
+		float	speed, drop, friction, newspeed, stopspeed;
+		float	wishspeed;
+		idVec3	wishdir;
+
+		// friction
+		speed = repeaterViewInfo.velocity.Length();
+		if ( speed < 20.f ) {
+			repeaterViewInfo.velocity.Zero();
+		} else {
+			stopspeed = pm_democamspeed.GetFloat() * 0.3f;
+			if ( speed < stopspeed ) {
+				speed = stopspeed;
+			}
+			friction = 12.0f;
+			drop = speed * friction * frametime;
+
+			// scale the velocity
+			newspeed = speed - drop;
+			if (newspeed < 0) {
+				newspeed = 0;
+			}
+
+			repeaterViewInfo.velocity *= newspeed / speed;
+		}
+
+		// accelerate
+		wishdir = scale * (viewForward * repeaterUserCmd.forwardmove + viewRight * repeaterUserCmd.rightmove);
+		wishdir -= scale * gravityNormal * repeaterUserCmd.upmove;
+		wishspeed = wishdir.Normalize();
+		wishspeed *= scale;
+
+		// q2 style accelerate
+		float addspeed, accelspeed, currentspeed;
+
+		currentspeed = repeaterViewInfo.velocity * wishdir;
+		addspeed = wishspeed - currentspeed;
+		if ( addspeed > 0 ) {
+			accelspeed = 10.0f * frametime * wishspeed;
+			if ( accelspeed > addspeed ) {
+				accelspeed = addspeed;
+			}
+			
+			repeaterViewInfo.velocity += accelspeed * wishdir;
+		}
+
+		// move
+		idVec3 velocity = repeaterViewInfo.velocity;
+		float timeLeft = frametime;
+
+		int count = 10;
+		while ( count > 0 ) {
+			idVec3 newOrigin = repeaterViewInfo.origin + ( timeLeft * velocity );
+
+			trace_t trace;
+			gameLocal.clip.TranslationWorld( trace, repeaterViewInfo.origin, newOrigin, gameLocal.clip.GetThirdPersonOffsetModel(), mat3_identity, CONTENTS_SOLID | CONTENTS_PLAYERCLIP | CONTENTS_BODY ); 
+			if ( trace.fraction != 1.f ) {
+				repeaterViewInfo.origin = trace.endpos;
+				timeLeft -= timeLeft * trace.fraction;
+				velocity.ProjectOntoPlane( trace.c.normal, 1.001f );
+			} else {
+				repeaterViewInfo.origin = newOrigin;
+				break;
+			}
+
+			count--;
+		}
+	}
+
+	for( int i = 0; i < 3; i++ ) {
+		repeaterViewInfo.deltaViewAngles[ i ] = repeaterViewInfo.viewAngles[ i ] - SHORT2ANGLE( repeaterUserCmd.angles[ i ] );
+	}
+
+	userOrigin.origin = repeaterViewInfo.origin;
+
+#ifdef SD_SUPPORT_REPEATER
+	networkSystem->SetClientRepeaterUserOrigin( userOrigin );
+#endif // SD_SUPPORT_REPEATER
+}
+
+/*
+===================
+idPlayerView::CalculateRepeaterView
+===================
+*/
+void idPlayerView::CalculateRepeaterView( renderView_t& view ) {
+	// jrad - ensure that this is running updates
+	sdPostProcess* postProcess = gameLocal.localPlayerProperties.GetPostProcess();
+	if ( postProcess != NULL && !postProcess->Enabled() ) {
+		postProcess->Enable( true );
+	}
+
+	view.viewID = 0;
+	view.vieworg = repeaterViewInfo.origin;
+	view.viewaxis = repeaterViewInfo.viewAngles.ToMat3();
+	view.fov_x = g_fov.GetFloat();
+
+	view.time = gameLocal.time;
+
+	view.x = 0;
+	view.y = 0;
+	view.width = SCREEN_WIDTH;
+	view.height = SCREEN_HEIGHT;
+}
+
+/*
+===================
 idPlayerView::RenderPlayerView
 ===================
 */
 bool idPlayerView::RenderPlayerView( idPlayer* viewPlayer ) {
 	// hack the shake in at the very last moment, so it can't cause any consistency problems
 	memset( &currentView, 0, sizeof( currentView ) );
-
-	if ( viewPlayer == NULL ) {
-		return false;
-	}
 
 	// allow demo manager to override the view
 	if ( sdDemoManager::GetInstance().CalculateRenderView( &currentView ) ) {
@@ -541,50 +841,63 @@ bool idPlayerView::RenderPlayerView( idPlayer* viewPlayer ) {
 		// field of view
 		gameLocal.CalcFov( currentView.fov_x, currentView.fov_x, currentView.fov_y );
 	} else {
-		const renderView_t& view = viewPlayer->renderView;
+		int listenerId = -1;
+		if ( viewPlayer == NULL ) {
+			if ( gameLocal.serverIsRepeater ) {
+				CalculateRepeaterView( currentView );
 
-		// hack the shake in at the very last moment, so it can't cause any consistency problems
-		currentView = view;
+				// field of view
+				gameLocal.CalcFov( currentView.fov_x, currentView.fov_x, currentView.fov_y );
+			} else {
+				return false;
+			}
+		} else {
+			const renderView_t& view = viewPlayer->renderView;
 
-		// readjust the view one frame earlier for regular game draws (again: for base draws, not for extra draws)
-		// extra draws do this in their own loop
-		if ( gameLocal.com_unlockFPS->GetBool() && !gameLocal.unlock.unlockedDraw && gameLocal.unlock.canUnlockFrames ) {
-			if ( g_unlock_updateViewpos.GetBool() && g_unlock_viewStyle.GetInteger() == 1 ) {
-				currentView.vieworg = gameLocal.unlock.originlog[ ( gameLocal.framenum + 1 ) & 1 ];
-				if ( viewPlayer->weapon != NULL ) {
-					viewPlayer->weapon->GetRenderEntity()->origin -= gameLocal.unlock.originlog[ gameLocal.framenum & 1 ] - gameLocal.unlock.originlog[ ( gameLocal.framenum + 1 ) & 1 ];
-					viewPlayer->weapon->BecomeActive( TH_UPDATEVISUALS );
-					viewPlayer->weapon->Present();
+			currentView = view;
 
-					// if the weapon has a GUI bound, offset it as well
-					for ( rvClientEntity* cent = viewPlayer->weapon->clientEntities.Next(); cent != NULL; cent = cent->bindNode.Next() ) {
+			// readjust the view one frame earlier for regular game draws (again: for base draws, not for extra draws)
+			// extra draws do this in their own loop
+			if ( gameLocal.com_unlockFPS->GetBool() && !gameLocal.unlock.unlockedDraw && gameLocal.unlock.canUnlockFrames ) {
+				if ( g_unlock_updateViewpos.GetBool() && g_unlock_viewStyle.GetInteger() == 1 ) {
+					currentView.vieworg = gameLocal.unlock.originlog[ ( gameLocal.framenum + 1 ) & 1 ];
+					if ( viewPlayer->weapon != NULL ) {
+						viewPlayer->weapon->GetRenderEntity()->origin -= gameLocal.unlock.originlog[ gameLocal.framenum & 1 ] - gameLocal.unlock.originlog[ ( gameLocal.framenum + 1 ) & 1 ];
+						viewPlayer->weapon->BecomeActive( TH_UPDATEVISUALS );
+						viewPlayer->weapon->Present();
 
-						sdGuiSurface* guiSurface;
-						rvClientEffect* effect;
-						if ( ( guiSurface = cent->Cast< sdGuiSurface >() ) != NULL ) {
-							idVec3 o;
-							guiSurface->GetRenderable().GetOrigin( o );
-							o -= gameLocal.unlock.originlog[ gameLocal.framenum & 1 ] - gameLocal.unlock.originlog[ ( gameLocal.framenum + 1 ) & 1 ];
-							guiSurface->GetRenderable().SetOrigin( o );
-						} else if ( ( effect = cent->Cast< rvClientEffect >() ) != NULL ) {
-							effect->ClientUpdateView();
+						// if the weapon has a GUI bound, offset it as well
+						for ( rvClientEntity* cent = viewPlayer->weapon->clientEntities.Next(); cent != NULL; cent = cent->bindNode.Next() ) {
+
+							sdGuiSurface* guiSurface;
+							rvClientEffect* effect;
+							if ( ( guiSurface = cent->Cast< sdGuiSurface >() ) != NULL ) {
+								idVec3 o;
+								guiSurface->GetRenderable().GetOrigin( o );
+								o -= gameLocal.unlock.originlog[ gameLocal.framenum & 1 ] - gameLocal.unlock.originlog[ ( gameLocal.framenum + 1 ) & 1 ];
+								guiSurface->GetRenderable().SetOrigin( o );
+							} else if ( ( effect = cent->Cast< rvClientEffect >() ) != NULL ) {
+								effect->ClientUpdateView();
+							}
 						}
 					}
 				}
 			}
+
+			// shakey shake
+			currentView.viewaxis = currentView.viewaxis * ShakeAxis();
+
+			listenerId = viewPlayer->entityNumber + 1;
 		}
 
-		// shakey shake
-		currentView.viewaxis = currentView.viewaxis * ShakeAxis();
-
-		viewPlayer->UpdateHudStats();
+		gameLocal.UpdateHudStats( viewPlayer );
 
 		// place the sound origin for the player
-		gameSoundWorld->PlaceListener( view.vieworg, view.viewaxis, viewPlayer->entityNumber + 1, gameLocal.time );
+		gameSoundWorld->PlaceListener( currentView.vieworg, currentView.viewaxis, listenerId, gameLocal.time );
 	}
 
 	// Special view mode is enabled
-	if ( g_testViewSkin.GetString()[0] ) {
+	if ( *g_testViewSkin.GetString() != '\0' ) {
 		const idDeclSkin *skin = declHolder.declSkinType.LocalFind( g_testViewSkin.GetString(), false );
 		currentView.globalSkin = skin;
 		if ( !skin ) {

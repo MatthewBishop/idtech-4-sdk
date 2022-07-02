@@ -833,15 +833,8 @@ bool sdPhysics_RigidBodyMultiple::CheckForCollisions( trace_t &collision ) {
 	bool collided = false;
 	int i;
 
-	int vpushClipMask = CONTENTS_SLIDEMOVER;
-	if ( !self->IsCollisionPushable() ) {
-		vpushClipMask |= CONTENTS_MONSTER;
-	}
-
-	int tempClipMask;
 	if ( flags.useFastPath && !mainBounds.IsCleared() && bodies.Num() > 1 ) {
-		tempClipMask = mainClipMask & ~vpushClipMask;
-		if ( !GetTraceCollection().Contents( CLIP_DEBUG_PARMS_ENTINFO( self ) current->i.position, mainClipModel, current->i.orientation, tempClipMask ) ) {
+		if ( !GetTraceCollection().Contents( CLIP_DEBUG_PARMS_ENTINFO( self ) current->i.position, mainClipModel, current->i.orientation, mainClipMask ) ) {
 			// calculate the position of the center of mass at current and next
 			idVec3 CoMstart = current->i.position + mainCenterOfMass * current->i.orientation;
 			idVec3 CoMend = next->i.position + mainCenterOfMass * next->i.orientation;
@@ -851,7 +844,7 @@ bool sdPhysics_RigidBodyMultiple::CheckForCollisions( trace_t &collision ) {
 			rotation.SetOrigin( CoMstart );
 
 			trace_t tr;
-			if( !gameLocal.clip.Motion( CLIP_DEBUG_PARMS_ENTINFO( self ) tr, CoMstart, CoMend, rotation, centeredMainClipModel, current->i.orientation, tempClipMask, self ) ) {
+			if( !gameLocal.clip.Motion( CLIP_DEBUG_PARMS_ENTINFO( self ) tr, CoMstart, CoMend, rotation, centeredMainClipModel, current->i.orientation, mainClipMask, self ) ) {
 
 				// no collision for the combined bounds, so we can early out
 				return false;
@@ -876,8 +869,7 @@ bool sdPhysics_RigidBodyMultiple::CheckForCollisions( trace_t &collision ) {
 		idVec3 end = next->i.position + worldBodyOffset;
 
 		trace_t tr;
-		tempClipMask = body.GetClipMask() & ~vpushClipMask;
-		if ( GetTraceCollection().Translation( CLIP_DEBUG_PARMS_ENTINFO( self ) tr, start, end, clipModel, current->i.orientation, tempClipMask ) ) {
+		if ( GetTraceCollection().Translation( CLIP_DEBUG_PARMS_ENTINFO( self ) tr, start, end, clipModel, current->i.orientation, body.GetClipMask() ) ) {
 			next->i.position = tr.endpos - worldBodyOffset;
 			next->i.linearMomentum = Lerp( current->i.linearMomentum, next->i.linearMomentum, tr.fraction );
 			next->i.angularMomentum = current->i.angularMomentum;
@@ -911,8 +903,7 @@ bool sdPhysics_RigidBodyMultiple::CheckForCollisions( trace_t &collision ) {
 		rotation.SetOrigin( next->i.position );
 
 		trace_t tr;
-		tempClipMask = body.GetClipMask() & ~vpushClipMask;
-		if ( GetTraceCollection().Rotation( CLIP_DEBUG_PARMS_ENTINFO( self ) tr, end, rotation, clipModel, current->i.orientation, tempClipMask ) ) {
+		if ( GetTraceCollection().Rotation( CLIP_DEBUG_PARMS_ENTINFO( self ) tr, end, rotation, clipModel, current->i.orientation, body.GetClipMask() ) ) {
 			next->i.orientation = tr.endAxis;
 			next->i.linearMomentum = current->i.linearMomentum;
 			next->i.angularMomentum = current->i.angularMomentum;
@@ -945,14 +936,8 @@ bool sdPhysics_RigidBodyMultiple::CheckForCollisions_Simple( trace_t &collision 
 		}
 	}
 
-	int vpushClipMask = CONTENTS_SLIDEMOVER;
-	if ( !self->IsCollisionPushable() ) {
-		vpushClipMask |= CONTENTS_MONSTER;
-	}
-
-	int tempClipMask;
 	if ( !mainBounds.IsCleared() ) {
-		tempClipMask = mainClipMask & ~vpushClipMask;
+		int tempClipMask = mainClipMask & ( ~GetVPushClipMask() );
 
 		// calculate the position of the center of mass at current and next
 		idVec3 CoMstart = current->i.position + mainCenterOfMass * current->i.orientation;
@@ -994,6 +979,60 @@ bool sdPhysics_RigidBodyMultiple::CheckForPlayerCollisions_Simple( float timeDel
 
 /*
 ================
+sdPhysics_RigidBodyMultiple::SetupVPushCollection
+================
+*/
+void sdPhysics_RigidBodyMultiple::SetupVPushCollection( void ) {
+	GetTraceCollection();
+
+	// find which ones to ignore for various reasons
+	vpushCollection.Clear();
+	vpushCollection.SetSelf( self );
+	idList< const idClipModel* >& collection = traceCollection.GetCollection();
+	int vpushClipMask = GetVPushClipMask();
+
+	for ( int i = 0; i < collection.Num(); i++ ) {
+		const idClipModel* otherModel = collection[ i ];
+		if ( !( otherModel->GetContents() & vpushClipMask ) ) {
+			continue;
+		}
+
+		idEntity* other = otherModel->GetEntity();
+		if ( other == NULL ) {
+			continue;
+		}
+		if ( !other->IsCollisionPushable() ) {
+			continue;
+		}
+
+		idPhysics* otherPhysics = other->GetPhysics();
+		idPhysics_Actor* actorPhysics = otherPhysics->Cast< idPhysics_Actor >();
+
+		if ( actorPhysics == NULL ) {
+			// only actor-derived things may be vpushed
+			continue;
+		}
+
+		idPlayer* playerOther = other->Cast< idPlayer >();
+		if ( playerOther != NULL ) {
+			// can't run over players that are our passenger, or the leg model of proned players
+			if ( playerOther->GetProxyEntity()->Cast< sdTransport >() != NULL || otherModel->GetId() != 0 ) {
+				// don't want these to touch the normal collision path either
+				traceCollection.RemoveClipModel( otherModel );
+				i--;
+				continue;
+			}
+		}
+
+		// add it to the collection, remove it from the main collection
+		vpushCollection.AddClipModel( otherModel );
+		traceCollection.RemoveClipModel( otherModel );
+		i--;
+	}
+}
+
+/*
+================
 sdPhysics_RigidBodyMultiple::CheckForPlayerCollisions
 
   Check for collisions against players only between the current and next state, by
@@ -1011,23 +1050,15 @@ bool sdPhysics_RigidBodyMultiple::CheckForPlayerCollisions( float timeDelta, tra
 		}
 	}
 
-	int vpushClipMask = CONTENTS_SLIDEMOVER;
-	if ( !self->IsCollisionPushable() ) {
-		vpushClipMask |= CONTENTS_MONSTER;
-	}
-
-	const idClipModel* clipModelList[ RBM_MAX_CLIP_MODELS_COLLECTED ];
-	int numClipModels;
+	int vpushClipMask = GetVPushClipMask();
 
 	idVec3 currentPosition = current->i.position;
 	idVec3 nextPosition = next->i.position;
 	idMat3 currentOrientation = current->i.orientation;
 	idMat3 nextOrientation = next->i.orientation;
 
-	// collect entities potentially hit by the body
-	idBounds traceBounds;
-	traceBounds.FromBoundsTranslation( totalBounds, currentPosition, currentOrientation, nextPosition - currentPosition );
-	numClipModels = gameLocal.clip.ClipModelsTouchingBounds( CLIP_DEBUG_PARMS_ENTINFO( self ) traceBounds, vpushClipMask, clipModelList, RBM_MAX_CLIP_MODELS_COLLECTED, self );
+	idList< const idClipModel* >& clipModelList = vpushCollection.GetCollection();
+	int numClipModels = vpushCollection.GetCollection().Num();
 
 	if ( numClipModels == 0 ) {
 		return false;
@@ -1046,12 +1077,12 @@ bool sdPhysics_RigidBodyMultiple::CheckForPlayerCollisions( float timeDelta, tra
 	// treat the final location of the true collision as the full distance travelled
 	blockingTrace.fraction = 1.0f;
 
-	idVec3 velocity	= mainInverseMass * current->i.linearMomentum;
+	idVec3 velocity		= mainInverseMass * current->i.linearMomentum;
 	idMat3 invIA		= currentOrientation.Transpose() * mainInverseInertiaTensor * currentOrientation;
 	idVec3 angVelocity	= invIA * current->i.angularMomentum;
-	idVec3 currentCoM = currentPosition + mainCenterOfMass * currentOrientation;
-	idVec3 nextCoM = nextPosition + mainCenterOfMass * nextOrientation;
-	idVec3 CoMdelta = nextCoM - currentCoM;
+	idVec3 currentCoM	= currentPosition + mainCenterOfMass * currentOrientation;
+	idVec3 nextCoM		= nextPosition + mainCenterOfMass * nextOrientation;
+	idVec3 CoMdelta		= nextCoM - currentCoM;
 
 	// check each of our hurtzone bodies against each of the clip models that belong to players
 	// (ie, don't care about rigidbodymultiple->rigidbodymultiple collisions)
@@ -1076,7 +1107,10 @@ bool sdPhysics_RigidBodyMultiple::CheckForPlayerCollisions( float timeDelta, tra
 			assert( otherModel );
 			idEntity* other = otherModel->GetEntity();
 
-			if ( other == NULL ) {
+			// paranoid check a bunch of assumptions
+			if ( other == NULL || !other->IsCollisionPushable() || other->GetPhysics() == NULL || self == NULL ) {
+				gameLocal.Warning( "sdPhysics_RigidBodyMultiple::CheckForPlayerCollisions NULL entity" );
+				assert( false );
 				continue;
 			}
 
@@ -1090,10 +1124,6 @@ bool sdPhysics_RigidBodyMultiple::CheckForPlayerCollisions( float timeDelta, tra
 
 			bool noCollide = false;
 			if ( playerOther != NULL ) {
-				// don't run over passengers or the prone clipmodel of players
-				if ( playerOther->GetProxyEntity() == self || otherModel->GetId() != 0 ) {
-					continue;
-				}
 				if ( gameLocal.time - positionManager->GetPlayerExitTime( playerOther ) < 1000 ) {
  					noCollide = true;
 				}
@@ -1185,7 +1215,10 @@ bool sdPhysics_RigidBodyMultiple::CheckForPlayerCollisions( float timeDelta, tra
 			assert( otherModel );
 			idEntity* other = otherModel->GetEntity();
 
-			if ( other == NULL ) {
+			// paranoid check a bunch of assumptions
+			if ( other == NULL || !other->IsCollisionPushable() || other->GetPhysics() == NULL || self == NULL ) {
+				gameLocal.Warning( "sdPhysics_RigidBodyMultiple::CheckForPlayerCollisions NULL entity" );
+				assert( false );
 				continue;
 			}
 
@@ -1199,10 +1232,6 @@ bool sdPhysics_RigidBodyMultiple::CheckForPlayerCollisions( float timeDelta, tra
 
 			bool noCollide = false;
 			if ( playerOther != NULL ) {
-				// don't run over passengers or the prone clipmodel of players
-				if ( playerOther->GetProxyEntity() == self || otherModel->GetId() != 0 ) {
-					continue;
-				}
 				if ( gameLocal.time - positionManager->GetPlayerExitTime( playerOther ) < 1000 ) {
 					noCollide = true;
 				}
@@ -1984,6 +2013,10 @@ bool sdPhysics_RigidBodyMultiple::Evaluate( int timeStepMSec, int endTimeMSec ) 
 	current->i.position.FixDenormals();
 
 	if ( masterEntity != NULL ) {
+		if ( timeStepMSec <= 0 ) {
+			return true;
+		}
+
 		float timeStep = MS2SEC( timeStepMSec );
 
 		idVec3 masterOrigin;
@@ -2072,6 +2105,11 @@ bool sdPhysics_RigidBodyMultiple::Evaluate( int timeStepMSec, int endTimeMSec ) 
 			current->i.linearMomentum -= gravityMomentum;
 			return false;
 		}
+
+		//
+		// update the clip model collection
+		//
+		SetupVPushCollection();
 
 		const idClipModel * possWater = CheckWater();
 		if ( possWater != NULL ) {
@@ -2422,6 +2460,20 @@ bool sdPhysics_RigidBodyMultiple::IsPushable( void ) const {
 
 /*
 ================
+sdPhysics_RigidBodyMultiple::GetVPushClipMask
+================
+*/
+int sdPhysics_RigidBodyMultiple::GetVPushClipMask() const {
+	int vpushClipMask = CONTENTS_SLIDEMOVER;
+	if ( !self->IsCollisionPushable() ) {
+		vpushClipMask |= CONTENTS_MONSTER;
+	}
+
+	return vpushClipMask;
+}
+
+/*
+================
 sdPhysics_RigidBodyMultiple::EvaluateContacts
 ================
 */
@@ -2447,10 +2499,7 @@ bool sdPhysics_RigidBodyMultiple::EvaluateContacts( bool addEntityContacts ) {
 		collisionEnt = gameLocal.entities[ lastCollision.trace.c.entityNum ];
 	}
 
-	int vpushClipMask = CONTENTS_SLIDEMOVER;
-	if ( !self->IsCollisionPushable() ) {
-		vpushClipMask |= CONTENTS_MONSTER;
-	}
+	int vpushClipMask = GetVPushClipMask();
 
 	for( int i = 0; i < bodies.Num() && count < RBM_MAX_CONTACTS; i++ ) {
 		sdRigidBodyMulti_Body& body = bodies[ i ];
@@ -2460,13 +2509,11 @@ bool sdPhysics_RigidBodyMultiple::EvaluateContacts( bool addEntityContacts ) {
 			continue;
 		}
 
-		int tempMask = body.GetClipMask();
-		tempMask &= ~vpushClipMask;
+		num = GetTraceCollection().Contacts( CLIP_DEBUG_PARMS_ENTINFO( self ) &contacts[ count ], RBM_MAX_CONTACTS - count, clipModel->GetOrigin(), NULL, /*CONTACT_EPSILON*/ 1.0f, clipModel, clipModel->GetAxis(), body.GetClipMask() );
 
-		num = GetTraceCollection().Contacts( CLIP_DEBUG_PARMS_ENTINFO( self ) &contacts[ count ], RBM_MAX_CONTACTS - count, clipModel->GetOrigin(), NULL, /*CONTACT_EPSILON*/ 1.0f, clipModel, clipModel->GetAxis(), tempMask );
 		count += num;
 
-		// add contacts from any players we may be blocked by
+		// add contacts from any slidemovers we may be blocked by
 		if ( collisionEnt != NULL ) {
 			int contents = collisionEnt->GetPhysics()->GetContents();
 			if ( contents & vpushClipMask ) {
@@ -2474,8 +2521,14 @@ bool sdPhysics_RigidBodyMultiple::EvaluateContacts( bool addEntityContacts ) {
 				if ( otherClip != NULL ) {
 					num = gameLocal.clip.ContactsModel( CLIP_DEBUG_PARMS_ENTINFO( self ) &contacts[ count ], RBM_MAX_CONTACTS - count, 
 														clipModel->GetOrigin(), &dir, CONTACT_EPSILON, clipModel, 
-														clipModel->GetAxis(), tempMask, otherClip, 
+														clipModel->GetAxis(), body.GetClipMask(), otherClip, 
 														otherClip->GetOrigin(), otherClip->GetAxis() );
+
+					for ( int j = count; j < count + num; j++ ) {
+						contacts[ j ].entityNum = collisionEnt->entityNumber;
+						contacts[ j ].id = clipModel->GetId();
+						contacts[ j ].selfId = i;
+					}
 					count += num;
 				}
 			}
@@ -2488,7 +2541,7 @@ bool sdPhysics_RigidBodyMultiple::EvaluateContacts( bool addEntityContacts ) {
 	if ( !self->IsCollisionPushable() ) {
 		for ( int i = 0; i < count; i++ ) {
 			idEntity* ent = gameLocal.entities[ contacts[ i ].entityNum ];
-			if ( ent->GetPhysics()->IsPushable() ) {
+			if ( ent->GetPhysics()->IsPushable() && ent->IsCollisionPushable() ) {
 				contacts.RemoveIndex( i );
 				i--;
 				count--;

@@ -222,11 +222,11 @@ sdCommandMapPost::DrawLocalPlayerCommandMapInfo
 void sdCommandMapPost::DrawLocalPlayerCommandMapInfo( sdUserInterfaceLocal* ui, float x, float y, float w, float h, const idVec2& offset ) {
 
 	idPlayer* player = gameLocal.GetLocalViewPlayer();
-	if ( !player ) {
+	if ( player == NULL && !gameLocal.serverIsRepeater ) {
 		return;
 	}
 
-	sdTeamInfo* team = player->GetGameTeam();
+	sdTeamInfo* team = player == NULL ? NULL : player->GetGameTeam();
 
 	idVec2	screenPos( x, y );
 	idVec2	screenExtents( w, h );
@@ -257,11 +257,20 @@ void sdCommandMapPost::DrawLocalPlayerCommandMapInfo( sdUserInterfaceLocal* ui, 
 		fullSize = true;
 	}
 
+	renderView_t repeaterView;
+	if ( gameLocal.serverIsRepeater ) {
+		gameLocal.playerView.CalculateRepeaterView( repeaterView );
+	}
+
 	idVec3 worldPos;
-	if ( player->GetRemoteCamera() != NULL ) {
-		worldPos = player->GetRenderView()->vieworg;
+	if ( gameLocal.serverIsRepeater ) {
+		worldPos = repeaterView.vieworg;
 	} else {
-		worldPos = player->GetPhysics()->GetOrigin();
+		if ( player->GetRemoteCamera() != NULL ) {
+			worldPos = player->GetRenderView()->vieworg;
+		} else {
+			worldPos = player->GetPhysics()->GetOrigin();
+		}
 	}
 
 	const sdPlayZone* playZone = GetPlayZone( ui, worldPos );
@@ -293,7 +302,10 @@ void sdCommandMapPost::DrawLocalPlayerCommandMapInfo( sdUserInterfaceLocal* ui, 
 	float rotAngle = 0.0f;
 	if( !fullSize ) {
 		if( sdCommandMapInfo::g_rotateCommandMap.GetBool() ) {
-			if( idPlayer* player = gameLocal.GetLocalPlayer() ) {
+			idPlayer* player = gameLocal.GetLocalPlayer();
+			if ( gameLocal.serverIsRepeater ) {
+				rotAngle = repeaterView.viewaxis.ToAngles().yaw - 90.0f;
+			} else if ( player != NULL ) {
 				idMat3 pAxis;
 				player->GetRenderViewAxis( pAxis );
 				rotAngle = pAxis.ToAngles().yaw - 90.0f;
@@ -322,7 +334,7 @@ sdCommandMapPost::DrawLocalPlayerCommandMapInfo_Icons
 void sdCommandMapPost::DrawLocalPlayerCommandMapInfo_Icons( sdUserInterfaceLocal* ui, float x, float y, float w, float h ) {
 
 	idPlayer* player = gameLocal.GetLocalViewPlayer();
-	if ( !player ) {
+	if ( player == NULL && !gameLocal.serverIsRepeater ) {
 		return;
 	}
 
@@ -354,11 +366,21 @@ void sdCommandMapPost::DrawLocalPlayerCommandMapInfo_Icons( sdUserInterfaceLocal
 		fullSize = true;
 	}
 
+	renderView_t repeaterView;
+	if ( gameLocal.serverIsRepeater ) {
+		gameLocal.playerView.CalculateRepeaterView( repeaterView );
+	}
+
 	idMat2 rotation( mat2_identity );
 	float rotAngle = 0.0f;
 	if( !fullSize) {
 		if( sdCommandMapInfo::g_rotateCommandMap.GetBool() ) {
-			if( idPlayer* player = gameLocal.GetLocalPlayer() ) {
+			idPlayer* player = gameLocal.GetLocalPlayer();
+			if ( gameLocal.serverIsRepeater ) {
+				rotAngle = repeaterView.viewaxis.ToAngles().yaw - 90.0f;
+				rotation.Rotation( DEG2RAD( rotAngle ) );
+				rotation.TransposeSelf();
+			} else if ( player != NULL ) {
 				idMat3 pAxis;
 				player->GetRenderViewAxis( pAxis );
 				rotAngle = pAxis.ToAngles().yaw - 90.0f;
@@ -367,11 +389,16 @@ void sdCommandMapPost::DrawLocalPlayerCommandMapInfo_Icons( sdUserInterfaceLocal
 			}
 		}
 	}
+
 	idVec3 worldPos;
-	if ( player->GetRemoteCamera() != NULL ) {
-		worldPos = player->GetRenderView()->vieworg;
+	if ( gameLocal.serverIsRepeater ) {
+		worldPos = repeaterView.vieworg;
 	} else {
-		worldPos = player->GetPhysics()->GetOrigin();
+		if ( player->GetRemoteCamera() != NULL ) {
+			worldPos = player->GetRenderView()->vieworg;
+		} else {
+			worldPos = player->GetPhysics()->GetOrigin();
+		}
 	}
 
 	const sdPlayZone* playZone = GetPlayZone( ui, worldPos );
@@ -417,8 +444,14 @@ void sdCommandMapPost::DrawLocalPlayerCommandMapInfo_Icons( sdUserInterfaceLocal
 	for ( info = sdCommandMapInfoManager::GetInstance().GetIcons(); info; info = info->GetActiveNode().Next() ) {
 		bool known = true;
 
-		if ( !info->GetRequirements().Check( player, info->GetOwner() ) ) {
-			continue;
+		const sdRequirementContainer& requirements = info->GetRequirements();
+		if ( requirements.HasRequirements() ) {
+			if ( player == NULL ) {
+				continue;
+			}
+			if ( !requirements.Check( player, info->GetOwner() ) ) {
+				continue;
+			}
 		}
 		
 		if ( info->OnlyInFullView() && scale < 1.0f ) {

@@ -70,6 +70,9 @@ sdPlayerProperties::InitGUIs
 ============
 */
 void sdPlayerProperties::InitGUIs( void ) {
+	if ( !gameLocal.DoClientSideStuff() ) {
+		return;
+	}
 
 	playerHud			.Reset( new sdPlayerHud() );
 	playerHud->InitGui( "hud", false  );
@@ -99,6 +102,9 @@ void sdPlayerProperties::InitGUIs( void ) {
 
 	postProcess			.Reset( new sdPostProcess() );
 	postProcess->InitGui( "guis/postprocess" );
+
+	gameLocal.FreeUserInterface( scoreBoard );
+	scoreBoard			= gameLocal.LoadUserInterface( "scoreboard", false, false );
 	
 	InitGUIStates();
 }
@@ -109,7 +115,7 @@ sdPlayerProperties::InitGUIStates
 ============
 */
 void sdPlayerProperties::InitGUIStates() {
-	if( gameLocal.GetLocalPlayer() == NULL ) {
+	if ( !gameLocal.DoClientSideStuff() ) {
 		return;
 	}
 	// set everything up sensibly
@@ -172,6 +178,7 @@ void sdPlayerProperties::Init( void ) {
 	properties.RegisterProperty( "vehiclePosition",			vehiclePosition );
 	properties.RegisterProperty( "vehicleDestructTime",		vehicleDestructTime );
 	properties.RegisterProperty( "vehicleWrongDirection",	vehicleWrongDirection );
+	properties.RegisterProperty( "vehicleKickDistance",		vehicleKickDistance );
 	properties.RegisterProperty( "vehicleEMPed",			vehicleEMPed );
 	properties.RegisterProperty( "vehicleWeaponEMPed",		vehicleWeaponEMPed );
 	properties.RegisterProperty( "vehicleSiegeMode",		vehicleSiegeMode );
@@ -202,6 +209,7 @@ void sdPlayerProperties::Init( void ) {
 	properties.RegisterProperty( "toolTipText",				toolTipText );
 	properties.RegisterProperty( "toolTipMaterial",			toolTipMaterial );
 	properties.RegisterProperty( "toolTipLocation",			toolTipLocation );
+	properties.RegisterProperty( "toolTipIsPriority",		toolTipIsPriority );
 
 	properties.RegisterProperty( "position",				position );
 
@@ -276,12 +284,23 @@ void sdPlayerProperties::Init( void ) {
 
 	properties.RegisterProperty( "scoreboardActive",		scoreboardActive );
 
+	properties.RegisterProperty( "gameTime",				gameTime );
+	properties.RegisterProperty( "showFireTeam",			showFireTeam );
+	properties.RegisterProperty( "isPaused",				isPaused );
+	properties.RegisterProperty( "isSinglePlayer",			singlePlayerGame );
+	properties.RegisterProperty( "unpauseKeyString",		unpauseKeyString );
+
+	properties.RegisterProperty( "serverIsRepeater",		serverIsRepeater );
+	properties.RegisterProperty( "isServer",				isServer );
+
 	killedPlayerMessage			= declHolder.declLocStrType.LocalFind( "game/obit/local/killed" );
 	killedByPlayerMessage		= declHolder.declLocStrType.LocalFind( "game/obit/local/killedby" );
 	killedPlayerTeamMessage		= declHolder.declLocStrType.LocalFind( "game/obit/local/killed_team" );
 	killedByPlayerTeamMessage	= declHolder.declLocStrType.LocalFind( "game/obit/local/killedby_team" );
 
 	currentMission				= declHolder.declLocStrType.LocalFind( "guis/game/scoreboard/currentmission" );
+
+	UpdateTeam( NULL ); // Make sure we have a sensible default
 
 	int numProficiency = gameLocal.declProficiencyTypeType.Num();
 
@@ -319,6 +338,8 @@ void sdPlayerProperties::Init( void ) {
 
 	activateEndGame = 0;
 	serverInfoChanged = 0.0f;
+	showFireTeam = false;
+	isPaused = false;
 
 	voiceSendMode = VO_NUM_MODES + 1;
 }
@@ -348,6 +369,9 @@ void sdPlayerProperties::ShutdownGUIs( void ) {
 	weaponSelectionMenu.Reset();	
 	playerHud.Reset();
 	postProcess.Reset();
+
+	gameLocal.FreeUserInterface( scoreBoard );
+	scoreBoard.Release();
 }
 
 /*
@@ -399,13 +423,18 @@ sdPlayerProperties::Update
 void sdPlayerProperties::Update( idPlayer* player ) {
 	using namespace sdProperties;
 
+	gameTime						= gameLocal.time;
+	serverIsRepeater				= gameLocal.serverIsRepeater;
+
+	localView						= localPlayer == player ? 1.0f : 0.0f;
+
 	if ( localPlayer != NULL ) {
+		assert( player != NULL );
+
 		spectator					= localPlayer->IsSpectator() ? 1.0f : 0.0f;
 		spectating					= localPlayer->IsSpectating() ? 1.0f : 0.0f;
-		localView					= localPlayer == player ? 1.0f : 0.0f;
 
 		isDead						= localPlayer->IsDead();
-		isViewDead					= localPlayer->GetViewClient()->IsDead();
 		isInLimbo					= localPlayer->IsInLimbo();
 		isSpawning					= localPlayer->WantRespawn();		
 		isReady						= localPlayer->IsReady();
@@ -413,28 +442,18 @@ void sdPlayerProperties::Update( idPlayer* player ) {
 		isLagged					= localPlayer->GetIsLagged() ? 1.0f : 0.0f;
 
 		float distance = localPlayer->GetCrosshairInfoDirect().GetDistance();
-		crosshairDistance		= distance < localPlayer->targetIdRangeNormal ? va( "%.2fm",  InchesToMetres( distance ) ) : "-1";
+		crosshairDistance			= distance < localPlayer->targetIdRangeNormal ? va( "%.2fm",  InchesToMetres( distance ) ) : "-1";
 
-		const char* newViewTeamName = teamName.GetValue().c_str();
-		idPlayer* spectateClient = localPlayer->GetSpectateClient();
-		if ( spectateClient == NULL ) {
-			assert( false );
-		} else {
-			sdTeamInfo* spectateTeam = spectateClient->GetGameTeam();
-			if ( spectateTeam != NULL ) {
-				newViewTeamName = spectateTeam->GetLookupName();
-			}
-		}
+		name						= localPlayer->userInfo.name;
+		singlePlayerGame			= gameLocal.isServer ? 1.0f : 0.0f;
 
-		teamNameView = newViewTeamName;
-		name		= localPlayer->userInfo.name;
+		toolTipIsPriority			= localPlayer->IsSinglePlayerToolTipPlaying();
 	} else {
-		spectator					= 0.f;
-		spectating					= 0.f;
-		localView					= 0.f;
+		spectator					= 1.f;
+		spectating					= 1.f;
 
 		isDead						= 0.f;
-		isViewDead					= 0.f;
+
 		isInLimbo					= 0.f;
 		isSpawning					= 0.f;
 		isReady						= 0.f;
@@ -443,62 +462,103 @@ void sdPlayerProperties::Update( idPlayer* player ) {
 		crosshairDistance			= "";
 		isLagged					= 0.0f;
 
-		teamNameView = teamName;
-		name						= player->userInfo.name;
+		name						= "";
+
+		singlePlayerGame			= 0.0f;
+		toolTipIsPriority			= 0.0f;
+
+		UpdateTeam( NULL );
 	}
 
-	sdUserInterfaceLocal* scoreboardUI = gameLocal.GetUserInterface( gameLocal.GetScoreBoardGui() );
+
+	const char* newViewTeamName = teamName.GetValue().c_str();
+	if ( player != NULL ) {
+		sdTeamInfo* spectateTeam = player->GetGameTeam();
+		if ( spectateTeam != NULL ) {
+			newViewTeamName = spectateTeam->GetLookupName();
+		}
+		isViewDead					= player->IsDead() ? 1.f : 0.f;
+	} else {
+		isViewDead					= 0.f;
+	}
+
+	teamNameView					= newViewTeamName;
+
+	isPaused = gameLocal.isPaused;
+	isServer = gameLocal.isServer;
+
+	sdUserInterfaceLocal* scoreboardUI = gameLocal.GetUserInterface( scoreBoard );
 	if ( scoreboardUI != NULL ){
 		scoreboardActive = scoreboardUI->IsActive() ? 1.0f : 0.0f;
 	} else {
 		scoreboardActive = 0.0f;
 	}
 
-	if( g_hitBeep.GetInteger() > 0 && g_hitBeep.GetInteger() != 2 ) {
-		hitFeedback = player->NewDamageDealt();
-		player->ClearDamageDealt();
-		lastHitFeedbackType = player->GetLastDamageDealtType();
-	}
+	if ( player != NULL ) {
+		if ( g_hitBeep.GetInteger() > 0 && g_hitBeep.GetInteger() != 2 ) {
+			hitFeedback = player->NewDamageDealt();
+			player->ClearDamageDealt();
+			lastHitFeedbackType = player->GetLastDamageDealtType();
+		}
 
-	const idPlayer::damageEvent_t& event = player->GetLastDamageEvent();
-	lastDamageTime = event.hitTime;
-	lastDamageIntensity = event.hitDamage;
+		const idPlayer::damageEvent_t& event = player->GetLastDamageEvent();
+		lastDamageTime = event.hitTime;
+		lastDamageIntensity = event.hitDamage;
+	}
 
 	lagOMeter		= ( net_clientLagOMeter.GetBool() && gameLocal.isClient ) ? 1.0f : 0.0f;
 
 	commandMapState	= GetCommandMapExpanding() ? 1.0f : 0.0f;
 
-	sdInventory& inv = player->GetInventory();
+	const sdDeclPlayerClass* playerClass = NULL;
+	sdInventory* inv = NULL;
 
-	// player
-	spectateClient	= player->userInfo.name;
-	health			= player->GetHealth();
-	maxHealth		= player->GetMaxHealth();
-	
-	role			= ( inv.GetClass() != NULL ) ? inv.GetClass()->GetName() : "spec";
-	roleTitle		= ( inv.GetClass() != NULL ) ? inv.GetClass()->GetTitle()->Index() : declHolder.FindLocStr( "spec" )->Index();
+	if ( player != NULL ) {
+		inv				= &player->GetInventory();
+		playerClass		= inv->GetClass();
 
-	idWStr locationText;
-	sdLocationMarker::GetLocationText( player->GetPhysics()->GetOrigin(), locationText );
+		// player
+		spectateClient	= player->userInfo.name;
+		health			= player->GetHealth();
+		maxHealth		= player->GetMaxHealth();
+		
+		role			= ( playerClass != NULL ) ? playerClass->GetName() : "spec";
+		roleTitle		= ( playerClass != NULL ) ? playerClass->GetTitle()->Index() : declHolder.FindLocStr( "spec" )->Index();
 
-	location		= locationText;
+		idWStr locationText;
+		sdLocationMarker::GetLocationText( player->GetPhysics()->GetOrigin(), locationText );
 
-	if( player->GetProxyEntity() == NULL && player->weapon && ( localPlayer && !( localPlayer->IsInLimbo() || gameLocal.rules->IsEndGame() ) ) ) {
-		float fraction = idMath::Sqrt( player->weapon->GetSpreadValueNormalized() );
-		float min = player->weapon->GetCrosshairSpreadMin();
-		float max = player->weapon->GetCrosshairSpreadMax();
-		float scale = player->weapon->GetCrosshairSpreadScale();
+		location		= locationText;
 
-		assert( !FLOAT_IS_NAN( fraction ) );
+		if( player->GetProxyEntity() == NULL && player->weapon && ( localPlayer && !( localPlayer->IsInLimbo() || gameLocal.rules->IsEndGame() ) ) ) {
+			float fraction = idMath::Sqrt( player->weapon->GetSpreadValueNormalized() );
+			float min = player->weapon->GetCrosshairSpreadMin();
+			float max = player->weapon->GetCrosshairSpreadMax();
+			float scale = player->weapon->GetCrosshairSpreadScale();
 
-		fraction = min + fraction * scale;
-		if ( fraction > max ) {
-			fraction = max;
+			assert( !FLOAT_IS_NAN( fraction ) );
+
+			fraction = min + fraction * scale;
+			if ( fraction > max ) {
+				fraction = max;
+			}
+
+			spreadFraction = fraction;
+		} else {
+			spreadFraction = 0.f;
 		}
-
-		spreadFraction = fraction;
 	} else {
-		spreadFraction = 0.0f;
+		// player
+		spectateClient	= "";
+		health			= 0.f;
+		maxHealth		= 0.f;
+		
+		role			= "spec";
+		roleTitle		= declHolder.FindLocStr( "spec" )->Index();
+
+		location		= L"";
+
+		spreadFraction	= 0.f;
 	}
 
 	if( localPlayer != NULL ) {
@@ -513,7 +573,7 @@ void sdPlayerProperties::Update( idPlayer* player ) {
 
 	matchTime		= gameLocal.rules->GetGameTime();
 
-	idEntity* proxy = player->GetProxyEntity();
+	idEntity* proxy = player != NULL ? player->GetProxyEntity() : NULL;
 	sdTransport* vehicle = proxy ? proxy->Cast< sdTransport >() : NULL;	
 	sdUsableInterface* iface = proxy ? proxy->GetUsableInterface() : NULL;
 
@@ -542,28 +602,41 @@ void sdPlayerProperties::Update( idPlayer* player ) {
 		} else {
 			localSpeed = proxy->GetPhysics()->GetLinearVelocity().Length();
 		}
-	} else {
+	} else if ( player != NULL ) {
 		localSpeed = player->GetPhysics()->GetLinearVelocity().Length();
+	} else {
+		localSpeed = 0.f;
 	}
+
 	speed					= idMath::FtoiFast( UPSToMPH( localSpeed ) );
 	vehicleEMPed			= localEMPed;
 	vehicleWeaponEMPed		= localWeaponEMPed;
 	vehicleSiegeMode		= localSiegeMode;
 	vehicleThirdPerson		= localThirdPerson;
 
-	// angles
-	idAngles viewAngles;
+	if ( player != NULL ) {
+		// angles
+		idAngles viewAngles;
 
-	viewAngles = player->renderView.viewaxis.ToAngles();
-	viewAngles.Normalize360();
+		viewAngles = player->renderView.viewaxis.ToAngles();
+		viewAngles.Normalize360();
 
-	yaw			= viewAngles.yaw;
-	pitch		= viewAngles.pitch;
+		yaw			= viewAngles.yaw;
+		pitch		= viewAngles.pitch;
 
-	spawnSelected			= ( player->GetSpawnPoint() == NULL ) ? 0.f : 1.f;
+		spawnSelected			= ( player->GetSpawnPoint() == NULL ) ? 0.f : 1.f;
+	} else {
+		// angles
+		idAngles viewAngles = gameLocal.playerView.GetRepeaterViewInfo().viewAngles;
+		viewAngles.Normalize360();
 
-	const sdDeclPlayerClass* playerClass = inv.GetClass();
-	idWeapon* pWeapon = player->GetWeapon();
+		yaw			= viewAngles.yaw;
+		pitch		= viewAngles.pitch;
+
+		spawnSelected			= 0.f;
+	}
+
+	idWeapon* pWeapon = player == NULL ? NULL : player->GetWeapon();
 
 	bool showWeaponInfo = true;
 	if ( vehicle != NULL ) {
@@ -571,7 +644,7 @@ void sdPlayerProperties::Update( idPlayer* player ) {
 
 		// e.g. the buffalo allows passengers to fire their weapons
 		showWeaponInfo = pos.GetAllowWeapon();		
-	} else if( proxy != NULL ) {
+	} else if( proxy != NULL || inv == NULL ) {
 		showWeaponInfo = false;
 		vehicleYaw = 0.0f;
 	} else {
@@ -579,17 +652,19 @@ void sdPlayerProperties::Update( idPlayer* player ) {
 	}
 
 	if ( showWeaponInfo && ( pWeapon != NULL ) && ( playerClass != NULL ) ) {
+		assert( inv != NULL );
+
 		if ( pWeapon->IsClipBased() ) {
 			weaponClip = player->GetClip( clipIndex );
 			weaponShotsPerClip = pWeapon->GetClipSize( clipIndex );
 		} else {
 			ammoType_t type = pWeapon->GetAmmoType( clipIndex );
 			if ( type != -1 ) {
-				weaponClip = inv.GetAmmo( type );
-				weaponShotsPerClip = inv.GetMaxAmmo( type );
+				weaponClip			= inv->GetAmmo( type );
+				weaponShotsPerClip	= inv->GetMaxAmmo( type );
 			} else {
-				weaponClip = -1;
-				weaponShotsPerClip = -1;
+				weaponClip			= -1;
+				weaponShotsPerClip	= -1;
 			}
 		}
 
@@ -601,10 +676,10 @@ void sdPlayerProperties::Update( idPlayer* player ) {
 		weaponNeedsAmmo			= pWeapon->AmmoRequired( clipIndex ) != 0 ? 1.0f : 0.0f;
 		weaponShotsAvailable	= pWeapon->ShotsAvailable( clipIndex );
 
-		if ( inv.IsSwitchActive() ) {
-			weaponSlot			= inv.GetSwitchingSlot() + 1;
+		if ( inv->IsSwitchActive() ) {
+			weaponSlot			= inv->GetSwitchingSlot() + 1;
 		} else {
-			weaponSlot			= inv.GetCurrentSlot() + 1;
+			weaponSlot			= inv->GetCurrentSlot() + 1;
 		}
 	}
 	inProxy = proxy != NULL ? 1.0f : 0.0f;
@@ -617,6 +692,7 @@ void sdPlayerProperties::Update( idPlayer* player ) {
 
 		vehicleDestructTime = iface->GetDestructionEndTime() != 0 ? MS2SEC( iface->GetDestructionEndTime() - gameLocal.time < 0 ? 0 : iface->GetDestructionEndTime() - gameLocal.time ) : 0.0f;
 		vehicleWrongDirection = iface->GetDirectionWarning() ? 1.f : 0.f;
+		vehicleKickDistance = iface->GetRouteKickDistance();
 
 		showCrosshair = iface->GetShowCrosshair( player ) ? 1.f : 0.f;
 		hideDecoyInfo = iface->GetHideDecoyInfo( player ) ? 1.f : 0.f;
@@ -625,20 +701,24 @@ void sdPlayerProperties::Update( idPlayer* player ) {
 	} else {
 		vehicleDestructTime = 0.0f;
 		vehicleWrongDirection = 0.0f;
+		vehicleKickDistance = -1;
 		showCrosshair = 1.0f;
 		hideDecoyInfo = 0.0f;
 		showTargetingInfo = 0.0f;
 	}
 
-	// if showWeaponInfo is true then we need to prevent the values being overwritten
-	if( iface != NULL && !showWeaponInfo ) {
+	if ( inv == NULL ) {
+		weaponNeedsAmmo		= 0.f;
+		weaponName			= -1;
+		weaponLookupName.Set( "" );
+	} else if ( iface != NULL && !showWeaponInfo ) { // if showWeaponInfo is true then we need to prevent the values being overwritten
 		weaponNeedsAmmo = 0.0f;
 		const sdDeclLocStr* weaponTitle = iface->GetWeaponName( player );
 		weaponName = weaponTitle != NULL ? weaponTitle->Index() : -1;
 		weaponLookupName.Set( iface->GetWeaponLookupName( player ) );
 	} else {
-		weaponName = inv.GetWeaponTitle() != NULL ? inv.GetWeaponTitle()->Index() : -1;
- 		weaponLookupName.Set( inv.GetWeaponName() );
+		weaponName = inv->GetWeaponTitle() != NULL ? inv->GetWeaponTitle()->Index() : -1;
+ 		weaponLookupName.Set( inv->GetWeaponName() );
 	}
 
 	sdTransport* viewVehicle = activeObjectView->Cast< sdTransport >();
@@ -655,17 +735,25 @@ void sdPlayerProperties::Update( idPlayer* player ) {
 
 	UpdateFireTeam( player );
 
-	// latitude/longitude/altitude
-	position = InchesToMetres( player->GetPhysics()->GetOrigin() );
+	if ( player != NULL ) {
 
-	// experience
-	xp = idMath::Floor( player->GetProficiencyTable().GetXP() );
+		// latitude/longitude/altitude
+		position = InchesToMetres( player->GetPhysics()->GetOrigin() );
 
-	const sdDeclRank* playerRank = player->GetProficiencyTable().GetRank();
-	if ( playerRank != NULL ) {
-		rank			= playerRank->GetTitle() != NULL ? playerRank->GetTitle()->Index() : -1;
-		rankMaterial	= playerRank->GetMaterial();
+		// experience
+		xp = idMath::Floor( player->GetProficiencyTable().GetXP() );
+
+		const sdDeclRank* playerRank = player->GetProficiencyTable().GetRank();
+		if ( playerRank != NULL ) {
+			rank			= playerRank->GetTitle() != NULL ? playerRank->GetTitle()->Index() : -1;
+			rankMaterial	= playerRank->GetMaterial();
+		} else {
+			rank = -1;
+			rankMaterial = "";
+		}
 	} else {
+		position = vec3_origin;
+		xp = 0.f;
 		rank = -1;
 		rankMaterial = "";
 	}
@@ -963,16 +1051,19 @@ sdPlayerProperties::UpdateTargetingInfo
 ================
 */
 void sdPlayerProperties::UpdateTargetingInfo( idPlayer* player ) {
-	idEntity* proxy = player->GetProxyEntity();	
+	idEntity* targetEnt = NULL;
 
-	idEntity* targetEnt = player->targetEntity;
+	if ( player != NULL ) {
+		idEntity* proxy = player->GetProxyEntity();	
+		targetEnt = player->targetEntity;
 
-	if ( targetEnt ) {
-		targetingColor = player->GetTargetLocked() ? colorRed : colorGreen;
-	} else {
-		targetEnt = player->targetEntityPrevious;
 		if ( targetEnt ) {
-			targetingColor = idVec4( colorGreen.x, colorGreen.y, colorGreen.z, 0.5f );
+			targetingColor = player->GetTargetLocked() ? colorRed : colorGreen;
+		} else {
+			targetEnt = player->targetEntityPrevious;
+			if ( targetEnt ) {
+				targetingColor = idVec4( colorGreen.x, colorGreen.y, colorGreen.z, 0.5f );
+			}
 		}
 	}
 
@@ -983,9 +1074,9 @@ void sdPlayerProperties::UpdateTargetingInfo( idPlayer* player ) {
 		idPhysics* targetPhysics = targetEnt->GetPhysics();
 
 		if ( targetEnt->GetSelectionBounds() != NULL && !targetEnt->GetSelectionBounds()->IsCleared() ) {
-			converter.Transform( targetEnt->GetRenderEntity()->origin + ( targetEnt->GetSelectionBounds()->GetCenter() * targetEnt->GetRenderEntity()->axis ), point );
+			converter.Transform( targetEnt->GetLastPushedOrigin() + ( targetEnt->GetSelectionBounds()->GetCenter() * targetEnt->GetLastPushedAxis() ), point );
 		} else {
-			converter.Transform( targetEnt->GetRenderEntity()->origin + ( targetPhysics->GetBounds().GetCenter() * targetEnt->GetRenderEntity()->axis ), point );
+			converter.Transform( targetEnt->GetLastPushedOrigin() + ( targetPhysics->GetBounds().GetCenter() * targetEnt->GetLastPushedAxis() ), point );
 		}
 		targetingCenter = point;
 
@@ -1009,7 +1100,7 @@ sdPlayerProperties::UpdateFireTeam
 ================
 */
 void sdPlayerProperties::UpdateFireTeam( idPlayer* player ) {	
-	sdFireTeam* fireTeam = gameLocal.rules->GetPlayerFireTeam( player->entityNumber );
+	sdFireTeam* fireTeam = player != NULL ? gameLocal.rules->GetPlayerFireTeam( player->entityNumber ) : NULL;
 
 	if ( fireTeam != NULL ) {
 		fireTeamName	= va( L"%hs", fireTeam->GetName() );
@@ -1107,7 +1198,12 @@ sdPlayerProperties::OnNewTask
 */
 void sdPlayerProperties::OnNewTask( sdPlayerTask* task ) {
 	taskStatus = common->LocalizeText( "guis/game/new_tasks_available" );
-	taskAddedTime = MS2SEC( gameLocal.time );
+	taskAddedTime = MS2SEC( gameLocal.ToGuiTime( gameLocal.time ) );
+
+	sdScriptHelper h1;
+	h1.Push( task->GetScriptObject() );
+	h1.Push( task->IsMission() );
+	localPlayer->CallNonBlockingScriptEvent( localPlayer->GetScriptFunction( "OnNewTask" ), h1 );
 }
 
 /*
@@ -1159,7 +1255,7 @@ void sdPlayerProperties::OnTaskSelected( sdPlayerTask* task ) {
 		}
 	}
 
-	taskSelectedTime = gameLocal.time;
+	taskSelectedTime = gameLocal.ToGuiTime( gameLocal.time );
 
 }
 
@@ -1193,7 +1289,7 @@ void sdPlayerProperties::OnObituary( idPlayer* self, idPlayer* other ) {
 		} else {
 			lastKillMessage		= common->LocalizeText( killedByPlayerMessage, parms );
 		}
-		lastKillMessageTime = MS2SEC( gameLocal.time );
+		lastKillMessageTime = MS2SEC( gameLocal.ToGuiTime( gameLocal.time ) );
 	} else if ( other == localPlayer ) {
 		idWStrList parms;
 		parms.Append( self->userInfo.wideName );
@@ -1203,7 +1299,7 @@ void sdPlayerProperties::OnObituary( idPlayer* self, idPlayer* other ) {
 		} else {
 			lastKillMessage		= common->LocalizeText( killedPlayerMessage, parms );
 		}
-		lastKillMessageTime = MS2SEC( gameLocal.time );
+		lastKillMessageTime = MS2SEC( gameLocal.ToGuiTime( gameLocal.time ) );
 	}
 }
 
@@ -1454,7 +1550,7 @@ sdPlayerProperties::OnTaskExpired
 ============
 */
 void sdPlayerProperties::OnTaskExpired( sdPlayerTask* task ) {
-	taskExpiredTime = MS2SEC( gameLocal.time );
+	taskExpiredTime = MS2SEC( gameLocal.ToGuiTime( gameLocal.time ) );
 
 	idWStrList args( 1 );
 	args.Append( task->GetTitle() );
@@ -1468,7 +1564,7 @@ sdPlayerProperties::OnTaskCompleted
 ============
 */
 void sdPlayerProperties::OnTaskCompleted( sdPlayerTask* task ) {
-	taskCompletedTime = MS2SEC( gameLocal.time );
+	taskCompletedTime = MS2SEC( gameLocal.ToGuiTime( gameLocal.time ) );
 
 	idWStrList args( 1 );
 	args.Append( task->GetCompletedTitle() );
@@ -1862,6 +1958,15 @@ void sdPlayerProperties::SetActiveWeapon( idWeapon* weapon ) {
 
 /*
 ============
+sdPlayerProperties::GetActivePlayer
+============
+*/
+idPlayer* sdPlayerProperties::GetActivePlayer( void ) {
+	return activePlayerEntity.GetEntity();
+}
+
+/*
+============
 sdPlayerProperties::SetActivePlayer
 ============
 */
@@ -1938,5 +2043,4 @@ void sdPlayerProperties::SetCriticalClass( const playerTeamTypes_t playerTeam, c
 			}
 			break;
 	}
-
 }

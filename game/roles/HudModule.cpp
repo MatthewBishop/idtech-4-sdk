@@ -743,9 +743,10 @@ void sdDeployMenu::UsercommandCallback( usercmd_t& cmd ) {
 		cmd.rightmove = 0;
 		cmd.upmove = 0;
 
-		int i;
-		for ( i = 0; i < 3; i++ ) {
-			rotation += SHORT2ANGLE( cmd.angles[ i ] - lockedAngles[ i ] );
+		for ( int i = 0; i < 3; i++ ) {
+			if ( !gameLocal.IsPaused() ) {
+				rotation += SHORT2ANGLE( cmd.angles[ i ] - lockedAngles[ i ] );
+			}
 			cmd.angles[ i ] = lockedAngles[ i ];
 		}
 	}

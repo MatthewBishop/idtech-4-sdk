@@ -609,7 +609,7 @@ void sdGeneralMover::StartTimedMove( int from, int to, int ms, int startTime ) {
 		event.WriteLong( _curMove.endPos );
 		event.WriteLong( _curMove.moveTime );
 		event.WriteLong( _curMove.startTime );
-		event.Send( true, true );
+		event.Send( true, sdReliableMessageClientInfoAll() );
 	}
 
 	UpdateVisuals();

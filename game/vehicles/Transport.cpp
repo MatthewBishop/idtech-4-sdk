@@ -41,8 +41,9 @@ const int	MAX_ENGINE_SOUNDS	= SND_ENGINE_LAST - SND_ENGINE + 1;
 const int	MAX_ZOOM_LEVELS		= 4;
 const float	MIN_DAMAGE_SPEED	= 10.f;
 
-idCVar g_noVehicleDecay(		"g_noVehicleDecay",			"0", CVAR_BOOL | CVAR_GAME, "enables / disables vehicle decay" );
-idCVar g_showVehicleCockpits(	"g_showVehicleCockpits",	"1", CVAR_BOOL | CVAR_GAME | CVAR_ARCHIVE | CVAR_PROFILE, "enables / disables vehicle cockpits" );
+idCVar g_noVehicleDecay(			"g_noVehicleDecay",				"0", CVAR_BOOL | CVAR_GAME, "enables / disables vehicle decay" );
+idCVar g_showVehicleCockpits(		"g_showVehicleCockpits",		"1", CVAR_BOOL | CVAR_GAME | CVAR_ARCHIVE | CVAR_PROFILE, "enables / disables vehicle cockpits" );
+idCVar g_noVehicleSpawnInvulnerability(	"g_noVehicleSpawnInvulnerability",	"0", CVAR_BOOL | CVAR_GAME | CVAR_NETWORKSYNC | CVAR_RANKLOCKED, "enables / disables vehicle invulnerability on spawn" );
 
 /*
 ===============================================================================
@@ -640,6 +641,15 @@ bool sdTransportUsableInterface::GetDirectionWarning( void ) const {
 
 /*
 ============
+sdTransportUsableInterface::GetRouteKickDistance
+============
+*/
+int sdTransportUsableInterface::GetRouteKickDistance( void ) const {
+	return owner->GetRouteKickDistance();
+}
+
+/*
+============
 sdTransportUsableInterface::GetXPSharer
 ============
 */
@@ -1191,6 +1201,8 @@ void sdTransportNetworkData::MakeDefault( void ) {
 	if ( controlState != NULL ) {
 		controlState->MakeDefault();
 	}
+
+	routeKickDistance = -1;
 }
 
 /*
@@ -1209,6 +1221,8 @@ void sdTransportNetworkData::Write( idFile* file ) const {
 	if ( controlState != NULL ) {
 		controlState->Write( file );
 	}
+
+	file->WriteInt( routeKickDistance );
 }
 
 /*
@@ -1227,6 +1241,8 @@ void sdTransportNetworkData::Read( idFile* file ) {
 	if ( controlState != NULL ) {
 		controlState->Read( file );
 	}
+
+	file->ReadInt( routeKickDistance );
 }
 
 /*
@@ -1257,6 +1273,7 @@ void sdTransportBroadcastData::MakeDefault( void ) {
 	lastDamageDir			= 0;
 	empTime					= 0;
 	weaponEmpTime			= 0;
+	weaponDisabled			= false;
 
 	for ( int i = 0; i < objectStates.Num(); i++ ) {
 		assert( objectStates[ i ] != NULL );
@@ -1288,6 +1305,7 @@ void sdTransportBroadcastData::Write( idFile* file ) const {
 	file->WriteInt( lastDamageDir );
 	file->WriteInt( empTime );
 	file->WriteInt( weaponEmpTime );
+	file->WriteBool( weaponDisabled );
 
 	for ( int i = 0; i < objectStates.Num(); i++ ) {
 		assert( objectStates[ i ] != NULL );
@@ -1322,6 +1340,7 @@ void sdTransportBroadcastData::Read( idFile* file ) {
 	file->ReadInt( lastDamageDir );
 	file->ReadInt( empTime );
 	file->ReadInt( weaponEmpTime );
+	file->ReadBool( weaponDisabled );
 
 	for ( int i = 0; i < objectStates.Num(); i++ ) {
 		assert( objectStates[ i ] != NULL );
@@ -1381,6 +1400,10 @@ const idEventDef EV_Transport_IsEMPed( "isEMPed", 'b', DOC_TEXT( "Returns whethe
 const idEventDef EV_Transport_IsWeaponEMPed( "isWeaponEMPed", 'b', DOC_TEXT( "Returns whether the vehicle's weapons are currently EMPed or not." ), 0, NULL );
 const idEventDef EV_Transport_ApplyEMPDamage( "applyEMPDamage", 'b', DOC_TEXT( "Attmempts to apply EMP damage to the vehicle and its weapons, and returns whether or not it was successful." ), 2, NULL, "f", "empTime", "Length of time to disable the vehicle for in seconds.", "f", "weaponEmpTime", "Length of time in seconds to disable the vehicle's weapons for." );
 const idEventDef EV_Transport_GetRemainingEMP( "getRemainingEMP", 'f', DOC_TEXT( "Returns how long in seconds the vehicle will remain disabled for, or 0 if not disabled." ), 0, NULL );
+
+const idEventDef EV_Transport_IsWeaponDisabled( "isWeaponDisabled", 'b', DOC_TEXT( "Returns whether the vehicle's weapons are currently disabled or not." ), 0, NULL );
+const idEventDef EV_Transport_SetWeaponDisabled( "setWeaponDisabled", '\0', DOC_TEXT( "Sets whether the vehicle's weapons are currently disabled or not." ), 1, NULL, "b", "disabled", "State to set to" );
+
 const idEventDef EV_Transport_SetLockAlarmActive( "setLockAlarmActive", '\0', DOC_TEXT( "Turns the target lock alarm on or off." ), 1, NULL, "b", "state", "Whether to turn on or off." );
 const idEventDef EV_Transport_SetImmobilized( "setImmobilized", '\0', DOC_TEXT( "Sets the state of the immobilized flag on the vehicle control system, which will affect engine sounds." ), 1, NULL, "b", "state", "Whether to set or clear the flag." );
 const idEventDef EV_Transport_InSiegeMode( "inSiegeMode", 'b', DOC_TEXT( "Returns whether the vehicle is in siege mode or not." ), 0, "If the vehicle does not have a control system, or the control system does not support siege mode, the result will be false.\nOnly the walker and desecrator control systems support siege mode." );
@@ -1455,6 +1478,9 @@ ABSTRACT_DECLARATION( sdScriptEntity, sdTransport )
 	EVENT( EV_Transport_ApplyEMPDamage,			sdTransport::Event_ApplyEMPDamage )
 	EVENT( EV_Transport_GetRemainingEMP,		sdTransport::Event_GetRemainingEMP )
 
+	EVENT( EV_Transport_IsWeaponDisabled,		sdTransport::Event_IsWeaponDisabled )
+	EVENT( EV_Transport_SetWeaponDisabled,		sdTransport::Event_SetWeaponDisabled )
+
 	EVENT( EV_Transport_SetLockAlarmActive,		sdTransport::Event_SetLockAlarmActive )
 	EVENT( EV_Transport_SetImmobilized,			sdTransport::Event_SetImmobilized )
 
@@ -1509,6 +1535,7 @@ sdTransport::sdTransport( void ) {
 	vehicleFlags.disableKnockback = false;
 	vehicleFlags.lockAlarmActive = false;
 	vehicleFlags.disablePartStateUpdate = false;
+	vehicleFlags.weaponDisabled = false;
 	killPlayerDamage			= NULL;
 	flippedDamage				= NULL;
 	attitudeMaterial			= NULL;
@@ -1545,6 +1572,8 @@ sdTransport::sdTransport( void ) {
 	enemyLockedOnUsFunc			= NULL;
 	isDeployedFunc				= NULL;
 	routeActionNumber			= ACTION_NULL;
+
+	routeKickDistance			= -1;
 }
 
 /*
@@ -2177,7 +2206,7 @@ void sdTransport::DestroyParts( int mask ) {
 
 	vehicleFlags.disablePartStateUpdate = false;
 
-	SendFullPartStates( -1 );
+	SendFullPartStates( sdReliableMessageClientInfoAll() );
 }
 
 /*
@@ -2202,7 +2231,7 @@ void sdTransport::DecayParts( int mask ) {
 	}
 
 	vehicleFlags.disablePartStateUpdate = false;
-	SendFullPartStates( -1 );
+	SendFullPartStates( sdReliableMessageClientInfoAll() );
 }
 
 /*
@@ -2239,7 +2268,7 @@ void sdTransport::DecayLeftWheels( void ) {
 
 	vehicleFlags.disablePartStateUpdate = false;
 	if ( changed ) {
-		SendFullPartStates( -1 );
+		SendFullPartStates( sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -2277,7 +2306,7 @@ void sdTransport::DecayRightWheels( void ) {
 
 	vehicleFlags.disablePartStateUpdate = false;
 	if ( changed ) {
-		SendFullPartStates( -1 );
+		SendFullPartStates( sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -2312,7 +2341,7 @@ void sdTransport::DecayNonWheels( void ){
 
 	vehicleFlags.disablePartStateUpdate = false;
 	if ( changed ) {
-		SendFullPartStates( -1 );
+		SendFullPartStates( sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -2873,6 +2902,7 @@ void sdTransport::OnPlayerExited( idPlayer* player, int position ) {
 	}
 
 	botThreadData.GetGameWorldState()->clientInfo[ player->entityNumber ].proxyInfo.time = 0;
+	player->lastOwnedVehicleTime = gameLocal.time;
 }
 
 /*
@@ -3042,7 +3072,7 @@ sdTransport::Damage
 ================
 */
 void sdTransport::Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &dir, const sdDeclDamage* damage, float damageScale, const trace_t* collision, bool forceKill ) {
-	if( !fl.takedamage || health < 0 ) {
+	if ( !fl.takedamage || health < 0 ) {
 		return;
 	}
 
@@ -3116,7 +3146,7 @@ void sdTransport::Decayed( void ) {
 
 	if ( gameLocal.isServer ) {
 		sdEntityBroadcastEvent msg( this, sdTransport::EVENT_DECAY );
-		msg.Send( true, true );
+		msg.Send( true, sdReliableMessageClientInfoAll() );
 	}
 
 	sdScriptHelper helper;
@@ -3314,7 +3344,9 @@ void sdTransport::Think( void ) {
 
 	bool doPhysics = !( gameLocal.isClient && IsPhysicsInhibited() ) && !IsTeleporting() && ( thinkFlags & TH_PHYSICS );
 	if ( doPhysics ) {
-		RunObjectPrePhysics();
+		if ( !gameLocal.IsPaused() ) {
+			RunObjectPrePhysics();
+		}
 	}
 
 	idVec3 vel = GetPhysics()->GetLinearVelocity();
@@ -3370,6 +3402,8 @@ void sdTransport::Think( void ) {
 				scriptObject->CallNonBlockingScriptEvent( scriptObject->GetFunction( "OnRouteKickPlayer" ), h1 );
 				routeTracker.Reset();
 			}
+
+			routeKickDistance = routeTracker.GetKickDistance();
 		}
         
 		idPlayer* localPlayer = gameLocal.GetLocalPlayer();
@@ -3600,6 +3634,7 @@ void sdTransport::Spawn( void ) {
 	submergeTime = 0;
 	lastWaterDamageTime = 0;
 	vehicleFlags.amphibious				= spawnArgs.GetBool( "amphibious" );
+	vehicleFlags.weaponDisabled			= false;
 
 	damageName			= spawnArgs.GetString( "dmg_water" );	
 	waterDamageDecl		= gameLocal.declDamageType[ damageName ];
@@ -3814,6 +3849,8 @@ void sdTransport::ApplyNetworkState( networkStateMode_t mode, const sdEntityStat
 
 		SetEMPTime( newData.empTime, newData.weaponEmpTime );
 
+		vehicleFlags.weaponDisabled	= newData.weaponDisabled;
+
 		for ( int i = 0; i < newData.positionWeapons.Num(); i++ ) {
 			positionManager.PositionForId( i )->SetWeaponIndex( newData.positionWeapons[ i ] );
 		}
@@ -3841,6 +3878,8 @@ void sdTransport::ApplyNetworkState( networkStateMode_t mode, const sdEntityStat
 		if ( newData.controlState != NULL && vehicleControl->IsNetworked() ) {
 			vehicleControl->ApplyNetworkState( mode, *newData.controlState );
 		}
+
+		routeKickDistance = newData.routeKickDistance;
 	}
 
 	sdScriptEntity::ApplyNetworkState( mode, newState );
@@ -3897,6 +3936,7 @@ void sdTransport::ReadNetworkState( networkStateMode_t mode, const sdEntityState
 		newData.lastDamageDir			= msg.ReadDelta( baseData.lastDamageDir, 9 );
 		newData.empTime					= msg.ReadDeltaLong( baseData.empTime );
 		newData.weaponEmpTime			= msg.ReadDeltaLong( baseData.weaponEmpTime );
+		newData.weaponDisabled			= msg.ReadBool();
 
 		int net_weaponBits = idMath::BitsForInteger( NumWeapons() + 1 );
 
@@ -3932,6 +3972,8 @@ void sdTransport::ReadNetworkState( networkStateMode_t mode, const sdEntityState
 		if ( vehicleControl->IsNetworked() ) {
 			vehicleControl->ReadNetworkState( mode, *baseData.controlState, *newData.controlState, msg );
 		}
+
+		newData.routeKickDistance = msg.ReadDeltaLong( baseData.routeKickDistance );
 	}
 	
 	sdScriptEntity::ReadNetworkState( mode, baseState, newState, msg );
@@ -3959,6 +4001,7 @@ void sdTransport::WriteNetworkState( networkStateMode_t mode, const sdEntityStat
 		newData.lastDamageDir			= idBitMsg::DirToBits( lastDamageDir, 9 );
 		newData.empTime					= empTime;
 		newData.weaponEmpTime			= weaponEmpTime;
+		newData.weaponDisabled			= vehicleFlags.weaponDisabled;
 	
 		// write state
 		msg.WriteBool( newData.teleporting );
@@ -3969,6 +4012,7 @@ void sdTransport::WriteNetworkState( networkStateMode_t mode, const sdEntityStat
 		msg.WriteDelta( baseData.lastDamageDir, newData.lastDamageDir, 9 );
 		msg.WriteDeltaLong( baseData.empTime, newData.empTime );
 		msg.WriteDeltaLong( baseData.weaponEmpTime, newData.weaponEmpTime );
+		msg.WriteBool( newData.weaponDisabled );
 
 		int net_weaponBits = idMath::BitsForInteger( NumWeapons() + 1 );
 
@@ -4003,6 +4047,10 @@ void sdTransport::WriteNetworkState( networkStateMode_t mode, const sdEntityStat
 		if ( vehicleControl->IsNetworked() ) {
 			vehicleControl->WriteNetworkState( mode, *baseData.controlState, *newData.controlState, msg );
 		}
+
+		newData.routeKickDistance = routeKickDistance;
+
+		msg.WriteDeltaLong( baseData.routeKickDistance, newData.routeKickDistance );
 	}
 
 	sdScriptEntity::WriteNetworkState( mode, baseState, newState, msg );
@@ -4022,6 +4070,10 @@ bool sdTransport::CheckNetworkStateChanges( networkStateMode_t mode, const sdEnt
 		}
 
 		if ( vehicleFlags.modelDisabled != baseData.modelDisabled ) {
+			return true;
+		}
+
+		if ( vehicleFlags.weaponDisabled != baseData.weaponDisabled ) {
 			return true;
 		}
 
@@ -4070,6 +4122,8 @@ bool sdTransport::CheckNetworkStateChanges( networkStateMode_t mode, const sdEnt
 				return true;
 			}
 		}
+
+		NET_CHECK_FIELD( routeKickDistance, routeKickDistance );
 	}
 
 	if ( sdScriptEntity::CheckNetworkStateChanges( mode, baseState ) ) {
@@ -4126,7 +4180,7 @@ sdEntityStateNetworkData* sdTransport::CreateNetworkStructure( networkStateMode_
 sdTransport::SendFullPartStates
 ================
 */
-void sdTransport::SendFullPartStates( int clientNum ) const {
+void sdTransport::SendFullPartStates( const sdReliableMessageClientInfoBase& target ) const {
 	// send the state of all the parts
 	sdEntityBroadcastEvent msg( this, sdTransport::EVENT_PARTSTATE );
 	msg.WriteBits( 0, BitsForPartIndex() );
@@ -4135,7 +4189,7 @@ void sdTransport::SendFullPartStates( int clientNum ) const {
 	for ( int i = 0; i < driveObjects.Num(); i++ ) {
 		msg.WriteBool( driveObjects[ i ]->IsHidden() );
 	}
-	msg.Send( false, false, clientNum );
+	msg.Send( false, target );
 }
 
 /*
@@ -4143,8 +4197,8 @@ void sdTransport::SendFullPartStates( int clientNum ) const {
 sdTransport::WriteInitialReliableMessages
 ================
 */
-void sdTransport::WriteInitialReliableMessages( int clientNum ) const {
-	SendFullPartStates( clientNum );
+void sdTransport::WriteInitialReliableMessages( const sdReliableMessageClientInfoBase& target ) const {
+	SendFullPartStates( target );
 }
 
 /*
@@ -4163,7 +4217,7 @@ void sdTransport::SendPartState( sdVehicleDriveObject* object ) const {
 	sdEntityBroadcastEvent msg( this, sdTransport::EVENT_PARTSTATE );
 	msg.WriteBits( partNum + 1, BitsForPartIndex() );
 	msg.WriteBool( driveObjects[ partNum ]->IsHidden() );
-	msg.Send( false, false );
+	msg.Send( false, sdReliableMessageClientInfoAll() );
 }
 
 /*
@@ -4606,7 +4660,7 @@ void sdTransport::SetTrackerEntity( idEntity* trackerEntity ) {
 		// Gordon: these are non-networked entities ( or should be ), so the spawnId wont always match => just use entityNum
 		sdEntityBroadcastEvent msg( this, EVENT_ROUTETRACKERENTITY );
 		msg.WriteLong( trackerEntity ? trackerEntity->entityNumber : -1 );
-		msg.Send( true, true );
+		msg.Send( true, sdReliableMessageClientInfoAll() );
 	}
 
 	routeTracker.SetTrackerEntity( trackerEntity );
@@ -4828,6 +4882,34 @@ sdTransport::Event_GetRemainingEMP
 void sdTransport::Event_GetRemainingEMP( void ) {
 	sdProgram::ReturnFloat( GetRemainingEMP() );
 }
+
+/*
+============
+sdTransport::IsWeaponDisabled
+============
+*/
+bool sdTransport::IsWeaponDisabled( void ) const {
+	return vehicleFlags.weaponDisabled;
+}
+
+/*
+============
+sdTransport::Event_IsWeaponDisabled
+============
+*/
+void sdTransport::Event_IsWeaponDisabled( void ) {
+	sdProgram::ReturnBoolean( IsWeaponDisabled() );
+}
+
+/*
+============
+sdTransport::Event_SetWeaponDisabled
+============
+*/
+void sdTransport::Event_SetWeaponDisabled( bool disabled ) {
+	vehicleFlags.weaponDisabled = disabled;
+}
+
 
 /*
 ============
@@ -5156,7 +5238,7 @@ void sdTransport::SetTeleportEntity( sdTeleporter* teleporter ) {
 	if ( gameLocal.isServer ) {
 		sdEntityBroadcastEvent msg( this, EVENT_SETTELEPORTER );
 		msg.WriteLong( gameLocal.GetSpawnId( teleporter ) );
-		msg.Send( true, true );
+		msg.Send( true, sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -5256,7 +5338,7 @@ void sdTransport::SetRouteWarning( bool value ) {
 	if ( gameLocal.isServer ) {
 		sdEntityBroadcastEvent msg( this, EVENT_ROUTEWARNING );
 		msg.WriteBool( value );
-		msg.Send( true, true );
+		msg.Send( true, sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -5282,7 +5364,7 @@ void sdTransport::SetRouteMaskWarning( bool value ) {
 	if ( gameLocal.isServer ) {
 		sdEntityBroadcastEvent msg( this, EVENT_ROUTEMASKWARNING );
 		msg.WriteLong( routeMaskWarningEndTime );
-		msg.Send( true, true );
+		msg.Send( true, sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -5397,7 +5479,7 @@ sdTransport::OnPhysicsRested
 ================
 */
 void sdTransport::OnPhysicsRested( void ) {
-	if ( !positionManager.IsEmpty() ) {
+	if ( !positionManager.IsEmpty() || gameLocal.IsPaused() ) {
 		return;
 	}
 	idEntity::OnPhysicsRested();

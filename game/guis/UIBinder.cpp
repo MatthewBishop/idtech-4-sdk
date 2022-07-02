@@ -52,11 +52,11 @@ bool sdUIBinder::PostEvent( const sdSysEvent* event ) {
 	}
 
 	bool consoleKey = sys->Keyboard().IsConsoleKey( *event );
-	if( consoleKey ) {
+	if ( consoleKey ) {
 		return false;
 	}
 
-	if( event->IsMouseEvent() ) {
+	if ( event->IsMouseEvent() ) {
 		return false;
 	}
 	
@@ -66,9 +66,12 @@ bool sdUIBinder::PostEvent( const sdSysEvent* event ) {
 		return false;
 	}
 
-	if( event->GetKey() == K_LWIN || event->GetKey() == K_RWIN ) {
+	// those can be bound fine under Linux
+#ifndef __linux__
+	if ( event->GetKey() == K_LWIN || event->GetKey() == K_RWIN ) {
 		return false;
-	}	
+	}
+#endif
 
 	currentKey = key;
 

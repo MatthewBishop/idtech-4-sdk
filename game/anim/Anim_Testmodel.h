@@ -40,6 +40,9 @@ public:
 	void					PrevFrame( const idCmdArgs &args );
 	void					TestAnim( const idCmdArgs &args );
 	void					BlendAnim( const idCmdArgs &args );
+	void					HideSurfaceID( const idCmdArgs &args );
+	void					ShowSurfaceID( const idCmdArgs &args );
+	void					ResetSurfaceID( const idCmdArgs &args );
 
 	static void 			KeepTestModel_f( const idCmdArgs &args );
 	static void 			TestModel_f( const idCmdArgs &args );
@@ -50,6 +53,9 @@ public:
 	static void 			TestAnim_f( const idCmdArgs &args );
 	static void				ArgCompletion_TestAnim( const idCmdArgs &args, void(*callback)( const char *s ) );
 	static void 			TestBlend_f( const idCmdArgs &args );
+	static void				TestModelHideSurfaceID_f( const idCmdArgs &args );
+	static void				TestModelShowSurfaceID_f( const idCmdArgs &args );
+	static void				TestModelResetSurfaceID_f( const idCmdArgs &args );
 	static void 			TestModelNextAnim_f( const idCmdArgs &args );
 	static void 			TestModelPrevAnim_f( const idCmdArgs &args );
 	static void 			TestModelNextFrame_f( const idCmdArgs &args );

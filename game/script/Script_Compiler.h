@@ -139,8 +139,12 @@ enum {
 	OP_IFNOT,
 
 	OP_CALL,
+
 	OP_THREAD,
+	OP_GUITHREAD,
+
 	OP_OBJTHREAD,
+	OP_GUIOBJTHREAD,
 
 	OP_PUSH_F,
 	OP_PUSH_V,
@@ -193,6 +197,7 @@ private:
 					
 	bool			eof;
 	bool			callthread;
+	bool			callguithread;
 	bool			lastStatementWasReturn;
 	int				braceDepth;
 	int				loopDepth;

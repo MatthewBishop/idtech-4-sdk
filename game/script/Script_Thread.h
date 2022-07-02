@@ -22,6 +22,7 @@ private:
 	int								creationTime;
 
 	bool							manualControl;
+	bool							guiThread;
 
 	static idThread*				currentThread;
 	static int						threadIndex;
@@ -39,7 +40,7 @@ public:
 								
 								idThread();
 
-	void						Init( idInterpreter *source, const sdProgram::sdFunction* func, int args );
+	void						Init( idInterpreter *source, const sdProgram::sdFunction* func, int args, bool guiThread );
 
 	virtual						~idThread();
 

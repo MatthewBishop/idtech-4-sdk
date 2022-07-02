@@ -46,6 +46,9 @@ public:
 	virtual const char*					GetSubScopeNameForIndex( int index ) { assert( 0 ); return ""; }
 	virtual sdUserInterfaceScope*		GetSubScopeForIndex( int index ) { assert( 0 ); return NULL; }
 
+	virtual const char*					FindPropertyNameByKey( int index, sdUserInterfaceScope*& scope ) { assert( false ); return NULL; }
+	virtual const char*					FindPropertyName( sdProperties::sdProperty* property, sdUserInterfaceScope*& scope ) { assert( false ); return NULL; }
+
 	virtual sdUserInterfaceLocal*		GetUI() { return &ui; }
 
 	virtual sdProperties::sdProperty*	GetProperty( const char* name, sdProperties::ePropertyType type )	{ assert( 0 ); return NULL;  }
@@ -112,6 +115,7 @@ public:
 	virtual sdProperties::sdProperty*				GetProperty( const char* name );
 	virtual sdProperties::sdProperty*				GetProperty( const char* name, sdProperties::ePropertyType type );
 	virtual sdUIFunctionInstance*					GetFunction( const char* name );
+	virtual const char*								FindPropertyName( sdProperties::sdProperty* property, sdUserInterfaceScope*& scope );
 
 	bool											RunTimeEvent( int time );
 	virtual sdProperties::sdPropertyHandler&		GetProperties() { return properties; }

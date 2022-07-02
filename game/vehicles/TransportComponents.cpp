@@ -4112,6 +4112,9 @@ void sdVehicleRigidBodyPseudoHover::Init( const sdDeclVehiclePart& part, sdTrans
 
 	lastParkEffectTime = 0;
 	lastUnparkEffectTime = 0;
+
+	chosenParkAxis.Identity();
+	chosenParkOrigin.Zero();
 }
 
 /*
@@ -4683,6 +4686,11 @@ void sdVehicleRigidBodyPseudoHover::DoParkRepulsors() {
 	float timeRemaining = parkTime - MS2SEC( gameLocal.time - startParkTime );
 	if ( timeRemaining < evalState.timeStep ) {
 		timeRemaining = evalState.timeStep;
+	}
+
+	if ( !foundPark ) {
+		chosenParkAxis = evalState.axis;
+		chosenParkOrigin = evalState.origin;
 	}
 
 	evalState.surfaceNormal = chosenParkAxis[ 2 ];

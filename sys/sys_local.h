@@ -36,6 +36,7 @@ public:
 	bool						IsConsoleEvent( void ) const { return type == SE_CONSOLE; }
 	bool						IsControllerButtonEvent( void ) const { return type == SE_CONTROLLER_BUTTON; }
 	bool						IsGuiEvent( void ) const { return type == SE_GUI; }
+	bool						IsIMEEvent( void ) const { return type == SE_IME; }
 
 	float						GetXCoord( void ) const { return static_cast< float >( value ); }
 	float						GetYCoord( void ) const { return static_cast< float >( value2 ); }
@@ -50,7 +51,7 @@ public:
 	unsigned int				GetScanCode( void ) const { return static_cast< unsigned int >( value & 0xFF ); }
 	keyNum_e					GetKey( void ) const { return static_cast< keyNum_e >( ( value & 0xFF00 ) >> 8 ); }
 #endif
-	int							GetChar( void ) const { return value2; }
+	wchar_t						GetChar( void ) const { return value2; }
 
 	bool						IsKeyRepeat( void ) const { return ( value2 & 0x2 ) != 0; }
 
@@ -61,6 +62,10 @@ public:
 	bool						IsButtonDown( void ) const { return ( value2 & 0x1 ) != 0; }
 	int							GetControllerHash( void ) const { return value2 >> 1; }
 	int							GetButton( void ) const { return value; }
+
+	// SE_IME
+	imeEvent_t					GetIMEEvent() const { return static_cast< imeEvent_t >( value ); }
+	const wchar_t*				GetCompositionString() const { return reinterpret_cast< const wchar_t* >( ptr ); }
 
 	idLinkList< sdSysEvent >&	GetNode( void ) { return node; }
 
@@ -96,7 +101,7 @@ public:
 									FreeData();
 									if ( rhs.ptr ) {
 										ptr = Mem_Alloc( ptrLength );
-										memcpy( ptr, rhs.ptr, rhs.ptrLength );
+										::memcpy( ptr, rhs.ptr, rhs.ptrLength );
 									}
 
 									return *this;
@@ -222,13 +227,13 @@ public:
 	virtual double			ClockTicksPerSecond( void );
 	virtual void			Sleep( int msec );
 	virtual int				Milliseconds();
-	virtual int				RealTime( sysTime_t* sysTime );
+	virtual time_t			RealTime( sysTime_t* sysTime );
 	const char*				TimeToSystemStr( const sysTime_t& sysTime );
 	virtual const char*		TimeAndDateToSystemStr( const sysTime_t& sysTime );
-	virtual int				TimeDiff( const sysTime_t& from, const sysTime_t& to );
-	virtual void			SecondsToTime( int t, sysTime_t& out, bool localTime = false );
+	virtual time_t			TimeDiff( const sysTime_t& from, const sysTime_t& to );
+	virtual void			SecondsToTime( const time_t t, sysTime_t& out, bool localTime = false );
 	virtual const char *	TimeToStr( const sysTime_t& t );
-	virtual const char *	SecondsToStr( int t, bool localTime = false );
+	virtual const char *	SecondsToStr( const time_t t, bool localTime = false );
 	virtual cpuid_t			GetProcessorId( void );
 	virtual const char *	GetProcessorString( void );
 	virtual const char *	FPU_GetState( void );
@@ -244,9 +249,6 @@ public:
 	virtual const char *	GetFunctionName( const address_t function );
 	virtual const char *	GetFunctionSourceFile( const address_t function );
 	virtual void			ShutdownSymbols( void );
-
-	virtual bool			LockMemory( void *ptr, int bytes );
-	virtual bool			UnlockMemory( void *ptr, int bytes );
 
 	virtual void			GetCurrentMemoryStatus( sysMemoryStats_t &stats );
 	virtual void			GetExeLaunchMemoryStatus( sysMemoryStats_t &stats );
@@ -295,6 +297,8 @@ public:
 
 	virtual idKeyboard&		Keyboard();
 	virtual idMouse&		Mouse();
+
+	virtual sdIME&			IME();
 
 	virtual void			SetSystemLocale();
 

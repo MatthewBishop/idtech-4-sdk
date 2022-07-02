@@ -278,6 +278,16 @@ sdProperties::sdProperty* sdUITimeline::GetProperty( const char* name, sdPropert
 
 /*
 ============
+sdUITimeline::FindPropertyName
+============
+*/
+const char* sdUITimeline::FindPropertyName( sdProperties::sdProperty* property, sdUserInterfaceScope*& scope ) {
+	scope = this;
+	return properties.NameForProperty( property );
+}
+
+/*
+============
 sdUITimeline::PushEvents
 ============
 */

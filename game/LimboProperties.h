@@ -28,6 +28,7 @@ public:
 	virtual sdProperties::sdProperty*		GetProperty( const char* name, sdProperties::ePropertyType type );
 	virtual sdProperties::sdPropertyHandler& GetProperties() { return properties; }
 	virtual const char*						GetName() const { return "limboProperties"; }
+	virtual const char*						FindPropertyName( sdProperties::sdProperty* property, sdUserInterfaceScope*& scope ) { scope = this; return properties.NameForProperty( property ); }
 
 	void									Update( void );
 	void									Init( void );

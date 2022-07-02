@@ -446,7 +446,7 @@ sdGameRulesStopWatch::ChangeMap
 */
 bool sdGameRulesStopWatch::ChangeMap( const char* mapName ) {
 	idStr cleanMapName = mapName;
-	SanitizeMapName( cleanMapName, true );
+	sdGameRules_SingleMapHelper::SanitizeMapName( cleanMapName, true );
 
 	idStr sessionCommand = va( "usermap %s", cleanMapName.c_str() );
 	cmdSystem->PushFrameCommand( sessionCommand.c_str() );
@@ -458,10 +458,8 @@ bool sdGameRulesStopWatch::ChangeMap( const char* mapName ) {
 sdGameRulesStopWatch::OnUserStartMap
 ================
 */
-bool sdGameRulesStopWatch::OnUserStartMap( const char* text, idStr& reason, idStr& mapName ) {
-	mapName = text;
-	SanitizeMapName( mapName, true );
-	return true;
+userMapChangeResult_e sdGameRulesStopWatch::OnUserStartMap( const char* text, idStr& reason, idStr& mapName ) {
+	return sdGameRules_SingleMapHelper::OnUserStartMap( text, reason, mapName );
 }
 
 /*
@@ -534,7 +532,7 @@ sdGameRulesStopWatch::ArgCompletion_StartGame
 ================
 */
 void sdGameRulesStopWatch::ArgCompletion_StartGame( const idCmdArgs& args, argCompletionCallback_t callback ) {
-	idCmdSystem::ArgCompletion_EntitiesName( args, callback );
+	sdGameRules_SingleMapHelper::ArgCompletion_StartGame( args, callback );
 }
 
 /*
@@ -581,6 +579,10 @@ void sdGameRulesStopWatch::UpdateClientFromServerInfo( const idDict& serverInfo,
 			*property->value.floatValue = 1.0f;
 		}
 
+		if ( sdProperty* property = scope->GetProperty( "currentMap", PT_FLOAT ) ) {
+			*property->value.floatValue = 1.0f;
+		}
+
 		idWStr text;
 		if( timeToBeat > 0 ) {
 			idWStr::hmsFormat_t format;
@@ -619,6 +621,23 @@ byte sdGameRulesStopWatch::GetProbeState( void ) const {
 		value |= PGS_RETURN;
 	}
 	return value;
+}
+
+/*
+============
+sdGameRulesStopWatch::GetServerBrowserScore
+============
+*/
+int sdGameRulesStopWatch::GetServerBrowserScore( const sdNetSession& session ) const {
+	int score = 0;
+	if ( session.GetGameState() & PGS_RETURN ) {
+		score += sdHotServerList::BROWSER_OK_BONUS;
+	} else {
+		score += sdHotServerList::BROWSER_GOOD_BONUS;
+	}
+
+	score += sdGameRules::GetServerBrowserScore( session );
+	return score;
 }
 
 /*

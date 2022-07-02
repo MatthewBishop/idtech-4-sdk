@@ -106,12 +106,15 @@ struct gameLocalInfo_t {
 	bool					teamStroggHasHuman;
 	bool					teamGDFHasHuman;
 	bool					gameIsBotMatch;
+	bool					botsDoObjsInTrainingMode;
 	int						time;
 	int						botSkill;
 	int						botAimSkill;
 	int						numClients;
 	int						nextGDFRespawnTime;
 	int						nextStroggRespawnTime;
+	int						botPauseInVehicleTime;
+	int						botTrainingModeObjDelayTime;
 
 //mal: timers
 	int						energyTimerTime;		// points to the time it takes to recharge the charge bar
@@ -296,7 +299,9 @@ struct botGoalInfo_t { //mal_TODO: keep adding more info for goals, as its neede
 	bool					mapHasMCPGoal;
 	bool					team_GDF_AttackDeployables;
 	bool					team_STROGG_AttackDeployables;
+	bool					gameIsOnFinalObjective;
 	int						deliverActionNumber;
+	int						mapHasMCPGoalTime;
 	int						team_GDF_PrimaryAction;
 	int						team_GDF_SecondaryAction;
 	int						team_STROGG_PrimaryAction;
@@ -347,6 +352,9 @@ struct clientInfo_t {
 	int						disguisedClient;					//mal: set in idPlayer::Think - client bot is disguised to look like.
 
 	int						tkReviveTime;
+
+	int						lastOwnedVehicleSpawnID;
+	int						lastOwnedVehicleTime;
 	
 	int						classChargeUsed;					//mal: set in idPlayer::Think -
 	int						supplyChargeUsed;					//mal: set in idPlayer::Think - supply packs
@@ -406,10 +414,12 @@ struct clientInfo_t {
 	int						covertWarningTime;
 	int						lastChatTime[ MAX_CHATS ];			//mal: when did this client last chat 
 	int						lastThanksTime;
+	int						lastClassChangeTime;
 	int						myHero;								//mal: client who gave this bot health/ammo recently.
 	int						mySavior;							//mal: client who revived us recently
 	int						killsSinceSpawn;					//mal: how many ppl have I killed since being spawned?
 	int						backPedalTime;
+	int						missionEntNum;						//mal: entity number of the entity we have a mission for
 	float					xySpeed;							//mal: set in idPlayer::Think
 	clientProxyInfo_t		proxyInfo;
 	weaponInfo_t			weapInfo;							//mal: the state of this clients weapon
@@ -625,6 +635,8 @@ public:							// the following routines are called from the game thread
 	static void					Cmd_KillAllBots_f( const idCmdArgs &args );
 	static void					Cmd_ResetAllBots_f( const idCmdArgs & args );
 
+	void						ManageBotClassesOnSmallServer();
+
 	bool						ServerHasHumans();
 	bool						ActionIsLinkedToAction( int curActionNum, int testActionNum );
 	bool						CheckActionIsValid( int actionNumber );
@@ -789,6 +801,7 @@ private:
 
 	int							lastCmdDeclinedChatTime;
 	int							nextChatUpdateTime;
+	int							lastWeapChangedTime;
 
 private:
 	void						AddActionToHash( const char *actionName, int actionNum );

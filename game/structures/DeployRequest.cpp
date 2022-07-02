@@ -226,7 +226,7 @@ bool sdDeployRequest::CallForDropOff( void ) {
 sdDeployRequest::WriteCreateEvent
 ==============
 */
-void sdDeployRequest::WriteCreateEvent( int index, int clientNum ) const {
+void sdDeployRequest::WriteCreateEvent( int index, const sdReliableMessageClientInfoBase& info ) const {
 	sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_CREATEDEPLOYREQUEST );
 	msg.WriteLong( index );
 	msg.WriteFloat( rotation );
@@ -234,7 +234,7 @@ void sdDeployRequest::WriteCreateEvent( int index, int clientNum ) const {
 	msg.WriteBits( object->Index() + 1, gameLocal.GetNumDeployObjectBits() );
 	msg.WriteVector( position );
 	sdTeamManager::GetInstance().WriteTeamToStream( team, msg );
-	msg.Send( clientNum );
+	msg.Send( info );
 }
 
 /*
@@ -258,5 +258,5 @@ sdDeployRequest::WriteDestroyEvent
 void sdDeployRequest::WriteDestroyEvent( int index ) const {
 	sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_DELETEDEPLOYREQUEST );
 	msg.WriteLong( index );
-	msg.Send( -1 );
+	msg.Send( sdReliableMessageClientInfoAll() );
 }

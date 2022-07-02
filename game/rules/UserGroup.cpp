@@ -413,7 +413,7 @@ void sdUserGroupManagerLocal::Init( void ) {
 	}
 
 	if ( gameLocal.isServer ) {
-		WriteNetworkData( -1 );
+		WriteNetworkData( sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -501,7 +501,7 @@ void sdUserGroupManagerLocal::ReadNetworkData( const idBitMsg& msg ) {
 sdUserGroupManagerLocal::WriteNetworkData
 ============
 */
-void sdUserGroupManagerLocal::WriteNetworkData( int clientNum ) {
+void sdUserGroupManagerLocal::WriteNetworkData( const sdReliableMessageClientInfoBase& target ) {
 	sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_USERGROUPS );
 
 	msg.WriteLong( userGroups.Num() - 1 );
@@ -513,7 +513,7 @@ void sdUserGroupManagerLocal::WriteNetworkData( int clientNum ) {
 	msg.WriteDeltaDict( configs, NULL );
 	msg.WriteDeltaDict( votes, NULL );
 
-	msg.Send( clientNum );
+	msg.Send( target );
 }
 
 /*

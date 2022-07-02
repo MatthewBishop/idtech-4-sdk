@@ -28,13 +28,6 @@ void idBotAI::Bot_FindBestCombatMovement() {
 		return;
 	}
 
-	const clientInfo_t& enemyClient = botWorld->clientInfo[ enemy ];
-
-	if ( botInfo->weapInfo.weapon == KNIFE ) {
-        COMBAT_MOVEMENT_STATE = &idBotAI::Enter_Knife_Attack_Movement;
-		return;
-	}
-
 	if ( botInfo->usingMountedGPMG ) {
 		COMBAT_MOVEMENT_STATE = &idBotAI::Enter_Null_Move_Attack;
 		return;
@@ -45,7 +38,22 @@ void idBotAI::Bot_FindBestCombatMovement() {
 		return;
 	}
 
-	if ( botInfo->weapInfo.weapon == NADE ) {
+	if ( botThreadData.GetBotSkill() == BOT_SKILL_DEMO ) { //mal: silly bot! Don't move around too much or be too hard to hit in training mode.
+		if ( botThreadData.random.RandomInt( 100 ) > 50 ) {
+			COMBAT_MOVEMENT_STATE = &idBotAI::Stand_Ground_Attack_Movement;
+		} else {
+			COMBAT_MOVEMENT_STATE = &idBotAI::Enter_Run_And_Gun_Movement;
+		}
+
+		return;
+	}
+
+	if ( botInfo->weapInfo.weapon == KNIFE ) {
+        COMBAT_MOVEMENT_STATE = &idBotAI::Enter_Knife_Attack_Movement;
+		return;
+	}
+
+	if ( botInfo->weapInfo.weapon == GRENADE || botInfo->weapInfo.weapon == EMP ) {
 		COMBAT_MOVEMENT_STATE = &idBotAI::Enter_Grenade_Attack_Movement;
 		return;
 	}
@@ -54,6 +62,8 @@ void idBotAI::Bot_FindBestCombatMovement() {
 		COMBAT_MOVEMENT_STATE = &idBotAI::Enter_Avoid_Danger_Movement;
 		return;
 	}
+
+	const clientInfo_t& enemyClient = botWorld->clientInfo[ enemy ];
 
 	if ( botInfo->inWater && !enemyClient.inWater ) {
 		COMBAT_MOVEMENT_STATE = &idBotAI::Enter_Run_And_Gun_Movement;
@@ -126,7 +136,7 @@ void idBotAI::Bot_FindBestCombatMovement() {
 	}
 
 //mal: next, check if we have the height advantage - in which case, we'll keep it! ONLY smarter bots will do this....
-	if ( botThreadData.GetBotSkill() > BOT_SKILL_EASY ) {
+	if ( botThreadData.GetBotSkill() > BOT_SKILL_EASY && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) {
         if ( enemyInfo.enemyHeight < -150 && enemyInfo.enemyDist > 900.0f ) { //mal: if we have the height advantage, run some special checks!
 			aasTraceFloor_t trace;
 			idVec3 enemyOrg = enemyClient.origin;
@@ -854,7 +864,7 @@ const botMoveFlags_t idBotAI::Bot_ShouldStrafeJump( const idVec3 &targetOrigin )
 		isStrafeJumping = false;
 		skipStrafeJumpTime = botWorld->gameLocalInfo.time + delayTime;
 		
-		if ( botThreadData.GetBotSkill() > BOT_SKILL_EASY ) {
+		if ( botThreadData.GetBotSkill() > BOT_SKILL_EASY && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) {
             return SPRINT;
 		} else {
 			return RUN;
@@ -1037,7 +1047,7 @@ idBotAI::Bot_MoveAwayFromClient
 Moves us away from the client we're blocking.
 ================
 */
-void idBotAI::Bot_MoveAwayFromClient( int clientNum ) {
+void idBotAI::Bot_MoveAwayFromClient( int clientNum, bool randomStrafe ) {
 
 	botMoveFlags_t botMoveFlag;
 
@@ -1047,8 +1057,18 @@ void idBotAI::Bot_MoveAwayFromClient( int clientNum ) {
 		botMoveFlag = WALK;
 	}
 
+	botMoveTypes_t botMoveType = NULLMOVETYPE;
+
+	if ( randomStrafe ) {
+		if ( botThreadData.random.RandomInt( 100 ) > 50 ) {
+			botMoveType = STRAFE_RIGHT;
+		} else {
+			botMoveType = STRAFE_LEFT;
+		}
+	}
+
 	Bot_SetupQuickMove( botInfo->origin, true );
-	Bot_MoveToGoal( botAAS.path.moveGoal, vec3_zero, botMoveFlag, NULLMOVETYPE );
+	Bot_MoveToGoal( botAAS.path.moveGoal, vec3_zero, botMoveFlag, botMoveType );
 	return;
 }
 
@@ -1196,8 +1216,8 @@ bool idBotAI::AddGroundObstacles( bool largePlayerBBox, bool inVehicle ) {
 			if ( botVehicleInfo != NULL ) {
 				continue;
 			} else {
-				//mal: if on foot - only avoid enemy players if we can see them.
-				if ( !InFrontOfClient( botNum, playerInfo.origin ) ) {
+				//mal: if on foot - only avoid enemy players if we can see them and we're not disguised.
+				if ( !botInfo->isDisguised && !InFrontOfClient( botNum, playerInfo.origin ) ) {
 					continue;											
 				}
 			}
@@ -1205,11 +1225,21 @@ bool idBotAI::AddGroundObstacles( bool largePlayerBBox, bool inVehicle ) {
 
 		//mal: if in a vehicle, avoid our fellow players better!
 		avoidObstacleRange = 1024.0f;
+		bool inFrontOfOurVehicle = ( inVehicle == false ) ? false : InFrontOfVehicle( botVehicleInfo->entNum, playerInfo.origin );
+		float ourForwardSpeed = ( inVehicle == true ) ? botVehicleInfo->forwardSpeed : botInfo->xySpeed;
 
 		idVec3 vec = playerInfo.origin - botInfo->origin;
+		float distToPlayerSqr = vec.LengthSqr();
 
 		//mal: keep the range pretty tight.
-		if ( vec.LengthSqr() > Square( avoidObstacleRange ) ) {
+		if ( distToPlayerSqr > Square( avoidObstacleRange ) ) {
+			if ( inFrontOfOurVehicle && ourForwardSpeed > BASE_VEHICLE_SPEED && distToPlayerSqr < Square( 2000.0f ) ) {
+				botShouldMoveCautiously = true;
+				if ( !playerInfo.isBot ) {
+					botUcmd->desiredChat = MOVE;		//mal: let the player know to move it or lose it!
+					botUcmd->botCmds.honkHorn = true;
+				}
+			}
 			continue;
 		}
 
@@ -1225,14 +1255,14 @@ bool idBotAI::AddGroundObstacles( bool largePlayerBBox, bool inVehicle ) {
 		}
 
 		if ( inVehicle ) {
-			if ( InFrontOfVehicle( botVehicleInfo->entNum, playerInfo.origin ) ) {
+			if ( inFrontOfOurVehicle ) {
 				botShouldMoveCautiously = true;
 
 				if ( botVehicleInfo->flags & PERSONAL ) { //mal: personal vehicles always keep moving, and just avoid.
 					obstacles.AddObstacle( box, i );
 				} else if ( playerInfo.xySpeed < WALKING_SPEED ) { //mal: if the player is stopped, or moving REALLY slow, avoid him
 					obstacles.AddObstacle( box, i );
-				} else if ( InFrontOfClient( i, botVehicleInfo->origin ) && vec.LengthSqr() < Square( 512.0f ) && InFrontOfVehicle( botVehicleInfo->entNum, playerInfo.origin, true ) ) {
+				} else if ( InFrontOfClient( i, botVehicleInfo->origin ) && distToPlayerSqr < Square( 512.0f ) && InFrontOfVehicle( botVehicleInfo->entNum, playerInfo.origin, true ) ) {
 					vehiclePauseTime = botWorld->gameLocalInfo.time + 100; //mal: else, just stop and wait for him to pass.
 				}
 			}

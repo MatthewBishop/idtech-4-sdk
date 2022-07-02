@@ -154,10 +154,12 @@ void idBotThreadData::InitClientInfo( int clientNum, bool resetAll, bool leaving
 
 	client.myHero = -1;
 	client.mySavior = -1;
+	client.missionEntNum = -1;
 
 	memset( client.lastChatTime, 0, sizeof ( client.lastChatTime ) );
 	client.lastThanksTime = 0;
 	client.chatDelay = 0;
+	client.lastClassChangeTime = 0;
 
 	memset( &client.weapInfo, 0, sizeof( client.weapInfo ) );
 	memset( client.packs, 0, sizeof( client.packs ) );
@@ -865,6 +867,7 @@ void idBotThreadData::UpdateState() {
 		}
 	}
 
+	gameLocalInfo.gameIsBotMatch = ( networkSystem->IsDedicated() || networkSystem->IsLANServer() ) ? false : true;
 	gameLocalInfo.inWarmup = gameLocal.rules->IsWarmup();
 	gameLocalInfo.botsUseTKRevive = bot_useTKRevive.GetBool();
 	gameLocalInfo.numClients = gameLocal.numClients;
@@ -875,6 +878,11 @@ void idBotThreadData::UpdateState() {
 	gameLocalInfo.botsUseSpawnHosts = bot_useSpawnHosts.GetBool();
 	gameLocalInfo.botsUseUniforms = bot_useUniforms.GetBool();
 	gameLocalInfo.botSkill = bot_skill.GetInteger();
+
+	if ( gameLocalInfo.botSkill == BOT_SKILL_DEMO && !gameLocalInfo.gameIsBotMatch ) { //mal_HACK: another 11th hour fix. ugh.
+		gameLocalInfo.botSkill = 2;
+	}
+
 	gameLocalInfo.botAimSkill = bot_aimSkill.GetInteger();
 	gameLocalInfo.friendlyFireOn = si_teamDamage.GetBool();
 	gameLocalInfo.botsPaused = bot_pause.GetBool();
@@ -890,6 +898,9 @@ void idBotThreadData::UpdateState() {
 	gameLocalInfo.botsCanSuicide = bot_useSuicideWhenStuck.GetBool();
 	gameLocalInfo.botsCanDecayObstacles = bot_allowObstacleDecay.GetBool();
 	gameLocalInfo.botsSleep = false;
+	gameLocalInfo.botPauseInVehicleTime = bot_pauseInVehicleTime.GetInteger();
+	gameLocalInfo.botsDoObjsInTrainingMode = bot_doObjsInTrainingMode.GetBool();
+	gameLocalInfo.botTrainingModeObjDelayTime = ( bot_doObjsDelayTimeInMins.GetInteger() * 60 );
 	
 	if ( bot_sleepWhenServerEmpty.GetBool() ) {
 		if ( !ServerHasHumans() ) {
@@ -909,8 +920,7 @@ void idBotThreadData::UpdateState() {
 	bool hasSTROGGHumans = gameLocalInfo.teamStroggHasHuman;
 	gameLocalInfo.teamStroggHasHuman = TeamHasHumans( STROGG );
 	gameLocalInfo.teamGDFHasHuman = TeamHasHumans( GDF );
-	gameLocalInfo.gameIsBotMatch = ( networkSystem->IsDedicated() || networkSystem->IsLANServer() ) ? false : true;
-
+	
 //mal: if the current human situation changed from last frame, update the bot AI. In hero mode, this will dictate whether they do objs or not.
 	if ( hasGDFHumans != gameLocalInfo.teamGDFHasHuman ) {
 		ResetBotAI( GDF );
@@ -1149,6 +1159,8 @@ void idBotThreadData::Init() {
 	GetGameWorldState()->botGoalInfo.botSightDist = ENEMY_SIGHT_DIST; //mal: nice default value
 	GetGameWorldState()->botGoalInfo.botGoal_MCP_VehicleNum = -1;
 	GetGameWorldState()->botGoalInfo.mapHasMCPGoal = false;
+	GetGameWorldState()->botGoalInfo.mapHasMCPGoalTime = 0;
+	GetGameWorldState()->botGoalInfo.gameIsOnFinalObjective = false;
 	GetGameWorldState()->gameLocalInfo.winningTeam = NOTEAM;
 	GetGameWorldState()->botGoalInfo.teamNeededClassInfo[ GDF ].criticalClass = NOCLASS;
 	GetGameWorldState()->botGoalInfo.teamNeededClassInfo[ GDF ].numCriticalClass = 0;
@@ -1167,6 +1179,7 @@ void idBotThreadData::Init() {
 	GetGameWorldState()->botGoalInfo.deliverActionNumber = FindDeliverActionNumber();
 
 	lastCmdDeclinedChatTime = 0;
+	lastWeapChangedTime = 0;
 	nextBotClassUpdateTime = 0;
 	nextDeployableUpdateTime = 0;
 	nextChatUpdateTime = 0;
@@ -1303,6 +1316,7 @@ void idBotThreadData::DebugOutput() {
 	gameLocal.TracePoint( tr, player->firstPersonViewOrigin, end, MASK_SHOT_BOUNDINGBOX | MASK_VEHICLESOLID | CONTENTS_RENDERMODEL );
 	gameLocal.Printf("Trace Entity: %i\n", tr.c.entityNum );
 */
+
 }
 
 /*
@@ -3194,6 +3208,23 @@ void idBotThreadData::VOChat( const botChatTypes_t chatType, int clientNum, bool
 			quickChat = gameLocal.declQuickChatType.LocalFind( quickChatName, false );
 			playerInfo.lastChatTime[ GENERAL_TAUNT ] = gameLocal.time + 20000;
 		}
+	} else if ( chatType == WILL_FIX_RIDE ) {
+        if ( playerInfo.lastChatTime[ WILL_FIX_RIDE ] < gameLocal.time || forceChat ) {
+			if ( gameLocal.random.RandomInt( 100 ) > 50 ) {
+				quickChatName = pc->BuildQuickChatDeclName( "botchat/generic/vehicle/letmerepair" );
+			} else {
+				quickChatName = pc->BuildQuickChatDeclName( "botchat/generic/vehicle/iwillfixride" );
+			}
+
+			quickChat = gameLocal.declQuickChatType.LocalFind( quickChatName, false );
+			playerInfo.lastChatTime[ WILL_FIX_RIDE ] = gameLocal.time + 15000;
+		}
+	} else if ( chatType == STOP_WILL_FIX_RIDE ) {
+        if ( playerInfo.lastChatTime[ STOP_WILL_FIX_RIDE ] < gameLocal.time || forceChat ) {
+            quickChatName = pc->BuildQuickChatDeclName( "botchat/generic/vehicle/stopiwillfixride" );
+			quickChat = gameLocal.declQuickChatType.LocalFind( quickChatName, false );
+			playerInfo.lastChatTime[ STOP_WILL_FIX_RIDE ] = gameLocal.time + 15000;
+		}
 	} else if ( chatType == YOURWELCOME ) {
         if ( playerInfo.lastChatTime[ YOURWELCOME ] < gameLocal.time || forceChat ) {
             quickChatName = pc->BuildQuickChatDeclName( "quickchat/responses/youwelcome" );
@@ -4577,7 +4608,7 @@ void idBotThreadData::CheckCurrentChatRequests() {
 				}
 			}
 
-			if ( !GetGameWorldState()->gameLocalInfo.heroMode ) {//mal: this is just for show anyhow, but if human has "Hero" mode on, the bot can't do the obj - so let the human know.
+			if ( !GetGameWorldState()->gameLocalInfo.heroMode && botThreadData.GetBotSkill() != BOT_SKILL_DEMO ) {//mal: this is just for show anyhow, but if human has "Hero" mode on, the bot can't do the obj - so let the human know.
 				VOChat( ACKNOWLEDGE_YES, j, true );
 			} else {
 				VOChat( CMD_DECLINED, j, true );
@@ -4777,6 +4808,12 @@ void idBotThreadData::CheckBotClassSpread() {
 		return;
 	}
 
+	if ( 1 /*GetNumBotsInServer( GDF ) <= 6 || GetNumBotsInServer( STROGG ) <= 6 */ ) {
+		ManageBotClassesOnSmallServer();
+		nextBotClassUpdateTime = gameLocal.time + 30000; //mal: this isn't super critical.
+		return;
+	}
+
 	int numConverted = 0;
 
 	nextBotClassUpdateTime = gameLocal.time + ( ( teamsSwapedRecently != false ) ? 5000 : 30000 ); //mal: this isn't super critical.
@@ -4964,19 +5001,25 @@ void idBotThreadData::CheckBotClassSpread() {
 			}
 
 			for( int i = 0; i < MAX_CLIENTS; i++ ) {
-				if ( !GetGameWorldState()->clientInfo[ i ].inGame ) {
+				clientInfo_t& playerInfo = this->GetGameWorldState()->clientInfo[ i ];
+
+				if ( !playerInfo.inGame ) {
 					continue;
 				}
 
-				if ( GetGameWorldState()->clientInfo[ i ].team != botTeam ) {
+				if ( playerInfo.team != botTeam ) {
 					continue;
 				}
 
-				if ( GetGameWorldState()->clientInfo[ i ].classType != sampleClass ) {
+				if ( playerInfo.classType != sampleClass ) {
 					continue;
 				}
 
-				if ( !GetGameWorldState()->clientInfo[ i ].isBot ) {
+				if ( !playerInfo.isBot ) {
+					continue;
+				}
+
+				if ( ( playerInfo.lastClassChangeTime + MIN_CLASS_CHANGE_DELAY ) > gameLocal.time ) {
 					continue;
 				}
 
@@ -4989,6 +5032,7 @@ void idBotThreadData::CheckBotClassSpread() {
 				player->ChangeClass( playerClass, weaponLoadOut ); //mal: default loadout.
 					
 				player->Kill( NULL ); //mal: hurry up and suicide, and get back into the game as our new class!
+				playerInfo.lastClassChangeTime = gameLocal.time;
 				break;
 			}
 			continue;
@@ -5621,6 +5665,10 @@ void idBotThreadData::DrawActionNumber( int actionNumber, const idMat3& viewAxis
 
 	gameRenderWorld->DrawText( va( "No Hack: %i     Requires Vehicle Type: %i", botActions[ actionNumber ]->noHack, botActions[ actionNumber ]->requiresVehicleType ), end, 0.2f, colorWhite, viewAxis );
 
+	end.z -= 16.0f;
+
+	gameRenderWorld->DrawText( va( "Is Priority: %i", botActions[ actionNumber ]->priority ), end, 0.2f, colorWhite, viewAxis );
+
 	if ( drawAllInfo ) {
 		if ( !botActions[ actionNumber ]->actionBBox.IsCleared() ) {
 			gameRenderWorld->DebugBox( colorRed, botActions[ actionNumber ]->actionBBox );
@@ -5752,3 +5800,231 @@ void idBotThreadData::VehicleRouteThink( bool setup, int& routeActionNumber, con
 	}
 }
 
+/*
+==================
+idBotThreadData::ManageBotClassesOnSmallServer
+==================
+*/
+void idBotThreadData::ManageBotClassesOnSmallServer() {
+	bool changedClass = false;
+
+	for( int t = 0; t < MAX_TEAMS; t++ ) {
+		int weaponLoadOut = gameLocal.random.RandomInt( 2 );
+		playerTeamTypes_t botTeam;
+		playerClassTypes_t criticalClass = NOCLASS;
+		playerClassTypes_t botClass = NOCLASS;
+		const sdDeclPlayerClass* pc;
+		
+		if ( t == GDF ) {
+			botTeam = GDF;
+			criticalClass = GetGameWorldState()->botGoalInfo.team_GDF_criticalClass;
+		} else if ( t == STROGG ) {
+			botTeam = STROGG;
+			criticalClass = GetGameWorldState()->botGoalInfo.team_STROGG_criticalClass;
+		}
+
+		int numMedic = GetNumClassOnTeam( botTeam, MEDIC );
+		int numEng = GetNumClassOnTeam( botTeam, ENGINEER );
+		int numFOps = GetNumClassOnTeam( botTeam, FIELDOPS );
+		int numCovert = GetNumClassOnTeam( botTeam, COVERTOPS );
+		int numSoldier = GetNumClassOnTeam( botTeam, SOLDIER );
+		int numRLOnTeam = GetNumWeaponsOnTeam( botTeam, ROCKET );
+		int numCritical;
+
+		if ( criticalClass != NOCLASS && bot_doObjectives.GetBool() ) {
+			numCritical = botThreadData.GetNumClassOnTeam( botTeam, criticalClass );
+		} else {
+			numCritical = -1;
+		}
+
+		//mal: make sure we always have a couple bots of the critical class first, unless the human wants to do the obj.
+		if ( numCritical < 2 && numCritical != -1 ) {
+			botClass = criticalClass;
+		} else if ( numMedic == 0 ) {
+			botClass = MEDIC;
+		} else if ( numSoldier == 0 ) {
+			botClass = SOLDIER;
+		} else if ( numEng == 0 ) {
+			botClass = ENGINEER;
+		} else if ( numCovert == 0 ) {
+			botClass = COVERTOPS;
+		} else if ( numFOps == 0 ) {
+			botClass = FIELDOPS;
+		}
+
+		if ( botClass == NOCLASS ) {
+			continue;
+		}
+
+		playerClassTypes_t sampleClass = NOCLASS;
+
+		if ( numMedic > 1 && ( criticalClass != MEDIC || numMedic > 2 ) ) {
+			sampleClass = MEDIC;
+		} else if ( numSoldier > 1 && ( criticalClass != SOLDIER || numSoldier > 2 ) ) {
+			sampleClass = SOLDIER;
+		} else if ( numEng > 1 && ( criticalClass != ENGINEER || numEng > 2 ) ) {
+			sampleClass = ENGINEER;
+		} else if ( numCovert > 1 && ( criticalClass != COVERTOPS || numCovert > 2 ) ) {
+			sampleClass = COVERTOPS;
+		} else if ( numFOps > 1 && ( criticalClass != FIELDOPS || numFOps > 2 ) ) {
+			sampleClass = FIELDOPS;
+		}
+
+		if ( sampleClass == NOCLASS ) { //mal: dont have anyone to spare.
+			continue;
+		}
+
+		if ( t == GDF ) {
+			if ( botClass == MEDIC ) {
+				pc = gameLocal.declPlayerClassType[ "medic" ];
+			} else if ( botClass == SOLDIER ) {
+				pc = gameLocal.declPlayerClassType[ "soldier" ];
+
+				if ( numRLOnTeam == 0 ) {
+					weaponLoadOut = 1;
+				} else {
+					weaponLoadOut = gameLocal.random.RandomInt( 4 );
+				}
+			} else if ( botClass == ENGINEER ) {
+				pc = gameLocal.declPlayerClassType[ "engineer" ];
+			} else if ( botClass == FIELDOPS ) {
+				pc = gameLocal.declPlayerClassType[ "fieldops" ];
+				weaponLoadOut = 0;
+			} else if ( botClass == COVERTOPS ) {
+				pc = gameLocal.declPlayerClassType[ "covertops" ];
+			} else {
+				continue;
+			}
+		} else if ( t == STROGG ) {
+			if ( botClass == MEDIC ) {
+				pc = gameLocal.declPlayerClassType[ "technician" ];
+			} else if ( botClass == SOLDIER ) {
+				pc = gameLocal.declPlayerClassType[ "aggressor" ];
+				if ( numRLOnTeam == 0 ) {
+					weaponLoadOut = 1;
+				} else {
+					weaponLoadOut = gameLocal.random.RandomInt( 4 );
+				}
+			} else if ( botClass == ENGINEER ) {
+				pc = gameLocal.declPlayerClassType[ "constructor" ];
+			} else if ( botClass == FIELDOPS ) {
+				pc = gameLocal.declPlayerClassType[ "oppressor" ];
+				weaponLoadOut = 0;
+			} else if ( botClass == COVERTOPS ) {
+				pc = gameLocal.declPlayerClassType[ "infiltrator" ];
+			} else {
+				continue;
+			}
+		}
+
+		for( int i = 0; i < MAX_CLIENTS; i++ ) {
+			clientInfo_t& playerInfo = GetGameWorldState()->clientInfo[ i ];
+
+			if ( !playerInfo.inGame ) {
+				continue;
+			}
+
+			if ( playerInfo.team != botTeam ) {
+				continue;
+			}
+
+			if ( playerInfo.classType != sampleClass ) {
+				continue;
+			}
+
+			if ( !playerInfo.isBot ) {
+				continue;
+			}
+
+			if ( bots[ i ]->GetAIState() != LTG ) { //mal: now, make sure the bot isn't doing something important.
+				continue;
+			}
+
+			if ( bots[ i ]->GetLTGType() != ROAM_GOAL && bots[ i ]->GetLTGType() != CAMP_GOAL ) {
+				continue;
+			}
+
+			if ( ( playerInfo.lastClassChangeTime + MIN_CLASS_CHANGE_DELAY ) > gameLocal.time ) {
+				continue;
+			}
+
+			idPlayer* player = gameLocal.GetClient( i );
+
+			if ( player == NULL ) {
+				continue;
+			}
+
+			player->ChangeClass( pc, weaponLoadOut );
+					
+			player->Kill( NULL ); //mal: hurry up and suicide, and get back into the game as our new class!
+			playerInfo.lastClassChangeTime = gameLocal.time;
+			changedClass = true;
+			break;
+		}
+	}
+
+	if ( ( lastWeapChangedTime + MIN_WEAPON_CHANGE_DELAY ) > gameLocal.time ) {
+		return;
+	}
+
+	if ( changedClass == false ) { //mal: make sure there is at least 1 RL soldier on each team.
+		for( int t = 0; t < MAX_TEAMS; t++ ) {
+			playerTeamTypes_t botTeam;
+			const sdDeclPlayerClass* pc;
+
+			if ( t == GDF ) {
+				botTeam = GDF;
+			} else if ( t == STROGG ) {
+				botTeam = STROGG;
+			}
+
+			int numSoldier = GetNumClassOnTeam( botTeam, SOLDIER );
+
+			if ( numSoldier == 0 ) {
+				continue;
+			}
+
+			int numRLOnTeam = GetNumWeaponsOnTeam( botTeam, ROCKET );
+
+			if ( numRLOnTeam > 0 ) {
+				continue;
+			}
+	
+			if ( t == GDF ) {
+				pc = gameLocal.declPlayerClassType[ "soldier" ];
+			} else if ( t == STROGG ) {
+				pc = gameLocal.declPlayerClassType[ "aggressor" ];
+			}
+
+			for( int i = 0; i < MAX_CLIENTS; i++ ) {
+				clientInfo_t& playerInfo = GetGameWorldState()->clientInfo[ i ];
+
+				if ( !playerInfo.inGame ) {
+					continue;
+				}
+
+				if ( playerInfo.team != botTeam ) {
+					continue;
+				}
+
+				if ( playerInfo.classType != SOLDIER ) {
+					continue;
+				}
+
+				if ( !playerInfo.isBot ) {
+					continue;
+				}
+
+				idPlayer* player = gameLocal.GetClient( i );
+
+				if ( player == NULL ) {
+					continue;
+				}
+
+				player->ChangeClass( pc, 1 );
+				lastWeapChangedTime = gameLocal.time;
+				break;
+			}
+		}
+	}
+}

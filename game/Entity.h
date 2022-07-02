@@ -138,6 +138,7 @@ class sdTaskInterface;
 class sdDeclDeployableObject;
 class sdUsableInterface;
 class sdInteractiveInterface;
+class sdEntityDisplayIconInterface;
 class sdPlayerTask;
 class sdTeleporter;
 
@@ -286,7 +287,7 @@ public:
 
 	virtual const char*		GetDefaultSurfaceType( void ) const { return ""; }
 
-	void					WriteCreateEvent( idBitMsg* msg, int clientNum = -1 );
+	void					WriteCreateEvent( idBitMsg* msg, const sdReliableMessageClientInfoBase& target );
 	void					WriteDestroyEvent( void );
 
 	static void				ClearEntityCaches( void );
@@ -333,7 +334,7 @@ public:
 	// this is called when resetting the state back to the base state before applying a new state and repredicting
 	virtual void						ResetNetworkState( networkStateMode_t mode, const sdEntityStateNetworkData& newState ) { ; }
 
-	virtual void			WriteInitialReliableMessages( int clientNum ) const {};
+	virtual void			WriteInitialReliableMessages( const sdReliableMessageClientInfoBase& target ) const {};
 	virtual void			OnSnapshotHitch() { ; }
 
 	bool					IsInterpolated( void ) const;
@@ -564,7 +565,7 @@ public:
 
 	bool					CheckTeamDamage( idEntity *inflictor, const sdDeclDamage* damageDecl );
 
-	virtual	void			UpdateKillStats( idPlayer* player, const sdDeclDamage* damageDecl ) { ; }
+	virtual	void			UpdateKillStats( idPlayer* player, const sdDeclDamage* damageDecl, bool headshot ) { ; }
 
 	virtual	void			OnBulletImpact( idEntity* attacker, const trace_t& trace ) { ; }
 
@@ -603,6 +604,8 @@ public:
 
 	virtual const idBounds*	GetSelectionBounds( void ) const { return NULL; }
 
+	virtual bool			RunPausedPhysics( void ) const { return false; }
+
 	// targets
 	void					FindTargets( void );
 	void					RemoveNullTargets( void );
@@ -636,7 +639,7 @@ public:
 
 	virtual bool			UpdateCrosshairInfo( idPlayer* player, sdCrosshairInfo& info );
 
-	void					BroadcastEvent( int eventId, const idBitMsg *msg, bool saveEvent, bool freeSameType, int clientNum ) const;
+	void					BroadcastEvent( int eventId, const idBitMsg *msg, bool saveEvent, const sdReliableMessageClientInfoBase& target ) const;
 	void					BroadcastUnreliableEvent( int eventId, const idBitMsg *msg ) const;
 
 	virtual void			SetGameTeam( sdTeamInfo* _team ) { ; }
@@ -645,6 +648,8 @@ public:
 	const idVec4&			GetColorForAllegiance( idEntity* other ) const;
 	static const idVec4&	GetColorForAllegiance( teamAllegiance_t allegiance );
 	static const idVec4&	GetFireteamColor( void );
+	static const idVec4&	GetFireteamLeaderColor( void );
+	static const idVec4&	GetBuddyColor( void );
 	virtual void			GetTaskName( idWStr& out );
 
 	virtual sdRequirementCheckInterface*	GetRequirementInterface( void ) { return NULL; }
@@ -654,6 +659,7 @@ public:
 	virtual sdRequirementContainer*			GetSpawnRequirements( void ) { return NULL; }
 	virtual sdUsableInterface*				GetUsableInterface( void ) { return NULL; }
 	virtual sdInteractiveInterface*			GetInteractiveInterface( void ) { return NULL; }
+	virtual sdEntityDisplayIconInterface*	GetDisplayIconInterface( void ) { return NULL; }
 
 	idPhysics_Static&		GetDefaultPhysics( void ) { return defaultPhysicsObj; }
 
@@ -899,7 +905,7 @@ protected:
 	void					Event_SetCrosshairLineFraction( int index, float frac );
 	void					Event_SetCrosshairLineType( int index, int type );
 
-	void					Event_SendNetworkEvent( idEntity* other, const char* message );
+	void					Event_SendNetworkEvent( int clientIndex, bool isRepeaterClient, const char* message );
 	void					Event_SendNetworkCommand( const char* message );
 	void					Event_PointInRadar( const idVec3& point, radarMasks_t type, bool ignoreJammers );
 
@@ -992,8 +998,8 @@ public:
 		owner	= _owner;
 	}
 
-	void Send( bool saveEvent, bool freeSameType, int clientNum = -1 ) {
-		owner->BroadcastEvent( eventId, this, saveEvent, freeSameType, clientNum );
+	void Send( bool saveEvent, const sdReliableMessageClientInfoBase& target ) {
+		owner->BroadcastEvent( eventId, this, saveEvent, target );
 	}
 
 protected:

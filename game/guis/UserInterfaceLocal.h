@@ -47,6 +47,8 @@ public:
 	virtual sdUIFunctionInstance*		GetFunction( const char* name );
 	virtual sdUIEvaluatorTypeBase*		GetEvaluator( const char* name );
 	virtual bool						RunNamedFunction( const char* name, sdUIFunctionStack& stack );
+	virtual const char*					FindPropertyNameByKey( int propertyKey, sdUserInterfaceScope*& scope ) { return FindPropertyName( boundProperties.PropertyForKey( propertyKey ), scope ); }
+	virtual const char*					FindPropertyName( sdProperties::sdProperty* property, sdUserInterfaceScope*& scope );
 
 	sdProperties::sdPropertyHandler&	GetProperties() { return properties; }
 
@@ -158,6 +160,7 @@ private:
 		GE_PROPCHANGED,
 		GE_CVARCHANGED,
 		GE_CANCEL,
+		GE_TOOLTIPEVENT,
 		GE_NUM_EVENTS
 	};
 
@@ -199,6 +202,8 @@ public:
 	virtual void						Draw( void );
 	virtual void						OnInputInit( void );
 	virtual void						OnInputShutdown( void );
+	virtual void						OnLanguageInit( void );
+	virtual void						OnLanguageShutdown( void );
 
 	void								SetRenderCallback( const char* objectName, uiRenderCallback_t callback, uiRenderCallbackType_t type );
 
@@ -219,6 +224,7 @@ public:
 	virtual sdUIObject*					GetWindow( int index ) { return windows.FindIndex( index )->second; }
 
 	void								OnSnapshotHitch( int delta );
+	void								OnToolTipEvent( const char* arg );
 
 	virtual bool						Load( const char* name );
 
@@ -320,6 +326,7 @@ public:
 	void								PopScriptVar( int& i )		{ scriptStack.Pop( i ); }
 	void								PopScriptVar( bool& b )		{ scriptStack.Pop( b ); }
 	void								ClearScriptStack()			{ scriptStack.Clear(); }
+	bool								IsScriptStackEmpty() const	{ return scriptStack.Empty(); }
 
 	void								PushScriptVar( const idWStr& str )	{ scriptStack.Push( str.c_str() ); }
 	void								PushScriptVar( const idStr& str )	{ scriptStack.Push( str ); }
@@ -340,8 +347,11 @@ public:
 	void								Script_PostNamedEventOn( sdUIFunctionStack& stack );
 	void								Script_PlaySound( sdUIFunctionStack& stack );
 	void								Script_PlayGameSound( sdUIFunctionStack& stack );
+	void								Script_PlayGameSoundDirectly( sdUIFunctionStack& stack );
 	void								Script_PlayMusic( sdUIFunctionStack& stack );
 	void								Script_StopMusic( sdUIFunctionStack& stack );
+	void								Script_PlayVoice( sdUIFunctionStack& stack );
+	void								Script_StopVoice( sdUIFunctionStack& stack );
 	void								Script_QuerySpeakers( sdUIFunctionStack& stack );
 	void								Script_FadeSoundClass( sdUIFunctionStack& stack );
 	void								Script_Activate( sdUIFunctionStack& stack );
@@ -415,6 +425,7 @@ public:
 	void								Script_GetClassSkin( sdUIFunctionStack& stack );
 
 	void								Script_MutePlayer( sdUIFunctionStack& stack );
+	void								Script_MutePlayerQuickChat( sdUIFunctionStack& stack );
 
 	void								Script_GetTeamPlayerCount( sdUIFunctionStack& stack );
 
@@ -448,7 +459,7 @@ public:
 	void								Script_RefreshSoundDevices( sdUIFunctionStack& stack );
 
 	void								SetFocus( sdUIWindow* focus );
-	bool								IsFocused( sdUIObject* focus ) const { return focusedWindow == focus; }
+	bool								IsFocused( const sdUIObject* focus ) const { return focusedWindow == focus; }
 
 	void								SetEntity( idEntity* entity )		{ this->entity = entity; }
 	idEntity*							GetEntity() const					{ return entity; }
@@ -545,6 +556,7 @@ public:
 	static idCVar						gui_fireTeamAlpha;
 	static idCVar						gui_commandMapAlpha;
 	static idCVar						gui_objectiveListAlpha;
+	static idCVar						gui_personalBestsAlpha;
 	static idCVar						gui_objectiveStatusAlpha;
 	static idCVar						gui_obitAlpha;
 	static idCVar						gui_voteAlpha;

@@ -26,7 +26,7 @@ public:
 						// returns total size of allocated memory including size of string pool type
 	size_t				Size( void ) const { return sizeof( *this ) + Allocated(); }
 						// returns a pointer to the pool this string was allocated from
-	const idStrPool *	GetPool( void ) const { return pool; }
+	idStrPool*			GetPool( void ) const { return pool; }
 
 private:
 	idStrPool *			pool;

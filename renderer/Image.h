@@ -527,6 +527,7 @@ static const imageParams_t defaultImageParms;
 class idImageManager {
 public:
 	void				Init();
+	void				PreSys3DShutdown();
 	void				Shutdown();
 
 	bool				IsInitialized() const { return ( images.Num() != 0 ); }
@@ -680,7 +681,9 @@ public:
 	idImage *			currentRenderImage;			// for SS_POST_PROCESS shaders
 	idImage *			currentDepthImage;
 	idImage *			postProcessBuffer[2];
+#if 0
 	GLuint				postProcessBufferFBO[2];
+#endif
 	idImage *			scratchCubeMapImage;
 	idImage *			scratchImage2;				// PENTA: TEST
 	idImage *			noise;					// 32x32x32x8bit noise image

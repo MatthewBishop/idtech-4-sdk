@@ -92,12 +92,12 @@ public:
 	int						GetId( void ) const { return id; }
 
 	void					GetLocalizedText( idWStr& text ) {
-		if ( locName.Length() > 0 ) {
-			text = common->LocalizeText( locName.c_str() );
-			return;
-		}
-		text = fixedText;
-	}
+								if ( locName.Length() > 0 ) {
+									text = common->LocalizeText( locName.c_str() );
+									return;
+								}
+								text = fixedText;
+							}
 
 	void					SetActiveCommand( sdKeyCommand* cmd ) { activeCommand = cmd; }
 	sdKeyCommand*			GetActiveCommand( void ) const { return activeCommand; }

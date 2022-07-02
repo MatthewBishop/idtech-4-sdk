@@ -47,6 +47,18 @@ public:
 	virtual void					CommandCompletion( const idCmdArgs& args, argCompletionCallback_t callback ) const;
 };
 
+class sdAdminSystemCommand_ListBans : public sdAdminSystemCommand {
+public:
+	virtual const char*				GetName( void ) const { return "listBans"; }
+	virtual bool					PerformCommand( const idCmdArgs& cmd, const sdUserGroup& userGroup, idPlayer* player ) const;
+};
+
+class sdAdminSystemCommand_UnBan : public sdAdminSystemCommand {
+public:
+	virtual const char*				GetName( void ) const { return "unBan"; }
+	virtual bool					PerformCommand( const idCmdArgs& cmd, const sdUserGroup& userGroup, idPlayer* player ) const;
+};
+
 class sdAdminSystemCommand_SetTeam : public sdAdminSystemCommand {
 public:
 	virtual const char*				GetName( void ) const { return "setTeam"; }
@@ -161,7 +173,7 @@ public:
 	virtual const char*				GetName( void ) const { return "addbot"; }
 	virtual bool					PerformCommand( const idCmdArgs& cmd, const sdUserGroup& userGroup, idPlayer* player ) const;
 	virtual void					CommandCompletion( const idCmdArgs& args, argCompletionCallback_t callback ) const;
-	virtual bool					AllowedOnRankedServer( void ) const { return false; }
+//	virtual bool					AllowedOnRankedServer( void ) const { return false; }
 };
 
 class sdAdminSystemCommand_AdjustBots : public sdAdminSystemCommand {
@@ -253,6 +265,7 @@ public:
 	virtual sdProperties::sdProperty*			GetProperty( const char* name, sdProperties::ePropertyType type );
 	virtual sdProperties::sdPropertyHandler&	GetProperties() { return properties; }
 	virtual const char*							GetName() const { return "adminProperties"; }
+	virtual const char*							FindPropertyName( sdProperties::sdProperty* property, sdUserInterfaceScope*& scope ) { scope = this; return properties.NameForProperty( property ); }
 
 	void										Update( void );
 	void										RegisterProperties( void );

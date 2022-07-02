@@ -159,25 +159,37 @@ private:
 	idStrList				descriptions;
 };
 
+struct metaDataContext_t {
+	const idDict*	meta;
+	bool			addon;
+	idStr			pak;
+};
+
 class sdAddonMetaDataList {
 	friend class idFileSystemLocal;
 public:
-							~sdAddonMetaDataList( void ) { meta.DeleteContents( true ); }
+
+							~sdAddonMetaDataList( void ) { 
+								for( int i = 0; i < meta.Num(); i++ ) {
+									delete meta[ i ].meta;
+								}
+							}
 
 	int						GetNumMetaData() const { return meta.Num(); }
-	const idDict&			GetMetaData( int index ) const { return *meta[ index ]; }
+	const idDict&			GetMetaData( int index ) const { return *meta[ index ].meta; }
+	const metaDataContext_t&GetMetaDataContext( int index ) const { return meta[ index ]; }
 	const idDict*			FindMetaData( const char* name, const idDict* defaultDict = NULL ) {
 								for( int i = 0; i < meta.Num(); i++ ) {
-									const char* value = meta[ i ]->GetString( "metadata_name" );
+									const char* value = meta[ i ].meta->GetString( "metadata_name" );
 									if( !idStr::Icmp( name, value ) ) {
-										return meta[ i ];
+										return meta[ i ].meta;
 									}
 								}
 								return defaultDict;
 							}
 	int						FindMetaDataIndex( const char* name ) {
 								for( int i = 0; i < meta.Num(); i++ ) {
-									const char* value = meta[ i ]->GetString( "metadata_name" );
+									const char* value = meta[ i ].meta->GetString( "metadata_name" );
 									if( !idStr::Icmp( name, value ) ) {
 										return i;
 									}
@@ -185,8 +197,18 @@ public:
 								return -1;
 							}
 
+	const metaDataContext_t*	FindMetaDataContext( const char* name ) const {
+								for( int i = 0; i < meta.Num(); i++ ) {
+									const char* value = meta[ i ].meta->GetString( "metadata_name" );
+									if( !idStr::Icmp( name, value ) ) {
+										return &meta[ i ];
+									}
+								}
+								return NULL;
+							}
+
 private:
-	idList<const idDict*>	meta;
+	idList<metaDataContext_t>	meta;
 };
 
 class idFileSystem {
@@ -202,6 +224,8 @@ public:
 	virtual bool			IsInitialized( void ) const = 0;
 							// Enables/Disables quiet mode.
 	virtual void			SetQuietMode( bool enable ) = 0;
+							// Returns quiet mode status.
+	virtual bool			GetQuietMode( void ) const = 0;
 							// Returns true if we are doing an fs_copyfiles.
 	virtual bool			PerformingCopyFiles( void ) const = 0;
 							// Returns a list of mods found along with descriptions
@@ -339,6 +363,9 @@ public:
 							// lookup a relative path, return the size or 0 if not found
 	virtual int				ValidateDownloadPakForChecksum( int checksum, char path[ MAX_STRING_CHARS ], bool isGamePak ) = 0;
 
+							// verify the file can be downloaded, lookup an absolute (OS) path, return the size or 0 if not found
+	virtual int				ValidateDownloadPakForRelativePath( const char *relativePath, char path[ MAX_STRING_CHARS ], bool &isGamePakReturn ) = 0;
+
 	virtual idFile *		MakeTemporaryFile( void ) = 0;
 
 							// make downloaded pak files known so pure negotiation works next time
@@ -358,6 +385,11 @@ public:
 	virtual void			AddLevelLoadStatistic( const char* extension, int numBytes ) = 0;
 	virtual void			EndLevelLoadStatistics() = 0;
 	virtual void			ReportLevelLoadStatistics() = 0;
+
+							// is the pack currently referenced?
+	virtual bool			IsAddonPackReferenced( const char* pak ) = 0;		
+							// ensure that the pack is loaded after the next pure restart
+	virtual void			ReferenceAddonPack( const char* pak ) = 0;
 
 	// textures
 	virtual void			ReadTGA( const char *name, byte **pic, int *width, int *height, unsigned *timestamp = 0, bool markPaksReferenced = true ) = 0;

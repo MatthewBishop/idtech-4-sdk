@@ -62,11 +62,12 @@ public:
 	virtual sdEntityStateNetworkData*	CreateNetworkStructure( void ) const;
 
 	virtual byte						GetProbeState( void ) const;
+	virtual int							GetServerBrowserScore( const sdNetSession& session ) const;
 	virtual	void						GetBrowserStatusString( idWStr& str, const sdNetSession& netSession ) const;
 
 
 	virtual bool						ChangeMap( const char* mapName );
-	virtual bool						OnUserStartMap( const char* text, idStr& reason, idStr& mapName );
+	virtual userMapChangeResult_e		OnUserStartMap( const char* text, idStr& reason, idStr& mapName );
 
 	virtual int							GetGameTime( void ) const;
 

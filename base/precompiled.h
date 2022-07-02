@@ -1,3 +1,6 @@
+// Copyright (C) 2007 Id Software, Inc.
+//
+
 #ifdef _WIN32
 #include <windows.h>
 #endif

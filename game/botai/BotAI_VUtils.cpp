@@ -58,7 +58,7 @@ idBotAI::VehicleIsValid
 Checks to make sure the vehicle in question is still valid.
 ==================
 */
-bool idBotAI::VehicleIsValid( int entNum, bool skipSpeedCheck ) {
+bool idBotAI::VehicleIsValid( int entNum, bool skipSpeedCheck, bool addDriverCheck ) {
 
 	proxyInfo_t vehicleInfo;
 
@@ -85,7 +85,13 @@ bool idBotAI::VehicleIsValid( int entNum, bool skipSpeedCheck ) {
 	}
 
 	if ( !VehicleHasGunnerSeatOpen( entNum ) ) {
-		return false;
+		if ( addDriverCheck == false ) {
+			return false;
+		} else {
+			if ( vehicleInfo.driverEntNum != -1 ) {
+				return false;
+			}
+		}
 	}
 
 	if ( vehicleInfo.inWater && !( vehicleInfo.flags & WATER ) ) {
@@ -142,10 +148,8 @@ int idBotAI::FindClosestVehicle( float range, const idVec3& org, const playerVeh
 
  //mal_hack: these maps weren't originally setup for boats...
 	if ( botWorld->gameLocalInfo.gameMap == ISLAND ) {
-		vehicleFlags += 16;
 		range = 3500.0f;
 	} else if ( botWorld->gameLocalInfo.gameMap == VALLEY ) {
-		vehicleFlags += 16;
 		range = 4500.0f;
 	} else if ( botWorld->gameLocalInfo.gameMap == VOLCANO ) {
 		range = 7000.0f;
@@ -259,7 +263,9 @@ int idBotAI::FindClosestVehicle( float range, const idVec3& org, const playerVeh
 			}
 		} else if ( vehicleFlags != NULL_VEHICLE_FLAGS ) { //mal: or just a general class of vehicles
 			if ( !( vehicle.flags & vehicleFlags ) ) {
-				continue;
+				if ( vehicle.type != PLATYPUS || ( botWorld->gameLocalInfo.gameMap != VALLEY && botWorld->gameLocalInfo.gameMap != ISLAND ) ) { //mal_HACK: these maps had boat support added late...
+					continue;
+				}
 			}
 		}
 
@@ -533,7 +539,7 @@ void idBotAI::Bot_SetupVehicleMove( const idVec3 &org, int clientNum, int action
 		nodeTimeOut += 50;
 		return;
 	}
-
+	
 	bool moveIsClear = false;
 	int areaNum = 0;
 	int i;
@@ -781,7 +787,7 @@ void idBotAI::Bot_SetupVehicleMove( const idVec3 &org, int clientNum, int action
 					if ( blockingClient.invulnerableEndTime < botWorld->gameLocalInfo.time && botInfo->invulnerableEndTime < botWorld->gameLocalInfo.time ) {
 						end = blockingClient.origin - botInfo->origin;
 
-						if ( end.LengthSqr() < Square( 500.0f ) ) {
+						if ( end.LengthSqr() < Square( 1500.0f ) ) {
 		                    botUcmd->desiredChat = MOVE;
 							botUcmd->botCmds.honkHorn = true;
 						}
@@ -824,7 +830,7 @@ void idBotAI::Bot_SetupVehicleQuickMove( const idVec3 &org, bool largePlayerBBox
 		if ( botWorld->clientInfo[ path.firstObstacle ].team == botInfo->team ) {
 			tempOrigin = botWorld->clientInfo[ path.firstObstacle ].origin - botInfo->origin;
 
-			if ( tempOrigin.LengthSqr() < Square( 500.0f ) ) {
+			if ( tempOrigin.LengthSqr() < Square( 1500.0f ) ) {
 				botUcmd->desiredChat = MOVE;
 				botUcmd->botCmds.honkHorn = true;
 			}
@@ -1349,7 +1355,7 @@ idBotAI::Bot_IsInHeavyAttackVehicle
 Some vehicles ( tanks or attack aircraft ) should never be left unless the bot is critical to the mission.
 ==================
 */
-bool idBotAI::Bot_IsInHeavyAttackVehicle() {
+bool idBotAI::Bot_IsInHeavyAttackVehicle( bool ignoreGroundVehicles ) {
 
 	if ( botVehicleInfo == NULL ) {
 		return false;
@@ -1359,8 +1365,14 @@ bool idBotAI::Bot_IsInHeavyAttackVehicle() {
 		return false;
 	}
 
-	if ( !( botVehicleInfo->flags & ARMOR ) && !( botVehicleInfo->flags & AIR ) || ( botVehicleInfo->flags & PERSONAL ) || botVehicleInfo->type == BUFFALO ) {
-		return false;
+	if ( ignoreGroundVehicles == true ) {
+		if ( !( botVehicleInfo->flags & AIR ) ) {
+			return false;
+		}
+	} else {
+		if ( !( botVehicleInfo->flags & ARMOR ) && !( botVehicleInfo->flags & AIR ) || ( botVehicleInfo->flags & PERSONAL ) || botVehicleInfo->type == BUFFALO ) {
+			return false;
+		}
 	}
 
 	return true;
@@ -1693,7 +1705,7 @@ idBotAI::Bot_CheckHumanRequestingTransport
 ==================
 */
 bool idBotAI::Bot_CheckHumanRequestingTransport() {
-	if ( botVehicleInfo->type >= ICARUS ) {
+	if ( botVehicleInfo->type >= ICARUS && !botVehicleInfo->hasGroundContact ) {
 		return false;
 	}
 
@@ -1701,13 +1713,18 @@ bool idBotAI::Bot_CheckHumanRequestingTransport() {
 		return false;
 	}
 
+	if ( !botVehicleInfo->hasFreeSeat ) {
+		return false;
+	}
+
 	if ( vehicleSurrenderTime > botWorld->gameLocalInfo.time ) { //mal: already have someone we're waiting on.
-		Bot_MoveToGoal( vec3_zero, vec3_zero, NULLMOVEFLAG, FULL_STOP );
+		botMoveTypes_t moveType = ( botVehicleInfo->type > ICARUS ) ? LAND : FULL_STOP;
+		Bot_MoveToGoal( vec3_zero, vec3_zero, NULLMOVEFLAG, moveType );
 		Bot_LookAtEntity( vehicleSurrenderClient, SMOOTH_TURN );
 		if ( !vehicleSurrenderChatSent ) {
-			Bot_AddDelayedChat( botNum, NEED_LIFT, 2 );
-			botUcmd->botCmds.honkHorn = true;
+			Bot_AddDelayedChat( botNum, NEED_LIFT, 1 );
 			vehicleSurrenderChatSent = true;
+			botUcmd->botCmds.honkHorn = true;
 		}
 
 		return true;
@@ -1746,12 +1763,60 @@ bool idBotAI::Bot_CheckHumanRequestingTransport() {
 			continue;
 		}
 
-		if ( player.pickupTargetSpawnID != botVehicleInfo->spawnID ) {
-			continue;
-		}
-
 		idVec3 vec = player.origin - botInfo->origin;
 		float ourDistSqr = vec.LengthSqr();
+
+		if ( player.pickupTargetSpawnID != -1 ) {
+			if ( player.pickupTargetSpawnID != botVehicleInfo->spawnID ) {
+				continue;
+			}
+		} else {
+			for( int j = 0; j < MAX_CLIENTS; j++ ) { //mal: check to make sure the bot is the closest vehicle to the player.
+				if ( !ClientIsValid( j, -1 ) ) {
+					continue; 	 
+				}
+
+				if ( j == botNum ) {
+					continue;
+				}
+				
+				const clientInfo_t& bot = botWorld->clientInfo[ j ]; 
+
+				if ( !bot.isBot ) {
+					continue;
+				}
+				
+				if ( bot.team != botInfo->team ) {
+					continue;
+				}
+
+				if ( bot.proxyInfo.entNum == CLIENT_HAS_NO_VEHICLE ) {
+					continue;
+				}
+
+				vec = player.origin - bot.origin; 	 
+                float distSqr = vec.LengthSqr();
+
+				if ( distSqr > Square( MAX_RIDE_DIST ) ) {
+					continue;
+				}
+
+				proxyInfo_t vehicle;
+				GetVehicleInfo( bot.proxyInfo.entNum, vehicle );
+
+				if ( vehicle.driverEntNum != j ) {
+					continue;
+				}
+
+				if ( !vehicle.hasFreeSeat || ( vehicle.type >= ICARUS && !vehicle.hasGroundContact ) || vehicle.flags & PERSONAL ) {
+					continue;
+				}
+
+				if ( distSqr < ourDistSqr ) { //mal: someones closer to this guy then us, so just let him give the player a ride
+					break;
+				}
+			}
+		}
 
 		if ( ourDistSqr > Square( MAX_RIDE_DIST ) ) {
 			Bot_AddDelayedChat( botNum, CMD_DECLINED, 1 );
@@ -1761,7 +1826,7 @@ bool idBotAI::Bot_CheckHumanRequestingTransport() {
 
 		vehicleSurrenderTime = botWorld->gameLocalInfo.time + 10000;
 		vehicleSurrenderChatSent = false;
-		vehicleSurrenderClient = i - 1;
+		vehicleSurrenderClient = i;
 		hasEscortRequest = true;
 		break;
 	}
@@ -1819,7 +1884,7 @@ bool idBotAI::Bot_CheckIfClientHasRideWaiting( int clientNum ) {
 idBotAI::VehiclesInArea
 ==================
 */
-int idBotAI::VehiclesInArea( int ignoreClientNum, const idVec3 &org, float range, int team, bool vis2Sky, bool humanOnly ) {
+int idBotAI::VehiclesInArea( int ignoreClientNum, const idVec3 &org, float range, int team, bool vis2Sky, int ignoreVehicleNum, bool humanOnly ) {
 	int clients = 0;
 
 	for( int i = 0; i < MAX_CLIENTS; i++ ) {
@@ -1849,6 +1914,10 @@ int idBotAI::VehiclesInArea( int ignoreClientNum, const idVec3 &org, float range
 		}
 
 		if ( playerInfo.proxyInfo.entNum == CLIENT_HAS_NO_VEHICLE ) {
+			continue;
+		}
+
+		if ( playerInfo.proxyInfo.entNum == ignoreVehicleNum ) {
 			continue;
 		}
 
@@ -1935,6 +2004,67 @@ void idBotAI::IcarusCombatMove() {
 	if ( distToEnemySqr < Square( 1500.0f ) && InFrontOfVehicle( botVehicleInfo->entNum, playerInfo.origin ) && !botVehicleInfo->hasGroundContact ) {
 		botUcmd->botCmds.attack = true;
 	}
+}
+
+/*
+================
+idBotAI::HumanVehicleOwnerNearby
+================
+*/
+bool idBotAI::HumanVehicleOwnerNearby( const playerTeamTypes_t playerTeam, const idVec3 &loc, float range, int vehicleSpawnID ) {
+	bool humanOwner = false;
+
+	for( int i = 0; i < MAX_CLIENTS; i++ ) {
+
+        if ( i == botNum ) {
+			continue;
+		}			
+			
+		if ( !ClientIsValid( i, -1 ) ) {
+			continue;
+		}
+
+		const clientInfo_t& playerInfo = botWorld->clientInfo[ i ];
+
+		if ( playerInfo.team != playerTeam ) {
+			continue;
+		}
+
+		if ( playerInfo.health <= 0 ) {
+			continue;
+		}
+
+		if ( playerInfo.proxyInfo.entNum != CLIENT_HAS_NO_VEHICLE ) { //mal: this player is already in a vehicle, dont worry about him
+			continue;
+		}
+
+		if ( playerInfo.lastOwnedVehicleSpawnID != vehicleSpawnID ) { //mal: the player was never in this vehicle, so dont worry about him
+			continue;
+		}
+
+		if ( playerInfo.isBot ) {
+			continue;
+		}
+
+		if ( playerInfo.lastOwnedVehicleTime + MAX_OWN_VEHICLE_TIME < botWorld->gameLocalInfo.time ) { //mal: after a certain amount of time, we don't care anymore.
+			continue;
+		}
+
+		if ( playerInfo.xySpeed >= RUNNING_SPEED && !InFrontOfClient( i, loc ) ) { //mal: player is running away from this vehicle, so don't worry about him.
+			continue;
+		}
+
+		idVec3 vec = playerInfo.origin - loc;
+
+		if ( vec.LengthSqr() > Square( range ) ) {
+			continue;
+		}
+
+		humanOwner = true;
+		break;
+	}
+
+	return humanOwner;
 }
 
 

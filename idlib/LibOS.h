@@ -70,7 +70,27 @@
 	#undef FindText
 	#undef IsMinimized
 
-#endif /* _WIN32 */
+#else /* _WIN32 */
+
+	/*
+	PATH_MAX vs MAX_PATH mess:
+
+	* MAX_PATH is a Windows invention - god knows how it's actually defined, if you ever find it in MSDN give me a poke
+
+	* POSIX (IEEE Std 1003.1, 2004 Edition):
+
+	PATH_MAX
+	Maximum number of bytes in a pathname, including the terminating
+	null character. Minimum Acceptable Value: _POSIX_PATH_MAX
+	[...]
+
+	_POSIX_PATH_MAX
+	Maximum number of bytes in a pathname. Value: 256
+	*/
+
+	#include <limits.h>
+	#define MAX_PATH PATH_MAX
+#endif
 
 #if defined( __linux__ )
 	#undef WIN32

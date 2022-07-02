@@ -105,13 +105,13 @@ sdVehicleView::GetFov
 */
 float sdVehicleView::GetFov( void ) const {
 	if ( !zoomTable ) {
-		return idPlayer::DefaultFov();
+		return 90.0f;
 	}
 
 	idPlayer* player = position->GetPlayer();
 
 	if ( player->vehicleViewCurrentZoom < 0 || player->vehicleViewCurrentZoom >= zoomTable->NumValues() ) {
-		return idPlayer::DefaultFov();
+		return 90.0f;
 	}
 
 	return zoomTable->GetValue( player->vehicleViewCurrentZoom );
@@ -1088,7 +1088,6 @@ void sdSmoothVehicleView::CalculateViewPos( idPlayer* player, idVec3& origin, id
 	state.ownerVelocity = state.ownerPhysics->GetLinearVelocity();
 	state.ownerDirection = state.ownerVelocity;
 	state.ownerSpeed = state.ownerDirection.NormalizeFast();
-	state.ownerCenter = state.ownerPhysics->GetBounds().GetCenter() * state.ownerAxes + state.ownerOrigin;
 
 	if ( position->GetTransport()->IsTeleporting() ) {
 		DoTeleporting( state );
@@ -1105,6 +1104,7 @@ void sdSmoothVehicleView::CalculateViewPos( idPlayer* player, idVec3& origin, id
 		state.owner->GetWorldOriginAxisNoUpdate( eyeJoint, state.ownerOrigin, tempAxes );
 	}
 
+	state.ownerCenter = state.ownerPhysics->GetBounds().GetCenter() * state.ownerAxes + state.ownerOrigin;
 	previousOwnerOrigin = state.ownerOrigin;
 
 

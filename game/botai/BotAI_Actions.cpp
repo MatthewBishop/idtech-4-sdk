@@ -35,6 +35,7 @@ idBotActions::idBotActions() {
 	baseActionType = BASE_ACTION;
 	actionVehicleFlags = -1; //mal: by default, no vehicle used.
 	spawnControllerEntityNum = -1;
+	actionActivateTime = 0;
 	memset( actionTargets, 0, sizeof( actionTargets ) );
 
 //mal_TODO: add more variables here to clear as create them.
@@ -363,15 +364,15 @@ only allow the Icarus to be used if the action is inside a valid vehicle AAS are
 ================
 */
 int idBotActions::GetActionVehicleFlags( const playerTeamTypes_t team ) const {
-	if ( areaNumVehicle == 0 && actionVehicleFlags == 0 && team == STROGG ) {
+	if ( actionVehicleFlags == 0 && areaNumVehicle == 0 && team == STROGG ) {
 		return ALL_VEHICLES_BUT_ICARUS;
 	}
 
-	if ( areaNumVehicle == 0 && actionVehicleFlags == 1 && team == STROGG ) {
+	if ( actionVehicleFlags == 1 && areaNumVehicle == 0 && team == STROGG ) {
 		return NO_VEHICLE;
 	}
 
-	if ( areaNumVehicle == 0 && ( actionVehicleFlags & PERSONAL ) && team == STROGG ) {
+	if ( actionVehicleFlags != -1 && areaNumVehicle == 0 && ( actionVehicleFlags & PERSONAL ) && team == STROGG ) {
 		int newFlags = actionVehicleFlags;
 		newFlags &= ~PERSONAL;
 		return newFlags;

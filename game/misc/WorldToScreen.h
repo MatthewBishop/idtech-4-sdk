@@ -151,7 +151,7 @@ sdWorldToScreenConverter::Setup
 ID_INLINE void sdWorldToScreenConverter::Setup( const renderView_t& view ) {
 	projectionMatrix = projectionMatrixArray;
 	modelViewMatrix = modelViewMatrixArray;
-	gameRenderWorld->SetupMatrices( &view, projectionMatrix, modelViewMatrix );
+	gameRenderWorld->SetupMatrices( &view, projectionMatrix, modelViewMatrix, false );
 }
 
 /*

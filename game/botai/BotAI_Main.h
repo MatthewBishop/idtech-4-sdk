@@ -26,15 +26,28 @@
 
 #define REPAIR_DRONE_RANGE		625.0f
 
+#define MIN_CLASS_CHANGE_DELAY	15000
+#define MIN_WEAPON_CHANGE_DELAY 180000
+
+#define TAKE_SPAWN_IN_DEMO_MODE_CHANCE 25
+
 #define MAX_DEPLOYABLE_FLANK_POINTS 6
+
+#define TRAINING_MODE_RANGE_ADDITION	2000.0f
 
 #define KILLING_SPREE			4
 
 #define MAX_ATTACK_GRIEFER_RANGE 8192.0f
 
+#define IGNORE_NEW_ENEMIES_TIME 5000 //mal: ignore new enemies for 5 seconds when find an important one!
+
 #define MAX_AI_NODE_SWITCH		25
 
 #define SHIELD_CONSIDER_RANGE	900.0f
+
+#define MAX_OWN_VEHICLE_TIME	20000	//mal: time enough for the human to jump out and repair, or look around for a bit, before jumping back in.
+
+#define BACKSTAB_DIST			145.0f
 
 #define DEPLOYABLE_PAUSE_TIME	1500
 
@@ -50,6 +63,10 @@
 
 #define MIN_TELEPORTER_RANGE	2500.0f
 #define MAX_TELEPORTER_RANGE	5000.0f
+
+#define MAX_NUM_OF_FRIENDS_OF_VICTIM 1
+
+#define SPAWNHOST_DESTROY_ORDER_RANGE 5000.0f
 
 #define AIRCRAFT_ATTACK_DIST	10000.0f
 
@@ -79,6 +96,8 @@ const int BOT_VISIBILITY_TRACE_MASK = MASK_SHOT_BOUNDINGBOX | MASK_VEHICLESOLID 
 #define PLAYER_HEARING_DIST		1200.0f
 
 #define DEFENSE_CAMP_MATE_RANGE	150.0f
+
+#define WARMUP_ACTION_TIME		2500
 
 #define PLASMA_CANNON_RANGE		8000.0f
 
@@ -140,7 +159,7 @@ const int BOT_VISIBILITY_TRACE_MASK = MASK_SHOT_BOUNDINGBOX | MASK_VEHICLESOLID 
 
 #define REQUEST_CONSIDER_TIME	5000
 
-#define SPAWNHOST_RELEVANT_DIST 5000.0f
+#define SPAWNHOST_RELEVANT_DIST 6000.0f
 
 #define GRENADE_THROW_MAXDIST	1200.0f
 #define GRENADE_THROW_MINDIST	1000.0f
@@ -172,7 +191,7 @@ const int BOT_VISIBILITY_TRACE_MASK = MASK_SHOT_BOUNDINGBOX | MASK_VEHICLESOLID 
 
 #define DEPLOYABLE_GOAL_DIST	8000.0f
 
-#define MG_REPAIR_MAX_DIST		2500.0f
+#define MG_REPAIR_MAX_DIST		5000.0f
 
 #define DEPLOYABLE_DISABLED_PERCENT			1.5f
 
@@ -603,7 +622,8 @@ enum botMoveTypes_t {
 	REVERSEMOVE,
 	RANDOM_DIR_JUMP,
 	ICARUS_BOOST,
-	IGNORE_ALTITUDE
+	IGNORE_ALTITUDE,
+	BACKSTEP
 };
 
 enum botAttackMoveTypes_t {
@@ -925,7 +945,7 @@ public:
 	bool					EnemyValid();
 	void					Bot_CheckAttack(); //mal: is it OK to fire our weapon now?
 	int						CheckClientAttacker( int clientNum ); // returns which client is attacking the client in question.
-	bool					Bot_CanBackStabClient( int clientNum );
+	bool					Bot_CanBackStabClient( int clientNum, float backStabDist = BACKSTAB_DIST );
 	bool					ClientHasAttackedTeammate( int clientNum, bool criticalOnly, int time );
 	bool					DisguisedKillerInArea();
 	bool					EnemyIsIgnored( int clientNum );
@@ -953,6 +973,7 @@ public:
 	bool					Bot_IsUnderAttackFromUnknownEnemy();
 	bool					Bot_CanAttackVehicles();
 	bool					Bot_HasEnemySniperInArea( float range );
+	bool					Bot_IsUnderAttackByAPT( idVec3& turretLocation );
 
 //mal: vehicle combat/misc utility functions
 	int						FindClosestVehicle( float range, const idVec3& org, const playerVehicleTypes_t vehicleType, int vehicleFlags, int vehicleIgnoreFlags, bool emptyOnly );
@@ -965,7 +986,7 @@ public:
 	void					Bot_ExitVehicle( bool ignoreMCP = true );
 	bool					Bot_VehicleFindEnemy();
 	bool					Bot_FindParkingSpotAoundLocaction( idVec3 &loc ); //mal: finds a parking spot near location - something the bot can move toward, without running over its goal.
-	bool					VehicleIsValid( int entNum, bool skipSpeedCheck = false );
+	bool					VehicleIsValid( int entNum, bool skipSpeedCheck = false, bool addDriverCheck = false );
 	bool					VehicleHasGunnerSeatOpen( int entNum );
 	bool					InFrontOfVehicle( int vehicleNum, const idVec3 &org, bool precise = false );
 	void					Bot_CheckCurrentStateForVehicleCombat();
@@ -984,12 +1005,13 @@ public:
 	bool					Bot_CheckMoveIsClear( idVec3& goalOrigin );
 	bool					Bot_CheckVehicleNodePath( const idVec3& goalOrigin, idVec3& pathPoint, bool& resetGoal );
 	bool					FindEntityByEntNum( int entNum, idVec3& origin, idBox& bbox );
-	bool					Bot_IsInHeavyAttackVehicle();
+	bool					Bot_IsInHeavyAttackVehicle( bool ignoreGroundVehicles = false );
 	int						Bot_VehicleIsUnderAVTAttack();
 	bool					Bot_CheckHumanRequestingTransport();
 	bool					Bot_CheckIfClientHasRideWaiting( int clientNum );
 	void					IcarusCombatMove();
 	bool					ClientIsAudibleToVehicle( int clientNum );
+	bool					HumanVehicleOwnerNearby( const playerTeamTypes_t playerTeam, const idVec3 &loc, float range, int vehicleSpawnID );
 
 
 //mal: misc utility functions
@@ -1006,11 +1028,11 @@ public:
 	bool					Bot_NBGIsAvailable( int clientNum, int actionNumber, const bot_NBG_Types_t goalType, int &busyClient );
 	bool					Bot_LTGIsAvailable( int clientNum, int actionNumber, const bot_LTG_Types_t goalType, int minNumClients );
 	void					Bot_Input(); //mal: sends the bots current user cmds to the game thread.
-	void					Bot_LookAtLocation( const idVec3 &spot, const botTurnTypes_t turnType ); // where the bot wants to look
+	void					Bot_LookAtLocation( const idVec3 &spot, const botTurnTypes_t turnType, bool useOriginOnly = false ); // where the bot wants to look
 	void					Bot_LookAtEntity( int entityNum, const botTurnTypes_t turnType ); // what the bot wants to look at
 	void					Bot_LookAtNothing( const botTurnTypes_t turnType); // just look straight ahead
 	int						ClientsInArea( int ignoreClientNum, const idVec3 &org, float range, int team, const playerClassTypes_t clientClass, bool inFront, bool vis2Sky, bool ignoreInvulnerable, bool ignoreDisguised, bool ignoreInVehicle, bool humanOnly = false ); //looks for clients of a specific team, possibly infront of client[ clientNum ].
-	int						VehiclesInArea( int ignoreClientNum, const idVec3 &org, float range, int team, bool vis2Sky, bool humanOnly = false ); //looks for vehicles in an area
+	int						VehiclesInArea( int ignoreClientNum, const idVec3 &org, float range, int team, bool vis2Sky, int ignoreVehicleNum, bool humanOnly = false ); //looks for vehicles in an area
 	bool					InFrontOfClient( int clientNum, const idVec3 &origin, bool precise = false ); //mal: is this location infront of the bot?
 	void					Bot_ClearAngleMods();
 	void					CheckBotStuckState();
@@ -1047,7 +1069,7 @@ public:
 	bool					NeedsReload();
 	int						FindClosestDangerIndex();
 	void					ClearDangerFromDangerList( int dangerIndex, bool isEntNum );
-	bool					TeamHumanNearLocation( const playerTeamTypes_t playerTeam, const idVec3 &loc, float range );
+	bool					TeamHumanNearLocation( const playerTeamTypes_t playerTeam, const idVec3 &loc, float range, bool ignorePlayersInVehicle = true, const playerClassTypes_t playerClass = NOCLASS, bool ignoreDeadMates = true );
 	bool					ClientHasVehicleInWorld( int clientNum, float range );
 	bool					BodyIsObstructed( int entNum, bool isCorpse, bool isSpawnHost = false );
 	int						Bot_ApproxTravelTimeToLocation( const idVec3 & from, const idVec3 &to, bool inVehicle ) const;
@@ -1085,12 +1107,15 @@ public:
 	bool					OtherBotsWantVehicle( const proxyInfo_t& vehicle );
 	idVec3					GetPlayerViewPosition( int clientNum );
 	float					Bot_GetDeployableOffSet( int deployableType );
-	int						Bot_FindNearbySafeActionToMoveToward( const idVec3& origin, float minAvoidDist );
+	int						Bot_FindNearbySafeActionToMoveToward( const idVec3& origin, float minAvoidDist, bool pickRandom = false );
 	bool					ClientHasShieldInWorld( int clientNum, float considerRange );
 	float					Bot_DistSqrToClosestForceShield( idVec3& shieldOrg );
 	bool					Bot_UseTeleporter();
 	bool					Bot_UseRepairDrone( int entNum, const idVec3& entOrg );
 	int						Bot_FindClosestAVTDanger( const idVec3& location, float range, bool useAngleCheck = false );
+	bool					SpawnHostIsMarkedForDeath( int spawnHostSpawnID );
+	int						Bot_GetRequestedEscortClient();
+	bool					Bot_CheckForHumanInteractingWithEntity( int entNum );
 
 //mal: movement utilities
 	void					Bot_MoveToGoal( const idVec3 &spot1, const idVec3 &spot2, const botMoveFlags_t moveFlag, const botMoveTypes_t moveType );
@@ -1103,7 +1128,7 @@ public:
 	const botMoveFlags_t	Bot_ShouldStrafeJump( const idVec3 &targetOrigin );
 	bool					MoveIsInvalid();
 	int						CheckBotBlockingOtherClients( int ignoreClient );
-	void					Bot_MoveAwayFromClient( int clientNum );
+	void					Bot_MoveAwayFromClient( int clientNum, bool randomStrafe = false );
 	bool					AddGroundObstacles( bool largePlayerBBox, bool inVehicle );
 	bool					AddGroundAndAirObstacles( bool largePlayerBBox, bool inVehicle, bool inAirVehicle );
 	bool					BuildObstacleList( bool largePlayerBBox, bool inVehicle );
@@ -1165,7 +1190,7 @@ public:
 	int						Bot_CheckForTacticalAction();
 	int						Bot_CheckForNeedyVehicles( float range, bool& chatRequest );
 	bool					Bot_EngCheckNBGState();
-	int						Bot_CheckForSpawnHostsToDestroy( float range );
+	int						Bot_CheckForSpawnHostsToDestroy( float range, bool& useChat );
 	bool					ObjIsOnGround();
 	bool					Bot_CheckForDroppedObjGoals();
 	int						Bot_CheckForNeedyDeployables( float range );
@@ -1184,6 +1209,8 @@ public:
 	bool					Bot_WantsVehicle();
 	bool					ClientIsCloseToDeliverObj( int clientNum );
 	int						Bot_CheckForGrieferTargetGoals();
+	bool					ActionIsActiveForTrainingMode( int actionNumber, int numSecondsToDelay );
+	bool					TeamHumanMissionIsObjective();
 
 //mal: debug utilities
 	void					SetupDebugHud();
@@ -1283,6 +1310,7 @@ private:
 	botMoveFlags_t			ltgPosture;	//mal: some actions can have a random amount of postures, track which the bot picked here.
 	idVec3					ltgOrigin;
 	moveDirections_t		ltgMoveDir;
+	int						ltgCounter;
 
 // Vehicle Long Term Goal Stuff
 	bot_Vehicle_LTG_Types_t	vLTGType; //mal: what kind of vehicle LTG....
@@ -1297,12 +1325,14 @@ private:
 	int						vLTGTimer2;
 	targetTypes_t			vLTGTargetType; //mal: the type of target, for special cases.
 	float					vLTGDist;
+	float					vLTGMoveTooCloseRange;
 	idVec3					vLTGOrigin;
 	moveDirections_t		vLTGMoveDir;
 	int						vLTGMoveTime;
 	int						vLTGSightTime;
 	int						vLTGDriveTime;
 	int						vLTGPauseTime;
+	int						vLTGMoveActionGoal;
 	bool					vLTGChat;
 
 // Short Term Goal Stuff
@@ -1353,6 +1383,8 @@ private:
 	botAttackMoveTypes_t		combatMoveType;
 	int							combatMoveTime;			//mal: how long to move this direction
 	int							combatMoveFailedCount;	//mal: how many times the bot has tried a move that failed.
+	int							combatMoveActionGoal;
+	float						combatMoveTooCloseRange;
 
 
 	int							gunTargetEntNum;			// the ent, if exists, thats in front of us ATM.
@@ -1390,6 +1422,7 @@ private:
 
 	playerWeaponTypes_t		botIdealWeapNum;		// the specific weapon the bot wants to use.
 	weaponBankTypes_t		botIdealWeapSlot;		//mal: tracks which weapon bank the bot wants to switch to.
+
 	int						lastGrenadeTime;
 	bool					safeGrenade;
 	bool					chaseEnemy;			// should the bot really chase this enemy around - otherwise will give up once reach place enemy last seen.
@@ -1401,12 +1434,16 @@ private:
 	int						vehicleUpdateTime;
 	int						rocketTime;
 
+	int						ignoreNewEnemiesTime;
+	int						ignoreNewEnemiesWhileInVehicleTime;
+
 	int						timeOnTarget;	// the time the bot should wait untill it attacks the target.
 
 	int						weapSwitchTime;
 
 	int						lastVehicleSpawnID;
 	int						lastVehicleTime;
+	int						lastNearbySafeActionToMoveTowardActionNum;
 
 	struct bot_AI_Stack_t {
 		bool						( idBotAI::*STACK_AI_NODE )(); //mal: node to run when get back to stack
@@ -1438,6 +1475,8 @@ private:
 	int						ignoreSpyTime;
 
 	int						framesVehicleStuck;
+
+	int						blockingTeammateCounter;
 
 	int						chaseEnemyTime;
 
@@ -1508,6 +1547,9 @@ private:
 	int						strafeToAvoidDangerTime;
 	moveDirections_t		strafeToAvoidDangerDir;
 
+	int						warmupActionMoveGoal;
+	int						warmupUseActionMoveGoalTime;
+
 	struct ignoreNodeTimer_t {
 		idBotNode*				ignorePathNode;
 		int						ignorePathNodeTime;
@@ -1520,6 +1562,11 @@ private:
     
 	char					*lastAINode;
 	char					*lastMoveNode;
+
+#ifdef _DEBUG
+	int						debugVar1;
+	int						debugVar2;
+#endif
 };
 
 idEntity *GetGameEntity( int entityNumber );

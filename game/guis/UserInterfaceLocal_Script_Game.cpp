@@ -444,12 +444,77 @@ void sdUserInterfaceLocal::Script_GetPersistentRankInfo( sdUIFunctionStack& stac
 	gameLocal.rankInfo.CreateData( sdGlobalStatsTracker::GetInstance().GetLocalStatsHash(), sdGlobalStatsTracker::GetInstance().GetLocalStats(), gameLocal.rankScratchInfo );
 
 	if( gameLocal.rankScratchInfo.completeTasks >= 0 && gameLocal.rankScratchInfo.completeTasks < gameLocal.declRankType.Num() ) {
-		const sdDeclRank* rank = gameLocal.declRankType.LocalFindByIndex( gameLocal.rankScratchInfo.completeTasks );
+		const sdDeclRank* rank = gameLocal.FindRankForLevel( gameLocal.rankScratchInfo.completeTasks );
 		if( !type.Icmp( "title" ) ) {
 			stack.Push( rank->GetTitle()->GetName() );
 			return;
 		} else if( !type.Icmp( "material" ) ) {
 			stack.Push( rank->GetMaterial() );
+			return;
+		} else if( !type.Icmpn( "next", 4 ) ) {			
+			const idList< sdPersistentRankInfo::sdBadge >& badges = gameLocal.rankInfo.GetBadges();
+
+			const sdPersistentRankInfo::sdBadge* bestBadge = NULL;
+			const sdPersistentRankInfo::sdRankInstance::sdBadge* bestDataBadge = NULL;
+			int mostSatisfied = -1;
+			int mostSatisfiedTotal = -1;
+			float bestPercentComplete = -1.0f;
+
+			bool allComplete = true;
+			for( int i = 0; i < badges.Num(); i++ ) {
+				const sdPersistentRankInfo::sdBadge& badge = badges[ i ];
+				const sdPersistentRankInfo::sdRankInstance::sdBadge& dataBadge = gameLocal.rankScratchInfo.badges[ i ];
+
+
+				int numComplete = 0;
+				float percentComplete = 0.0f;
+				for( int j = 0; j < badge.tasks.Num(); j++ ) {
+					float value = idMath::ClampFloat( 0.0f, dataBadge.taskValues[ j ].max, idMath::Floor( dataBadge.taskValues[ j ].value ) );
+					float percent = dataBadge.taskValues[ j ].value / dataBadge.taskValues[ j ].max;
+					percentComplete += idMath::ClampFloat( 0.0f, 1.0f, percent );
+					if( percent >= 1.0f ) {
+						numComplete++;
+					}
+				}
+				if( numComplete == badge.tasks.Num() ) {
+					continue;
+				}
+				allComplete = false;
+
+				if( badge.tasks.Num() > 0 ) {
+					percentComplete /= badge.tasks.Num();
+				}
+				if( percentComplete > bestPercentComplete ) {
+					bestBadge = &badge;
+					bestDataBadge = &dataBadge;
+					mostSatisfied = numComplete;
+					mostSatisfiedTotal = badge.tasks.Num();
+					bestPercentComplete = percentComplete;
+				}
+			}
+
+			if( !idStr::Icmp( type.c_str() + 4, "achievementAvailable" )) {
+				stack.Push( allComplete ? "0" : "1" );
+				return;
+			}
+
+			if( bestBadge != NULL ) {
+				if( !idStr::Icmp( type.c_str() + 4, "achievementTitle" )) {
+					stack.Push( va( "game/achievements/%s_level%i", bestBadge->category.c_str(), bestBadge->level ) );
+				} else if( !idStr::Icmp( type.c_str() + 4, "achievementTasks" )) {
+					stack.Push( va( "%i", mostSatisfied ) );
+				} else if( !idStr::Icmp( type.c_str() + 4, "achievementTasksTotal" )) {
+					stack.Push( va( "%i", mostSatisfiedTotal ) );
+				} else if( !idStr::Icmp( type.c_str() + 4, "achievementPercent" )) {
+					stack.Push( va( "%f", idMath::Ceil( ( bestPercentComplete * 100.0f ) ) / 100.0f ) );
+				} else if( !idStr::Icmp( type.c_str() + 4, "achievementMaterial" )) {
+					stack.Push( va( "guis/assets/icons/achieve_%s_rank%i", bestBadge->category.c_str(), bestBadge->level ) );
+				} else {
+					stack.Push( "" );
+				}
+			} else {
+				stack.Push( "" );
+			}
 			return;
 		}
 	}
@@ -573,6 +638,30 @@ void sdUserInterfaceLocal::Script_MutePlayer( sdUIFunctionStack& stack ) {
 
 /*
 ============
+sdUserInterfaceLocal::Script_MutePlayerQuickChat
+============
+*/
+void sdUserInterfaceLocal::Script_MutePlayerQuickChat( sdUIFunctionStack& stack ) {
+	idStr playerName;
+	bool mute;
+	stack.Pop( playerName );
+	stack.Pop( mute );
+
+	idPlayer* player = gameLocal.GetClientByName( playerName );
+	if( player == NULL ) {
+		assert( 0 );
+		return;
+	}
+
+	if( mute ) {
+		gameLocal.MutePlayerQuickChatLocal( player->entityNumber );
+	} else {
+		gameLocal.UnMutePlayerQuickChatLocal( player->entityNumber );
+	}
+}
+
+/*
+============
 sdUserInterfaceLocal::Script_SpectateClient
 ============
 */
@@ -582,15 +671,7 @@ void sdUserInterfaceLocal::Script_SpectateClient( sdUIFunctionStack& stack ) {
 
 	assert( spectateeNum >= 0 && spectateeNum < MAX_CLIENTS );
 
-	if ( gameLocal.isClient ) {
-		sdReliableClientMessage outMsg( GAME_RELIABLE_CMESSAGE_SETSPECTATECLIENT );
-		outMsg.WriteByte( spectateeNum );
-		outMsg.Send();
-		return;
-	} else {
-		idPlayer* localPlayer = gameLocal.GetLocalPlayer();
-		localPlayer->OnSetClientSpectatee( gameLocal.GetClient( spectateeNum ) );
-	}
+	gameLocal.ChangeLocalSpectateClient( spectateeNum );
 }
 
 /*

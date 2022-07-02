@@ -1385,7 +1385,7 @@ void idDoor::OpenPortals( void ) {
 	if ( gameLocal.isServer ) {
 		sdEntityBroadcastEvent msg( this, EVENT_PORTALSTATE );
 		msg.WriteBool( true );
-		msg.Send( true, true );
+		msg.Send( true, sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -1408,7 +1408,7 @@ void idDoor::ClosePortals( bool force ) {
 	if ( gameLocal.isServer ) {
 		sdEntityBroadcastEvent msg( this, EVENT_PORTALSTATE );
 		msg.WriteBool( false );
-		msg.Send( true, true );
+		msg.Send( true, sdReliableMessageClientInfoAll() );
 	}
 }
 

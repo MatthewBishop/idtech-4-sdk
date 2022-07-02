@@ -1618,6 +1618,10 @@ function_t &idProgram::AllocFunction( idVarDef *def ) {
 		throw idCompileError( va( "Exceeded maximum allowed number of functions (%d)", functions.Max() ) );
 	}
 
+	if ( ( functions.Num() % 20 ) == 0 ) {
+		common->PacifierUpdate();
+	}
+
 	// fill in the dfunction
 	function_t &func	= *functions.Alloc();
 	func.eventdef		= NULL;

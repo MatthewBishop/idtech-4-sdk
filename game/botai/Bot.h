@@ -29,6 +29,12 @@
 #define BOT_MOVE_LOOKUP_STEPS	720
 #define BOT_MOVE_LOOKUP_SCALE	( BOT_MOVE_LOOKUP_STEPS / 360.0f )
 
+enum projectileTypes_t {
+	PROJECTILE_TANK_ROUND,
+	PROJECTILE_ROCKET,
+	PROJECTILE_GRENADE
+};
+
 class idBot : public idPlayer {
 public:
 	friend class sdAdminSystemCommand_AddBot;
@@ -47,8 +53,9 @@ public:
 
 	static void				BuildMoveLookups( float runfwd, float runside, float runback, float sprintfwd, float sprintside );
 
-private:
 	void					Bot_InputToUserCmd(); //mal: sends the bots current user cmds to the server, for client prediction.
+
+private:
 	static void				Bot_SetClassType( idPlayer* player, int classType, int classWeapon ); //mal: utility function that lets me set bot's class.
 	void					Bot_SetWeapon();
 	void					Bot_ResetGameState();
@@ -66,7 +73,7 @@ private:
 	void					GroundVehicleControls( usercmd_t &ucmd );
 	void					GetVehicleInfo( int entNum, proxyInfo_t& vehicleInfo );
 	void					Bot_ChangeVehicleViewAngles( const idAngles &idealAngle, bool fast );
-	bool					Bot_GetProjectileAimPoint( bool tankGun, idVec3& targetOrg, int ignoreEntNum );
+	bool					Bot_GetProjectileAimPoint( const projectileTypes_t projectileType, idVec3& targetOrg, int ignoreEntNum );
 	void					AirVehicleControls( usercmd_t &ucmd );
 	void					IcarusVehicleControls( usercmd_t &ucmd );
 	void					Bot_ChangeAirVehicleViewAngles( const idAngles &idealAngle, bool fast, bool inCombat );

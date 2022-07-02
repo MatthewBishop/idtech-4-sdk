@@ -742,7 +742,9 @@ void idGameLocal::Clear( void ) {
 	framenum = 0;
 	previousTime = 0;
 	time = 0;
+	timeOffset = 0;
 	localViewChangedTime = 0;
+	nextTeamBalanceCheckTime = 0;
 	damageLogFile = NULL;
 	debugLogFile = NULL;
 
@@ -775,8 +777,13 @@ void idGameLocal::Clear( void ) {
 	localClientNum = ASYNC_DEMO_CLIENT_INDEX;
 	isServer = false;
 	isClient = false;
+	isRepeater = false;
+	serverIsRepeater = false;
+	snapShotClientIsRepeater = false;
+	repeaterClientFollowIndex = -1;
 	realClientTime = 0;
 	isNewFrame = true;
+	isPaused = false;
 
 	globalMaterial = NULL;
 	newInfo.Clear();
@@ -1162,6 +1169,49 @@ void ParseNetworkLog( void ) {
 
 /*
 ===========
+idGameLocal::LoadLifeStatsData
+============
+*/
+void idGameLocal::LoadLifeStatsData( void ) {
+	const sdDeclStringMap* lifeStataData = declStringMapType[ "life_stats_data" ];
+	if ( lifeStataData == NULL ) {
+		gameLocal.Warning( "No Life Stats Data Found" );
+		return;
+	}
+
+	const idDict& info = lifeStataData->GetDict();
+
+	const idKeyValue* kv = NULL;
+	while ( ( kv = info.MatchPrefix( "life_stat_", kv ) ) != NULL ) {
+		const char* statName = kv->GetValue().c_str();
+		if ( *statName == '\0' ) {
+			continue;
+		}
+
+		const char* textName = info.GetString( va( "text_%s", kv->GetKey().c_str() ) );
+		const sdDeclLocStr* text = declHolder.declLocStrType[ textName ];
+		if ( text == NULL ) {
+			gameLocal.Warning( "sdDeclPlayerClass::ReadFromDict Bad Text '%s' for Life Stat %s", textName, kv->GetKey().c_str() );
+			continue;
+		}
+
+		sdStringBuilder_Heap textNameLong( va( "%s_long", textName ) );
+		const sdDeclLocStr* textLong = declHolder.declLocStrType[ textNameLong.c_str() ];
+		if ( textLong == NULL ) {
+			gameLocal.Warning( "sdDeclPlayerClass::ReadFromDict Bad Long Text '%s' for Life Stat %s", textNameLong.c_str(), kv->GetKey().c_str() );
+			continue;
+		}
+
+		lifeStat_t& stat = lifeStats.Alloc();
+		stat.stat = statName;
+		stat.text = text;
+		stat.textLong = textLong;
+		stat.isTimeBased = info.GetBool( va( "timebased_%s", kv->GetKey().c_str() ) );
+	}
+}
+
+/*
+===========
 idGameLocal::Init
 
   initialize the game object, only happens once at startup, not each level load
@@ -1209,8 +1259,8 @@ void idGameLocal::Init( void ) {
 
 	sdStatsTracker& statsTracker = sdGlobalStatsTracker::GetInstance();
 
-	totalShotsFiredStat = statsTracker.GetStat( statsTracker.AllocStat( "total_shots_fired", "int" ) );
-	totalShotsHitStat	= statsTracker.GetStat( statsTracker.AllocStat( "total_shots_hit", "int" ) );
+	totalShotsFiredStat = statsTracker.GetStat( statsTracker.AllocStat( "total_shots_fired", sdNetStatKeyValue::SVT_INT ) );
+	totalShotsHitStat	= statsTracker.GetStat( statsTracker.AllocStat( "total_shots_hit", sdNetStatKeyValue::SVT_INT ) );
 
 	// initialize processor specific SIMD
 	idSIMD::InitProcessor( "game", com_forceGenericSIMD.GetBool() );
@@ -1307,6 +1357,8 @@ void idGameLocal::Init( void ) {
 
 	cmdSystem->AddCommand( "testGUI",				idGameLocal::TestGUI_f,							CMD_FL_SYSTEM | CMD_FL_GAME, "Replace the main menu with a test gui.", idArgCompletionGameDecl_f< DECLTYPE_GUI > );
 
+	sdDeclGUI::InitDefines();
+
 	globalProperties.Init();
 	limboProperties.Init();
 	localPlayerProperties.Init();
@@ -1314,6 +1366,8 @@ void idGameLocal::Init( void ) {
 	sdInventory::BuildSlotBankLookup();
 
 	Clear();
+
+	LoadLifeStatsData();
 
 	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
 		proficiencyTables[ i ].Init( i );
@@ -1395,6 +1449,9 @@ void idGameLocal::Init( void ) {
 		sdDemoManager::GetInstance().InitGUIs();
 
 		uiManager->RegisterListEnumerationCallback( "demoList",				CreateDemoList );
+		uiManager->RegisterListEnumerationCallback( "lifeStatsList",		CreateLifeStatsList );
+		uiManager->RegisterListEnumerationCallback( "predictedUpgradesList",CreatePredictedUpgradesList );
+		uiManager->RegisterListEnumerationCallback( "reviewUpgradesList",	CreateUpgradesReviewList );
 		uiManager->RegisterListEnumerationCallback( "modList",				CreateModList );
 		uiManager->RegisterListEnumerationCallback( "crosshairs",			CreateCrosshairList );
 		uiManager->RegisterListEnumerationCallback( "keyBindings",			CreateKeyBindingList );
@@ -1422,6 +1479,7 @@ void idGameLocal::Init( void ) {
 		sdDeclGUI::AddDefine( va( "MSG_OK %i",				MSG_OK ) );
 		sdDeclGUI::AddDefine( va( "MSG_OKCANCEL %i",		MSG_OKCANCEL ) );
 		sdDeclGUI::AddDefine( va( "MSG_YESNO %i",			MSG_YESNO ) );
+		sdDeclGUI::AddDefine( va( "MSG_DOWNLOAD_YESNO %i",	MSG_DOWNLOAD_YESNO ) );
 		sdDeclGUI::AddDefine( va( "MSG_NEED_PASSWORD %i",	MSG_NEED_PASSWORD ) );
 		sdDeclGUI::AddDefine( va( "MSG_NEED_AUTH %i",		MSG_NEED_AUTH ) );
 		sdDeclGUI::AddDefine( va( "MSG_ABORT %i",			MSG_ABORT ) );
@@ -1432,8 +1490,7 @@ void idGameLocal::Init( void ) {
 
 		uiMainMenuHandle	= LoadUserInterface( "mainmenu",	false, true );
 		uiSystemUIHandle	= LoadUserInterface( "system",		false, true );
-		pureWaitHandle		= LoadUserInterface( "purewait",	false, true );
-		scoreBoard			= LoadUserInterface( "scoreboard",	false, true );
+		pureWaitHandle		= LoadUserInterface( "purewait",	false, true );		
 
 		if( sdUserInterfaceLocal* systemUI = GetUserInterface( uiSystemUIHandle ) ) {
 			systemUI->Activate();
@@ -1683,6 +1740,10 @@ bool idGameLocal::ClientsOnSameTeam( int clientNum1, int clientNum2, voiceMode_t
 				return false;
 			}
 
+			if ( !player1->IsTeam( player2->GetTeam() ) ) {
+				return false;
+			}
+
 			sdFireTeam* f1 = gameLocal.rules->GetPlayerFireTeam( clientNum1 );
 			sdFireTeam* f2 = gameLocal.rules->GetPlayerFireTeam( clientNum2 );
 			if ( f1 != NULL || f2 != NULL ) {
@@ -1759,7 +1820,7 @@ void idGameLocal::SetRules( idTypeInfo* type ) {
 		sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_RULES_DATA );
 		msg.WriteLong( sdGameRules::EVENT_CREATE );
 		msg.WriteLong( type->typeNum );
-		msg.Send( -1 );
+		msg.Send( sdReliableMessageClientInfoAll() );
 	}
 
 	ResetGameState( ENSM_RULES );
@@ -1811,6 +1872,10 @@ idGameLocal::MouseMove
 ============
 */
 void idGameLocal::MouseMove( const idVec3& vecAngleBase, idVec3& vecAngleDelta ) {
+	if ( IsPaused() ) {
+		return;
+	}
+
 	idPlayer* player = GetLocalPlayer();
 	if ( !player ) {
 		return;
@@ -1829,6 +1894,10 @@ idGameLocal::GetSensitivity
 ============
 */
 bool idGameLocal::GetSensitivity( float& scaleX, float& scaleY ) {
+	if ( IsPaused() ) {
+		return false;
+	}
+
 	idPlayer* player = GetLocalPlayer();
 	if ( !player ) {
 		return false;
@@ -2012,6 +2081,8 @@ void idGameLocal::Shutdown( void ) {
 
 	// shut down the animation manager
 	animationLib.Shutdown();
+
+	playZoneAreas.DeleteContents( true );
 
 	delete rules;
 	rules = NULL;
@@ -2375,6 +2446,9 @@ void idGameLocal::SetServerInfo( const idDict& _serverInfo ) {
 	serverInfo = _serverInfo;
 	UpdateServerInfoFlags();
 	ParseServerInfo();
+#ifdef SD_SUPPORT_REPEATER
+	UpdateRepeaterInfo();
+#endif // SD_SUPPORT_REPEATER
 
 	sdnet.UpdateGameSession( true, false );
 }
@@ -2393,9 +2467,7 @@ void idGameLocal::ParseServerInfo( void ) {
 	serverInfoData.readyPercent			= serverInfo.GetInt( "si_readyPercent" );
 	serverInfoData.gameReviewReadyWait	= serverInfo.GetBool( "si_gameReviewReadyWait" );
 
-	if( GetLocalPlayer() != NULL ) {
-		localPlayerProperties.OnServerInfoChanged();
-	}
+	localPlayerProperties.OnServerInfoChanged();
 
 	UpdateCampaignStats( false );
 }
@@ -2534,6 +2606,7 @@ void idGameLocal::LoadMap( const char* mapName, int randSeed, int startTime ) {
 	this->startTime	= startTime;
 	previousTime	= startTime;
 	time			= startTime;
+	timeOffset		= 0;
 	nextBotPopulationCheck = startTime;
 
 	framenum		= 0;
@@ -2586,7 +2659,7 @@ void idGameLocal::LocalMapRestart( void ) {
 
 	if ( gameLocal.isServer ) {
 		sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_MAP_RESTART );
-		msg.Send();
+		msg.Send( sdReliableMessageClientInfoAll() );
 	}
 	OnLocalMapRestart();
 
@@ -2713,7 +2786,7 @@ void idGameLocal::StartDemos_f( const idCmdArgs &args ) {
 
 	if ( gameLocal.isServer ) {
 		sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_RECORD_DEMO );
-		msg.Send();
+		msg.Send( sdReliableMessageClientInfoAll() );
 	}
 
 	gameLocal.StartRecordingDemo();
@@ -2805,7 +2878,7 @@ void idGameLocal::OnPreMapStart( void ) {
 	sdDemoManager::GetInstance().StartDemo();	// FIXME: move to EndLevelLoad?
 
 	spawnSpots.Clear();
-	playZoneAreas.Clear();
+	playZoneAreas.DeleteContents( true );
 
 	int numAreas = gameRenderWorld->NumAreas();
 	playZoneAreas.SetNum( numAreas );
@@ -2871,9 +2944,7 @@ void idGameLocal::OnMapStart( void ) {
 	sdLocationMarker::OnMapStart();
 	LinkPlayZoneAreas();
 
-	if( !networkSystem->IsDedicated() ) {
-		localPlayerProperties.InitGUIs();
-	}
+	localPlayerProperties.InitGUIs();
 
 	// free up any unused animations
 	animationLib.FlushUnusedAnims();
@@ -2917,6 +2988,21 @@ void idGameLocal::InitFromNewMap( const char* mapName, idRenderWorld *renderWorl
 	this->isServer = isServer;
 	this->isClient = isClient;
 	localViewChangedTime = 0;
+	nextTeamBalanceCheckTime = 0;
+
+	if ( !gameLocal.isClient ) {
+		SetPaused( false );
+	}
+
+	playerView.ClearEffects();
+	playerView.ClearRepeaterView();
+	repeaterClientFollowIndex = -1;
+
+	if ( net_serverDownload.GetInteger() == 3 ) {
+#if !defined( SD_PUBLIC_TOOLS )
+		networkSystem->HTTPEnable( this->isServer || this->isRepeater );
+#endif // !SD_PUBLIC_TOOLS
+	}
 
 	GetMDFExportTargets(); // Gordon: force this to be touched during level loads so that builds get it, etc
 
@@ -3133,6 +3219,8 @@ void idGameLocal::MapShutdown( void ) {
 	renderSystem->SyncRenderSystem();
 
 	if ( gameSoundWorld != NULL ) {
+		gameSoundWorld->PlayShaderDirectly( NULL, SND_PLAYER_TOOLTIP );
+		gameSoundWorld->FadeSoundClasses( 0, 0, 0.5f );
 		gameSoundWorld->PlaceListener( playerView.GetCurrentView().vieworg, playerView.GetCurrentView().viewaxis, -1, time );
 	}
 
@@ -3256,8 +3344,15 @@ void idGameLocal::DumpOggSounds() {
 	pyFile->WriteFloatString( "import sys\n" );
 	pyFile->WriteFloatString( "import subprocess\n" );
 	pyFile->WriteFloatString( "import time\n" );
+	pyFile->WriteFloatString( "import traceback\n" );
 	pyFile->WriteFloatString( "from optparse import OptionParser\n" );
 	pyFile->WriteFloatString( "from threading import Thread, Lock\n\n" );
+
+	pyFile->WriteFloatString( "def SoundFile( sound, language ):\n" );
+	pyFile->WriteFloatString( "    sourceFile = sound\n" );
+	pyFile->WriteFloatString( "    if language is not None:\n" );
+	pyFile->WriteFloatString( "        sourceFile = sourceFile.replace( '$LANGUAGE$', language )\n" );
+	pyFile->WriteFloatString( "    return sourceFile\n\n" );
 
 	pyFile->WriteFloatString( "class OggEnc2Thread( Thread ):\n" );
 	pyFile->WriteFloatString( "    def __init__( self, encodeSounds, language=None ):\n" );
@@ -3272,6 +3367,9 @@ void idGameLocal::DumpOggSounds() {
 	pyFile->WriteFloatString( "        if self.isAlive():\n" );
 	pyFile->WriteFloatString( "            self.stop = True\n\n" );
 
+	pyFile->WriteFloatString( "    def OnCompleted( self ):\n" );
+	pyFile->WriteFloatString( "        return\n\n" );
+
 	pyFile->WriteFloatString( "    def run( self ):\n" );
 	pyFile->WriteFloatString( "        self.stop = False\n" );
 	pyFile->WriteFloatString( "        self.error = False\n\n" );
@@ -3280,16 +3378,15 @@ void idGameLocal::DumpOggSounds() {
 	pyFile->WriteFloatString( "            if self.stop:\n" );
 	pyFile->WriteFloatString( "                return\n\n" );
 
-	pyFile->WriteFloatString( "            sourceFile = sound[0]\n" );
-	pyFile->WriteFloatString( "            if self.language is not None:\n" );
-	pyFile->WriteFloatString( "                sourceFile = sourceFile.replace( '$LANGUAGE$', self.language )\n\n" );
+	pyFile->WriteFloatString( "            sourceFile = SoundFile( sound[0], self.language )\n" );
+	pyFile->WriteFloatString( "            destFile = SoundFile( sound[1], self.language )\n\n" );
 
-	pyFile->WriteFloatString( "            destFile = sound[1]\n" );
-	pyFile->WriteFloatString( "            if self.language is not None:\n" );
-	pyFile->WriteFloatString( "                destFile = destFile.replace( '$LANGUAGE$', self.language )\n\n" );
-
-	pyFile->WriteFloatString( "            if not self.EncodeSound( sourceFile, destFile, sound[2] ):\n" );
-	pyFile->WriteFloatString( "                self.error = True\n" );
+	pyFile->WriteFloatString( "            try:\n" );
+	pyFile->WriteFloatString( "                if not self.EncodeSound( sourceFile, destFile, sound[2] ):\n" );
+	pyFile->WriteFloatString( "                    self.error = True\n" );
+	pyFile->WriteFloatString( "                    return\n" );
+	pyFile->WriteFloatString( "            except:\n" );
+	pyFile->WriteFloatString( "                sys.stdout.write( traceback.format_exc() )\n" );
 	pyFile->WriteFloatString( "                return\n\n" );
 
 	pyFile->WriteFloatString( "    def OggEnc2( self, sourceFile, destFile, quality ):\n" );
@@ -3307,7 +3404,7 @@ void idGameLocal::DumpOggSounds() {
 	pyFile->WriteFloatString( "            p = subprocess.Popen( 'oggenc2 -Q -q %%d -o \"%%s\" \"%%s\"' %% ( quality, destFile, sourceFile ), stdout=subprocess.PIPE, stderr=subprocess.PIPE )\n\n" );
 
 	pyFile->WriteFloatString( "            stdoutLines = p.stdout.readlines()\n" );
-	pyFile->WriteFloatString( "            stderrLines = p.stderr.readlines()\n\n" );
+	pyFile->WriteFloatString( "            stderrLines = []#p.stderr.readlines()\n\n" );
 
 	pyFile->WriteFloatString( "            returnCode = p.wait()\n" );
 	pyFile->WriteFloatString( "        except OSError, e:\n" );
@@ -3338,29 +3435,38 @@ void idGameLocal::DumpOggSounds() {
 
 	pyFile->WriteFloatString( "        destPath = os.path.dirname( destFile )\n" );
 	pyFile->WriteFloatString( "        if not os.path.exists( destPath ):\n" );
-	pyFile->WriteFloatString( "            try:\n" );
-	pyFile->WriteFloatString( "                os.makedirs( destPath )\n" );
-	pyFile->WriteFloatString( "            except os.error, e:\n" );
-	pyFile->WriteFloatString( "                # errno 17 is file exists, a different thread potentially created it so we're all happy anyway\n" );
-	pyFile->WriteFloatString( "                if e.errno != 17:\n" );
-	pyFile->WriteFloatString( "                    sys.stdout.write( 'Directory creation failed: %%s (%%i)\\\\n' %% ( e.strerror, e.errno ) )\n" );
-	pyFile->WriteFloatString( "                    return False\n\n" );
+	pyFile->WriteFloatString( "            sys.stdout.write( 'Output directory \\\\'%%s\\\\' does not exist\\\\n' %% destPath )\n" );
+	pyFile->WriteFloatString( "            return False\n\n" );
 
 	pyFile->WriteFloatString( "        if not self.OggEnc2( sourceFile, destFile, quality ):\n" );
 	pyFile->WriteFloatString( "            return False\n\n" );
 
 	pyFile->WriteFloatString( "        return True\n\n" );
 
+	pyFile->WriteFloatString( "def CreateDirectories( encodeSounds, language=None ):\n" );
+	pyFile->WriteFloatString( "    for sound in encodeSounds:\n" );
+	pyFile->WriteFloatString( "        destFile = os.path.normpath( SoundFile( sound[1], language ) )\n" );
+	pyFile->WriteFloatString( "        destPath = os.path.dirname( destFile )\n\n" );
+
+	pyFile->WriteFloatString( "        if not os.path.exists( destPath ):\n" );
+	pyFile->WriteFloatString( "            try:\n" );
+	pyFile->WriteFloatString( "                os.makedirs( destPath )\n" );
+	pyFile->WriteFloatString( "            except os.error, e:\n" );
+	pyFile->WriteFloatString( "                sys.stdout.write( 'Directory creation failed: %%s (%%i)\\\\n' %% ( e.strerror, e.errno ) )\n" );
+	pyFile->WriteFloatString( "                return False\n\n" );
+
+	pyFile->WriteFloatString( "    return True\n\n" );
+
 	cpuInfo_t cpuInfo;
 	sys->GetCPUInfo( cpuInfo );
 
-	pyFile->WriteFloatString( "cfg_number_of_hardware_threads = %d\n", 1 );	//cpuInfo.physicalNum );
+	pyFile->WriteFloatString( "cfg_number_of_hardware_threads = %d\n\n", cpuInfo.physicalNum );
 
-	pyFile->WriteFloatString( "def ogg2enc( encodeSounds, language=None ): \n" );
+	pyFile->WriteFloatString( "def RunThreads( threadClass, encodeSounds, language=None ):\n" );
 	pyFile->WriteFloatString( "    threads = []\n\n" );
 
 	pyFile->WriteFloatString( "    offset = 0\n" );
-	pyFile->WriteFloatString( "    step = len( encodeSounds ) / 3\n" );
+	pyFile->WriteFloatString( "    step = len( encodeSounds ) / cfg_number_of_hardware_threads\n" );
 	pyFile->WriteFloatString( "    for core in xrange( 0, cfg_number_of_hardware_threads ):\n" );
 	pyFile->WriteFloatString( "        if core == cfg_number_of_hardware_threads - 1:\n" );
 	pyFile->WriteFloatString( "            start = offset\n" );
@@ -3368,9 +3474,9 @@ void idGameLocal::DumpOggSounds() {
 	pyFile->WriteFloatString( "        else:\n" );
 	pyFile->WriteFloatString( "            start = offset\n" );
 	pyFile->WriteFloatString( "            end = offset + step\n" );
-	pyFile->WriteFloatString( "            offset += step\n\n" );
+	pyFile->WriteFloatString( "            offset = end\n\n" );
 
-	pyFile->WriteFloatString( "        threads.append( OggEnc2Thread( encodeSounds[start:end], language ) )\n\n" );
+	pyFile->WriteFloatString( "        threads.append( threadClass( encodeSounds[start:end], language ) )\n\n" );
 
 	pyFile->WriteFloatString( "    for thread in threads:\n" );
 	pyFile->WriteFloatString( "        thread.start()\n\n" );
@@ -3386,14 +3492,16 @@ void idGameLocal::DumpOggSounds() {
 	pyFile->WriteFloatString( "                if thread.isAlive():\n" );
 	pyFile->WriteFloatString( "                    thread.Stop()\n" );
 	pyFile->WriteFloatString( "                    thread.join()\n" );
- 	pyFile->WriteFloatString( "            return False\n\n" );
+ 	pyFile->WriteFloatString( "            return 1\n\n" );
 
 	pyFile->WriteFloatString( "        terminate = True\n" );
 	pyFile->WriteFloatString( "        for thread in threads:\n" );
  	pyFile->WriteFloatString( "            terminate &= not thread.isAlive()\n\n" );
 
 	pyFile->WriteFloatString( "        if terminate:\n" );
-	pyFile->WriteFloatString( "            return True\n\n" );
+	pyFile->WriteFloatString( "            for thread in threads:\n" );
+	pyFile->WriteFloatString( "                thread.OnCompleted()\n" );
+	pyFile->WriteFloatString( "            return 0\n\n" );
 
 	pyFile->WriteFloatString( "def vararg_strings( option, opt_str, value, parser ):\n" );
 	pyFile->WriteFloatString( "    assert value is None\n" );
@@ -3493,13 +3601,21 @@ void idGameLocal::DumpOggSounds() {
 
 	pyFile->WriteFloatString( "    ( options, args ) = parser.parse_args()\n\n" );
 
-	pyFile->WriteFloatString( "    if not ogg2enc( encodeSounds ):\n" );
+	pyFile->WriteFloatString( "    if not CreateDirectories( encodeSounds ):\n" );
 	pyFile->WriteFloatString( "        return 1\n\n" );
+
+	pyFile->WriteFloatString( "    status = RunThreads( OggEnc2Thread, encodeSounds )\n" );
+	pyFile->WriteFloatString( "    if status != 0:\n" );
+	pyFile->WriteFloatString( "        return status\n\n" );
 
 	pyFile->WriteFloatString( "    if options.languages is not None:\n" );
 	pyFile->WriteFloatString( "        for language in options.languages:\n" );
-	pyFile->WriteFloatString( "            if not ogg2enc( localizedEncodeSounds, language ):\n" );
+	pyFile->WriteFloatString( "            if not CreateDirectories( localizedEncodeSounds, language ):\n" );
 	pyFile->WriteFloatString( "                return 1\n\n" );
+
+	pyFile->WriteFloatString( "            status = RunThreads( OggEnc2Thread, localizedEncodeSounds, language )\n" );
+	pyFile->WriteFloatString( "            if status != 0:\n" );
+	pyFile->WriteFloatString( "                return status\n\n" );
 
 	pyFile->WriteFloatString( "    return 0\n\n" );
 
@@ -3665,12 +3781,7 @@ idGameLocal::GetLocalViewPlayer
 ================
 */
 idPlayer* idGameLocal::GetLocalViewPlayer( void ) const {
-	idPlayer* player = GetLocalPlayer();
-	if ( player == NULL ) {
-		return NULL;
-	}
-
-	return player->GetSpectateClient();
+	return GetActiveViewer();
 }
 
 /*
@@ -3679,7 +3790,7 @@ idGameLocal::DoClientSideStuff
 ================
 */
 bool idGameLocal::DoClientSideStuff() const { 
-	return (localClientNum != ASYNC_DEMO_CLIENT_INDEX || sdDemoManager::GetInstance().InPlayBack()); 
+	return !networkSystem->IsDedicated();
 }
 
 /*
@@ -3691,6 +3802,7 @@ void idGameLocal::OnLocalViewPlayerChanged( void ) {
 	UpdatePlayerShadows();
 	sdObjectiveManager::GetInstance().OnLocalViewPlayerChanged();
 	localViewChangedTime = realClientTime;
+	playerView.ClearEffects();
 	
 	ResetTeamAssets();
 
@@ -3700,6 +3812,10 @@ void idGameLocal::OnLocalViewPlayerChanged( void ) {
 		localPlayerProperties.SetActiveCamera( player->GetRemoteCamera() );
 		localPlayerProperties.SetActivePlayer( player );
 		localPlayerProperties.SetActiveWeapon( player->GetWeapon() );
+	} else {
+		localPlayerProperties.SetActiveCamera( NULL );
+		localPlayerProperties.SetActivePlayer( NULL );
+		localPlayerProperties.SetActiveWeapon( NULL );
 	}
 }
 
@@ -3730,6 +3846,175 @@ void idGameLocal::ResetTeamAssets( void ) {
 	}
 
 	PurgeAndLoadTeamAssets( declStringMapType[ team->GetDict().GetString( "partial_load" ) ] );
+}
+
+int SortPlayersByXP( const idPlayer* a, const idPlayer* b ) {
+	return ( int )( a->GetProficiencyTable().GetXP() - b->GetProficiencyTable().GetXP() );
+}
+
+/*
+================
+idGameLocal::FindUnbalancedTeam
+================
+*/
+sdTeamInfo* idGameLocal::FindUnbalancedTeam( sdTeamInfo** lowest ) {
+	const int TEAM_BALANCE_CHECK_THRESHOLD = 2;
+
+	int numTeams = sdTeamManager::GetInstance().GetNumTeams();
+
+	size_t arraySize = sizeof( int ) * numTeams;
+	int* teamPlayerCounts = ( int* )_alloca( arraySize );
+	memset( teamPlayerCounts, 0, arraySize );
+
+	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+		idPlayer* player = GetClient( i );
+		if ( player == NULL ) {
+			continue;
+		}
+
+		sdTeamInfo* team = player->GetGameTeam();
+		if ( team == NULL ) {
+			continue;
+		}
+
+		teamPlayerCounts[ team->GetIndex() ]++;
+	}
+
+	int highestTeam = -1;
+	int lowestTeam = -1;
+	for ( int i = 0; i < numTeams; i++ ) {
+		if ( highestTeam == -1 || ( teamPlayerCounts[ i ] > teamPlayerCounts[ highestTeam ] ) ) {
+			highestTeam = i;
+		}
+
+		if ( lowestTeam == -1 || ( teamPlayerCounts[ i ] < teamPlayerCounts[ lowestTeam ] ) ) {
+			lowestTeam = i;
+		}
+	}
+
+	if ( ( teamPlayerCounts[ highestTeam ] - teamPlayerCounts[ lowestTeam ] ) < TEAM_BALANCE_CHECK_THRESHOLD ) {
+		return NULL;
+	}
+
+	if ( lowest != NULL ) {
+		*lowest = &sdTeamManager::GetInstance().GetTeamByIndex( lowestTeam );
+	}
+	return &sdTeamManager::GetInstance().GetTeamByIndex( highestTeam );
+}
+
+/*
+================
+idGameLocal::CheckTeamBalance
+================
+*/
+void idGameLocal::CheckTeamBalance( void ) {
+	bool valid = si_teamForceBalance.GetBool() && gameLocal.rules->GetState() == sdGameRules::GS_GAMEON && g_smartTeamBalance.GetBool() && g_smartTeamBalanceReward.GetInteger() > 0;
+
+	class sdBalanceTeamSwitchFinalizer : public sdVoteFinalizer {
+	public:
+		sdBalanceTeamSwitchFinalizer( idPlayer* player, sdTeamInfo* team ) {
+			this->player		= player;
+			this->team			= player->GetGameTeam();
+			this->switchTeam	= team;
+		}
+
+		void OnVoteCompleted( bool passed ) const {
+			if ( !passed ) {
+				return;
+			}
+
+			sdTeamInfo* switchTeam;
+			sdTeamInfo* team = gameLocal.FindUnbalancedTeam( &switchTeam );
+			if ( !CheckValid( team, switchTeam ) ) {
+				return;
+			}
+
+			idPlayer* player = this->player;
+			player->GiveClassProficiency( g_smartTeamBalanceReward.GetInteger(), "helped team balance" );
+			gameLocal.rules->SetClientTeam( player, switchTeam->GetIndex() + 1, true, "" );
+		}
+
+		bool CheckValid( sdTeamInfo* team, sdTeamInfo* switchTeam ) const {
+			idPlayer* player = this->player;
+			if ( this->team != team || this->switchTeam != switchTeam || player == NULL || player->GetGameTeam() != this->team ) {
+				return false;
+			}
+			return true;
+		}
+
+	private:
+		idEntityPtr< idPlayer >		player;
+		sdTeamInfo*					team;
+		sdTeamInfo*					switchTeam;
+	};
+
+	sdTeamInfo* switchTeam;
+	sdTeamInfo* team = FindUnbalancedTeam( &switchTeam );
+
+	sdPlayerVote* vote = sdVoteManager::GetInstance().FindVote( VI_SWITCH_TEAM );
+	if ( vote != NULL ) {
+		bool cancel = false;
+
+		sdBalanceTeamSwitchFinalizer* finalizer = ( sdBalanceTeamSwitchFinalizer* )vote->GetFinalizer();
+		if ( valid && finalizer->CheckValid( team, switchTeam ) ) {
+			return;
+		}
+		sdVoteManager::GetInstance().CancelVote( vote );
+	}
+
+	if ( !valid || team == NULL ) {
+		return;
+	}
+
+	if ( gameLocal.time < nextTeamBalanceCheckTime ) {
+		return;
+	}
+	nextTeamBalanceCheckTime = gameLocal.time + SEC2MS( 20 );
+
+	idStaticList< idPlayer*, MAX_CLIENTS > sortedPlayers;
+	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+		idPlayer* player = GetClient( i );
+		if ( player == NULL ) {
+			continue;
+		}
+
+		if ( player->GetGameTeam() != team ) {
+			continue;
+		}
+
+		if ( player->userInfo.isBot ) {
+			continue;
+		}
+
+		if ( player->GetNextTeamBalanceSwitchTime() > gameLocal.time ) {
+			continue;
+		}
+
+		sortedPlayers.Append( player );
+	}
+
+	if ( sortedPlayers.Num() == 0 ) {
+		return;
+	}
+
+	sortedPlayers.Sort( SortPlayersByXP );
+
+	int index = ( int )idMath::Floor( sortedPlayers.Num() * 0.33f ); // Gordon: Aim for someone who has a decent amount of XP, but not right at the top, as they are less likely to switch
+
+	vote = sdVoteManager::GetInstance().AllocVote();
+	if ( vote != NULL ) {
+		idPlayer* player = sortedPlayers[ index ];
+		player->SetNextTeamBalanceSwitchTime( gameLocal.time + MINS2MS( 2 ) );
+
+		vote->DisableFinishMessage();
+		vote->MakePrivateVote( player );
+		vote->Tag( VI_SWITCH_TEAM, player );
+		vote->SetText( gameLocal.declToolTipType[ "unbalanced_teams_switch" ] );
+		vote->AddTextParm( switchTeam->GetTitle() );
+		vote->AddTextParm( va( L"%d", g_smartTeamBalanceReward.GetInteger() ) );
+		vote->SetFinalizer( new sdBalanceTeamSwitchFinalizer( player, switchTeam ) );
+		vote->Start();
+	}
 }
 
 /*
@@ -3957,16 +4242,25 @@ void idGameLocal::RunFrame( const usercmd_t *clientCmds, int elapsedTime ) {
 
 	// update demo state
 	sdDemoManagerLocal& demoManager = sdDemoManager::GetInstance();
-	demoManager.RunDemoFrame( localClientNum, NULL );
+	demoManager.RunDemoFrame( NULL );
 
 	{
-		msec = elapsedTime;
 
 		// update the game time
 		framenum++;
-		previousTime = time;
-		time += elapsedTime;
-		realClientTime = time;
+
+		if ( IsPaused() ) {
+			msec = 0;
+			previousTime = time;
+			timeOffset += elapsedTime;
+			time += 0;
+		} else {
+			msec = elapsedTime;
+			previousTime = time;
+			timeOffset += 0;
+			time += elapsedTime;
+		}
+		realClientTime = ToGuiTime( time );
 
 #ifdef GAME_DLL
 		// allow changing SIMD usage on the fly
@@ -3984,29 +4278,9 @@ void idGameLocal::RunFrame( const usercmd_t *clientCmds, int elapsedTime ) {
 		// are influenced by the player's actions
 		random.RandomInt();
 
-		// handle game session advertising
 #ifndef _XENON
-		if ( isServer && sdnet.NeedsGameSession() ) {
-			if ( networkService->GetState() == sdNetService::SS_INITIALIZED ) {
-				sdnet.Connect();
-			} else if ( networkService->GetState() == sdNetService::SS_ONLINE ) {
-				if ( networkService->GetDedicatedServerState() == sdNetService::DS_OFFLINE ) {
-					// if ranked, don't automatically try to connect anymore if we've had a duplicate auth
-					// for dedicated servers using the key distribution, report and request a different key (TTimo)
-					if ( !networkSystem->IsRankedServer() || networkService->GetDisconnectReason() != sdNetService::DR_DUPLICATE_AUTH ) {
-						sdnet.SignInDedicated();
-					}
-				} else if ( networkService->GetDedicatedServerState() == sdNetService::DS_ONLINE ) {
-					if ( !sdnet.HasGameSession() ) {
-						reservedClientSlots.Clear(); // the session ID will change, so old invites aren't valid anymore anyway
-						sdnet.StartGameSession();
-					} else {
-						sdnet.UpdateGameSession( false, true );
-					}
-				}
-			}
-		}
-#endif
+		UpdateGameSession();
+#endif // _XENON
 
 		if ( player ) {
 			// update the renderview so that any gui videos play from the right frame
@@ -4032,9 +4306,6 @@ void idGameLocal::RunFrame( const usercmd_t *clientCmds, int elapsedTime ) {
 
 		bse->StartFrame();
 
-		// sort the active entity list
-		SortActiveEntityList();
-
 		timer_think.Clear();
 		timer_think.Start();
 
@@ -4046,11 +4317,21 @@ void idGameLocal::RunFrame( const usercmd_t *clientCmds, int elapsedTime ) {
 
 		idEntity::ClearEntityCaches();
 
-		int num = 0;
-		for ( ent = activeEntities.Next(); ent != NULL; ent = ent->activeNode.Next() ) {
-			sdProfileHelper_ScopeTimer( "EntityThink", ent->spawnArgs.GetString( "classname" ), g_profileEntityThink.GetBool() );
-			ent->Think();
-			num++;
+//mal: generate bot user cmds
+		for( int i = 0; i < MAX_CLIENTS; i++ ) {
+			idPlayer* botPlayer = GetClient( i );
+
+			if ( botPlayer == NULL || botPlayer->userInfo.isBot == false ) {
+				continue;
+			}
+
+			idBot* bot = botPlayer->Cast< idBot >();
+
+			if ( bot == NULL ) {
+				continue;
+			}
+
+			bot->Bot_InputToUserCmd();
 		}
 
 		for ( int i = 0; i < changedEntities.Num(); i++ ) {
@@ -4068,6 +4349,16 @@ void idGameLocal::RunFrame( const usercmd_t *clientCmds, int elapsedTime ) {
 			}
 		}
 		changedEntities.SetNum( 0, false );
+
+		// sort the active entity list
+		SortActiveEntityList();
+
+		int num = 0;
+		for ( ent = activeEntities.Next(); ent != NULL; ent = ent->activeNode.Next() ) {
+			sdProfileHelper_ScopeTimer( "EntityThink", ent->spawnArgs.GetString( "classname" ), g_profileEntityThink.GetBool() );
+			ent->Think();
+			num++;
+		}
 
 		idPlayer* viewPlayer = GetLocalViewPlayer();
 		if ( viewPlayer != NULL ) {
@@ -4106,7 +4397,9 @@ void idGameLocal::RunFrame( const usercmd_t *clientCmds, int elapsedTime ) {
 		sdWayPointManager::GetInstance().Think();
 		sdVoteManager::GetInstance().Think();
 		sdWakeManager::GetInstance().Think();
-		sdAntiLagManager::GetInstance().Think();
+		if ( !gameLocal.IsPaused() ) {
+			sdAntiLagManager::GetInstance().Think();
+		}
 		tireTreadManager->Think();
 		footPrintManager->Think();
 		sdGlobalStatsTracker::GetInstance().UpdateStatsRequests();
@@ -4132,6 +4425,8 @@ void idGameLocal::RunFrame( const usercmd_t *clientCmds, int elapsedTime ) {
 		// Run multiplayer game rules
 		rules->Run();
 
+		CheckTeamBalance();
+
 		// decrease deleted clip model reference counts
 		clip.ThreadDeleteClipModels();
 
@@ -4146,9 +4441,7 @@ void idGameLocal::RunFrame( const usercmd_t *clientCmds, int elapsedTime ) {
 		}
 	}
 
-#if !defined( SD_DEMO_BUILD )
 	UpdateServerRankStats();
-#endif /* !SD_DEMO_BUILD */
 
 #ifdef GAME_FPU_EXCEPTIONS
 	sys->FPU_EnableExceptions( 0 );
@@ -4161,7 +4454,6 @@ void idGameLocal::RunFrame( const usercmd_t *clientCmds, int elapsedTime ) {
 	D_DrawDebugLines();
 }
 
-#if !defined( SD_DEMO_BUILD )
 /*
 ============
 idGameLocal::UpdateServerRankStats
@@ -4176,6 +4468,7 @@ void idGameLocal::UpdateServerRankStats( void ) {
 		return;
 	}
 
+#if !defined( SD_DEMO_BUILD )
 	if ( clientStatsRequestIndex != -1 ) {
 		if ( !clientConnected[ clientStatsRequestIndex ] ) {
 			FreeClientStatsRequestTask();
@@ -4196,9 +4489,14 @@ void idGameLocal::UpdateServerRankStats( void ) {
 	if ( clientStatsRequestIndex == -1 ) {
 		clientStatsRequestIndex = 0;
 	}
+#endif /* !SD_DEMO_BUILD */
 
 	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+#if !defined( SD_DEMO_BUILD )
 		int clientIndex = ( clientStatsRequestIndex + i ) % MAX_CLIENTS;
+#else
+		int clientIndex = i;
+#endif // SD_DEMO_BUILD
 		if ( !clientConnected[ clientIndex ] ) {
 			continue;
 		}
@@ -4207,22 +4505,56 @@ void idGameLocal::UpdateServerRankStats( void ) {
 			continue;
 		}
 
-		if ( StartClientStatsRequest( clientIndex ) ) {
-			clientStatsRequestIndex = clientIndex;
-			return;
-		} else {
-			if ( g_debugStatsSetup.GetBool() ) {
-				gameLocal.Printf( "Failed To Start Stats Request Task for client %d\n", clientIndex );
+		if ( gameLocal.GetLocalPlayer() != NULL ) {
+			if ( clientIndex == localClientNum ) {
+				sdNetUser* activeUser = networkService->GetActiveUser();
+				if ( activeUser != NULL ) {
+					sdStatsTracker::ReadLocalUserStats( activeUser, clientStatsList[ clientIndex ] );
+					CreateClientStatsHash( clientIndex );
+				}
 			}
 			clientRanks[ clientIndex ].calculated = true;
-			clientRanks[ clientIndex ].rank = -1;
+		} else {
+#if !defined( SD_DEMO_BUILD )
+			if ( StartClientStatsRequest( clientIndex ) ) {
+				clientStatsRequestIndex = clientIndex;
+				return;
+			} else {
+				if ( g_debugStatsSetup.GetBool() ) {
+					gameLocal.Printf( "Failed To Start Stats Request Task for client %d\n", clientIndex );
+				}
+				clientRanks[ clientIndex ].calculated = true;
+				clientRanks[ clientIndex ].rank = -1;
+			}
+#else
+			clientRanks[ clientIndex ].calculated = true;
+#endif /* !SD_DEMO_BUILD */
 		}
 	}
 
 	clientStatsRequestsPending = false;
+#if !defined( SD_DEMO_BUILD )
 	clientStatsRequestIndex = -1;
+#endif /* !SD_DEMO_BUILD */
 }
 
+/*
+============
+idGameLocal::CreateClientStatsHash
+============
+*/
+void idGameLocal::CreateClientStatsHash( int clientIndex ) {
+	sdNetStatKeyValList& statsList = clientStatsList[ clientIndex ];
+	idHashIndex& hashIndex = clientStatsHash[ clientIndex ];
+	hashIndex.Clear();
+
+	for ( int i = 0; i < statsList.Num(); i++ ) {
+		int hashKey = hashIndex.GenerateKey( statsList[ i ].key->c_str(), false );
+		hashIndex.Add( hashKey, i );
+	}
+}
+
+#if !defined( SD_DEMO_BUILD )
 /*
 ============
 idGameLocal::FreeClientStatsRequestTask
@@ -4256,13 +4588,14 @@ void idGameLocal::FinishClientStatsRequest( void ) {
 		return;
 	}
 
-	idHashIndex hashIndex;
-	for ( int i = 0; i < clientStartRequestList.Num(); i++ ) {
-		int hashKey = hashIndex.GenerateKey( clientStartRequestList[ i ].key->c_str(), false );
-		hashIndex.Add( hashKey, i );
-	}
+	CreateClientStatsHash( clientStatsRequestIndex );
 
-	rankInfo.CreateData( hashIndex, clientStartRequestList, rankScratchInfo );
+	sdNetStatKeyValList& statsList = clientStatsList[ clientStatsRequestIndex ];
+	idHashIndex& hashIndex = clientStatsHash[ clientStatsRequestIndex ];
+
+	hashIndex.Clear();
+
+	rankInfo.CreateData( clientStatsHash[ clientStatsRequestIndex ], clientStatsList[ clientStatsRequestIndex ], rankScratchInfo );
 
 	int rank = rankScratchInfo.completeTasks;
 	if ( rank >= gameLocal.declRankType.Num() ) {
@@ -4280,12 +4613,46 @@ bool idGameLocal::StartClientStatsRequest( int clientIndex ) {
 	sdNetClientId clientId;
 	networkSystem->ServerGetClientNetId( clientIndex, clientId );	
 	if ( clientId.IsValid() ) {
-		clientStatsRequestTask = networkService->GetStatsManager().ReadDictionary( clientId, clientStartRequestList );
+		clientStatsHash[ clientIndex ].Clear();
+		clientStatsRequestTask = networkService->GetStatsManager().ReadDictionary( clientId, clientStatsList[ clientIndex ] );
 	}
 
 	return clientStatsRequestTask != NULL;
 }
+
 #endif /* !SD_DEMO_BUILD */
+
+/*
+============
+idGameLocal::GetGlobalStatsValueMax
+============
+*/
+void idGameLocal::GetGlobalStatsValueMax( int clientIndex, const char* name, sdPlayerStatEntry::statValue_t& value ) {
+	sdNetStatKeyValList& statsList = clientStatsList[ clientIndex ];
+	idHashIndex& hashIndex = clientStatsHash[ clientIndex ];
+
+	int key = hashIndex.GenerateKey( name, false );
+	for ( int index = hashIndex.GetFirst( key ); index != hashIndex.NULL_INDEX; index = hashIndex.GetNext( index ) ) {
+		if ( idStr::Icmp( statsList[ index ].key->c_str(), name ) != 0 ) {
+			continue;
+		}
+
+		switch ( statsList[ index ].type ) {
+			case sdNetStatKeyValue::SVT_INT:
+			case sdNetStatKeyValue::SVT_INT_MAX:
+				if ( statsList[ index ].val.i > value.GetInt() ) {
+					value = sdPlayerStatEntry::statValue_t( statsList[ index ].val.i );
+				}
+				break;
+			case sdNetStatKeyValue::SVT_FLOAT:
+			case sdNetStatKeyValue::SVT_FLOAT_MAX:
+				if ( statsList[ index ].val.f > value.GetFloat() ) {
+					value = sdPlayerStatEntry::statValue_t( statsList[ index ].val.f );
+				}
+				break;
+		}
+	}
+}
 
 /*
 ============
@@ -4306,13 +4673,25 @@ void idGameLocal::SetupFixedClientRank( int clientIndex ) {
 		return;
 	}
 
+	const sdDeclRank* rank = FindRankForLevel( clientRanks[ clientIndex ].rank );
+	if ( rank != NULL ) {
+		player->GetProficiencyTable().SetFixedRank( rank );
+	}
+}
+
+/*
+============
+idGameLocal::FindRankForLevel
+============
+*/
+const sdDeclRank* idGameLocal::FindRankForLevel( int rankLevel ) {
 	int highestRankLevel = -1;
 	const sdDeclRank* highestRank = NULL;
 	const sdDeclRank* rank = NULL;
 	for ( int i = 0; i < gameLocal.declRankType.Num(); i++ ) {
 		const sdDeclRank* testRank = gameLocal.declRankType[ i ];
 		int level = gameLocal.declRankType[ i ]->GetLevel();
-		if ( clientRanks[ clientIndex ].rank == level ) {
+		if ( rankLevel == level ) {
 			rank = testRank;
 			break;
 		}
@@ -4323,11 +4702,9 @@ void idGameLocal::SetupFixedClientRank( int clientIndex ) {
 		}
 	}
 	if ( rank == NULL ) {
-		rank = highestRank;
+		return highestRank;
 	}
-	if ( rank != NULL ) {
-		player->GetProficiencyTable().SetFixedRank( rank );
-	}
+	return rank;
 }
 
 /*
@@ -4428,25 +4805,34 @@ idGameLocal::GetActiveViewer
 ================
 */
 idPlayer* idGameLocal::GetActiveViewer( void ) const {
-	idPlayer* viewPlayer = NULL;
-
-	if ( sdDemoManager::GetInstance().InPlayBack() ) {
+	sdDemoManagerLocal& manager = sdDemoManager::GetInstance();
+	if ( manager.InPlayBack() ) {
+		if ( manager.NoClip() ) {
+			return NULL;
+		}
 		if ( g_testSpectator.GetInteger() >= 0 && g_testSpectator.GetInteger() < MAX_CLIENTS ) {
-			viewPlayer = GetClient( g_testSpectator.GetInteger() );
-			if ( viewPlayer ) {
+			idPlayer* viewPlayer = GetClient( g_testSpectator.GetInteger() );
+			if ( viewPlayer != NULL ) {
 				return viewPlayer;
 			}
 		}
 	}
 
-	if ( localClientNum != ASYNC_DEMO_CLIENT_INDEX ) {
+	idPlayer* viewPlayer = NULL;
+	if ( gameLocal.serverIsRepeater ) {
+		int followClient = GetRepeaterFollowClientIndex();
+		if ( followClient != -1 ) {
+			viewPlayer = GetClient( followClient );
+		}
+	} else if ( localClientNum != ASYNC_DEMO_CLIENT_INDEX ) {
 		viewPlayer = GetClient( localClientNum );
-		if ( viewPlayer ) {
-			if ( viewPlayer->IsSpectating() ) {
-				idPlayer* spectator = viewPlayer->GetSpectateClient();
-				if ( spectator ) {
-					viewPlayer = spectator;
-				}
+	}
+
+	if ( viewPlayer != NULL ) {
+		if ( viewPlayer->IsSpectating() ) {
+			idPlayer* spectator = viewPlayer->GetSpectateClient();
+			if ( spectator ) {
+				viewPlayer = spectator;
 			}
 		}
 	}
@@ -4545,7 +4931,9 @@ void idGameLocal::ClientUpdateView( const usercmd_t &cmd, int timeLeft ) {
 	float interpFraction = float( USERCMD_MSEC - timeLeft ) / float( USERCMD_MSEC );
 
 	idAngles currentAngles = unlock.refAngles;
-	if ( g_unlock_updateAngles.GetBool() ) {
+
+	// Gordon: FIXME: This doesn't take all clamps/rate limits into account
+	if ( g_unlock_updateAngles.GetBool() && !IsPaused() ) {
 		// apply the latest angles to update the view axis
 		for ( int i = 0; i < 3; i++ ) {
 			currentAngles[i] = unlock.refAngles[i] + SHORT2ANGLE( cmd.angles[i] ) - SHORT2ANGLE( p->usercmd.angles[i] );
@@ -4565,6 +4953,8 @@ void idGameLocal::ClientUpdateView( const usercmd_t &cmd, int timeLeft ) {
 		p->renderView.viewaxis = currentAngles.ToMat3();
 		updateSight = true;
 	}
+
+
 	idVec3 originDelta = vec3_origin;
 	if ( g_unlock_updateViewpos.GetBool() ) {
 		switch ( g_unlock_viewStyle.GetInteger() ) {
@@ -5056,6 +5446,16 @@ void idGameLocal::ForceNetworkUpdate( idEntity *ent ) {
 		clientNetworkInfo[ i ].lastMarker[ ent->entityNumber ] = -1;
 	}
 	demoClientNetworkInfo.lastMarker[ ent->entityNumber ] = -1;
+
+#ifdef SD_SUPPORT_REPEATER
+	repeaterClientNetworkInfo.lastMarker[ ent->entityNumber ] = -1;
+	for ( int i = 0; i < repeaterNetworkInfo.Num(); i++ ) {
+		if ( repeaterNetworkInfo[ i ] == NULL ) {
+			continue;
+		}
+		( *repeaterNetworkInfo[ i ] ).lastMarker[ ent->entityNumber ] = -1;
+	}
+#endif // SD_SUPPORT_REPEATER
 }
 
 /*
@@ -6320,6 +6720,47 @@ int idGameLocal::SortSpawnsByAge( const void* a, const void* b ) {
 
 /*
 ===========
+idGameLocal::SelectInitialSpawnPointForRepeaterClient
+============
+*/
+bool idGameLocal::SelectInitialSpawnPointForRepeaterClient( idVec3& outputOrg, idAngles& outputAngles ) {
+	for ( int pass = 0; pass < 2; pass++ ) {
+		for ( int i = 0; i < spawnSpots.Num(); i++ ) {
+			const sdSpawnPoint& tempSpot = spawnSpots[ i ];
+
+			idEntity* other = tempSpot.GetOwner();
+			if ( pass == 0 ) {
+				if ( other != NULL ) {
+					sdRequirementContainer* requirements = other->GetSpawnRequirements();
+					if ( requirements && requirements->HasRequirements() ) {
+						continue;
+					}
+				}
+			}
+
+			if ( tempSpot.GetRelativePositioning() ) {
+				if ( other != NULL ) {
+					outputOrg	= other->GetPhysics()->GetOrigin() + ( other->GetPhysics()->GetAxis() * tempSpot.GetOffset() );
+				} else {
+					continue;
+				}
+			} else {
+				outputOrg	= tempSpot.GetOffset();
+			}
+
+			// move up to make sure the player is at least an epsilon above the floor
+			outputOrg[ 2 ] += 4.0f + CM_BOX_EPSILON;
+
+			outputAngles	= tempSpot.GetAngles();
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/*
+===========
 idGameLocal::SelectInitialSpawnPoint
 ============
 */
@@ -6561,14 +7002,6 @@ const idMaterial *idGameLocal::GetGlobalMaterial() {
 
 /*
 ================
-idGameLocal::ThrottleUserInfo
-================
-*/
-void idGameLocal::ThrottleUserInfo( void ) {
-}
-
-/*
-================
 idGameLocal::UsercommandCallback
 ================
 */
@@ -6793,6 +7226,8 @@ idGameLocal::RegisterClientEntity
 void idGameLocal::RegisterClientEntity( rvClientEntity *cent ) {
 	int entityNumber;
 
+	sdScopedLock<true> scoped( clientEntLock );
+
 	assert ( cent );
 
 	// Find a free entity index to use
@@ -6834,6 +7269,8 @@ idGameLocal::UnregisterClientEntity
 */
 void idGameLocal::UnregisterClientEntity( rvClientEntity* cent ) {
 	assert( cent );
+
+	sdScopedLock<true> scoped( clientEntLock );
 
 	// No entity number then it failed to register
 	if( cent->entityNumber == -1 ) {
@@ -7278,6 +7715,15 @@ void idGameLocal::RegisterTargetEntity( idLinkList< idEntity >& node ) {
 
 /*
 ============
+idGameLocal::RegisterIconEntity
+============
+*/
+void idGameLocal::RegisterIconEntity( idLinkList< idEntity >& node ) {
+	node.AddToEnd( iconEntities );
+}
+
+/*
+============
 idGameLocal::RegisterSpawnPoint
 ============
 */
@@ -7410,7 +7856,7 @@ bool idGameLocal::RequestDeployment( idPlayer* player, const sdDeclDeployableObj
 	sdDeployRequest* request = new sdDeployRequest( object, player, trace.endpos, rotation, player->GetGameTeam(), delayMS );
 
 	deployRequests[ player->entityNumber ] = request;
-	request->WriteCreateEvent( player->entityNumber, -1 );
+	request->WriteCreateEvent( player->entityNumber, sdReliableMessageClientInfoAll() );
 
 	return true;
 }
@@ -7553,7 +7999,7 @@ qhandle_t idGameLocal::AllocTargetTimer( const char* targetName ) {
 		sdReliableServerMessage outMsg( GAME_RELIABLE_SMESSAGE_CREATEPLAYERTARGETTIMER );
 		outMsg.WriteString( targetName );
 		outMsg.WriteShort( i );
-		outMsg.Send();
+		outMsg.Send( sdReliableMessageClientInfoAll() );
 	}
 
 	for ( int j = 0; j < MAX_CLIENTS; j++ ) {
@@ -7698,7 +8144,7 @@ sdGameState* idGameLocal::AllocGameState( const sdNetworkStateObject& object ) c
 idGameLocal::OnUserStartMap
 ============
 */
-bool idGameLocal::OnUserStartMap( const char* text, idStr& reason, idStr& mapName ) {
+userMapChangeResult_e idGameLocal::OnUserStartMap( const char* text, idStr& reason, idStr& mapName ) {
 	sys->FlushServerInfo();
 	MakeRules();
 	return rules->OnUserStartMap( text, reason, mapName );
@@ -7955,6 +8401,135 @@ void idGameLocal::SetActionCommand( const char* action ) {
 
 /*
 ================
+idGameLocal::IsPaused
+================
+*/
+bool idGameLocal::IsPaused( void ) {
+	if ( gameLocal.isServer && gameLocal.time > gameLocal.playerSpawnTime ) { // Gordon: give the entities a little time to settle down before the menus will pause the game
+
+		// don't do this if any clients are connected (development only, retail can't do this)
+		bool hasClients = false;
+		for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+			idPlayer* client = GetClient( i );
+			if ( client != NULL && !client->IsType( idBot::Type ) && client != gameLocal.GetLocalPlayer() ) {
+				hasClients = true;
+				break;
+			}
+		}
+
+		if ( !hasClients ) {
+			sdLimboMenu* menu = gameLocal.localPlayerProperties.GetLimboMenu();
+			if ( menu != NULL ) {
+				if ( menu->Active() ) {
+					return true;
+				}
+			}
+
+			if ( gameLocal.IsMainMenuActive() ) {
+				return true;
+			}
+		}
+	}
+	return isPaused;
+}
+
+/*
+================
+idGameLocal::SetPaused
+================
+*/
+void idGameLocal::SetPaused( bool value ) {
+	if ( isPaused == value ) {
+		return;
+	}
+	isPaused = value;
+
+	if ( gameLocal.isServer ) {
+		SendPauseInfo( sdReliableMessageClientInfoAll() );
+	}
+
+	OnPausedChanged();
+}
+
+/*
+================
+idGameLocal::OnPausedChanged
+================
+*/
+void idGameLocal::OnPausedChanged( void ) {
+	if ( isPaused ) {
+		pauseViewInited = false;
+		pauseStartGuiTime = gameLocal.ToGuiTime( gameLocal.time );
+	} else {
+	}
+}
+
+/*
+================
+idGameLocal::GetPausedView
+================
+*/
+void idGameLocal::GetPausedView( idVec3& origin, idMat3& axis ) {
+	if ( !pauseViewInited ) {
+		idPlayer* localPlayer = GetLocalPlayer();
+		if ( localPlayer == NULL ) {
+			origin.Zero();
+			axis.Identity();
+			return;
+		}
+
+		pauseViewOrg			= localPlayer->firstPersonViewOrigin;
+		pauseViewAngles			= localPlayer->firstPersonViewAxis.ToAngles();
+		pauseViewAngles.roll	= 0.f;
+		pauseViewInited			= true;
+
+		const usercmd_t& cmd = gameLocal.usercmds[ localPlayer->entityNumber ];
+		for ( int i = 0; i < 3; i++ ) {
+			pauseViewAnglesBase[ i ] = pauseViewAngles[ i ] - SHORT2ANGLE( cmd.angles[ i ] );
+		}
+	}
+
+	origin	= pauseViewOrg;
+	axis	= pauseViewAngles.ToMat3();
+}
+
+idCVar g_pauseNoClipSpeed( "g_pauseNoClipSpeed", "100", CVAR_GAME | CVAR_FLOAT, "speed to move when in pause noclip mode" );
+
+/*
+================
+idGameLocal::UpdatePauseNoClip
+================
+*/
+void idGameLocal::UpdatePauseNoClip( usercmd_t& cmd ) {
+	const float speed = g_pauseNoClipSpeed.GetFloat();
+
+	idVec3 dir;
+	dir.x = ( cmd.forwardmove / 127.f ) * speed;
+	dir.y = -( cmd.rightmove / 127.f ) * speed;
+	dir.z = ( cmd.upmove / 127.f ) * speed;
+
+	for ( int i = 0; i < 3; i++ ) {
+		pauseViewAngles[ i ] = idMath::AngleNormalize180( pauseViewAnglesBase[ i ] + SHORT2ANGLE( cmd.angles[ i ] ) );
+	}
+
+	pauseViewOrg += pauseViewAngles.ToMat3() * dir;
+}
+
+/*
+================
+idGameLocal::SendPauseInfo
+================
+*/
+void idGameLocal::SendPauseInfo( const sdReliableMessageClientInfoBase& info ) {
+	sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_PAUSEINFO );
+	msg.WriteBool( isPaused );
+	msg.WriteLong( time );
+	msg.WriteLong( timeOffset );
+	msg.Send( info );
+}
+
+/*
+================
 idGameLocal::OnInputInit
 ================
 */
@@ -7998,6 +8573,23 @@ void idGameLocal::OnInputShutdown( void ) {
 		cls->OnInputShutdown();
 	}
 	uiManager->OnInputShutdown();
+}
+
+/*
+================
+idGameLocal::OnLanguageInit
+================
+*/
+void idGameLocal::OnLanguageInit() {
+	uiManager->OnLanguageInit();
+}
+/*
+================
+idGameLocal::OnLanguageShutdown
+================
+*/
+void idGameLocal::OnLanguageShutdown() {
+	uiManager->OnLanguageShutdown();
 }
 
 /*
@@ -8135,6 +8727,7 @@ userCmdString_t	userCmdStrings[] = {
 	{ "_showLocations",		B_LOCAL_IMPULSE,	ULI_SHOWLOCATIONS },
 	{ "_context",			B_LOCAL_IMPULSE,	ULI_CONTEXT },
 	{ "_showwaypoints",		B_LOCAL_IMPULSE,	ULI_SHOW_WAYPOINTS },
+	{ "_showFireTeam",		B_LOCAL_IMPULSE,	ULI_SHOW_FIRETEAM },
 };
 
 const int NUM_USERCMD_STRING = sizeof( userCmdStrings ) / sizeof( userCmdStrings[ 0 ] );
@@ -8235,8 +8828,7 @@ void idGameLocal::HandleLocalImpulse( int action, bool down ) {
 					break;
 				}
 
-				idPlayer* player = gameLocal.GetLocalPlayer();
-				if ( player != NULL ) {
+				if ( !networkSystem->IsDedicated() ) {
 					if( sdUserInterfaceScope* scope = gameLocal.globalProperties.GetSubScope( "gameHud" ) ) {
 						if( sdProperties::sdProperty* property = scope->GetProperty( "wantAdmin", sdProperties::PT_FLOAT ) ) {
 							*property->value.floatValue = 0.0f;
@@ -8424,6 +9016,10 @@ void idGameLocal::HandleLocalImpulse( int action, bool down ) {
 			sdWayPointManager::GetInstance().ShowWayPoints( down );
 			break;
 		}
+		case ULI_SHOW_FIRETEAM: {
+			localPlayerProperties.SetShowFireTeam( down );
+			break;
+		 }
 	}
 }
 
@@ -8697,8 +9293,8 @@ void idGameLocal::LogComplaint( idPlayer* player, idPlayer* attacker ) {
 				clientUniqueComplaints[ clientNum ].AddUnique( clientId );
 
 				if ( clientUniqueComplaints[ clientNum ].Num() >= maxComplaints ) {
-					sdPlayerStatEntry* stat = sdGlobalStatsTracker::GetInstance().GetStat( sdGlobalStatsTracker::GetInstance().AllocStat( "times_kicked_complaints", "int" ) );
-					stat->IncreaseInteger( clientNum, 1 );
+					sdPlayerStatEntry* stat = sdGlobalStatsTracker::GetInstance().GetStat( sdGlobalStatsTracker::GetInstance().AllocStat( "times_kicked_complaints", sdNetStatKeyValue::SVT_INT ) );
+					stat->IncreaseValue( clientNum, 1 );
 
 					networkSystem->ServerKickClient( clientNum, reason, true );
 					return;
@@ -8797,23 +9393,124 @@ void idGameLocal::UnMutePlayerLocal( idPlayer* player, int clientIndex ) {
 	}
 }
 
-void idGameLocal::GetClientName( int clientIndex, idStr& name ) {
-	idPlayer* player = GetClient( clientIndex );
-	if ( player == NULL ) {
-		name = "";
+
+/*
+============
+idGameLocal::MutePlayerQuickChatLocal
+============
+*/
+void idGameLocal::MutePlayerQuickChatLocal( int clientIndex ) {
+	if ( clientIndex == localClientNum ) {
 		return;
 	}
 
-	name = player->GetUserInfo().rawName;
+	idPlayer* player = gameLocal.GetClient( clientIndex );
+	if ( player == NULL ) {
+		return;
+	}
+
+	int i;
+	for ( i = 0; i < clientQuickChatMuteList.Num(); i++ ) {
+		if ( clientQuickChatMuteList[ i ].name == player->userInfo.rawName ) {
+			break;
+		}
+	}
+	if ( i == clientQuickChatMuteList.Num() ) {
+		quickChatMuteEntry_t& entry = clientQuickChatMuteList.Alloc();
+		entry.name = player->userInfo.rawName;
+	}
 }
 
 /*
 ============
-idGameLocal::PushEndGameStat
+idGameLocal::UnMutePlayerQuickChatLocal
 ============
 */
-void idGameLocal::PushEndGameStat( idPlayer* player, float value ) {
+void idGameLocal::UnMutePlayerQuickChatLocal( int clientIndex ) {
+	if ( clientIndex == localClientNum ) {
+		return;
+	}
+
+	idPlayer* player = gameLocal.GetClient( clientIndex );
+	if ( player == NULL ) {
+		return;
+	}
+
+	for ( int i = 0; i < clientQuickChatMuteList.Num(); i++ ) {
+		if ( clientQuickChatMuteList[ i ].name == player->userInfo.rawName ) {
+			clientQuickChatMuteList.RemoveIndexFast( i );
+			break;
+		}
+	}
+}
+
+/*
+============
+idGameLocal::IsClientQuickChatMuted
+============
+*/
+bool idGameLocal::IsClientQuickChatMuted( idPlayer* player ) {
+	if ( gameLocal.IsLocalPlayer( player ) ) {
+		return false;
+	}
+
+	for ( int i = 0; i < clientQuickChatMuteList.Num(); i++ ) {
+		if ( clientQuickChatMuteList[ i ].name == player->userInfo.rawName ) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/*
+============
+idGameLocal::OnUserNameChanged
+============
+*/
+void idGameLocal::OnUserNameChanged( idPlayer* player, idStr oldName, idStr newName ) {
+	for ( int i = 0; i < clientQuickChatMuteList.Num(); i++ ) {
+		if ( clientQuickChatMuteList[ i ].name == oldName ) {
+			clientQuickChatMuteList[ i ].name = newName;
+			return;
+		}
+	}
+}
+
+/*
+============
+idGameLocal::AllocEndGameStat
+============
+*/
+int idGameLocal::AllocEndGameStat( void ) {
+	int index = endGameStats.Num();
 	savedPlayerStat_t& stat = endGameStats.Alloc();
+	stat.name = "";
+	stat.value = 0.f;
+	stat.rank = NULL;
+	stat.team = NULL;
+	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+		stat.data[ i ] = -1.f;
+	}
+	return index;
+}
+
+/*
+============
+idGameLocal::SetEndGameStatValue
+============
+*/
+void idGameLocal::SetEndGameStatValue( int statIndex, idPlayer* player, float value ) {
+	assert( player != NULL );
+	endGameStats[ statIndex ].data[ player->entityNumber ] = value;
+}
+
+/*
+============
+idGameLocal::SetEndGameStatWinner
+============
+*/
+void idGameLocal::SetEndGameStatWinner( int statIndex, idPlayer* player ) {
+	savedPlayerStat_t& stat = endGameStats[ statIndex ];
 	if ( player == NULL ) {
 		stat.name = "";
 		stat.value = 0.f;
@@ -8821,7 +9518,7 @@ void idGameLocal::PushEndGameStat( idPlayer* player, float value ) {
 		stat.team = NULL;
 	} else {
 		stat.name = player->userInfo.name;
-		stat.value = value;
+		stat.value = stat.data[ player->entityNumber ];
 		stat.rank = player->GetProficiencyTable().GetRank();
 		stat.team = player->GetTeam();
 	}
@@ -8832,12 +9529,12 @@ void idGameLocal::PushEndGameStat( idPlayer* player, float value ) {
 idGameLocal::SendEndGameStats
 ============
 */
-void idGameLocal::SendEndGameStats( int clientNum ) {
+void idGameLocal::SendEndGameStats( const sdReliableMessageClientInfoBase& target ) {
 	if ( gameLocal.isClient ) {
 		return;
 	}
 
-	if ( clientNum == -1 ) {
+	if ( target.SendToClients() && target.SendToAll() ) {
 		OnEndGameStatsReceived();
 	}
 
@@ -8846,16 +9543,53 @@ void idGameLocal::SendEndGameStats( int clientNum ) {
 	}
 
 	if ( gameLocal.isServer ) {
-		sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_ENDGAMESTATS );
-		msg.WriteLong( endGameStats.Num() );
-		for ( int i = 0; i < endGameStats.Num(); i++ ) {
-			savedPlayerStat_t& stat = endGameStats[ i ];
+		if ( target.SendToClients() ) {
+			if ( target.SendToAll() ) {
+				for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+					if ( GetClient( i ) == NULL ) {
+						continue;
+					}
 
-			msg.WriteLong( stat.rank == NULL ? -1 : stat.rank->Index() );
-			msg.WriteString( stat.name.c_str() );
-			msg.WriteFloat( stat.value );
+					sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_ENDGAMESTATS );
+					msg.WriteLong( endGameStats.Num() );
+					for ( int j = 0; j < endGameStats.Num(); j++ ) {
+						savedPlayerStat_t& stat = endGameStats[ j ];
+
+						msg.WriteLong( stat.rank == NULL ? -1 : stat.rank->Index() );
+						msg.WriteString( stat.name.c_str() );
+						msg.WriteFloat( stat.value );
+						msg.WriteFloat( stat.data[ i ] );
+					}
+					msg.Send( sdReliableMessageClientInfo( i ) );
+				}
+			} else {
+				sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_ENDGAMESTATS );
+				msg.WriteLong( endGameStats.Num() );
+				for ( int i = 0; i < endGameStats.Num(); i++ ) {
+					savedPlayerStat_t& stat = endGameStats[ i ];
+
+					msg.WriteLong( stat.rank == NULL ? -1 : stat.rank->Index() );
+					msg.WriteString( stat.name.c_str() );
+					msg.WriteFloat( stat.value );
+					msg.WriteFloat( stat.data[ target.GetClientNum() ] );
+				}
+				msg.Send( sdReliableMessageClientInfo( target.GetClientNum() ) );
+			}
 		}
-		msg.Send( clientNum );
+
+		if ( target.SendToRepeaterClients() ) {
+			sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_ENDGAMESTATS );
+			msg.WriteLong( endGameStats.Num() );
+			for ( int j = 0; j < endGameStats.Num(); j++ ) {
+				savedPlayerStat_t& stat = endGameStats[ j ];
+
+				msg.WriteLong( stat.rank == NULL ? -1 : stat.rank->Index() );
+				msg.WriteString( stat.name.c_str() );
+				msg.WriteFloat( stat.value );
+				msg.WriteFloat( -1.f );
+			}
+			msg.Send( sdReliableMessageClientInfoRepeater( target.GetClientNum() ) );
+		}
 	}
 }
 
@@ -8874,7 +9608,7 @@ void idGameLocal::ClearEndGameStats( void ) {
 	if ( gameLocal.isServer ) {
 		sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_ENDGAMESTATS );
 		msg.WriteLong( 0 );
-		msg.Send( -1 );
+		msg.Send( sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -9034,6 +9768,17 @@ void idGameLocal::SetUpdateState( updateState_t state ) {
 
 /*
 ============
+idGameLocal::SetUpdateFromServer
+============
+*/
+void idGameLocal::SetUpdateFromServer( bool fromServer ) {
+	if( !networkSystem->IsDedicated() ) {
+		updateManager.SetUpdateFromServer( fromServer );
+	}
+}
+
+/*
+============
 idGameLocal::AddSystemNotification
 ============
 */
@@ -9141,6 +9886,33 @@ void idGameLocal::CreateStatusResponseDict( const idDict& serverInfo, idDict& st
 
 /*
 ============
+idGameLocal::WriteExtendedProbeData
+============
+*/
+void idGameLocal::WriteExtendedProbeData( idBitMsg& msg ) {
+	sdStatsTracker& tracker = sdGlobalStatsTracker::GetInstance();
+	sdPlayerStatEntry* totalKillsStat = tracker.GetStat( tracker.AllocStat( "total_kills", sdNetStatKeyValue::SVT_INT ) );
+	sdPlayerStatEntry* totalDeathsStat = tracker.GetStat( tracker.AllocStat( "total_deaths", sdNetStatKeyValue::SVT_INT ) );
+
+	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+		idPlayer* player = GetClient( i );
+		if ( player == NULL ) {
+			continue;
+		}
+
+		sdTeamInfo* team = player->GetGameTeam();
+
+		msg.WriteByte( i );
+		msg.WriteFloat( player->GetProficiencyTable().GetXP() );
+		msg.WriteString( team != NULL ? team->GetLookupName() : "" );
+		msg.WriteLong( totalKillsStat->GetValue( i ).GetInt() );
+		msg.WriteLong( totalDeathsStat->GetValue( i ).GetInt() );
+	}
+	msg.WriteByte( MAX_CLIENTS );
+}
+
+/*
+============
 idGameLocal::GetProbeTime
 ============
 */
@@ -9176,4 +9948,302 @@ sdGameRules* idGameLocal::GetRulesInstance( const char* type ) const {
 	return iter->second;
 }
 
+/*
+===============
+idGameLocal::DownloadRequest
+===============
+*/
+bool idGameLocal::DownloadRequest( const char* IP, const char* guid, const char* paks, char urls[ MAX_STRING_CHARS ] ) {
+	if ( net_serverDownload.GetInteger() == 0 ) {
+		return false;
+	}
 
+	if ( net_serverDownload.GetInteger() == 1 ) {
+		const char* serverURL = si_serverURL.GetString();
+		// 1: single URL redirect
+		if ( idStr::Length( serverURL ) == 0 ) {
+			common->Warning( "si_serverURL not set" );
+			return false;
+		}
+		idStr::snPrintf( urls, MAX_STRING_CHARS, "1;%s", serverURL );
+		return true;
+	} else {
+		// 2: table of pak URLs
+		// 3: table of pak URLs with built-in http server
+		// first token is the game pak if requested, empty if not requested by the client
+		// there may be empty tokens for paks the server couldn't pinpoint - the order matters
+		idStr 		reply = "2;";
+		idStrList	dlTable, pakList;
+		bool		matchAll = false;
+		int			i, j;
+
+		if ( !idStr::Cmp( net_serverDlTable.GetString(), "*" ) ) {
+			matchAll = true;
+		} else {
+			idSplitStringIntoList( dlTable, net_serverDlTable.GetString(), ";" );
+		}
+		idSplitStringIntoList( pakList, paks, ";" );
+
+		for ( i = 0; i < pakList.Num(); i++ ) {
+			if ( i > 0 ) {
+				reply += ";";
+			}
+			if ( pakList[ i ][ 0 ] == '\0' ) {
+				if ( i == 0 ) {
+					// pak 0 will always miss when client doesn't ask for game bin
+					common->DPrintf( "no game pak request\n" );
+				} else {
+					common->DPrintf( "no pak %d\n", i );
+				}
+				continue;
+			}
+
+			idStr url = net_serverDlBaseURL.GetString();
+			if ( url.Length() == 0 ) {
+				if ( net_serverDownload.GetInteger() == 2 ) {
+					common->Warning( "net_serverDownload == 2 and net_serverDlBaseURL not set" );
+				} else {
+					url = cvarSystem->GetCVarString( "net_httpServerBaseURL" );
+				}
+			}
+			
+			if ( matchAll ) {
+				url.AppendPath( pakList[ i ] );
+				reply += url;
+				common->Printf( "download for %s: %s\n", IP, url.c_str() );
+			} else {
+				for ( j = 0; j < dlTable.Num(); j++ ) {
+					if ( !pakList[ i ].Icmp( dlTable[ j ] ) ) {
+						break;
+					}
+				}
+				if ( j == dlTable.Num() ) {
+					common->Printf( "download for %s: pak not matched: %s\n", IP, pakList[ i ].c_str() );
+				} else {
+					url.AppendPath( dlTable[ j ] );
+					reply += url;
+					common->Printf( "download for %s: %s\n", IP, url.c_str() );
+				}
+			}
+		}
+
+		idStr::Copynz( urls, reply, MAX_STRING_CHARS );
+		return true;
+	}
+}
+
+/*
+===============
+idGameLocal::HTTPRequest
+===============
+*/
+bool idGameLocal::HTTPRequest( const char *IP, const char *file, bool isGamePak ) {
+	idStrList	dlTable;
+	int			i;
+
+	if ( !idStr::Cmp( net_serverDlTable.GetString(), "*" ) ) {
+		return true;
+	}
+
+	idSplitStringIntoList( dlTable, net_serverDlTable.GetString(), ";" );
+	while ( *file == '/' ) ++file; // net_serverDlTable doesn't include the initial /
+
+	for ( i = 0; i < dlTable.Num(); i++ ) {
+		if ( !dlTable[ i ].Icmp( file ) ) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/*
+============
+idGameLocal::EnablePlayerHeadModels
+============
+*/
+void idGameLocal::EnablePlayerHeadModels( void ) {
+	// enable the relevant player head models
+	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+		idPlayer* player = GetClient( i );
+		if ( player == NULL ) {
+			continue;
+		}
+		bool enable = true;
+		if ( player->IsSpectator() ) {
+			enable = false;
+		}
+		if ( player->GetHealth() <= 0 ) {
+			enable = false;
+		}
+		idEntity* proxy = player->GetProxyEntity();
+		if ( proxy != NULL ) {
+			if ( !proxy->GetUsableInterface()->GetAllowPlayerDamage( player ) ) {
+				enable = false;
+			}
+		}
+		if ( enable ) {
+			player->GetPlayerPhysics().EnableHeadClipModel();
+		} else {
+			player->GetPlayerPhysics().DisableHeadClipModel();
+		}
+	}
+}
+
+/*
+============
+idGameLocal::DisablePlayerHeadModels
+============
+*/
+void idGameLocal::DisablePlayerHeadModels( void ) {
+	// disable the player head models
+	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+		idPlayer* player = GetClient( i );
+		if ( player == NULL ) {
+			continue;
+		}
+		player->GetPlayerPhysics().DisableHeadClipModel();
+	}
+}
+
+/*
+============
+idGameLocal::IsMultiPlayer
+============
+*/
+bool idGameLocal::IsMultiPlayer( void ) {
+	return isClient || networkSystem->IsDedicated();
+}
+
+/*
+============
+idGameLocal::IsMetaDataValidForPlay
+============
+*/
+bool idGameLocal::IsMetaDataValidForPlay( const metaDataContext_t& context, bool checkBrowserStatus ) {
+	const idDict& dict = *context.meta;
+	if ( checkBrowserStatus ) {
+		if ( !dict.GetBool( "show_in_browser" ) ) {
+			return false;
+		}
+	}
+
+	if ( gameLocal.IsMultiPlayer() ) {
+		if ( dict.GetBool( "sp_only" ) ) {
+			return false;
+		}
+	} else {
+		if ( dict.GetBool( "mp_only" ) ) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+/*
+============
+idGameLocal::ChangeLocalSpectateClient
+============
+*/
+void idGameLocal::ChangeLocalSpectateClient( int spectateeNum ) {
+	if ( serverIsRepeater ) {
+		repeaterClientFollowIndex = spectateeNum;
+		idWeapon::UpdateWeaponVisibility();
+		OnLocalViewPlayerChanged();
+	} else if ( isClient ) {
+		sdReliableClientMessage outMsg( GAME_RELIABLE_CMESSAGE_SETSPECTATECLIENT );
+		outMsg.WriteByte( spectateeNum );
+		outMsg.Send();
+	} else {
+		idPlayer* localPlayer = GetLocalPlayer();
+		if ( localPlayer != NULL ) {
+			localPlayer->OnSetClientSpectatee( GetClient( spectateeNum ) );
+		}
+	}
+}
+
+/*
+============
+idGameLocal::GetRepeaterFollowClientIndex
+============
+*/
+int idGameLocal::GetRepeaterFollowClientIndex( void ) const {
+	if ( repeaterClientFollowIndex < -1 || repeaterClientFollowIndex >= MAX_ASYNC_CLIENTS ) {
+		repeaterClientFollowIndex = -1;
+		idWeapon::UpdateWeaponVisibility();
+	}
+	if ( repeaterClientFollowIndex != -1 ) {
+		if ( GetClient( repeaterClientFollowIndex ) == NULL ) {
+			repeaterClientFollowIndex = -1;
+			idWeapon::UpdateWeaponVisibility();
+		}
+	}
+	return repeaterClientFollowIndex;
+}
+
+#ifndef _XENON
+/*
+============
+idGameLocal::UpdateGameSession
+============
+*/
+void idGameLocal::UpdateGameSession( void ) {
+	// handle game session advertising
+	if ( gameLocal.GetLocalPlayer() == NULL && sdnet.NeedsGameSession() ) {
+		if ( networkService->GetState() == sdNetService::SS_INITIALIZED ) {
+			sdnet.Connect();
+		} else if ( networkService->GetState() == sdNetService::SS_ONLINE ) {
+			if ( networkService->GetDedicatedServerState() == sdNetService::DS_OFFLINE ) {
+				// if ranked, don't automatically try to connect anymore if we've had a duplicate auth
+				// for dedicated servers using the key distribution, report and request a different key (TTimo)
+				if ( !networkSystem->IsRankedServer() || networkService->GetDisconnectReason() != sdNetService::DR_DUPLICATE_AUTH ) {
+					sdnet.SignInDedicated();
+				}
+			} else if ( networkService->GetDedicatedServerState() == sdNetService::DS_ONLINE ) {
+				if ( !sdnet.HasGameSession() ) {
+					reservedClientSlots.Clear(); // the session ID will change, so old invites aren't valid anymore anyway
+					sdnet.StartGameSession();
+				} else {
+					sdnet.UpdateGameSession( false, true );
+				}
+			}
+		}
+	}
+}
+#endif // _XENON
+
+/*
+============
+idGameLocal::StartSendingBanList
+============
+*/
+void idGameLocal::StartSendingBanList( idPlayer* player ) {
+	if ( player == NULL || gameLocal.IsLocalPlayer( player ) ) {
+		guidFile.ListBans();
+		return;
+	}
+
+	clientLastBanIndexReceived[ player->entityNumber ] = -1;
+
+	SendBanList( player );
+}
+
+/*
+============
+idGameLocal::SendBanList
+============
+*/
+void idGameLocal::SendBanList( idPlayer* player ) {
+	assert( player != NULL );
+
+	sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_BANLISTMESSAGE );
+	bool done = guidFile.WriteBans( clientLastBanIndexReceived[ player->entityNumber ], msg );
+	msg.Send( sdReliableMessageClientInfo( player->entityNumber ) );
+	if ( done ) {
+		clientLastBanIndexReceived[ player->entityNumber ] = -1;
+
+		sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_BANLISTFINISHED );
+		msg.Send( sdReliableMessageClientInfo( player->entityNumber ) );
+	}
+}

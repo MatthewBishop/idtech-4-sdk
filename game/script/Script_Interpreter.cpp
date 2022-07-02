@@ -723,8 +723,9 @@ bool idInterpreter::Execute( void ) {
 			break;
 
 		case OP_THREAD:
+		case OP_GUITHREAD:
 			newThread = idThread::AllocThread();
-			newThread->Init( this, st->a->value.functionPtr, st->b->value.argSize );
+			newThread->Init( this, st->a->value.functionPtr, st->b->value.argSize, st->op == OP_GUITHREAD );
 			newThread->DelayedStart( 0 );
 
 			// return the thread number to the script
@@ -736,6 +737,7 @@ bool idInterpreter::Execute( void ) {
 			break;
 
 		case OP_OBJTHREAD:
+		case OP_GUIOBJTHREAD:
 #ifdef SCRIPT_EVENT_RETURN_CHECKS
 			SetExpectedReturn( D_EVENT_FLOAT );
 #endif // SCRIPT_EVENT_RETURN_CHECKS
@@ -748,7 +750,7 @@ bool idInterpreter::Execute( void ) {
 				func = t->GetFunction( st->b->value.virtualFunction );
 				assert( st->c->value.functionPtr->parmTotal == func->parmTotal );
 				newThread = idThread::AllocThread();
-				newThread->Init( this, func, func->parmTotal );
+				newThread->Init( this, func, func->parmTotal, st->op == OP_GUIOBJTHREAD );
 				newThread->GetAutoNode().AddToEnd( obj->GetAutoThreads() );
 				
 				idEntity* ent = obj->GetClass()->Cast< idEntity >();

@@ -31,6 +31,7 @@ public:
 	void						Event_GetCVar( const char* name, const char* defaultValue ) const;
 	void						Event_Random( float range ) const;
 	void						Event_GetTime( void );
+	void						Event_ToGuiTime( float time ) const;
 	void						Event_KillThread( const char *name );
 	void						Event_GetEntity( const char *name );
 	void						Event_GetEntityByID( const char* hexSpawnID );
@@ -234,18 +235,23 @@ public:
 
 	void						Event_CreateMaskEditSession( void );
 
+	void						Event_GetStat( const char* name );
 	void 						Event_AllocStatInt( const char* name );
 	void 						Event_AllocStatFloat( const char* name );
 	void 						Event_IncreaseStatInt( int handle, int playerIndex, int count );
 	void 						Event_IncreaseStatFloat( int handle, int playerIndex, float count );
 	void						Event_GetStatValue( int handle, int playerIndex );
+	void						Event_GetStatDelta( int handle, int playerIndex );
+	void						Event_SetStatBaseLine( int playerIndex );
 
 	void						Event_GetClimateSkin( const char* key );
 
 	void						Event_SendQuickChat( idEntity* sender, int quickChatIndex, idEntity* other );
 	void						Event_GetContextEntity();
 
-	void						Event_PushEndGameStatPlayer( idEntity* other, float value );
+	void						Event_SetEndGameStatValue( int statIndex, idEntity* ent, float value );
+	void						Event_SetEndGameStatWinner( int statIndex, idEntity* ent );
+	void						Event_AllocEndGameStat( void );
 	void						Event_SendEndGameStats( void );
 
 	void						Event_HeightMapTrace( const idVec3& start, const idVec3& end );
@@ -256,6 +262,9 @@ public:
 	void						Event_GetBotActionOrigin( int index );
 	void						Event_GetBotActionDeployableType( int index );
 	void						Event_GetBotActionBaseGoalType( int index, idScriptObject* obj );
+
+	void						Event_EnablePlayerHeadModels( void );
+	void						Event_DisablePlayerHeadModels( void );
 
 protected:
 	static trace_t				trace;

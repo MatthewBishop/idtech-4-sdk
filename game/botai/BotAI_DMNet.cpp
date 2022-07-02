@@ -297,7 +297,7 @@ screw around and shoot each other, do other wacky stuff.
 */
 bool idBotAI::Run_Warmup_Node() {
 
-	float attackDist = 2500.0f; //mal: the range of the bot's "awareness" during warmup
+	float attackDist = 3500.0f; //mal: the range of the bot's "awareness" during warmup
 	float dist;
 	idVec3	vec;
 
@@ -338,7 +338,7 @@ bool idBotAI::Run_Warmup_Node() {
 				continue;
 			}
 
-			if ( EnemyIsIgnored( i )) {
+			if ( EnemyIsIgnored( i ) ) {
 				continue; //mal: dont try to fight someone we've flagged to ignore for whatever reason!
 			}
 
@@ -369,7 +369,7 @@ bool idBotAI::Run_Warmup_Node() {
 
 			botIdealWeapNum = NULL_WEAP;
 
-			if ( botThreadData.random.RandomInt( 100 ) > 50 || dist > 900.0f ) { //mal: lets have a little fun - sometimes we'll try to knife our enemy!
+			if ( botThreadData.random.RandomInt( 100 ) > 50 || dist > 2500.0f ) { //mal: lets have a little fun - sometimes we'll try to knife our enemy! 
 				botIdealWeapSlot = GUN;
 			} else {
 				if ( botThreadData.random.RandomInt( 100 ) > 50 ) {
@@ -382,9 +382,39 @@ bool idBotAI::Run_Warmup_Node() {
 					}
 				}
 			}
+
+			warmupUseActionMoveGoalTime = 0;
+
+			if ( botThreadData.random.RandomInt( 100 ) > 75 ) {
+				warmupActionMoveGoal = Bot_FindNearbySafeActionToMoveToward( botInfo->origin, 1024.0f, true );
+
+				if ( warmupActionMoveGoal != ACTION_NULL ) {
+					warmupUseActionMoveGoalTime = botWorld->gameLocalInfo.time + WARMUP_ACTION_TIME;
+				}
+			}
+
+			return true;
 		}
 
 		return true; //mal: dont do anything til next pass, whether found someone or not.
+	}
+
+	if ( warmupUseActionMoveGoalTime > botWorld->gameLocalInfo.time ) { //mal: don't always attack, sometimes move away from the spawn, and attack from a diff position
+		
+		Bot_SetupMove( vec3_zero, -1, warmupActionMoveGoal );
+
+		if ( MoveIsInvalid() ) {
+			warmupUseActionMoveGoalTime = 0;
+			return true;
+		}
+
+		Bot_MoveAlongPath( SPRINT );
+
+		if ( botInfo->backPedalTime > botWorld->gameLocalInfo.time ) { //mal: add a bit of variety...
+			botUcmd->viewType = VIEW_REVERSE;
+		}
+
+		return true;
 	}
 
 	if ( !botWorld->clientInfo[ enemy ].inGame ) {
@@ -406,12 +436,7 @@ bool idBotAI::Run_Warmup_Node() {
 		return true;
 	}
 
-	if ( ClientIsDead( enemy ) ) {
-		enemy = -1;
-		return true;
-	}
-
-	if ( botIdealWeapSlot == MELEE && dist > 900.0f ) {
+	if ( botIdealWeapSlot == MELEE && dist > 2500.0f ) {
 		botIdealWeapSlot = GUN;
 	}
 

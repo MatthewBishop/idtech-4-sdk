@@ -226,6 +226,7 @@ public:
 	bool									GetBreakOnDraw() const { return breakOnDraw; }
 #endif
 
+	static void								InitDefines() { defines.Resize( 256 ); }
 	static void								AddDefine( const char* define ) { defines.Append( define ); }
 	static void								ClearDefines( void ) { defines.Clear(); }
 

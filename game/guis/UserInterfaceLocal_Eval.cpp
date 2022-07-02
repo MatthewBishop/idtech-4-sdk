@@ -89,7 +89,6 @@ void sdUserInterfaceLocal::InitEvaluators( void ) {
 
 	SD_UI_FUNC_TAG( wFormat, "Format multiple values into a string." )
 		SD_UI_FUNC_PARM( string, "format string", "Format string. %1 is the first string arguent, %2, etc." )
-		SD_UI_FUNC_PARM( float, "precision", "Number of digits after the decimal point." )
 	SD_UI_END_FUNC_TAG
 	ALLOC_EVALUATOR( "wFormat", WString, "s#", sdUserInterfaceLocal::Eval_FormatWString );
 

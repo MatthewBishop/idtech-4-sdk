@@ -146,6 +146,10 @@ bool idBotAI::Bot_VehicleFindEnemy() {
 			}
 		}
 
+		if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO && botVehicleInfo->type > ICARUS && !playerInfo.isBot ) { //mal: don't attack human players in training mode when we're in flyers.
+			continue;
+		}
+
 		hasAttackedCriticalMate = ClientHasAttackedTeammate( i, true, 3000 );
 		hasAttackedMate = ClientHasAttackedTeammate( i, false, 3000 );
 		hasObj = ClientHasObj( i );
@@ -187,6 +191,10 @@ bool idBotAI::Bot_VehicleFindEnemy() {
 			}
 
 			if ( botIsBigShot && enemyVehicleInfo.type <= ICARUS ) {
+				continue;
+			}
+
+			if ( botVehicleInfo->type == ANANSI && enemyVehicleInfo.type == ICARUS ) { //mal: this is funny to watch, but is a waste of time. :-)
 				continue;
 			}
 
@@ -262,25 +270,31 @@ bool idBotAI::Bot_VehicleFindEnemy() {
 			continue;
 		}
 
-		if ( hasAttackedCriticalMate && inFront && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) {
-			dist = Square( 600.0f ); //mal: will give higher priority to someone attacking a critical mate, if we can see it happening.
-		}
+		if ( botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO || botWorld->botGoalInfo.gameIsOnFinalObjective || botWorld->botGoalInfo.attackingTeam == botInfo->team ) {
+			if ( hasAttackedCriticalMate && inFront && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) {
+				dist = Square( 600.0f ); //mal: will give higher priority to someone attacking a critical mate, if we can see it happening.
+			}
 
-		if ( botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) {
-			if ( Client_IsCriticalForCurrentObj( i, 6000.0f ) ) {
-				dist = Square( 700.0f ); //mal: if your a critical client, we're more likely to kill you.
+			if ( botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) {
+				if ( Client_IsCriticalForCurrentObj( i, 6000.0f ) ) {
+					dist = Square( 700.0f ); //mal: if your a critical client, we're more likely to kill you.
+				}
+			}
+
+			if ( botWorld->botGoalInfo.mapHasMCPGoal ) {
+				if ( playerInfo.proxyInfo.entNum == botWorld->botGoalInfo.botGoal_MCP_VehicleNum ) {
+					dist = 400.0f;
+				}
+			} //mal: if your in MCP, you get higher priority then a normal enemy. Especially when we're in a vehicle!
+
+			if ( botVehicleInfo->type > ICARUS && botVehicleInfo->type != BUFFALO && ( playerInfo.isCamper || playerInfo.killsSinceSpawn >= KILLING_SPREE ) && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && !playerInfo.isBot ) {
+				dist = Square( 600.0f );
+			} //mal: target trouble making humans!
+		} else {
+			if ( !playerInfo.isBot ) {
+				dist += Square( TRAINING_MODE_RANGE_ADDITION );
 			}
 		}
-
-		if ( botWorld->botGoalInfo.mapHasMCPGoal ) {
-			if ( playerInfo.proxyInfo.entNum == botWorld->botGoalInfo.botGoal_MCP_VehicleNum ) {
-				dist = 400.0f;
-			}
-		} //mal: if your in MCP, you get higher priority then a normal enemy. Especially when we're in a vehicle!
-
-		if ( botVehicleInfo->type > ICARUS && botVehicleInfo->type != BUFFALO && ( playerInfo.isCamper || playerInfo.killsSinceSpawn >= KILLING_SPREE ) && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && !playerInfo.isBot ) {
-			dist = Square( 600.0f );
-		} //mal: target trouble making humans!
 
 		numVisEnemies++;
 
@@ -455,6 +469,10 @@ bool idBotAI::Bot_VehicleFindBetterEnemy() {
 		return false;
 	}
 
+	if ( ignoreNewEnemiesWhileInVehicleTime > botWorld->gameLocalInfo.time ) {
+		return false;
+	}
+
 	if ( botWorld->clientInfo[ enemy ].proxyInfo.entNum != CLIENT_HAS_NO_VEHICLE ) { //mal: if we're attacking the MCP, its the priority.
 		if ( botWorld->clientInfo[ enemy ].proxyInfo.entNum == botWorld->botGoalInfo.botGoal_MCP_VehicleNum ) {
 			return false;
@@ -467,11 +485,17 @@ bool idBotAI::Bot_VehicleFindBetterEnemy() {
 		return false;
 	}
 
-    vec = botWorld->clientInfo[ enemy ].origin - botInfo->origin;
+	const clientInfo_t& enemyPlayerInfo = botWorld->clientInfo[ enemy ];
+
+    vec = enemyPlayerInfo.origin - botInfo->origin;
 	entDist = vec.LengthSqr();
 
 	if ( !enemyInfo.enemyVisible ) { //mal: if we can't see our current enemy, more likely to attack a visible enemy.
 		entDist = idMath::INFINITY;
+	}
+
+	if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO && !botWorld->botGoalInfo.gameIsOnFinalObjective && !enemyPlayerInfo.isBot ) { //mal: dont worry about keeping our human target in training mode, unless its the final obj...
+		entDist += Square( TRAINING_MODE_RANGE_ADDITION );
 	}
 
 	bool curEnemyNotInVehicle = false;
@@ -594,20 +618,24 @@ bool idBotAI::Bot_VehicleFindBetterEnemy() {
 
 		if ( Client_IsCriticalForCurrentObj( i, 1500.0f ) && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) { //mal: if a critical class, get high priority
 			dist = Square( 600.0f );
+			ignoreNewEnemiesWhileInVehicleTime = botWorld->gameLocalInfo.time + IGNORE_NEW_ENEMIES_TIME;
 		}
 
 		if ( ClientHasObj( i ) && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) { //mal: if have docs, get HIGHER priority.
 			dist = Square( 500.0f );
+			ignoreNewEnemiesWhileInVehicleTime = botWorld->gameLocalInfo.time + IGNORE_NEW_ENEMIES_TIME;
 		}
 
 		if ( botWorld->botGoalInfo.mapHasMCPGoal && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) {
 			if ( playerInfo.proxyInfo.entNum == botWorld->botGoalInfo.botGoal_MCP_VehicleNum ) {
 				dist = Square( 400.0f );
+				ignoreNewEnemiesWhileInVehicleTime = botWorld->gameLocalInfo.time + IGNORE_NEW_ENEMIES_TIME;
 			}
 		}
 
 		if ( enemyIsInAirAttackVehicle && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) { //mal: dont ignore a chance to dogfight!
 			dist = Square( 100.0f );
+			ignoreNewEnemiesWhileInVehicleTime = botWorld->gameLocalInfo.time + IGNORE_NEW_ENEMIES_TIME;
 		}
 
 		numVisEnemies++;
@@ -1069,6 +1097,10 @@ bool idBotAI::VehicleHasGunnerSeatOpen( int entNum ) {
 		return false;
 	}
 
+	if ( vehicleInfo.type == MCP ) {
+		return true;
+	}
+
 	if ( vehicleInfo.type == BUFFALO ) { //mal: buffalo actually has 2 gunner seats, where most vehicles only have 1.
 		numSeats = 2;
 	}
@@ -1160,6 +1192,10 @@ bool idBotAI::ClientIsAudibleToVehicle( int clientNum ) {
 	}
 
 	const clientInfo_t& client = botWorld->clientInfo[ clientNum ];
+
+	if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO && !botWorld->botGoalInfo.gameIsOnFinalObjective && !client.isBot ) { //mal: dont worry about hearing human targets in training mode, unless its the final obj...
+		return false;
+	}
 
 	float hearingRange = ( client.proxyInfo.entNum == CLIENT_HAS_NO_VEHICLE ) ? PLAYER_HEARING_DIST : VEHICLE_HEARING_DIST;
 

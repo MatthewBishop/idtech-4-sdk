@@ -96,7 +96,7 @@ public:
 
 	void								SelectWayPoints( int time );
 
-	void								WriteInitialState( int clientNum ) const;
+	void								WriteInitialState( const sdReliableMessageClientInfoBase& target ) const;
 	void								ReadInitialState( const idBitMsg& msg );
 	void								ReadInitialState( idFile* file );
 
@@ -128,6 +128,8 @@ public:
 
 	void								SetCurrentRange( float value ) { _currentRange = value; }
 
+	void								FlashIcon( int time );
+
 	void								Event_Complete( void );
 	void								Event_SetTimeout( float duration );
 	void								Event_Free( void );
@@ -150,6 +152,8 @@ public:
 
 	void								Event_SetUserCreated( void );
 	void								Event_IsUserCreated( void );
+
+	void								Event_FlashIcon( int time );
 
 private:
 	idWStr&								ProcessTitle( const wchar_t* text, idWStr& output ) const;
@@ -205,7 +209,7 @@ public:
 	bool								IsTaskValid( idPlayer* player, taskHandle_t taskHandle, bool onlyCheckInitialFT );
 	void								SelectTask( idPlayer* player, taskHandle_t taskHandle );
 	
-	void								WriteInitialReliableMessages( int clientNum ) const;
+	void								WriteInitialReliableMessages( const sdReliableMessageClientInfoBase& target ) const;
 
 	void								Write( idFile* file ) const;
 	void								Read( idFile* file );

@@ -248,9 +248,19 @@ namespace sdProperties {
 
 		void				Remove( const char* name );
 
+		const char*			NameForProperty( sdProperty* property ) {
+								propertyHashMap_t::Iterator iter = properties.Begin();
+								for ( iter; iter != properties.End(); ++iter ) {
+									if ( ( *iter ).second == property ) {
+										return ( *iter ).first.c_str();
+									}
+								}
+								return NULL;
+							}
+
 		void				Clear() {
 								propertyHashMap_t::Iterator iter = properties.Begin();
-								for ( iter; iter != properties.End(); ++iter ) {									
+								for ( iter; iter != properties.End(); ++iter ) {
 									propertyAllocator.Free( iter->second );
 								}
 								properties.Clear();

@@ -767,7 +767,7 @@ void sdFireTeam::AddMember( int clientNum ) {
 	if ( gameLocal.isServer ) {
 		sdFireTeamMessage msg( this, FM_ADDMEMBER );
 		msg.WriteBits( clientNum, idMath::BitsForInteger( MAX_CLIENTS ) );
-		msg.Send();
+		msg.Send( sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -820,7 +820,7 @@ void sdFireTeam::RemoveMember( int clientNum ) {
 	if ( gameLocal.isServer ) {
 		sdFireTeamMessage msg( this, FM_REMOVEMEMBER );
 		msg.WriteBits( clientNum, idMath::BitsForInteger( MAX_CLIENTS ) );
-		msg.Send();
+		msg.Send( sdReliableMessageClientInfoAll() );
 
 		if ( _members.Num() == 0 ) {
 			SetName( _defaultName.c_str() );
@@ -843,7 +843,7 @@ void sdFireTeam::SetPrivate( bool isPrivate ) {
 	if ( gameLocal.isServer ) {
 		sdFireTeamMessage msg( this, FM_SETPRIVATE );
 		msg.WriteBool( isPrivate );
-		msg.Send();
+		msg.Send( sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -858,7 +858,7 @@ void sdFireTeam::SetName( const char* name ) {
 	if ( gameLocal.isServer ) {
 		sdFireTeamMessage msg( this, FM_SETNAME );
 		msg.WriteString( _name.c_str(), 32 );
-		msg.Send();
+		msg.Send( sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -897,7 +897,7 @@ void sdFireTeam::HandleMessage( const idBitMsg& msg ) {
 sdFireTeam::WriteInitialState
 ================
 */
-void sdFireTeam::WriteInitialState( int clientNum ) const {
+void sdFireTeam::WriteInitialState( const sdReliableMessageClientInfoBase& target ) const {
 	sdFireTeamMessage msg( this, FM_FULLSTATE );
 	msg.WriteBool( _private );
 	msg.WriteBits( _members.Num(), idMath::BitsForInteger( MaxMembers() ) );
@@ -905,7 +905,7 @@ void sdFireTeam::WriteInitialState( int clientNum ) const {
 		msg.WriteBits( _members[ i ], idMath::BitsForInteger( MAX_CLIENTS ) );
 	}
 	msg.WriteString( _name.c_str() );
-	msg.Send( clientNum );
+	msg.Send( target );
 }
 
 /*
@@ -1064,7 +1064,7 @@ void sdFireTeam::PromoteMember( int clientNum ) {
 	if ( gameLocal.isServer ) {
 		sdFireTeamMessage msg( this, FM_PROMOTEMEMBER );
 		msg.WriteBits( clientNum, idMath::BitsForInteger( MAX_CLIENTS ) );
-		msg.Send();
+		msg.Send( sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -1349,7 +1349,7 @@ void sdFireTeam::SendDisbandMessage( void ) {
 		if ( gameLocal.IsLocalPlayer( player ) ) {
 			player->OnFireTeamDisbanded();
 		} else {
-			msg.Send( player->entityNumber );
+			msg.Send( sdReliableMessageClientInfo( player->entityNumber ) );
 		}
 	}
 }
@@ -1449,9 +1449,9 @@ void sdFireTeamManagerLocal::Think( void ) {
 sdFireTeamManagerLocal::WriteInitialReliableMessages
 ================
 */
-void sdFireTeamManagerLocal::WriteInitialReliableMessages( int clientNum ) const {
+void sdFireTeamManagerLocal::WriteInitialReliableMessages( const sdReliableMessageClientInfoBase& target ) const {
 	for ( int i = 0; i < _fireTeams.Num(); i++ ) {
-		_fireTeams[ i ]->WriteInitialState( clientNum );
+		_fireTeams[ i ]->WriteInitialState( target );
 	}
 }
 

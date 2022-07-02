@@ -57,7 +57,7 @@ public:
 	int									GetNumMembers( void ) const { return _members.Num(); }
 	idPlayer*							GetMember( int index ) const { return gameLocal.GetClient( _members[ index ] ); }
 
-	void								WriteInitialState( int clientNum ) const;
+	void								WriteInitialState( const sdReliableMessageClientInfoBase& target ) const;
 	void								ReadInitialState( const idBitMsg& msg );
 	void								HandleMessage( fireteamMessageType_t type, const idBitMsg& msg );
 
@@ -184,7 +184,7 @@ public:
 	sdFireTeam*							FireTeamForIndex( int index ) { return _fireTeams[ index ]; }
 	const sdFireTeam*					FireTeamForIndex( int index ) const { return _fireTeams[ index ]; }
 	
-	void								WriteInitialReliableMessages( int clientNum ) const;
+	void								WriteInitialReliableMessages( const sdReliableMessageClientInfoBase& target ) const;
 
 	void								Write( idFile* file ) const;
 	void								Read( idFile* file );

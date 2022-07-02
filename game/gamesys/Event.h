@@ -111,9 +111,10 @@ private:
 	idClass*					object;
 	const idTypeInfo*			typeinfo;
 	int							activeEventIndex;
+	bool						isGuiEvent;
 
-	idLinkList<idEvent>			eventNode;
-	idLinkList<idEvent>			eventEntityNode;
+	idLinkList< idEvent >		eventNode;
+	idLinkList< idEvent >		eventEntityNode;
 
 	static idDynamicBlockAlloc<byte, 16 * 1024, 256, false> eventDataAllocator;
 
@@ -124,7 +125,7 @@ public:
 								idEvent( void );
 								~idEvent( void );
 
-	static idEvent*				Alloc( const idEventDef *evdef, int numargs, va_list args );
+	static idEvent*				Alloc( const idEventDef *evdef, int numargs, va_list args, bool guiEvent );
 	static void					CopyArgs( const idEventDef *evdef, int numargs, va_list args, UINT_PTR data[ D_EVENT_MAXARGS ]  );
 	
 	static bool					ArgsMatch( char format, const idEventArg* arg );
@@ -143,6 +144,7 @@ public:
 	
 	static idLinkList< idEvent >	freeEvents;
 	static idLinkList< idEvent >	eventQueue;
+	static idLinkList< idEvent >	guiEventQueue;
 	static idLinkList< idEvent >	frameEventQueue[ 2 ];
 	static idList< idEvent* >		eventsToRun;
 	static int						frameQueueIndex;

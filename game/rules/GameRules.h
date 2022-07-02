@@ -160,6 +160,7 @@ public:
 	virtual void				Run( void );
 	virtual void				MapRestart( void );
 	virtual byte				GetProbeState( void ) const;
+	virtual int					GetServerBrowserScore( const sdNetSession& session ) const;
 	virtual void				GetBrowserStatusString( idWStr& str, const sdNetSession& netSession ) const;
 
 	virtual void				OnNewScriptLoad( void );
@@ -181,9 +182,10 @@ public:
 	virtual void				ProcessChatMessage( idPlayer* player, gameReliableClientMessage_t mode, const wchar_t *text );
 	virtual void				AddChatLine( chatMode_t chatMode, const idVec4& color, const wchar_t *fmt, ... );
 	virtual void				AddChatLine( const idVec3& origin, chatMode_t chatMode, const int clientNum, const wchar_t *text );
+	virtual void				AddRepeaterChatLine( const char* clientName, const int clientNum, const wchar_t *text );
 	virtual void				MessageMode( const idCmdArgs &args );
 
-	virtual void				WriteInitialReliableMessages( int clientNum );
+	virtual void				WriteInitialReliableMessages( const sdReliableMessageClientInfoBase& target );
 
 	virtual bool				HandleGuiEvent( const sdSysEvent* event );
 	virtual bool				TranslateGuiBind( const idKey& key, sdKeyCommand** cmd );
@@ -199,7 +201,7 @@ public:
 	virtual void				SetAttacker( sdTeamInfo* team ) { }
 	virtual void				SetDefender( sdTeamInfo* team ) { }
 
-	virtual bool				OnUserStartMap( const char* text, idStr& reason, idStr& mapName ) = 0;
+	virtual userMapChangeResult_e OnUserStartMap( const char* text, idStr& reason, idStr& mapName ) = 0;
 
 	virtual bool				ChangeMap( const char* mapName ) { return false; }
 
@@ -238,7 +240,7 @@ public:
 
 	virtual void				OnObjectiveCompletion( int objectiveIndex ) {}
 
-	void						Event_SendNetworkEvent( idEntity* other, const char* message );
+	void						Event_SendNetworkEvent( int clientIndex, bool isRepeaterClient, const char* message );
 	void						Event_SetEndGameCamera( idEntity* other );
 	void						Event_SetWinningTeam( idScriptObject* object );
 	void						Event_EndGame( void );
@@ -298,12 +300,10 @@ protected:
 	static int					NumActualClients( bool countSpectators, bool countBots = false );
 
 	void						UpdateChatLines();
-	void						SendCameraEvent( idEntity* entity, int clientNum );
+	void						SendCameraEvent( idEntity* entity, const sdReliableMessageClientInfoBase& target );
 
 	void						CallScriptEndGame( void );
-	static void					RecordWinningTeam( sdTeamInfo* winner, const char* prefix, bool includeTeamName );
-
-	static void					SanitizeMapName( idStr& mapName, bool setExtension );
+	static void					RecordWinningTeam( sdTeamInfo* winner, const char* prefix, bool includeTeamName );	
 
 	static void					SetupLoadScreenUI( sdUserInterfaceScope& scope, const char* status, bool currentMap, int mapIndex, const idDict& metaData, const sdDeclMapInfo* mapInfo );
 
@@ -359,13 +359,13 @@ protected:
 			node.SetOwner( this );
 		}	
 
-		void Set( const wchar_t* text, int time, chatMode_t mode );
+		void Set( const wchar_t* text, chatMode_t mode );
 
 		bool 			IsExpired() const		{ return flags.expired; }
 		bool 			IsTeam() const			{ return flags.team; }
 		bool 			IsObituary() const		{ return flags.obituary; }
 
-		void 			CheckExpired()			{ flags.expired = ( gameLocal.time - time ) >= SEC2MS( g_chatLineTimeout.GetFloat() ); }
+		void 			CheckExpired()			{ flags.expired = ( gameLocal.ToGuiTime( gameLocal.time ) - time ) >= SEC2MS( g_chatLineTimeout.GetFloat() ); }
 
 		const idVec4&	GetColor() const		{ return color; }
 		const wchar_t*	GetText() const			{ return text.c_str(); }
@@ -422,6 +422,15 @@ protected:
 	idWStr						statusText;
 	const sdDeclLocStr*			noMission;
 	const sdDeclLocStr*			infinity;
+};
+
+
+// Encapsulate some common behaviour for game types that manage a single map
+class sdGameRules_SingleMapHelper {
+public:	
+	static void						ArgCompletion_StartGame( const idCmdArgs& args, argCompletionCallback_t callback );
+	static userMapChangeResult_e	OnUserStartMap( const char* text, idStr& reason, idStr& mapName );
+	static void						SanitizeMapName( idStr& mapName, bool setExtension );
 };
 
 #endif /* !__GAME_RULES_GAMERULES_H__ */

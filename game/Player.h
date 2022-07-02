@@ -25,6 +25,7 @@ typedef enum playerStance_t {
 #include "Teleporter.h"
 #include "effects/HardcodedParticleSystem.h"
 #include "effects/WaterEffects.h"
+#include "proficiency/StatsTracker.h"
 
 class sdVehiclePosition;
 class idWeapon;
@@ -159,6 +160,7 @@ typedef enum locationDamageArea_e {
 	LDA_TORSO,
 	LDA_HEAD,
 	LDA_NECK,
+	LDA_HEADBOX,
 	LDA_COUNT,
 } locationDamageArea_t;
 
@@ -212,6 +214,7 @@ public:
 		EVENT_GODMODE,
 		EVENT_NOCLIP,
 		EVENT_SETWEAPON,
+		EVENT_LIFESTAT,
 		EVENT_MAXEVENTS
 	};
 
@@ -313,6 +316,8 @@ public:
 	int						nextTeamSwitchTime;
 	int						nextReadyToggleTime;
 	int						nextSuicideTime;
+	int						nextTeamBalanceSwitchTime;
+	int						lastAliveTimeRegistered;
 
 	int						gameStartTime;
 
@@ -333,12 +338,14 @@ public:
 	};
 	int						lastHurtTime;			// the last time we took damage (used for screen effects, etc.)
 
-	static const int		MAX_DAMAGE_EVENTS = 12;
+	static const int		MAX_DAMAGE_EVENTS = 16;
+	static const int		NUM_REPAIR_INDICATORS = 4;
 	idStaticList< damageEvent_t, MAX_DAMAGE_EVENTS > damageEvents;
 
 	bool					ownsVehicle;
 	bool					aasPullPlayer;
 	int						lastOwnedVehicleSpawnID;
+	int						lastOwnedVehicleTime;
 
 private:
 	idEntityPtr< idEntity >	selectedSpawnPoint;
@@ -356,15 +363,19 @@ public:
 	bool					InhibitMovement( void ) const;
 	bool					InhibitTurning( void );
 	bool					InhibitHud( void );
-	bool					InhibitWeaponSwitch( void ) const;
+	bool					InhibitWeaponSwitch( bool allowPause = false ) const;
 	bool					InhibitWeapon( void ) const;
 	void					SetClip( int modIndex, int count );
 	int						GetClip( int modIndex );
 
 	int						GetNextTeamSwitchTime( void ) const { return nextTeamSwitchTime; }
+	int						GetNextTeamBalanceSwitchTime( void ) const { return nextTeamBalanceSwitchTime; }
+	void					SetNextTeamBalanceSwitchTime( int time ) { nextTeamBalanceSwitchTime = time; }
 
 	int						GetNextCallVoteTime( void ) const { return nextCallVoteTime; }
 	void					SetNextCallVoteTime( int time );
+
+	void					RegisterTimeAlive( void );
 
 	void					RequestQuickChat( const sdDeclQuickChat* quickChatDecl, int targetSpawnId );
 
@@ -392,8 +403,13 @@ public:
 
 	void					SetActionMessage( const char* message );
 	void					UpdateToolTips( void );
+	void					UpdateToolTipTimeline( void );
 
+	void					RunToolTipTimelineEvent( const sdDeclToolTip::timelineEvent_t& event );
+	
 	bool					IsToolTipPlaying( void ) const { return toolTips.Num() > 0 || nextTooltipTime > gameLocal.time; }
+
+	bool					IsSinglePlayerToolTipPlaying( void ) const { return currentToolTip != NULL && currentToolTip->GetSinglePlayerToolTip(); }
 
 	void					UpdatePlayerInformation( void ); //mal: for the bots
 	void					UpdatePlayerTeamInfo( void ); //mal: ditto
@@ -442,6 +458,9 @@ public:
 	void					SetHandJoint( int index, jointHandle_t handle ) { arms[ index ].handJoint = handle; }
 	void					SetFootJoint( int index, jointHandle_t handle ) { arms[ index ].footJoint = handle; }
 
+	void					SetHeadModelJoint( jointHandle_t handle ) { headModelJoint = handle; }
+	void					SetHeadModelOffset( const idVec3& offset ) { headModelOffset = offset; }
+
 	jointHandle_t			GetHipJoint( void ) const { return hipJoint; }
 	jointHandle_t			GetChestJoint( void ) const { return chestJoint; }
 	jointHandle_t			GetTorsoJoint( void ) const { return torsoJoint; }
@@ -450,6 +469,9 @@ public:
 	jointHandle_t			GetElbowJoint( int index ) const { return arms[ index ].elbowJoint; }
 	jointHandle_t			GetHandJoint( int index ) const { return arms[ index ].handJoint; }
 	jointHandle_t			GetFootJoint( int index ) const { return arms[ index ].footJoint; }
+
+	jointHandle_t			GetHeadModelJoint( void ) const { return headModelJoint; }
+	const idVec3&			GetHeadModelOffset() const { return headModelOffset; }
 
 	void					ClearIKJoints( void );
 
@@ -482,6 +504,8 @@ public:
 	virtual sdEntityStateNetworkData*	CreateNetworkStructure( networkStateMode_t mode ) const;
 	virtual void						OnSnapshotHitch();
 
+	virtual bool						RunPausedPhysics( void ) const;
+
 	void								ApplyPlayerStateData( const sdEntityStateNetworkData& newState );
 	void								ReadPlayerStateData( const sdEntityStateNetworkData& baseState, sdEntityStateNetworkData& newState, const idBitMsg& msg ) const;
 	void								WritePlayerStateData( const sdEntityStateNetworkData& baseState, sdEntityStateNetworkData& newState, idBitMsg& msg ) const;
@@ -492,9 +516,21 @@ public:
 	void								WritePlayerStateBroadcast( const sdEntityStateNetworkData& baseState, sdEntityStateNetworkData& newState, idBitMsg& msg ) const;
 	bool								CheckPlayerStateBroadcast( const sdEntityStateNetworkData& baseState ) const;
 
-	bool								ShouldWritePlayerState( void ) const { return gameLocal.GetSnapshotPlayer() == this; }
+	bool								ShouldReadPlayerState( void ) const {
+		if ( gameLocal.isRepeater && gameLocal.serverIsRepeater ) {
+			return true;
+		}
+		return gameLocal.GetSnapshotPlayer() == this;
+	}
 
-	virtual void						WriteInitialReliableMessages( int clientNum ) const;
+	bool								ShouldWritePlayerState( void ) const {
+		if ( gameLocal.isRepeater && gameLocal.snapShotClientIsRepeater ) {
+			return true;
+		}
+		return gameLocal.GetSnapshotPlayer() == this;
+	}
+
+	virtual void						WriteInitialReliableMessages( const sdReliableMessageClientInfoBase& target ) const;
 
 
 	idEntity*				GetProxyEntity( void ) const { return proxyEntity; }
@@ -506,7 +542,7 @@ public:
 
 	void					OnProxyUpdate( int newProxySpawnId, int newProxyPositionId );
 
-	void					ShowWeaponMenu( sdWeaponSelectionMenu::eActivationType show );
+	void					ShowWeaponMenu( sdWeaponSelectionMenu::eActivationType show, bool noTimeout = false );
 	virtual bool			AcceptWeaponSwitch( bool hideWeaponMenu = true );
 	void					SwitchWeapon();
 
@@ -528,6 +564,7 @@ public:
 	void					PlayProneFailedToolTip( void );
 
 	void					CancelToolTips( void );
+	void					CancelToolTipTimeline( void );
 	void					SendToolTip( const sdDeclToolTip* toolTip, sdToolTipParms* toolTipParms = NULL );
 	void					SpawnToolTip( const sdDeclToolTip* toolTip, sdToolTipParms* toolTipParms = NULL );
 
@@ -742,7 +779,8 @@ public:
 	virtual void			DisableClip( bool activateContacting = true );
 	virtual void			EnableClip( void );
 
-	float					GetDamageScaleForTrace( const trace_t& t, locationDamageArea_t& area );
+	void					GetHeadModelCenter( idVec3& output );
+	float					GetDamageScaleForTrace( const trace_t& t, const idVec3& traceDirection, locationDamageArea_t& area );
 	void					CalcDamagePoints(  idEntity *inflictor, idEntity *attacker, const sdDeclDamage* damageDecl, 
 											const float damageScale, const trace_t* collision, float& _health, const idVec3& dir, bool& headshot );
 
@@ -762,7 +800,11 @@ public:
 
 	void					WriteStats( void );
 
-	virtual	void			UpdateKillStats( idPlayer* player, const sdDeclDamage* damageDecl );
+	virtual	void			UpdateKillStats( idPlayer* player, const sdDeclDamage* damageDecl, bool headshot );
+
+	void					CalcLifeStats( void );
+	void					SendLifeStatsMessage( int statIndex, const sdPlayerStatEntry::statValue_t& oldValue, const sdPlayerStatEntry::statValue_t& newValue );
+	void					HandleLifeStatsMessage( int statIndex, const sdPlayerStatEntry::statValue_t& oldValue, const sdPlayerStatEntry::statValue_t& newValue );
 
 	void					Kill( idEntity* killer, bool noBody = false, const sdDeclDamage* damage = NULL, const sdDeclDamage* applyDamage = NULL );
 	void					OnKilled( idEntity *inflictor, idEntity *attacker, int damage, const idVec3 &dir, int location );
@@ -792,16 +834,19 @@ public:
 	void					OffsetThirdPersonView( float angle, float range, float height, bool clip, renderView_t& rView );
 	bool					CalculateLookAtView( idPlayer* other, renderView_t& rView, bool doTraceCheck = false, float maxDist = -1.0f );
 
+	void					UpdatePausedObjectiveView();
+
 	bool					CanGetClass( const sdDeclPlayerClass* pc );
 
 	bool					Give( const char *statname, const char *value );
 	bool					GiveClass( const char* classname );
 	void					ChangeClass( const sdDeclPlayerClass* pc, int classOption );
 	bool					GivePackage( const sdDeclItemPackage* package );
+	void					GiveClassProficiency( float count, const char* reason );
 
 	int						Heal( int count );
 	void					OnHealed( int oldHealth, int health );
-	
+
 	bool					IsWeaponValid( void );
 	void					Reload( void );
 	void					NextWeapon( bool safe = false );
@@ -843,8 +888,6 @@ public:
 	void					PerformImpulse( int impulse );
 	void					Spectate( void );
 	void					UpdateHud( void );
-
-	void					UpdateHudStats( void );
 
 	void					UpdatePlayerKills( int victimNum, idEntity *client );
 	bool					IsCamping( void );
@@ -975,6 +1018,9 @@ private:
 
 	arm_t					arms[ 2 ];
 
+	jointHandle_t			headModelJoint;
+	idVec3					headModelOffset;
+
 	taskHandle_t			activeTask;
 	playerTaskList_t		availableTasks;
 
@@ -1036,6 +1082,11 @@ private:
 	idPlayerIcon			playerIcon;
 	int						playerIconFlashTime;
 
+	bool					lastWeaponMenuState;
+	int						lastWeaponSwitchPos;
+	bool					enableWeaponSwitchTimeout;
+	int						lastTimelineTime;
+
 	// script callback functions
 	const sdProgram::sdFunction*	raiseWeaponFunction;
 	const sdProgram::sdFunction*	lowerWeaponFunction;
@@ -1073,6 +1124,8 @@ private:
 	// model based sights
 	float sightFOV;
 	rvClientEntityPtr< sdClientAnimated > sight;
+
+	taskHandle_t					lookAtTask;
 
 #ifdef PLAYER_DAMAGE_LOG
 	struct damageLogInfo_t {
@@ -1193,6 +1246,7 @@ public:
 	void					Event_NumDeployOptions( void );
 	void					Event_GetAmmoFraction( void );
 	void					Event_GetUserName( void );
+	void					Event_GetCleanUserName( void );
 	void					Event_GetClassName( void );
 	void					Event_GetCachedClassName( void );
 	void					Event_GetPlayerClass( void );
@@ -1277,6 +1331,7 @@ public:
 
 	void					Event_IsLocalPlayer( void );
 	void					Event_IsToolTipPlaying( void );
+	void					Event_IsSinglePlayerToolTipPlaying( void );
 
 	void					Event_SetPlayerChargeOrigin( idEntity *self );
 	void					Event_SetPlayerChargeArmed( bool chargeArmed, idEntity *self );
@@ -1299,6 +1354,7 @@ public:
 	void					Event_SetRepairDroneState( bool destroy );
 	void					Event_IsBot();
 	void					Event_SetBotEscort( idEntity* botEscort );
+	void					Event_SetPlayerSpawnHostTarget( idEntity* spawnHostTarget );
 	
 	void					Event_ResetTargetLock( void );
 	void					Event_IsLocking( void );
@@ -1314,6 +1370,8 @@ public:
 	void					Event_AdjustDeathYaw( float value );
 
 	void					Event_SetCarryingObjective( bool isCarrying );
+	void					Event_AddDamageEvent( int time, float angle, float damage, bool updateDirection );
+	void					Event_IsInLimbo( void );
 };
 
 #endif /* !__GAME_PLAYER_H__ */

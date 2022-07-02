@@ -93,10 +93,12 @@ public:
 
 	virtual void			RefreshSoundDevices( void ) = 0; // Updates the list of sound devices available
 
-	virtual const idStrList*ListSoundPlaybackDevices() const = 0;
-	virtual const idStrList*ListSoundCaptureDevices() const = 0;
+	virtual const idWStrList*	ListSoundPlaybackDevices() const = 0;
+	virtual const idWStrList*	ListSoundCaptureDevices() const = 0;
+	virtual void				FreeDeviceList( const idWStrList* list ) const = 0;
 
-	virtual void			FreeDeviceList( const idStrList* list ) const = 0;
+	virtual int					GetAudioDeviceHash( const wchar_t* name ) const = 0;
+	virtual int					GetAudioDeviceHash( const char* name ) const = 0;
 };
 
 extern idSoundSystem	*soundSystem;

@@ -628,7 +628,7 @@ idProjectile::UpdateScript
 =====================
 */
 void idProjectile::UpdateScript( void ) {
-	if ( !baseScriptThread ) {
+	if ( !baseScriptThread || gameLocal.IsPaused() ) {
 		return;
 	}
 

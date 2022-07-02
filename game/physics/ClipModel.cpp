@@ -571,7 +571,12 @@ idCollisionModel *idClipModel::GetCollisionModel( int index ) const {
 		}
 	}
 	if ( collisionModelManager->GetThreadId() == MAIN_THREAD_ID ) {
-		gameLocal.Warning( "idClipModel::GetCollisionModel: clip model %d on '%s' (%i) is not a collision or trace model", id, entity->GetName(), entity->entityNumber );
+		if ( entity != NULL ) {
+			gameLocal.Warning( "idClipModel::GetCollisionModel: clip model %d on '%s' (%i) is not a collision or trace model", id, entity->GetName(), entity->entityNumber );
+		} else {		
+			assert( false );
+			gameLocal.Warning( "idClipModel::GetCollisionModel: clip model %d on NULL entity is not a collision or trace model", id );
+		}
 	}
 	return NULL;
 }

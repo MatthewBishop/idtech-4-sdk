@@ -491,13 +491,12 @@ public:
 		if( index < 0 || index > gameLocal.mapMetaDataList->GetNumMetaData() ) {
 			return NULL;
 		}
-		const idDict& mapData = gameLocal.mapMetaDataList->GetMetaData( index );
-
-		if ( !mapData.GetBool( "show_in_browser" ) ) {
+		const metaDataContext_t& metaData = gameLocal.mapMetaDataList->GetMetaDataContext( index );
+		if ( !gameLocal.IsMetaDataValidForPlay( metaData, true ) ) {
 			return NULL;
 		}
 
-		return &mapData;
+		return metaData.meta;
 	}
 
 	static const sdDeclMapInfo* sdCallVoteMapChange::GetMapInfo( int index ) {
@@ -540,13 +539,13 @@ public:
 
 	virtual void sdCallVoteMapChange::EnumerateOptions( sdUIList* list ) const {
 		for ( int i = 0; i < gameLocal.mapMetaDataList->GetNumMetaData(); i++ ) {
-			const idDict& mapInfo = gameLocal.mapMetaDataList->GetMetaData( i );
-			if( !mapInfo.GetBool( "show_in_browser" ) ) {
+			const idDict* mapInfo = GetMapData( i );
+			if ( mapInfo == NULL ) {
 				continue;
 			}
 
-			const char* materialName = mapInfo.GetString( "server_shot_thumb", "levelshots/thumbs/generic.tga" );
-			AddVoteOption( list, va( L"%hs\t%hs\t1.7777", mapInfo.GetString( "pretty_name", "" ), materialName ), i );
+			const char* materialName = mapInfo->GetString( "server_shot_thumb", "levelshots/thumbs/generic.tga" );
+			AddVoteOption( list, va( L"%hs\t%hs\t1.7777", mapInfo->GetString( "pretty_name", "" ), materialName ), i );
 		}
 	}
 
@@ -649,10 +648,11 @@ public:
 
 	virtual void EnumerateOptions( sdUIList* list ) const {
 		for( int i = 0; i < gameLocal.campaignMetaDataList->GetNumMetaData(); i++ ) {
-			const idDict& dict = gameLocal.campaignMetaDataList->GetMetaData( i );
-			if( !dict.GetBool( "show_in_browser" ) ) {
+			const metaDataContext_t& metaData = gameLocal.campaignMetaDataList->GetMetaDataContext( i );
+			if ( !gameLocal.IsMetaDataValidForPlay( metaData, true ) ) {
 				continue;
 			}
+			const idDict& dict = *metaData.meta;
 			
 			const char* materialName = dict.GetString( "server_shot_thumb" );
 			const char* prettyName = dict.GetString( "pretty_name" );
@@ -666,7 +666,12 @@ public:
 			gameLocal.Warning( "sdCallVoteCampaignChange: index '%i' out of range", dataKey );
 			return;
 		}
-		const idDict& dict = gameLocal.campaignMetaDataList->GetMetaData( dataKey );
+		const metaDataContext_t& metaData = gameLocal.campaignMetaDataList->GetMetaDataContext( dataKey );
+		if ( !gameLocal.IsMetaDataValidForPlay( metaData, true ) ) {
+			return;
+		}
+
+		const idDict& dict = *metaData.meta;
 		const sdDeclCampaign* campaign = gameLocal.declCampaignType.LocalFind( dict.GetString( "metadata_name" ), false );
 		if ( campaign == NULL ) {
 			return;
@@ -930,7 +935,7 @@ sdPlayerVote::Start
 */
 void sdPlayerVote::Start( idPlayer* player ) {
 	int length = text ? text->GetLength() : SEC2MS( 30.f );
-	endTime = gameLocal.time + length;
+	endTime = gameLocal.ToGuiTime( gameLocal.time + length );
 	sdVoteManager::GetInstance().MakeActive( activeNode );
 
 	voteCaller = player;
@@ -1070,7 +1075,7 @@ void sdPlayerVote::SendMessage( sdReliableServerMessage& msg ) {
 			continue;
 		}
 
-		msg.Send( i );
+		msg.Send( sdReliableMessageClientInfo( i ) );
 	}
 }
 
@@ -1093,7 +1098,8 @@ bool sdPlayerVote::Match( voteId_t id, idEntity* object ) {
 	return voteId == id && voteObject == object;
 }
 
-idCVar g_votePassPercentage( "g_votePassPercentage", "51", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE | CVAR_RANKLOCKED, "Percentage of yes votes required for a vote to pass", 0.f, 100.f );
+idCVar g_votePassPercentage( "g_votePassPercentage", "51",	CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE | CVAR_RANKLOCKED,	"Percentage of yes votes required for a vote to pass", 0.f, 100.f );
+idCVar g_minAutoVotePlayers( "g_minAutoVotePlayers", "0",	CVAR_GAME | CVAR_INTEGER | CVAR_ARCHIVE,					"If this number of players has voted, then the vote will be considered valid even if the required % of yes/no votes has not been met" );
 
 /*
 ================
@@ -1110,8 +1116,13 @@ sdPlayerVote::Complete
 ================
 */
 void sdPlayerVote::Complete( void ) {
-	float frac = ( yesCount / ( float )totalCount );
-	bool passed = frac >= GetPassPercentage();
+	bool passed;
+	if ( g_minAutoVotePlayers.GetInteger() > 0 && ( yesCount + noCount ) >= g_minAutoVotePlayers.GetInteger() ) {
+		passed = yesCount > noCount;
+	} else {
+		float frac = ( yesCount / ( float )totalCount );
+		passed = frac >= GetPassPercentage();
+	}
 
 	if ( displayFinishedMessage ) {
 		const sdDeclLocStr* finishedMessage = NULL;
@@ -1221,7 +1232,7 @@ void sdVoteManagerLocal::Think( void ) {
 		next = vote->GetNextActiveVote();
 
 		int endTime = vote->GetEndTime();
-		if ( gameLocal.time < endTime ) {
+		if ( gameLocal.ToGuiTime( gameLocal.time ) < endTime ) {
 			continue;
 		}
 
@@ -1313,7 +1324,9 @@ sdVoteManagerLocal::GetActiveVote
 ================
 */
 sdPlayerVote* sdVoteManagerLocal::GetActiveVote( idPlayer* p ) {
-	assert( p != NULL );
+	if ( p == NULL ) {
+		return NULL;
+	}
 
 	// get first vote player hasn't voted on
 	for ( sdPlayerVote* vote = activeVotes.Next(); vote != NULL; vote = vote->GetNextActiveVote() ) {
@@ -1457,7 +1470,7 @@ void sdVoteManagerLocal::PerformCommand( const idCmdArgs& args, idPlayer* player
 		if ( playerVote == NULL ) {
 			return;
 		}
-		player->SetNextCallVoteTime( gameLocal.time + MINS2MS( g_voteWait.GetFloat() ) );
+		player->SetNextCallVoteTime( gameLocal.ToGuiTime( gameLocal.time + MINS2MS( g_voteWait.GetFloat() ) ) );
 		playerVote->Start( player );
 		if ( player != NULL ) {
 			playerVote->Vote( player, true );
@@ -1478,6 +1491,15 @@ void sdVoteManagerLocal::CancelVote( voteId_t id, idEntity* object ) {
 
 /*
 ============
+sdVoteManagerLocal::CancelVote
+============
+*/
+void sdVoteManagerLocal::CancelVote( sdPlayerVote* vote ) {
+	FreeVote( vote->GetIndex() );
+}
+
+/*
+============
 sdVoteManagerLocal::CancelFireTeamVotesForPlayer
 ============
 */
@@ -1487,6 +1509,21 @@ void sdVoteManagerLocal::CancelFireTeamVotesForPlayer( idPlayer *player ) {
 	CancelVote( VI_FIRETEAM_REQUEST, player );
 	CancelVote( VI_FIRETEAM_PROPOSE, player );
 	CancelVote( VI_FIRETEAM_INVITE, player );
+}
+
+/*
+============
+sdVoteManagerLocal::FindVote
+============
+*/
+sdPlayerVote* sdVoteManagerLocal::FindVote( voteId_t id ) {
+	for ( sdPlayerVote* vote = activeVotes.Next(); vote; vote = vote->GetNextActiveVote() ) {
+		if ( vote->GetVoteId() != id ) {
+			continue;
+		}
+		return vote;
+	}
+	return NULL;
 }
 
 /*
@@ -1601,9 +1638,13 @@ bool sdVoteManagerLocal::CanUseVote( sdCallVote* vote, idPlayer* player ) {
 		}
 	}
 
+	if( player == NULL ) {
+		return false;
+	}
+
 	const sdUserGroup& group = sdUserGroupManager::GetInstance().GetGroup( player->GetUserGroup() );
 	int voteLevel = sdUserGroupManager::GetInstance().GetVoteLevel( vote->GetCommandName() );
-	return gameLocal.time > player->GetNextCallVoteTime() && group.CanCallVote( voteLevel );
+	return gameLocal.ToGuiTime( gameLocal.time ) > player->GetNextCallVoteTime() && group.CanCallVote( voteLevel );
 }
 
 /*

@@ -67,7 +67,7 @@ public:
 	int													GetNumObjectives( void ) const { return objectives.Num(); }
 	int													GetNextObjective( int teamIndex ) const { return nextObjective[ teamIndex ]; }
 
-	void												WriteInitialReliableMessages( int clientNum ) const;
+	void												WriteInitialReliableMessages( const sdReliableMessageClientInfoBase& target ) const;
 
 	void												SetNextObjective( sdTeamInfo* team, int objectiveIndex );
 
@@ -122,14 +122,20 @@ public:
 	void												Event_SetBotActionVehicleType( const char* actionName, int actionVehicleFlags );
 	void												Event_SetBotActionGroupVehicleType( int actionGroupNum, int actionVehicleFlags );
 	void												Event_DisableAASAreaInLocation( int aasType, const idVec3& location );
+	void												Event_GameIsOnFinalObjective();
+	void												Event_GetBotCriticalClass( const playerTeamTypes_t playerTeam );
+	void												Event_GetNumClassPlayers( const playerTeamTypes_t playerTeam, const playerClassTypes_t playerClass );
 
 
-	void												Event_SendNetworkEvent( idEntity* other, const char* message );
+	void												Event_SendNetworkEvent( int clientIndex, bool isRepeater, const char* message );
 	void												OnNetworkEvent( const char* message );
 
 	void												SetCriticalClass( const playerTeamTypes_t playerTeam, const playerClassTypes_t criticalClass );
 
 private:
+	const sdDeclPlayerClass*							GetPlayerClass( const playerTeamTypes_t playerTeam, const playerClassTypes_t playerClass );
+
+
 	idScriptObject*										scriptObject;
 
 	idStaticList< sdObjectiveObject, MAX_OBJECTIVES >	objectives;

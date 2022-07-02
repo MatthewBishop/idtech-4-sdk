@@ -85,7 +85,7 @@ public:
 	const sdUserGroup&				GetGroup( int index ) { if ( index < 0 || index >= userGroups.Num() ) { return userGroups[ defaultGroup ]; } else { return userGroups[ index ]; } }
 	bool							Login( idPlayer* player, const char* password );
 	void							ReadNetworkData( const idBitMsg& msg );
-	void							WriteNetworkData( int clientNum );
+	void							WriteNetworkData( const sdReliableMessageClientInfoBase& target );
 	int								NumGroups( void ) const { return userGroups.Num(); }
 
 	bool							CanLogin() const;

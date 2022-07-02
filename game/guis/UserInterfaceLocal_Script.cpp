@@ -66,6 +66,11 @@ void sdUserInterfaceLocal::InitFunctions( void ) {
 	SD_UI_END_FUNC_TAG
 	INIT_SCRIPT_FUNCTION( "playGameSound", 'v', "s", Script_PlayGameSound );
 
+	SD_UI_FUNC_TAG( playGameSoundDirectly, "Play a sound in the game sound world without looking up in the GUI sound dictionary." )
+		SD_UI_FUNC_PARM( string, "name", "Sound name." )
+		SD_UI_END_FUNC_TAG
+	INIT_SCRIPT_FUNCTION( "playGameSoundDirectly", 'v', "s", Script_PlayGameSoundDirectly );
+
 	SD_UI_FUNC_TAG( playMusic, "Play a sound on the music channel." )
 		SD_UI_FUNC_PARM( string, "name", "Sound name." )
 	SD_UI_END_FUNC_TAG
@@ -74,6 +79,15 @@ void sdUserInterfaceLocal::InitFunctions( void ) {
 	SD_UI_FUNC_TAG( stopMusic, "Stop any sound on the music channel." )
 	SD_UI_END_FUNC_TAG
 	INIT_SCRIPT_FUNCTION( "stopMusic", 'v', "", Script_StopMusic );
+
+	SD_UI_FUNC_TAG( playVoice, "Play a sound on the voice channel." )
+		SD_UI_FUNC_PARM( string, "name", "Sound name." )
+		SD_UI_END_FUNC_TAG
+	INIT_SCRIPT_FUNCTION( "playVoice", 'v', "s", Script_PlayVoice );
+
+	SD_UI_FUNC_TAG( stopVoice, "Stop any sound on the voice channel." )
+		SD_UI_END_FUNC_TAG
+	INIT_SCRIPT_FUNCTION( "stopVoice", 'v', "", Script_StopVoice );
 
 	SD_UI_FUNC_TAG( querySpeakers, "Desired number of speakers." )
 		SD_UI_FUNC_PARM( float, "num", "Number of speakers." )
@@ -407,6 +421,12 @@ void sdUserInterfaceLocal::InitFunctions( void ) {
 		SD_UI_FUNC_PARM( float, "mute", "Either true or false." )
 	SD_UI_END_FUNC_TAG
 	INIT_SCRIPT_FUNCTION( "mutePlayer", 'v', "sf", Script_MutePlayer );
+
+	SD_UI_FUNC_TAG( mutePlayerQuickChat, "Toggle quickchat mute for a player." )
+		SD_UI_FUNC_PARM( string, "playerName", "Player to mute." )
+		SD_UI_FUNC_PARM( float, "mute", "Either true or false." )
+		SD_UI_END_FUNC_TAG
+	INIT_SCRIPT_FUNCTION( "mutePlayerQuickChat", 'v', "sf", Script_MutePlayerQuickChat );
 
 	SD_UI_FUNC_TAG( spectateClient, "Spectate a specific client, works on client and listen server." )
 		SD_UI_FUNC_PARM( float, "spectatee", "Spectatee client number." )
@@ -1089,6 +1109,19 @@ void sdUserInterfaceLocal::Script_PlayGameSound( sdUIFunctionStack& stack ) {
 	}
 }
 
+/*
+================
+sdUserInterfaceLocal::Script_PlayGameSoundDirectly
+================
+*/
+void sdUserInterfaceLocal::Script_PlayGameSoundDirectly( sdUIFunctionStack& stack ) {
+	idStr filename;
+	stack.Pop( filename );
+
+	if ( gameSoundWorld ) {
+		gameSoundWorld->PlayShaderDirectly( declHolder.declSoundShaderType.LocalFind( filename ) );
+	}
+}
 
 /*
 ============
@@ -1127,6 +1160,33 @@ void sdUserInterfaceLocal::Script_StopMusic( sdUIFunctionStack& stack ) {
 	idSoundWorld* sw = soundSystem->GetPlayingSoundWorld();
 	if ( sw ) {
 		sw->PlayShaderDirectly( declHolder.declSoundShaderType.LocalFind( "silence" ), SND_MUSIC );
+	}
+}
+
+/*
+================
+sdUserInterfaceLocal::Script_PlayVoice
+================
+*/
+void sdUserInterfaceLocal::Script_PlayVoice( sdUIFunctionStack& stack ) {
+	idStr filename;
+	stack.Pop( filename );
+
+	idSoundWorld* sw = soundSystem->GetPlayingSoundWorld();
+	if ( sw ) {
+		sw->PlayShaderDirectly( declHolder.declSoundShaderType.LocalFind( GetSound( filename ) ), SND_PLAYER_VO );
+	}
+}
+
+/*
+============
+sdUserInterfaceLocal::Script_StopVoice
+============
+*/
+void sdUserInterfaceLocal::Script_StopVoice( sdUIFunctionStack& stack ) {
+	idSoundWorld* sw = soundSystem->GetPlayingSoundWorld();
+	if ( sw ) {
+		sw->PlayShaderDirectly( declHolder.declSoundShaderType.LocalFind( "silence" ), SND_PLAYER_VO );
 	}
 }
 

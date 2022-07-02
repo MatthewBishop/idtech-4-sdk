@@ -162,10 +162,12 @@ ID_INLINE void idBitMsg::InitRead( const byte *data, int length ) {
 }
 
 ID_INLINE byte *idBitMsg::GetData( void ) {
+	assert( writeData != NULL );
 	return writeData;
 }
 
 ID_INLINE const byte *idBitMsg::GetData( void ) const {
+	assert( readData != NULL );
 	return readData;
 }
 

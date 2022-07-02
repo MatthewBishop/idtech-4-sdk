@@ -55,9 +55,11 @@ private:
 
 class sdDeclToolTipOptionKey : public sdDeclToolTipOption {
 public:
+							sdDeclToolTipOptionKey() {}
 							sdDeclToolTipOptionKey( const char* _key ) : key( _key ) { ; }
 	virtual					~sdDeclToolTipOptionKey() { ; }
 
+	virtual void			SetKey( const char* _key ) { key = _key; }
 	virtual const wchar_t*	GetText( sdToolTipParms* formatting ) const;
 
 private:
@@ -67,6 +69,29 @@ private:
 
 class sdDeclToolTip : public idDecl {
 public:
+	enum tlEventType_e {
+		TL_GUIEVENT,
+		TL_PAUSE,
+		TL_UNPAUSE,
+		TL_SHOWINVENTORY,
+		TL_HIDEINVENTORY,
+		TL_WAYPOINTHIGHLIGHT,
+		TL_LOOKATTASK,
+	};
+
+	class timelineEvent_t {
+	public:
+		tlEventType_e eventType;
+		idStr arg1;
+	};
+
+	enum tlTime_e {
+		TLTIME_END = -1,
+	};
+
+	// int == time in percent
+	typedef sdPair< int, timelineEvent_t > timelinePair_t;
+
 							sdDeclToolTip( void );
 	virtual					~sdDeclToolTip( void );
 
@@ -75,7 +100,7 @@ public:
 	virtual void			FreeData( void );
 
 	void					GetMessage( sdToolTipParms* formatting, idWStr& text ) const;
-	int						GetLength( void ) const { return length; }
+	int						GetLength( void ) const { return ( useSoundLength && sound != NULL ) ? sound->GetTimeLength() : length; }
 
 	bool					AddMessage( const wchar_t *text );
 
@@ -85,9 +110,14 @@ public:
 	const idSoundShader*	GetSoundShader( void ) const { return sound; }
 	int						GetMaxPlayCount( void ) const { return maxPlayCount; }
 	int						GetCurrentPlayCount( void ) const;
+	int						GetCurrentSinglePlayerPlayCount( void ) const;
 	int						GetNextShowDelay( void ) const { return nextShowDelay; }
 	const idMaterial*		GetIcon( void ) const { return icon; }
 	int						GetLocationIndex( void ) const { return locationIndex; }
+	bool					GetSinglePlayerToolTip( void ) const { return singlePlayerToolTip; }
+	bool					UsingSoundLength( void ) const { return ( useSoundLength && sound != NULL ) ? true : false; };
+	int						GetUnpauseWeaponSlot( void ) const { return unpauseWeaponSlot; }
+	const wchar_t*			GetUnpauseKeyString( void ) const { return unpauseKeyString.GetText( NULL ); }
 
 	void					ClearCookies( void ) const;
 
@@ -98,7 +128,13 @@ public:
 	static void				Cmd_DumpTooltips_f( const idCmdArgs& args );
 	static void				Cmd_ClearCookies_f( const idCmdArgs& args );
 
+	const idList< timelinePair_t >& GetTimeline() const { return timeline; }
+
+	bool					GetLookAtObjective( void ) const { return lookAtObjective; }
+
 protected:
+	virtual bool			ParseTimeline( idParser& src );
+
 	class message_t {
 	public:
 							~message_t( void ) { blurbs.DeleteContents( true ); }
@@ -115,6 +151,12 @@ protected:
 	int						maxPlayCount;
 	int						nextShowDelay;
 	const idMaterial*		icon;
+	bool					useSoundLength;
+	idList< timelinePair_t > timeline;
+	bool					singlePlayerToolTip;
+	int						unpauseWeaponSlot;
+	sdDeclToolTipOptionKey	unpauseKeyString;
+	bool					lookAtObjective;
 };
 
 #endif // __DECLTOOLTIP_H__

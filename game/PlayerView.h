@@ -20,6 +20,7 @@ class sdWorldToScreenConverter;
 #include "../renderer/RenderWorld.h"
 #include "client/ClientEntity.h"
 #include "effects/Effects.h"
+#include "CrosshairInfo.h"
 
 struct weaponFeedback_t;
 
@@ -27,6 +28,14 @@ struct weaponFeedback_t;
 
 class idPlayerView {
 public:
+	struct repeaterViewInfo_t {
+		idVec3								origin;
+		idVec3								velocity;
+		idAngles							deltaViewAngles;
+		idAngles							viewAngles;
+		bool								foundSpawn;
+	};
+
 						idPlayerView( void );
 						~idPlayerView( void );
 
@@ -44,6 +53,14 @@ public:
 	void				CalculateShake( idPlayer* player );
 	void				UpdateProxyView( idPlayer* player, bool force );
 	void				SetActiveProxyView( idEntity* other, idPlayer* player );
+
+	void						CalculateRepeaterView( renderView_t& view );
+	void						UpdateRepeaterView( void );
+	void						SetRepeaterUserCmd( const usercmd_t& usercmd );
+	void						ClearRepeaterView( void );
+	const usercmd_t&			GetRepeaterUserCmd( void ) const { return repeaterUserCmd; }
+	const repeaterViewInfo_t	GetRepeaterViewInfo( void ) const { return repeaterViewInfo; }
+	const sdCrosshairInfo&		CalcRepeaterCrosshairInfo( void );
 
 	bool				RenderPlayerView( idPlayer* player );
 	bool				RenderPlayerView2D( idPlayer* player );
@@ -106,16 +123,20 @@ private:
 
 	renderView_t		currentView;
 
-	idEntityPtr< idPlayer >									lastSpectatePlayer;
-	int														lastSpectateUpdateTime;
-	idVec3													lastSpectateOrigin;
-	idQuat													lastSpectateAxis;
+	idEntityPtr< idPlayer >					lastSpectatePlayer;
+	int										lastSpectateUpdateTime;
+	idVec3									lastSpectateOrigin;
+	idQuat									lastSpectateAxis;
 
-	idEntityPtr< idEntity >									activeViewProxy;	
-	rvClientEntityPtr< sdClientAnimated >					cockpit;
+	usercmd_t								repeaterUserCmd;
+	repeaterViewInfo_t						repeaterViewInfo;			
+	sdCrosshairInfo							repeaterCrosshairInfo;
 
-	sdEffect		underWaterEffect;
-	bool			underWaterEffectRunning;
+	idEntityPtr< idEntity >					activeViewProxy;	
+	rvClientEntityPtr< sdClientAnimated >	cockpit;
+
+	sdEffect								underWaterEffect;
+	bool									underWaterEffectRunning;
 };
 
 #endif /* !__GAME_PLAYERVIEW_H__ */

@@ -30,7 +30,8 @@ public:
 	virtual void						Update( bool outOfSequence );
 	virtual void						OnInputInit( void );
 	virtual void						OnInputShutdown( void );
-
+	virtual void						OnLanguageInit( void ) ;
+	virtual void						OnLanguageShutdown( void ) ;
 
 	virtual void						BeginLevelLoad( void );
 	virtual void						EndLevelLoad( void );
@@ -69,6 +70,7 @@ public:
 
 	virtual int							GetLastNonGameTime() const { return lastNonGameGuiTime; }
 	virtual void						OnSnapshotHitch( int delta ) const;
+	virtual void						OnToolTipEvent( const char* arg ) const;
 
 	virtual void						InvalidateLayout();
 

@@ -84,6 +84,7 @@ typedef enum {
 	CVAR_GUILOCKED			= BIT(21),	// a flag to the UI that the cvar shouldn't be changed
 										// the value can still be changed via the console
 	CVAR_RANKLOCKED			= BIT(22),	// locked on ranked servers
+	CVAR_REPEATERINFO		= BIT(23),	// repeater info, similar to server info
 } cvarFlags_t;
 
 
@@ -130,6 +131,8 @@ public:
 	bool					IsGuiLocked( void ) const { return ( internalVar->flags & CVAR_GUILOCKED ) != 0; }
 	void					SetGuiLocked( void ) { internalVar->flags |= CVAR_GUILOCKED; }
 	void					ClearGuiLocked( void ) { internalVar->flags &= ~CVAR_GUILOCKED; }
+
+	void					SetROM( void ) { internalVar->flags |= CVAR_ROM; }
 
 	const char *			GetString( void ) const { return internalVar->value; }
 	bool					GetBool( void ) const { return ( internalVar->integerValue != 0 ); }

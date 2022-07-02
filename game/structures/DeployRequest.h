@@ -23,7 +23,7 @@ public:
 	void							Show( void );
 	void							Hide( void );
 
-	void							WriteCreateEvent( int index, int clientNum ) const;
+	void							WriteCreateEvent( int index, const sdReliableMessageClientInfoBase& info ) const;
 	void							WriteDestroyEvent( int index ) const;
 
 	void							Write( idFile* file ) const;

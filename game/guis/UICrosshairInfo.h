@@ -60,6 +60,7 @@ protected:
 	virtual void							DrawLocal();
 	virtual void							ApplyLayout();
 
+	void									DrawEntityIcons( void );
 	void									DrawPlayerIcons2D( void );
 	void									DrawWayPoints( idEntity* exclude );
 	void									DrawDockedIcons( void );
@@ -71,6 +72,10 @@ protected:
 	void									ClearInactiveDockIcons( void );
 
 	void									DrawBrackets( const sdBounds2D& bounds, const idVec4& color );
+	void									DrawCrosshairInfo( idPlayer* player );
+	void									DrawDamageIndicators( idPlayer* player );
+
+	const sdCrosshairInfo&					GetRepeaterCrosshairInfo( void );
 
 private:
 	void									OnBarMaterialChanged( const idStr& oldValue, const idStr& newValue );

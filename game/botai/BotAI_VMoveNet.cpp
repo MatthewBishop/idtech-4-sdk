@@ -627,6 +627,8 @@ bool idBotAI::Enter_Vehicle_Air_Movement() {
 	proxyInfo_t enemyVehicleInfo;
  
 	combatMoveType = VEHICLE_AIR_MOVEMENT;
+	combatMoveActionGoal = ACTION_NULL;
+	combatMoveTooCloseRange = 0.0f;
 
 	if ( botWorld->clientInfo[ enemy ].proxyInfo.entNum != CLIENT_HAS_NO_VEHICLE  ) {
 		GetVehicleInfo( botWorld->clientInfo[ enemy ].proxyInfo.entNum, enemyVehicleInfo );
@@ -710,7 +712,7 @@ bool idBotAI::Vehicle_Air_To_Air_Movement() {
 		desiredRange = 5000.0f;
 		tooCloseDist = 2500.0f;
 
-		if ( Bot_CheckEnemyHasLockOn( enemy ) && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) { //mal: they need a bit of an edge
+		if ( Bot_CheckEnemyHasLockOn( enemy ) && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) { //mal: they need a bit of an edge
 			botUcmd->botCmds.launchDecoys = true;
 		}
 
@@ -848,8 +850,10 @@ This is a bit of a hack, but theres no time to do anything else. :-(
 */
 bool idBotAI::Vehicle_Air_To_Ground_Movement() {
 	bool overRideLook = false;
+	bool inVehicle = false;
 	float desiredRange = 5800.0f;
 	float tooCloseRange = 2700.0f;
+	float enemySpeed = 0.0f;
 	float dist;
 	proxyInfo_t enemyVehicleInfo;
 	idVec3 enemyOrg;
@@ -858,9 +862,12 @@ bool idBotAI::Vehicle_Air_To_Ground_Movement() {
 	if ( botWorld->clientInfo[ enemy ].proxyInfo.entNum != CLIENT_HAS_NO_VEHICLE ) {
 		GetVehicleInfo( botWorld->clientInfo[ enemy ].proxyInfo.entNum, enemyVehicleInfo );
 		enemyOrg = enemyVehicleInfo.origin;
+		inVehicle = true;
 	} else {
 		enemyOrg = botWorld->clientInfo[ enemy ].origin;
 	}
+
+	enemySpeed = botWorld->clientInfo[ enemy ].xySpeed;
 
 	vec = enemyOrg - botVehicleInfo->origin;
 	vec[ 2 ] = 0.0f;
@@ -868,59 +875,78 @@ bool idBotAI::Vehicle_Air_To_Ground_Movement() {
 
 	Bot_CheckVehicleAttack(); //mal: always see if we can get a shot off.
 
-	if ( botInfo->enemyHasLockon && dist < Square( 6000.0f ) && botWorld->gameLocalInfo.botSkill == BOT_SKILL_EASY ) { //mal: OH NOES! Panic and run for it.
+	if ( botInfo->enemyHasLockon && dist < Square( 6000.0f ) && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) { //mal: OH NOES! Panic and run for it. 
 		Bot_IgnoreEnemy( enemy, 3000 );
 		Bot_ResetEnemy();
 		return false;
 	}
 
-//mal: we're too close, so manuever around our enemy and fire. low skill bots need not apply.
-	if ( dist < Square( tooCloseRange ) && combatMoveTime < botWorld->gameLocalInfo.time && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) {
-		int n = botThreadData.random.RandomInt( 3 );
+//mal: we're too close, so manuever around our enemy and fire. 
+	if ( dist < Square( tooCloseRange ) && combatMoveTime < botWorld->gameLocalInfo.time && enemySpeed < SPRINTING_SPEED ) { //mal: if they're moving fast, just let them move into our crosshairs..
+		int actionNumber = ACTION_NULL;
 
-		if ( n == 0 ) {
-			combatMoveDir = BACK;
-		} else if ( n == 1 ) {
-			combatMoveDir = RIGHT;
-		} else {
-			combatMoveDir = LEFT;
+		if ( botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) {
+			actionNumber = Bot_FindNearbySafeActionToMoveToward( botInfo->origin, ( desiredRange ) );
 		}
 
-		combatMoveTime = botWorld->gameLocalInfo.time + 5000;
+		if ( actionNumber != -1 ) {
+			combatMoveActionGoal = actionNumber;
+			combatMoveTime = botWorld->gameLocalInfo.time + 10000;
+			combatMoveTooCloseRange = ( inVehicle ) ? 5000.0f : tooCloseRange + 1000.0f;
+		} else {
+			int n = botThreadData.random.RandomInt( 3 );
 
-		if ( botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && botThreadData.random.RandomInt( 100 ) > 90 ) {
+			if ( n == 0 ) {
+				combatMoveDir = BACK;
+			} else if ( n == 1 ) {
+				combatMoveDir = RIGHT;
+			} else {
+				combatMoveDir = LEFT;
+			}
+
+			combatMoveTime = botWorld->gameLocalInfo.time + 5000;
+			combatMoveTooCloseRange = tooCloseRange;
+		}
+
+		if ( botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && botThreadData.random.RandomInt( 100 ) > 90 && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) {
 			botUcmd->botCmds.launchDecoys = true; //mal: we're exposing our flank, so fire some decoys to cover our move.
 		}
 	}
 
 	if ( combatMoveTime > botWorld->gameLocalInfo.time ) {
-		if ( dist > Square( tooCloseRange ) ) { //mal: we're far enough away to get a shot - attack.
+		if ( dist > Square( combatMoveTooCloseRange ) ) { //mal: we're far enough away to get a shot - attack.
 			combatMoveTime = 0;
+			combatMoveActionGoal = ACTION_NULL;
 			overRideLook = true;
 		}
 	}
 
-	if ( combatMoveTime > 0 ) {
-		vec = enemyOrg;
-		if ( combatMoveDir == BACK ) {
-			vec += ( -tooCloseRange * botWorld->clientInfo[ enemy ].viewAxis[ 0 ] );
-		} else if ( combatMoveDir == RIGHT ) {
-			vec += ( tooCloseRange * ( botWorld->clientInfo[ enemy ].viewAxis[ 1 ] * -1 ) );
-		} else if ( combatMoveDir == LEFT ) {
-			vec += ( -tooCloseRange * ( botWorld->clientInfo[ enemy ].viewAxis[ 1 ] * -1 ) );
+	if ( combatMoveTime > botWorld->gameLocalInfo.time ) {
+		if ( combatMoveActionGoal != ACTION_NULL ) {
+			Bot_SetupVehicleMove( vec3_zero, -1, combatMoveActionGoal );
+		} else {
+			vec = enemyOrg;
+			if ( combatMoveDir == BACK ) {
+				vec += ( -tooCloseRange * botWorld->clientInfo[ enemy ].viewAxis[ 0 ] );
+			} else if ( combatMoveDir == RIGHT ) {
+				vec += ( tooCloseRange * ( botWorld->clientInfo[ enemy ].viewAxis[ 1 ] * -1 ) );
+			} else if ( combatMoveDir == LEFT ) {
+				vec += ( -tooCloseRange * ( botWorld->clientInfo[ enemy ].viewAxis[ 1 ] * -1 ) );
+			}
+
+			vec.z = botVehicleInfo->origin.z;
+
+			if ( !botThreadData.Nav_IsDirectPath( AAS_VEHICLE, botInfo->team, botInfo->areaNumVehicle, botInfo->aasVehicleOrigin, vec ) ) {
+				combatMoveTime = 0;
+				return true;
+			}
+
+			Bot_SetupVehicleMove( vec, -1, ACTION_NULL );
 		}
-
-		vec.z = botVehicleInfo->origin.z;
-
-		if ( !botThreadData.Nav_IsDirectPath( AAS_VEHICLE, botInfo->team, botInfo->areaNumVehicle, botInfo->aasVehicleOrigin, vec ) ) {
-			combatMoveTime = 0;
-			return true;
-		}
-
-		Bot_SetupVehicleMove( vec, -1, ACTION_NULL );
 
 		if ( MoveIsInvalid() ) {
 			combatMoveTime = 0;
+			combatMoveActionGoal = ACTION_NULL;
 			return true;
 		}
 
@@ -1051,3 +1077,4 @@ bool idBotAI::Buffalo_Air_To_Air_Movement() {
 
 	return true;
 }
+

@@ -31,6 +31,8 @@ public:
 
 	const sdDeclDamage*		GetCollideDamage() const { return collideDamage; }
 
+	static void				IncRoadKillStats( idPlayer* player );
+
 protected:
 	int						nextSelfCollisionTime;
 	int						nextJumpSound;

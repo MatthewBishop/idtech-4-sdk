@@ -37,7 +37,6 @@
 #include "../renderer/RenderSystem.h"
 #include "../renderer/RenderWorld.h"
 #include "../renderer/Model.h"
-#include "../renderer/Model_local.h" // Gordon: urk
 #include "../renderer/ModelManager.h"
 #include "../renderer/RenderWorld.h"
 

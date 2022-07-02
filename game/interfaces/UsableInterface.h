@@ -6,6 +6,7 @@
 #define __GAME_INTERFACES_USABLEINTERFACE_H__
 
 class sdWeaponLockInfo;
+class sdEntityDisplayIconInfo;
 
 
 class sdUsableInterface {
@@ -39,6 +40,7 @@ public:
 
 	virtual int							GetDestructionEndTime( void ) const = 0;
 	virtual bool						GetDirectionWarning( void ) const = 0;
+	virtual int							GetRouteKickDistance( void ) const = 0;
 
 	virtual const sdDeclGUI*			GetOverlayGUI( void ) const = 0;
 
@@ -75,6 +77,12 @@ public:
 	virtual bool						OnActivate( idPlayer* player, float distance ) = 0;
 	virtual bool						OnActivateHeld( idPlayer* player, float distance ) = 0;
 	virtual bool						OnUsed( idPlayer* player, float distance ) = 0;
+};
+
+class sdEntityDisplayIconInterface {
+public:
+	virtual bool						HasIcon( idPlayer* viewer, sdWorldToScreenConverter& converter ) = 0;
+	virtual bool						GetEntityDisplayIconInfo( idPlayer* viewer, sdWorldToScreenConverter& converter, sdEntityDisplayIconInfo& iconInfo ) = 0;
 };
 
 #endif // __GAME_INTERFACES_USABLEINTERFACE_H__

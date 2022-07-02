@@ -47,5 +47,9 @@ void idBotAI::VThink() {
 	if ( vehicleReverseTime > botWorld->gameLocalInfo.time ) {
 		botUcmd->specialMoveType = REVERSEMOVE;
 	}
+
+	if ( HumanVehicleOwnerNearby( botInfo->team, botVehicleInfo->origin, HUMAN_OWN_VEHICLE_DIST, botVehicleInfo->spawnID ) ) {
+		botUcmd->specialMoveType = FULL_STOP; //mal: don't move if the human who own(ed) this vehicle is nearby, but still look and shoot.
+	}
 }
 

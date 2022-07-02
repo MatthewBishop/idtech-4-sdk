@@ -748,12 +748,6 @@ void sdGameRules::UpdateScoreboard( sdUIList* list, const char* teamName ) {
 	sdUIList::ClearItems( list );
 
 	idPlayer* localPlayer = gameLocal.GetLocalPlayer();
-	if ( !localPlayer ) {
-		list->GetUI()->PushScriptVar( 0.0f );
-		list->GetUI()->PushScriptVar( 0.0f );
-		list->GetUI()->PushScriptVar( 0.0f );
-		return;
-	}
 
 	sdTeamManagerLocal& manager = sdTeamManager::GetInstance();
 
@@ -769,7 +763,9 @@ void sdGameRules::UpdateScoreboard( sdUIList* list, const char* teamName ) {
 
 	sdTeamInfo& teamInfo = manager.GetTeamByIndex( index - 1 );
 
-	bool showClass = localPlayer->GetTeam() ? *localPlayer->GetTeam() == teamInfo : true;
+	sdTeamInfo* localTeam = localPlayer == NULL ? NULL : localPlayer->GetTeam();
+
+	bool showClass = localTeam == NULL ? true : *localTeam == teamInfo;
 
 	idStaticList< idPlayer*, MAX_CLIENTS > players;
 	teamInfo.SortPlayers( players, true );
@@ -1059,6 +1055,12 @@ void sdGameRules::NewState( gameState_t news ) {
 		case GS_GAMEON: {
 			sdGlobalStatsTracker::GetInstance().Clear();
 			for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+				// Gordon: For local play, grab the latest local stats for life stats baseline
+				if ( gameLocal.isServer && gameLocal.GetLocalPlayer() != NULL ) {
+					gameLocal.clientRanks[ i ].calculated = false;
+					gameLocal.clientStatsRequestsPending = true;
+				}
+
 				idPlayer* player = gameLocal.GetClient( i );
 				if ( player == NULL ) {
 					continue;
@@ -1071,6 +1073,22 @@ void sdGameRules::NewState( gameState_t news ) {
 			break;
 		}
 		case GS_GAMEREVIEW: {
+			for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+				idPlayer* player = gameLocal.GetClient( i );
+				if ( player == NULL ) {
+					continue;
+				}
+
+				if ( player->GetHealth() > 0 ) {
+					player->RegisterTimeAlive();
+				}
+				player->CalcLifeStats();
+			}
+
+			if ( gameLocal.GetLocalPlayer() != NULL ) {
+				sdGlobalStatsTracker::GetInstance().StartStatsRequest();
+			}
+
 			if ( gameState == GS_GAMEON ) {
 				// we've just finished the match
 
@@ -1180,17 +1198,17 @@ sdGameRules::Run
 */
 void sdGameRules::Run( void ) {
 	UpdateChatLines();
+	pureReady = true;
+
 	if( gameLocal.isClient ) {
 		return;
 	}
-
-	pureReady = true;
 
 	if ( gameState == GS_INACTIVE ) {
 		NewState( GS_WARMUP );
 	}
 
-	if ( gameLocal.time > gameLocal.playerSpawnTime ) {
+	if ( gameLocal.time > gameLocal.playerSpawnTime && !gameLocal.IsPaused() ) {
 		CheckRespawns();
 	}
 
@@ -1270,7 +1288,7 @@ void sdGameRules::AddChatLine( chatMode_t chatMode, const idVec4& color, const w
 
 	gameLocal.Printf( "%ls\n", temp.c_str() );
 
-	if ( gameLocal.GetLocalPlayer() != NULL ) {
+	if ( gameLocal.DoClientSideStuff() ) {
 		sdChatLine::node_t* node = chatFree.NextNode();
 		sdChatLine* line = NULL;
 		if( node != NULL ) {
@@ -1287,12 +1305,23 @@ void sdGameRules::AddChatLine( chatMode_t chatMode, const idVec4& color, const w
 		}
 		if( line != NULL ) {
 			line->GetNode().AddToEnd( chatHead );
-			line->Set( temp.c_str(), gameLocal.time, chatMode );
+			line->Set( temp.c_str(), chatMode );
 		}
 	}
 }
 
 idCVar g_showChatLocation( "g_showChatLocation", "1", CVAR_BOOL | CVAR_GAME, "show/hide locations in chat text" );
+
+/*
+===============
+sdGameRules::AddRepeaterChatLine
+===============
+*/
+void sdGameRules::AddRepeaterChatLine( const char* clientName, const int clientNum, const wchar_t *text ) {
+	idVec4 color;
+	sdProperties::sdFromString( color, g_chatDefaultColor.GetString() );
+	AddChatLine( CHAT_MODE_MESSAGE, color, L"%hs^0(%d): %ls", clientName, clientNum, text );
+}
 
 /*
 ===============
@@ -1451,8 +1480,7 @@ void sdGameRules::MessageMode( const idCmdArgs &args ) {
 		return;
 	}
 
-	idPlayer* player = gameLocal.GetLocalPlayer();
-	if ( !player ) {
+	if ( networkSystem->IsDedicated() ) {
 		gameLocal.Printf( "sdGameRules::MessageMode not valid without a local player\n" );
 		return;
 	}
@@ -1659,7 +1687,7 @@ void sdGameRules::ProcessChatMessage( idPlayer* player, gameReliableClientMessag
 
 	switch ( mode ) {
 		case GAME_RELIABLE_CMESSAGE_CHAT:
-			outMsg.Send();
+			outMsg.Send( sdReliableMessageClientInfoAll() );
 			AddChatLine( location, sdGameRules::CHAT_MODE_SAY, clientIndex, text );
 			break;
 		case GAME_RELIABLE_CMESSAGE_TEAM_CHAT: {
@@ -1677,7 +1705,7 @@ void sdGameRules::ProcessChatMessage( idPlayer* player, gameReliableClientMessag
 					if ( localPlayer == other ) {
 						AddChatLine( location, sdGameRules::CHAT_MODE_SAY_TEAM, clientIndex, text );
 					} else {
-						outMsg.Send( i );
+						outMsg.Send( sdReliableMessageClientInfo( i ) );
 					}
 				}
 				break;
@@ -1692,7 +1720,7 @@ void sdGameRules::ProcessChatMessage( idPlayer* player, gameReliableClientMessag
 						if ( localPlayer == other ) {
 							AddChatLine( location, sdGameRules::CHAT_MODE_SAY_FIRETEAM, clientIndex, text );
 						} else {
-							outMsg.Send( other->entityNumber );
+							outMsg.Send( sdReliableMessageClientInfo( other->entityNumber ) );
 						}
 					}
 				} else {
@@ -1708,7 +1736,7 @@ void sdGameRules::ProcessChatMessage( idPlayer* player, gameReliableClientMessag
 								if ( localPlayer == other ) {
 									AddChatLine( location, sdGameRules::CHAT_MODE_SAY_FIRETEAM, clientIndex, text );
 								} else {
-									outMsg.Send( other->entityNumber );
+									outMsg.Send( sdReliableMessageClientInfo( other->entityNumber ) );
 								}
 							}
 						}
@@ -1945,19 +1973,27 @@ void sdGameRules::OnNetworkEvent( const char* message ) {
 sdGameRules::Event_SendNetworkEvent
 ================
 */
-void sdGameRules::Event_SendNetworkEvent( idEntity* other, const char* message ) {
-	if ( other && ( other->entityNumber < 0 || other->entityNumber >= MAX_CLIENTS ) ) {
-		gameLocal.Warning( "sdGameRules::Event_SendNetworkEvent - tried to send network event to non-player!" );
-		return;
+void sdGameRules::Event_SendNetworkEvent( int clientIndex, bool isRepeaterClient, const char* message ) {
+	if ( !isRepeaterClient ) {
+		if ( clientIndex == -1 ) {
+			if ( gameLocal.GetLocalPlayer() != NULL ) {
+				OnNetworkEvent( message );
+			}
+		} else {
+			idPlayer* player = gameLocal.GetClient( clientIndex );
+			if ( player != NULL && gameLocal.IsLocalPlayer( player ) ) {
+				OnNetworkEvent( message );
+			}
+		}
 	}
 
-	if ( ( other && gameLocal.IsLocalPlayer( other ) ) || ( !other && !networkSystem->IsActive() ) ) {
-		OnNetworkEvent( message );
+	sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_NETWORKEVENT );
+	msg.WriteLong( NETWORKEVENT_RULES_ID );
+	msg.WriteString( message );
+	if ( isRepeaterClient ) {
+		msg.Send( sdReliableMessageClientInfoRepeater( clientIndex ) );
 	} else {
-		sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_NETWORKEVENT );
-		msg.WriteLong( NETWORKEVENT_RULES_ID );
-		msg.WriteString( message );
-		msg.Send( other ? other->entityNumber : -1 );
+		msg.Send( sdReliableMessageClientInfo( clientIndex ) );
 	}
 }
 
@@ -1973,7 +2009,7 @@ void sdGameRules::Event_SetEndGameCamera( idEntity* other ) {
 
 	endGameCamera = other;
 	if ( gameLocal.isServer ) {
-		SendCameraEvent( other, -1 );
+		SendCameraEvent( other, sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -2197,22 +2233,6 @@ bool sdGameRules::ParseNetworkMessage( int msgType, const idBitMsg& msg ) {
 }
 
 /*
-================
-sdGameRules::SanitizeMapName
-================
-*/
-void sdGameRules::SanitizeMapName( idStr& mapName, bool setExtension ) {
-	if ( mapName.Icmpn( "maps/", 5 ) ) {
-		mapName = "maps/" + mapName;
-	}
-	if ( setExtension ) {
-		mapName.SetFileExtension( "entities" );
-	} else {
-		mapName.StripFileExtension();
-	}
-}
-
-/*
 ============
 sdGameRules::GetStatusText
 ============
@@ -2244,7 +2264,7 @@ bool sdGameRules::HandleGuiEvent( const sdSysEvent* event ) {
 		return false;
 	}
 
-	sdUserInterfaceLocal* scoreboardUI = gameLocal.GetUserInterface( gameLocal.GetScoreBoardGui() );
+	sdUserInterfaceLocal* scoreboardUI = gameLocal.GetUserInterface( gameLocal.localPlayerProperties.GetScoreBoard() );
 	if ( !scoreboardUI ) {
 		return false;
 	}
@@ -2262,7 +2282,7 @@ bool sdGameRules::TranslateGuiBind( const idKey& key, sdKeyCommand** cmd ) {
 		return false;
 	}
 
-	sdUserInterfaceLocal* scoreboardUI = gameLocal.GetUserInterface( gameLocal.GetScoreBoardGui() );
+	sdUserInterfaceLocal* scoreboardUI = gameLocal.GetUserInterface( gameLocal.localPlayerProperties.GetScoreBoard() );
 	if ( scoreboardUI == NULL ) {
 		return false;
 	}
@@ -2279,8 +2299,8 @@ bool sdGameRules::TranslateGuiBind( const idKey& key, sdKeyCommand** cmd ) {
 sdGameRules::sdChatLine::Set
 ============
 */
-void sdGameRules::sdChatLine::Set( const wchar_t* text, int time, chatMode_t mode ) {
-	this->time = time;
+void sdGameRules::sdChatLine::Set( const wchar_t* text, chatMode_t mode ) {
+	this->time = gameLocal.ToGuiTime( gameLocal.time );
 	CheckExpired();
 
 	if( flags.expired ) {
@@ -2387,7 +2407,7 @@ readyState_e sdGameRules::ArePlayersReady( bool readyIfNoPlayers, bool checkMin,
 	float readyFrac = idMath::ClampFloat( 0.f, 1.f, ( gameLocal.serverInfoData.readyPercent / 100.f ) );
 
 	if ( checkMin ) {
-		if ( networkSystem->IsDedicated() || gameLocal.isClient ) {
+		if ( gameLocal.IsMultiPlayer() ) {
 			bool allowBots = false;
 			if ( !networkSystem->IsRankedServer() ) {
 				allowBots = g_useBotsInPlayerTotal.GetBool();
@@ -2511,9 +2531,9 @@ void sdGameRules::OnTimeLimitHit( void ) {
 sdGameRules::WriteInitialReliableMessages
 ============
 */
-void sdGameRules::WriteInitialReliableMessages( int clientNum ) {
+void sdGameRules::WriteInitialReliableMessages( const sdReliableMessageClientInfoBase& target ) {
 	if ( endGameCamera.IsValid() ) {
-		SendCameraEvent( endGameCamera, clientNum );
+		SendCameraEvent( endGameCamera, target );
 	}
 }
 
@@ -2522,11 +2542,11 @@ void sdGameRules::WriteInitialReliableMessages( int clientNum ) {
 sdGameRules::SendCameraEvent
 ============
 */
-void sdGameRules::SendCameraEvent( idEntity* entity, int clientNum ) {
+void sdGameRules::SendCameraEvent( idEntity* entity, const sdReliableMessageClientInfoBase& target ) {
 	sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_RULES_DATA );
 	msg.WriteLong( sdGameRules::EVENT_SETCAMERA );
 	msg.WriteLong( gameLocal.GetSpawnId( entity ) );
-	msg.Send( -1 );
+	msg.Send( target );
 }
 
 /*
@@ -2566,8 +2586,8 @@ void sdGameRules::RecordWinningTeam( sdTeamInfo* winner, const char* prefix, boo
 			}
 		}
 
-		sdPlayerStatEntry* stat = sdGlobalStatsTracker::GetInstance().GetStat( sdGlobalStatsTracker::GetInstance().AllocStat( statName, "int" ) );
-		stat->IncreaseInteger( i, 1 );
+		sdPlayerStatEntry* stat = sdGlobalStatsTracker::GetInstance().GetStat( sdGlobalStatsTracker::GetInstance().AllocStat( statName, sdNetStatKeyValue::SVT_INT ) );
+		stat->IncreaseValue( i, 1 );
 	}
 }
 
@@ -2674,6 +2694,28 @@ byte sdGameRules::GetProbeState( void ) const {
 
 /*
 ============
+sdGameRules::GetServerBrowserScore
+============
+*/
+int sdGameRules::GetServerBrowserScore( const sdNetSession& session ) const {
+	int score = 0;
+
+	if ( session.GetGameState() & PGS_WARMUP ) {
+		score += sdHotServerList::BROWSER_GOOD_BONUS;
+	} else if ( session.GetGameState() & PGS_WARMUP ) {
+		score += 0;
+	} else {
+		int minsLeft = ( int )( MS2SEC( session.GetSessionTime() ) / 60.f );
+		if ( minsLeft >= 15 ) {
+			score += sdHotServerList::BROWSER_OK_BONUS;
+		}
+	}
+
+	return score;
+}
+
+/*
+============
 sdGameRules::GetBrowserStatusString
 ============
 */
@@ -2712,4 +2754,93 @@ bool sdGameRules::InhibitEntitySpawn( idDict &spawnArgs ) const {
 	}
 
 	return false;
+}
+
+
+/*
+============
+sdGameRules_SingleMapHelper::ArgCompletion_StartGame
+============
+*/
+void sdGameRules_SingleMapHelper::ArgCompletion_StartGame( const idCmdArgs& args, argCompletionCallback_t callback ) {
+	// public builds only allow maps with metadata
+	// otherwise, unofficial defs wouldn't be loaded after pure restarts
+
+#if defined( SD_PUBLIC_BUILD )
+	if( gameLocal.mapMetaDataList == NULL ) {
+		return;
+	}
+
+	const char* cmd = args.Argv( 1 );
+	int len = idStr::Length( cmd );
+
+	int num = gameLocal.mapMetaDataList->GetNumMetaData();
+	for ( int i = 0; i < num; i++ ) {
+		const metaDataContext_t& metaData = gameLocal.mapMetaDataList->GetMetaDataContext( i );
+		if ( !gameLocal.IsMetaDataValidForPlay( metaData, false ) ) {
+			continue;
+		}
+		const idDict& meta = *metaData.meta;
+
+		const char* metaName = meta.GetString( "metadata_name" );
+		if ( idStr::Icmpn( metaName, cmd, len ) ) {
+			continue;
+		}
+
+		callback( va( "%s %s", args.Argv( 0 ), metaName ) );
+	}
+#else
+	idCmdSystem::ArgCompletion_EntitiesName( args, callback );
+#endif
+}
+
+
+/*
+============
+sdGameRules_SingleMapHelper::OnUserStartMap
+============
+*/
+userMapChangeResult_e sdGameRules_SingleMapHelper::OnUserStartMap( const char* text, idStr& reason, idStr& mapName ) {
+	mapName = text;	
+	SanitizeMapName( mapName, true );
+
+#if defined( SD_PUBLIC_BUILD )
+	idStr metaDataName = text;
+	SanitizeMapName( metaDataName, false );
+
+	const metaDataContext_t* metaData = gameLocal.mapMetaDataList->FindMetaDataContext( metaDataName.c_str() );
+	if ( metaData == NULL || !gameLocal.IsMetaDataValidForPlay( *metaData, false ) ) {
+		reason = va( "Unknown map '%s'", metaDataName.c_str() );
+		return UMCR_ERROR;
+	}
+
+	if( metaData->addon ) {
+		if( !fileSystem->IsAddonPackReferenced( metaData->pak ) ) {
+			fileSystem->ReferenceAddonPack( metaData->pak );
+
+			idCmdArgs args;
+			args.AppendArg( "spawnServer" );
+			args.AppendArg( text );
+			cmdSystem->SetupReloadEngine( args );
+			return UMCR_STOP;	
+		}		
+	}	
+#endif
+	return UMCR_CONTINUE;
+}
+
+/*
+================
+sdGameRules_SingleMapHelper::SanitizeMapName
+================
+*/
+void sdGameRules_SingleMapHelper::SanitizeMapName( idStr& mapName, bool setExtension ) {
+	if ( mapName.Icmpn( "maps/", 5 ) ) {
+		mapName = "maps/" + mapName;
+	}
+	if ( setExtension ) {
+		mapName.SetFileExtension( "entities" );
+	} else {
+		mapName.StripFileExtension();
+	}
 }

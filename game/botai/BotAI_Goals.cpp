@@ -241,9 +241,21 @@ void idBotAI::Bot_CheckClassState() {
 		Bot_RunTacticalAction();
 	} else if ( botInfo->classType == COVERTOPS ) {
 		Bot_CheckCovertToolState();
+	} else if ( botInfo->classType == FIELDOPS && botInfo->team == STROGG ) {
+		idVec3 turret_location;
+		if ( Bot_IsUnderAttackByAPT( turret_location ) && ClassWeaponCharged( SHIELD_GUN ) ) {
+			Bot_LookAtLocation( turret_location, FAST_TURN );
+
+			botIdealWeapNum = SHIELD_GUN;
+			botIdealWeapSlot = NO_WEAPON;
+			if ( botInfo->weapInfo.weapon == SHIELD_GUN ) {
+				botUcmd->botCmds.attack = true;
+			}
+		}
 	}
 
-//mal: GDF FOps will give ammo in the spawn. Strogg dont need this because they start out with SO much ammo.
+//mal: GDF FOps will give ammo in the spawn. Strogg dont need this because they start out with SO much ammo. NOT needed anymore as now GDF start with max ammo.
+/*
 	if ( botInfo->spawnTime + SPAWN_CONSIDER_TIME > botWorld->gameLocalInfo.time && !botInfo->revived && ClassWeaponCharged( AMMO_PACK ) ) {
         if ( botInfo->classType == FIELDOPS && botInfo->team == GDF ) {
 			if ( botInfo->xySpeed > WALKING_SPEED ) {
@@ -264,6 +276,7 @@ void idBotAI::Bot_CheckClassState() {
 			}
 		}
 	}
+*/
 
 	if ( botInfo->team == GDF && botInfo->classType == FIELDOPS && botInfo->spawnTime + SPAWN_CONSIDER_TIME > botWorld->gameLocalInfo.time && botInfo->revived && ClassWeaponCharged( AMMO_PACK ) && ClientIsValid( botInfo->mySavior, -1 ) && enemy == -1 && !ClientIsIgnored( botInfo->mySavior ) ) {
 		nbgTarget = botInfo->mySavior;
@@ -454,7 +467,7 @@ bool idBotAI::Bot_MedicCheckNBGState_InLTG () {
 
 	if ( botInfo->team == GDF ) {
 
-		clientNum = Bot_CheckForSpawnHostsToDestroy( range );
+		clientNum = Bot_CheckForSpawnHostsToDestroy( range, nbgChat );
 
 		if ( clientNum != -1 ) {
 			nbgTarget = clientNum;
@@ -667,7 +680,11 @@ bool idBotAI::Bot_EngCheckNBGState() {
 		return false;
 	}
 
-	bool chatRequested;
+	if ( aiState == LTG && ltgType == DEFUSE_GOAL ) { //mal: defusing bombs has to take priority!
+		return false;
+	}
+
+	bool chatRequested = false;
 
 	proxyNum = Bot_CheckForNeedyVehicles( range, chatRequested );
 
@@ -872,7 +889,13 @@ bool idBotAI::Bot_CheckForTeamGoals() {
 		GetVehicleInfo( botWorld->botGoalInfo.botGoal_MCP_VehicleNum, mcpVehicleInfo );
 		if ( mcpVehicleInfo.entNum != CLIENT_HAS_NO_VEHICLE ) {
 			if ( !mcpVehicleInfo.isImmobilized && ( mcpVehicleInfo.driverEntNum == -1 || mcpVehicleInfo.driverEntNum == botNum || botInfo->proxyInfo.entNum == mcpVehicleInfo.entNum ) ) {
-				mcpGoal = true;
+				if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO ) {
+					if ( botWorld->gameLocalInfo.botsDoObjsInTrainingMode && ( !TeamHasHuman( botInfo->team ) || ( botWorld->botGoalInfo.mapHasMCPGoalTime + ( botWorld->gameLocalInfo.botTrainingModeObjDelayTime * 1000 ) ) < botWorld->gameLocalInfo.time ) ) {
+						mcpGoal = true;
+					}
+				} else {
+					mcpGoal = true;
+				}
 			}
 		}
 	}
@@ -1170,6 +1193,23 @@ bool idBotAI::Bot_CheckForTeamGoals() {
 				continue;
 			}
 
+			if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO ) {
+				if ( Bot_CheckForHumanInteractingWithEntity( botThreadData.botActions[ i ]->GetActionSpawnControllerEntNum() ) == true ) {
+					continue;
+				}
+
+				if ( !ActionIsActiveForTrainingMode( i, botWorld->gameLocalInfo.botTrainingModeObjDelayTime ) ) { //mal: wait a while before we try to complete the goal, to give the player time to decide what he wants to do.
+					continue;
+				}
+
+				if ( !TeamHasHuman( botInfo->team ) ) { //mal: dont keep frustrating the human player by taking our spawn back too quick, in case he took it from us.
+					if ( botThreadData.random.RandomInt( 100 ) > TAKE_SPAWN_IN_DEMO_MODE_CHANCE ) {
+						continue;
+					}
+				}
+
+			}
+
 			if ( !Bot_LTGIsAvailable( -1, i, FDA_GOAL, 2 ) ) {
 				continue;
 			} //mal: some bot(s) is already on the way to grab that spawn - no need for us to do so as well.
@@ -1258,6 +1298,12 @@ bool idBotAI::Bot_CheckForTeamGoals() {
 				continue;
 			}
 
+			if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO ) {
+				if ( Bot_CheckForHumanInteractingWithEntity( botThreadData.botActions[ i ]->GetActionSpawnControllerEntNum() ) == true ) {
+					continue;
+				}
+			}
+
 			if ( !Bot_LTGIsAvailable( -1, i, STEAL_SPAWN_GOAL, 1 ) ) {
 				continue;
 			} //mal: some bot is already on the way to grab that spawn - no need for us to do so as well.
@@ -1342,6 +1388,10 @@ bool idBotAI::Bot_CheckForTeamGoals() {
 			botThreadData.botActions[ i ]->GetObjForTeam( teamFilter ) == ACTION_PREVENT_HACK ) {
 
 			if ( botWorld->gameLocalInfo.inWarmup ) {
+				continue;
+			}
+
+			if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO && !botWorld->botGoalInfo.gameIsOnFinalObjective ) { //mal: dont worry about the obj much in training mode, unless its the final obj...
 				continue;
 			}
  
@@ -2213,7 +2263,7 @@ void idBotAI::Bot_FindDeadWhileInVehicle() {
 		return;
 	}
 
-	if ( Bot_IsInHeavyAttackVehicle() ) { //mal: dont do this if in a tank, or attack aircraft.
+	if ( Bot_IsInHeavyAttackVehicle() ) { //mal: dont do this if in an attack aircraft or tank.
 		return;
 	}
 	
@@ -2245,6 +2295,7 @@ bool idBotAI::Bot_CheckForSoldierGoals() {
 	proxyInfo_t vehicleInfo;
 	idVec3 vec;
 	idList< int > plantGoals;
+	idList< int > trainingModeRoamGoals;
 
 	if ( botWorld->gameLocalInfo.botsIgnoreGoals ) {
 		return false;
@@ -2265,6 +2316,25 @@ bool idBotAI::Bot_CheckForSoldierGoals() {
 		}
 
 		if ( botThreadData.botActions[ i ]->GetObjForTeam( botInfo->team ) == ACTION_HE_CHARGE ) {
+
+			if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO ) {
+				if ( !botWorld->gameLocalInfo.botsDoObjsInTrainingMode ) {
+					trainingModeRoamGoals.Append( i );
+					continue;
+				}
+
+				if ( TeamHumanNearLocation( botInfo->team, vec3_zero, -1.0f, false, SOLDIER, false ) && TeamHumanMissionIsObjective() && botThreadData.botActions[ i ]->ActionIsPriority() ) {
+					trainingModeRoamGoals.Append( i );
+					continue;
+				}
+
+				int timeDelay = ( botThreadData.botActions[ i ]->ActionIsPriority() ) ? botWorld->gameLocalInfo.botTrainingModeObjDelayTime : 60; //mal: some plants are primary objs, so wait longer.
+
+				if ( !ActionIsActiveForTrainingMode( i, timeDelay ) ) { //mal: wait a while before we try to complete the goal, to give the player time to decide what he wants to do.
+					trainingModeRoamGoals.Append( i );
+					continue;
+				}
+			}
 
 			if ( ActionIsIgnored( i ) ) {
 				continue;
@@ -2295,7 +2365,7 @@ bool idBotAI::Bot_CheckForSoldierGoals() {
 		}
 	}
 
-	if ( plantGoals.Num() == 0 ) {
+	if ( plantGoals.Num() == 0 && trainingModeRoamGoals.Num() == 0 ) {
 		return false;
 	}
 
@@ -2361,6 +2431,48 @@ bool idBotAI::Bot_CheckForSoldierGoals() {
 		return true;
 	}
 
+	if ( trainingModeRoamGoals.Num() > 0 ) {
+		if ( botThreadData.random.RandomInt( 100 ) > 50 ) {
+			if ( trainingModeRoamGoals.Num() == 1 ) {
+				actionNum = trainingModeRoamGoals[ 0 ];
+			} else {
+				j = botThreadData.random.RandomInt( trainingModeRoamGoals.Num() );
+				actionNum = trainingModeRoamGoals[ j ];
+			}	
+
+			ltgUseVehicle = Bot_ShouldUseVehicleForAction( actionNum, true );
+
+			if ( ltgUseVehicle ) {
+				if ( botVehicleInfo != NULL ) {
+					if ( botVehicleInfo->driverEntNum == botNum ) {
+						V_ROOT_AI_NODE = &idBotAI::Run_VLTG_Node;
+						V_LTG_AI_SUB_NODE = &idBotAI::Enter_VLTG_RoamGoal;
+					} else {
+						Bot_ExitVehicle();
+					}
+				}	
+			} else {
+				if ( botVehicleInfo != NULL ) { //mal: if we're close to the goal, or theres some other reason not to use a vehicle for this goal, then exit our vehicle
+					Bot_ExitVehicle();
+				}
+			}
+
+	  		ROOT_AI_NODE = &idBotAI::Run_LTG_Node;
+			ltgTime = botWorld->gameLocalInfo.time + 30000;
+			LTG_AI_SUB_NODE = &idBotAI::Enter_LTG_RoamGoal;
+
+			if ( !botInfo->isDisguised ) {
+				if ( !ltgUseVehicle ) {
+					Bot_FindRouteToCurrentGoal();	
+				}
+
+				PushAINodeOntoStack( -1, -1, actionNum, ltgTime, true, ltgUseVehicle, ( routeNode != NULL ) ? true : false );
+			}
+
+			return true;
+		}
+	}
+
 	return false; //mal: no soldier goals, find a non-class specific goal to do.
 }
 
@@ -2388,6 +2500,7 @@ bool idBotAI::Bot_CheckForEngineerGoals() {
 	idList< int > priorityMineGoals;
 	idList< int > priorityDeployGoals;
 	idList< int > mgNestGoals; // both repair and build.
+	idList< int > trainingModeRoamGoals;
 
 	if ( botWorld->gameLocalInfo.inWarmup ) {
 		return false;
@@ -2417,6 +2530,16 @@ bool idBotAI::Bot_CheckForEngineerGoals() {
 				continue;
 			}
 
+			if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO ) {
+				if ( !botWorld->gameLocalInfo.botsDoObjsInTrainingMode ) { 
+					continue;
+				}
+
+				if ( TeamHumanNearLocation( botInfo->team, botThreadData.botActions[ i ]->GetActionOrigin(), CLOSE_TO_GOAL_RANGE, false, ENGINEER ) ) {
+					continue;
+				}
+			}
+
 			if ( botWorld->gameLocalInfo.heroMode != false && TeamHasHuman( botInfo->team ) ) { //mal: the human has decided to complete the maps goals.
 				continue;
 			}
@@ -2438,6 +2561,23 @@ bool idBotAI::Bot_CheckForEngineerGoals() {
 		if ( botThreadData.botActions[ i ]->GetObjForTeam( botInfo->team ) == ACTION_MAJOR_OBJ_BUILD ) {
 			if ( botWorld->gameLocalInfo.botsIgnoreGoals ) {
 				continue;
+			}
+
+			if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO ) {
+				if ( !botWorld->gameLocalInfo.botsDoObjsInTrainingMode ) {
+					trainingModeRoamGoals.Append( i );
+					continue;
+				}
+
+				if ( TeamHumanNearLocation( botInfo->team, vec3_zero, -1.0f, false, ENGINEER, false ) && TeamHumanMissionIsObjective() ) {
+					trainingModeRoamGoals.Append( i );
+					continue;
+				}
+
+				if ( !ActionIsActiveForTrainingMode( i, botWorld->gameLocalInfo.botTrainingModeObjDelayTime ) ) { //mal: wait a while before we try to complete the goal, to give the player time to decide what he wants to do.
+					trainingModeRoamGoals.Append( i );
+					continue;
+				}
 			}
 
 			if ( ActionIsIgnored( i ) ) {
@@ -2490,17 +2630,33 @@ bool idBotAI::Bot_CheckForEngineerGoals() {
 				continue;
 			}
 
-			if ( !( botThreadData.botActions[ i ]->GetDeployableType() & APT ) && !( botThreadData.botActions[ i ]->GetDeployableType() & AVT ) && !( botThreadData.botActions[ i ]->GetDeployableType() & AIT ) ) {
+			if ( Bot_GetDeployableTypeForAction( i ) == NULL_DEPLOYABLE ) {
 				continue;
+			}
+
+			if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO ) { //mal: in training mode, dont have too many deployables on the ground, as they can overwhelm the player....
+				if ( botThreadData.botActions[ i ]->GetDeployableType() == APT && Bot_CheckTeamHasDeployableTypeNearLocation( botInfo->team, APT, vec3_zero, -1.0f ) ) {
+					continue;
+				}
+
+				if ( botThreadData.botActions[ i ]->GetDeployableType() == AVT && Bot_CheckTeamHasDeployableTypeNearLocation( botInfo->team, AVT, vec3_zero, -1.0f ) ) {
+					continue;
+				}
+
+				if ( ( botThreadData.botActions[ i ]->GetDeployableType() & APT ) && ( botThreadData.botActions[ i ]->GetDeployableType() & AVT ) ) {
+					if ( Bot_CheckTeamHasDeployableTypeNearLocation( botInfo->team, AVT, vec3_zero, -1.0f ) && Bot_CheckTeamHasDeployableTypeNearLocation( botInfo->team, APT, vec3_zero, -1.0f ) ) {
+						continue;
+					}
+				}
+
+				if ( !Bot_LTGIsAvailable( -1, ACTION_NULL, DROP_DEPLOYABLE_GOAL, 1 ) ) {
+					continue;
+				}
 			}
 
 			vec = botThreadData.botActions[ i ]->GetActionOrigin() - botInfo->origin;
 
-			if ( vec.Length() > Square( DEPLOYABLE_GOAL_DIST ) ) { //mal: goal should be back at base, if too far away, then dont drop one here.
-				continue;
-			}
-
-			if ( ( botThreadData.botActions[ i ]->GetDeployableType() & AIT ) && Bot_CheckTeamHasDeployableTypeNearAction( botInfo->team, AIT, i, DEFAULT_DEPLOYABLE_COVERAGE_RANGE ) ) {
+			if ( vec.LengthSqr() > Square( DEPLOYABLE_GOAL_DIST ) ) { 
 				continue;
 			}
 
@@ -2527,6 +2683,21 @@ bool idBotAI::Bot_CheckForEngineerGoals() {
 				continue;
 			}
 
+			if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO ) {
+				if ( !botWorld->gameLocalInfo.botsDoObjsInTrainingMode ) { 
+					continue;
+				}
+				
+				if ( TeamHumanNearLocation( botInfo->team, vec3_zero, -1.0f, false, ENGINEER, false ) ) {
+					continue;
+				}
+
+				if ( !ActionIsActiveForTrainingMode( i, 60 ) ) { //mal: wait a while before we try to complete the goal, to give the player time to decide what he wants to do.
+					trainingModeRoamGoals.Append( i );
+					continue;
+				}
+			}
+
 			if ( Bot_WantsVehicle() ) {
 				continue;
 			}
@@ -2545,7 +2716,7 @@ bool idBotAI::Bot_CheckForEngineerGoals() {
 
 			vec = botThreadData.botActions[ i ]->GetActionOrigin() - botInfo->origin;
 
-			if ( vec.Length() > Square( MG_REPAIR_MAX_DIST ) ) { 
+			if ( vec.LengthSqr() > Square( MG_REPAIR_MAX_DIST ) ) { 
 				continue;
 			}
 
@@ -2584,17 +2755,33 @@ bool idBotAI::Bot_CheckForEngineerGoals() {
 				continue;
 			}
 
-			if ( !( botThreadData.botActions[ i ]->GetDeployableType() & APT ) && !( botThreadData.botActions[ i ]->GetDeployableType() & AVT ) && !( botThreadData.botActions[ i ]->GetDeployableType() & AIT ) ) {
+			if ( Bot_GetDeployableTypeForAction( i ) == NULL_DEPLOYABLE ) {
 				continue;
+			}
+
+			if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO ) { //mal: in training mode, dont have too many deployables on the ground, as they can overwhelm the player....
+				if ( botThreadData.botActions[ i ]->GetDeployableType() == APT && Bot_CheckTeamHasDeployableTypeNearLocation( botInfo->team, APT, vec3_zero, -1.0f ) ) {
+					continue;
+				}
+
+				if ( botThreadData.botActions[ i ]->GetDeployableType() == AVT && Bot_CheckTeamHasDeployableTypeNearLocation( botInfo->team, AVT, vec3_zero, -1.0f ) ) {
+					continue;
+				}
+
+				if ( ( botThreadData.botActions[ i ]->GetDeployableType() & APT ) && ( botThreadData.botActions[ i ]->GetDeployableType() & AVT ) ) {
+					if ( Bot_CheckTeamHasDeployableTypeNearLocation( botInfo->team, AVT, vec3_zero, -1.0f ) && Bot_CheckTeamHasDeployableTypeNearLocation( botInfo->team, APT, vec3_zero, -1.0f ) ) {
+						continue;
+					}
+				}
+
+				if ( !Bot_LTGIsAvailable( -1, ACTION_NULL, DROP_PRIORITY_DEPLOYABLE_GOAL, 1 ) ) {
+					continue;
+				}
 			}
 
 			vec = botThreadData.botActions[ i ]->GetActionOrigin() - botInfo->origin;
 
-			if ( vec.Length() > Square( DEPLOYABLE_GOAL_DIST ) ) { //mal: goal should be back at base, if too far away, then dont drop one here.
-				continue;
-			}
-
-			if ( ( botThreadData.botActions[ i ]->GetDeployableType() & AIT ) && Bot_CheckTeamHasDeployableTypeNearAction( botInfo->team, AIT, i, DEFAULT_DEPLOYABLE_COVERAGE_RANGE ) ) {
+			if ( vec.LengthSqr() > Square( DEPLOYABLE_GOAL_DIST ) ) { //mal: goal should be back at base, if too far away, then dont drop one here.
 				continue;
 			}
 
@@ -2619,6 +2806,21 @@ bool idBotAI::Bot_CheckForEngineerGoals() {
 
 			if ( Bot_IsInHeavyAttackVehicle() ) {
 				continue;
+			}
+
+			if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO ) {
+				if ( !botWorld->gameLocalInfo.botsDoObjsInTrainingMode ) { 
+					continue;
+				}
+				
+				if ( TeamHumanNearLocation( botInfo->team, vec3_zero, -1.0f, false, ENGINEER, false ) ) {
+					continue;
+				}
+
+				if ( !ActionIsActiveForTrainingMode( i, 60 ) ) { //mal: wait a while before we try to complete the goal, to give the player time to decide what he wants to do.
+					trainingModeRoamGoals.Append( i );
+					continue;
+				}
 			}
 
 			if ( Bot_WantsVehicle() ) {
@@ -2704,7 +2906,7 @@ bool idBotAI::Bot_CheckForEngineerGoals() {
 		}
 	}
 
-	if ( defuseGoals.Num() == 0 && buildGoals.Num() == 0 && mineGoals.Num() == 0 && mcpGoal == false && minorBuildGoal == -1 && deployableGoals.Num() == 0 && priorityMineGoals.Num() == 0 && mgNestGoals.Num() == 0 ) {
+	if ( defuseGoals.Num() == 0 && buildGoals.Num() == 0 && mineGoals.Num() == 0 && mcpGoal == false && minorBuildGoal == -1 && deployableGoals.Num() == 0 && priorityMineGoals.Num() == 0 && mgNestGoals.Num() == 0 && trainingModeRoamGoals.Num() == 0 ) {
 		return false;
 	}
 
@@ -3101,6 +3303,48 @@ bool idBotAI::Bot_CheckForEngineerGoals() {
 		return true;
 	}
 
+	if ( trainingModeRoamGoals.Num() > 0 ) {
+		if ( botThreadData.random.RandomInt( 100 ) > 50 ) {
+			if ( trainingModeRoamGoals.Num() == 1 ) {
+				actionNum = trainingModeRoamGoals[ 0 ];
+			} else {
+				j = botThreadData.random.RandomInt( trainingModeRoamGoals.Num() );
+				actionNum = trainingModeRoamGoals[ j ];
+			}	
+
+			ltgUseVehicle = Bot_ShouldUseVehicleForAction( actionNum, true );
+
+			if ( ltgUseVehicle ) {
+				if ( botVehicleInfo != NULL ) {
+					if ( botVehicleInfo->driverEntNum == botNum ) {
+						V_ROOT_AI_NODE = &idBotAI::Run_VLTG_Node;
+						V_LTG_AI_SUB_NODE = &idBotAI::Enter_VLTG_RoamGoal;
+					} else {
+						Bot_ExitVehicle();
+					}
+				}	
+			} else {
+				if ( botVehicleInfo != NULL ) { //mal: if we're close to the goal, or theres some other reason not to use a vehicle for this goal, then exit our vehicle
+					Bot_ExitVehicle();
+				}
+			}
+
+	  		ROOT_AI_NODE = &idBotAI::Run_LTG_Node;
+			ltgTime = botWorld->gameLocalInfo.time + 30000;
+			LTG_AI_SUB_NODE = &idBotAI::Enter_LTG_RoamGoal;
+
+			if ( !botInfo->isDisguised ) {
+				if ( !ltgUseVehicle ) {
+					Bot_FindRouteToCurrentGoal();	
+				}
+
+				PushAINodeOntoStack( -1, -1, actionNum, ltgTime, true, ltgUseVehicle, ( routeNode != NULL ) ? true : false );
+			}
+
+			return true;
+		}
+	}
+
 	return false; //mal: else, find a normal non-class specific goal to do.
 }
 
@@ -3123,6 +3367,7 @@ bool idBotAI::Bot_CheckForCovertGoals() {
 	idList< int > sniperGoals;
 	idList< int > deployableGoals;
 	idList< int > hiveGoals;
+	idList< int > trainingModeRoamGoals;
 
 	if ( botWorld->gameLocalInfo.inWarmup ) {
 		return false;
@@ -3139,6 +3384,23 @@ bool idBotAI::Bot_CheckForCovertGoals() {
 		}
 
 		if ( botThreadData.botActions[ i ]->GetObjForTeam( botInfo->team ) == ACTION_HACK ) {
+
+			if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO ) {
+				if ( !botWorld->gameLocalInfo.botsDoObjsInTrainingMode ) {
+					trainingModeRoamGoals.Append( i );
+					continue;
+				}
+
+				if ( TeamHumanNearLocation( botInfo->team, vec3_zero, -1.0f, false, COVERTOPS, false ) && TeamHumanMissionIsObjective() ) {
+					trainingModeRoamGoals.Append( i );
+					continue;
+				}
+
+				if ( !ActionIsActiveForTrainingMode( i, botWorld->gameLocalInfo.botTrainingModeObjDelayTime ) ) { //mal: wait a while before we try to complete the goal, to give the player time to decide what he wants to do.
+					trainingModeRoamGoals.Append( i );
+					continue;
+				}
+			}
 
 			if ( ActionIsIgnored( i ) ) {
 				continue;
@@ -3233,13 +3495,17 @@ bool idBotAI::Bot_CheckForCovertGoals() {
 				continue;
 			}
 
+			if ( Bot_GetDeployableTypeForAction( i ) == NULL_DEPLOYABLE ) {
+				continue;
+			}
+
 			if ( !( botThreadData.botActions[ i ]->GetDeployableType() & RADAR ) ) {
 				continue;
 			}
 
 			vec = botThreadData.botActions[ i ]->GetActionOrigin() - botInfo->origin;
 
-			if ( vec.Length() > Square( DEPLOYABLE_GOAL_DIST ) ) { //mal: goal should be back at base, if too far away, then dont drop one here.
+			if ( vec.LengthSqr() > Square( DEPLOYABLE_GOAL_DIST ) ) { //mal: goal should be back at base, if too far away, then dont drop one here.
 				continue;
 			}
 
@@ -3304,7 +3570,7 @@ bool idBotAI::Bot_CheckForCovertGoals() {
 
 	int botDeployableTarget = Bot_HasDeployableTargetGoals( true ); //mal: only hacks if in disguise.
 
-	if ( hackGoals.Num() == 0 && sniperGoals.Num() == 0 && deployableGoals.Num() == 0 && hiveGoals.Num() == 0 && botDeployableTarget == -1 ) {
+	if ( hackGoals.Num() == 0 && sniperGoals.Num() == 0 && deployableGoals.Num() == 0 && hiveGoals.Num() == 0 && botDeployableTarget == -1 && trainingModeRoamGoals.Num() == 0 ) {
 		return false;
 	}
 
@@ -3536,6 +3802,48 @@ bool idBotAI::Bot_CheckForCovertGoals() {
 		return true;
 	}
 
+	if ( trainingModeRoamGoals.Num() > 0 ) {
+		if ( botThreadData.random.RandomInt( 100 ) > 50 ) {
+			if ( trainingModeRoamGoals.Num() == 1 ) {
+				actionNum = trainingModeRoamGoals[ 0 ];
+			} else {
+				j = botThreadData.random.RandomInt( trainingModeRoamGoals.Num() );
+				actionNum = trainingModeRoamGoals[ j ];
+			}	
+
+			ltgUseVehicle = Bot_ShouldUseVehicleForAction( actionNum, true );
+
+			if ( ltgUseVehicle ) {
+				if ( botVehicleInfo != NULL ) {
+					if ( botVehicleInfo->driverEntNum == botNum ) {
+						V_ROOT_AI_NODE = &idBotAI::Run_VLTG_Node;
+						V_LTG_AI_SUB_NODE = &idBotAI::Enter_VLTG_RoamGoal;
+					} else {
+						Bot_ExitVehicle();
+					}
+				}	
+			} else {
+				if ( botVehicleInfo != NULL ) { //mal: if we're close to the goal, or theres some other reason not to use a vehicle for this goal, then exit our vehicle
+					Bot_ExitVehicle();
+				}
+			}
+
+	  		ROOT_AI_NODE = &idBotAI::Run_LTG_Node;
+			ltgTime = botWorld->gameLocalInfo.time + 30000;
+			LTG_AI_SUB_NODE = &idBotAI::Enter_LTG_RoamGoal;
+
+			if ( !botInfo->isDisguised ) {
+				if ( !ltgUseVehicle ) {
+					Bot_FindRouteToCurrentGoal();	
+				}
+
+				PushAINodeOntoStack( -1, -1, actionNum, ltgTime, true, ltgUseVehicle, ( routeNode != NULL ) ? true : false );
+			}
+
+			return true;
+		}
+	}
+
 	return false; //mal: else, find a normal non-class specific goal to do.
 }
 
@@ -3549,7 +3857,7 @@ A non-class specific long term goal check for escorting important teammates.
 bool idBotAI::Bot_CheckForEscortGoals() {
 	int i;
 	int clientNum = -1;
-	int allowedEscorts = 1; //mal: normally, only 1 bot might escort you. In hero mode, upto 3 will follow you.
+	int allowedEscorts = 1; //mal: normally, only 1 bot might escort you. In hero/demo mode, upto 3 will follow you.
 	float dist;
 	float closest = idMath::INFINITY;
 	playerClassTypes_t criticalClass = ( botInfo->team == GDF ) ? botWorld->botGoalInfo.team_GDF_criticalClass : botWorld->botGoalInfo.team_STROGG_criticalClass;
@@ -3572,24 +3880,20 @@ bool idBotAI::Bot_CheckForEscortGoals() {
 		return false;
 	}
 
-	if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_EASY ) {
-		return false;
-	} //mal: low skill bots are too stupid to escort each other.
-
 	if ( botInfo->classType == criticalClass && botWorld->gameLocalInfo.heroMode == false ) { //mal: we're too important to escort others.
 		return false;
 	}
 
-	if ( botInfo->classType == MEDIC && Bot_HasTeamWoundedInArea( false ) ) {
+	if ( botInfo->classType == MEDIC && Bot_HasTeamWoundedInArea( false ) && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) {
 		return false;
 	}
 
-	if ( botWorld->gameLocalInfo.heroMode == false ) { 
+	if ( botWorld->gameLocalInfo.heroMode == false && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) { 
 		if ( botThreadData.random.RandomInt( 100 ) < 50 ) {
 			return false;
 		}
 	} else {
-		allowedEscorts = 3;
+		allowedEscorts = 2;
 	}//mal: if we're not excluded from doing major goals, we'll randomly decide to not do this. If we are excluded, then we'll always want to escort critical teammates!
 
 	for( i = 0; i < MAX_CLIENTS; i++ ) {
@@ -3612,15 +3916,27 @@ bool idBotAI::Bot_CheckForEscortGoals() {
 			continue;
 		}
 
+		if ( playerInfo.isBot ) { //mal: dont follow a bot thats following someone else.
+			if ( botThreadData.bots[ i ]->aiState == LTG && ( botThreadData.bots[ i ]->ltgType == FOLLOW_TEAMMATE || botThreadData.bots[ i ]->ltgType == FOLLOW_TEAMMATE_BY_REQUEST ) ) {
+				continue;
+			}
+		}
+
 		vec = playerInfo.origin - botInfo->origin;
-
 		dist = vec.LengthSqr();
+		int tempAllowedEscorts = allowedEscorts;
+		float maxEscortDist = 1900.0f;
+		
+		if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO && !playerInfo.isBot ) {
+			maxEscortDist *= 3.5f;
+			tempAllowedEscorts = 3;
+		}
 
-		if ( dist > Square( 1200.0f ) ) { //mal: they're too far away for us to start following!
+		if ( dist > Square( maxEscortDist ) ) { //mal: they're too far away for us to start following!
 			continue;
 		}
 
-		if ( !Client_IsCriticalForCurrentObj( i, 1900.0f ) && !ClientHasObj( i ) ) { //mal: this bozo isn't worth following! Check if he has a vehicle.
+		if ( !Client_IsCriticalForCurrentObj( i, -1.0f ) && !ClientHasObj( i ) ) { //mal: this bozo isn't worth following! Check if he has a vehicle.
 
 			if ( playerInfo.proxyInfo.entNum == CLIENT_HAS_NO_VEHICLE ) {
 				continue;
@@ -3645,11 +3961,11 @@ bool idBotAI::Bot_CheckForEscortGoals() {
 			}
 		}
 
-		if ( !Bot_LTGIsAvailable( i, ACTION_NULL, FOLLOW_TEAMMATE, allowedEscorts ) ) {
+		if ( !Bot_LTGIsAvailable( i, ACTION_NULL, FOLLOW_TEAMMATE, tempAllowedEscorts ) ) {
 			continue;
 		} //mal: some bot(s) is already escorting this guy - no need for us to do so as well.
 
-		if ( !Bot_LTGIsAvailable( i, ACTION_NULL, FOLLOW_TEAMMATE_BY_REQUEST, allowedEscorts ) ) {
+		if ( !Bot_LTGIsAvailable( i, ACTION_NULL, FOLLOW_TEAMMATE_BY_REQUEST, tempAllowedEscorts ) ) {
 			continue;
 		} //mal: some bot(s) is already escorting this guy - no need for us to do so as well.
 
@@ -3810,6 +4126,10 @@ bool idBotAI::Bot_CheckForFieldOpsGoals() {
 				continue;
 			}
 
+			if ( botThreadData.botActions[ i ]->GetObjForTeam( botInfo->team ) == ACTION_DROP_DEPLOYABLE ) {
+				continue;
+			}
+
 			if ( !Bot_LTGIsAvailable( -1, i, DROP_DEPLOYABLE_GOAL, 1 ) ) {
 				continue;
 			}
@@ -3820,7 +4140,7 @@ bool idBotAI::Bot_CheckForFieldOpsGoals() {
 
 			vec = botThreadData.botActions[ i ]->GetActionOrigin() - botInfo->origin;
 
-			if ( vec.Length() > Square( DEPLOYABLE_GOAL_DIST ) ) { //mal: goal should be back at base, if too far away, then dont drop one here.
+			if ( vec.LengthSqr() > Square( DEPLOYABLE_GOAL_DIST ) ) { //mal: goal should be back at base, if too far away, then dont drop one here.
 				continue;
 			}
 
@@ -4309,7 +4629,6 @@ bool idBotAI::Bot_CheckMCPGoals() {
 		return false;
 	}
 
-
 	proxyInfo_t mcp;
 	GetVehicleInfo( botWorld->botGoalInfo.botGoal_MCP_VehicleNum, mcp );
 
@@ -4319,6 +4638,16 @@ bool idBotAI::Bot_CheckMCPGoals() {
 
 	if ( mcp.isDeployed ) {
 		return false;
+	}
+
+	if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO && mcp.driverEntNum != botNum ) {
+		if ( !botWorld->gameLocalInfo.botsDoObjsInTrainingMode ) {
+			return false;
+		}
+
+		if ( TeamHasHuman( botInfo->team ) && ( botWorld->botGoalInfo.mapHasMCPGoalTime + ( botWorld->gameLocalInfo.botTrainingModeObjDelayTime * 1000 ) ) > botWorld->gameLocalInfo.time ) {
+			return false;
+		}
 	}
 
 	if ( mcp.isImmobilized ) {

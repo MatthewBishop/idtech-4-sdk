@@ -898,6 +898,9 @@ void idBotAI::ClearBotState() {
 
 	wantsVehicle = false;
 
+	ignoreNewEnemiesTime = 0;
+	ignoreNewEnemiesWhileInVehicleTime = 0;
+
 	botTeleporterAttempts = 0;
 
 	botPathFailedCounter = 0;
@@ -917,12 +920,16 @@ void idBotAI::ClearBotState() {
 
 	hopMoveGoal = vec3_zero;
 
+	warmupActionMoveGoal = ACTION_NULL;
+	warmupUseActionMoveGoalTime = 0;
+
 	stuckRandomMoveTime = 0;
 
 	lastVehicleSpawnID = 0;
 	lastVehicleTime = 0;
 
 	actionNumInsideDanger = ACTION_NULL;
+	lastNearbySafeActionToMoveTowardActionNum = ACTION_NULL;
 
 	shotIsBlockedCounter = 0;
 
@@ -1110,6 +1117,11 @@ void idBotAI::ClearBotState() {
 	lastMoveNode = "NO NODE";
 
 	botVehiclePathList.Clear();
+
+#ifdef _DEBUG
+	debugVar1 = -1;
+	debugVar2 = -1;
+#endif
 }
 
 void idBotAI::ClearBotUcmd( int clientNum ) {

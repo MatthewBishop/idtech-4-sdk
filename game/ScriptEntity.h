@@ -249,6 +249,7 @@ public:
 
 	virtual int							GetDestructionEndTime( void ) const { return 0; }
 	virtual bool						GetDirectionWarning( void ) const { return false; }
+	virtual int							GetRouteKickDistance( void ) const { return -1; }
 
 	virtual const sdDeclGUI*			GetOverlayGUI( void ) const;
 	virtual bool						HasAbility( qhandle_t handle, const idPlayer* player ) const;
@@ -310,6 +311,62 @@ private:
 	const sdProgram::sdFunction*		onUsed;
 
 	sdScriptEntity*						owner;
+};
+
+// TODO: This isn't the best place to keep this around.
+//       Finding a better place for it would be good.
+class sdEntityDisplayIconInfo {
+public:
+	static int SortByDistance( const sdEntityDisplayIconInfo* a, const sdEntityDisplayIconInfo* b ) {
+		return ( b->distance - a->distance ) > 0.0f ? 1 : -1;
+	}
+
+	idVec2				size;
+	const idMaterial*	material;
+	idVec4				color;
+
+	idVec2				origin;
+	float				distance;
+};
+
+class sdScriptEntityDisplayIconInterface : public sdEntityDisplayIconInterface {
+public:
+	void								Init( sdScriptEntity* _owner );
+
+	virtual bool						HasIcon( idPlayer* viewer, sdWorldToScreenConverter& converter );
+	virtual bool						GetEntityDisplayIconInfo( idPlayer* viewer, sdWorldToScreenConverter& converter, sdEntityDisplayIconInfo& iconInfo );
+
+	typedef enum {
+		EI_CENTER = 0,
+		EI_ABOVE
+	} iconPosition_t;
+
+	typedef enum {
+		EI_NONE = 0,
+		EI_WHITE = 0,
+		EI_TEAM
+	} iconColorMode_t;
+
+	void								SetIconMaterial( const idMaterial* material ) { storedInfo.material = material; }
+	void								SetIconSize( const idVec2& size ) { storedInfo.size = size; }
+	void								SetIconColorMode( iconColorMode_t mode ) { colorMode = mode; }
+	void								SetIconPosition( iconPosition_t pos ) { position = pos; }
+	void								SetIconEnabled( bool _enabled ) { enabled = _enabled; }
+	void								SetIconCutoff( float dist ) { cutoffDistance = dist; }
+	void								SetIconAlphaScale( float scale ) { alphaScale = scale; }
+
+
+private:
+	sdScriptEntity*						owner;
+
+	bool								enabled;
+	float								cutoffDistance;
+	iconPosition_t						position;
+	iconColorMode_t						colorMode;
+	float								alphaScale;
+
+	bool								hasIconResult;
+	sdEntityDisplayIconInfo				storedInfo;
 };
 
 class sdScriptEntityNetworkData : public sdEntityStateNetworkData {
@@ -391,7 +448,7 @@ public:
 	virtual void							Killed( idEntity* inflictor, idEntity* attacker, int damage, const idVec3& dir, int location, const sdDeclDamage* damageDecl );
 	virtual void							Damage( idEntity* inflictor, idEntity* attacker, const idVec3& dir, const sdDeclDamage* damage, const float damageScale, const trace_t* collision, bool forceKill = false );
 
-	virtual	void							UpdateKillStats( idPlayer* player, const sdDeclDamage* damageDecl );
+	virtual	void							UpdateKillStats( idPlayer* player, const sdDeclDamage* damageDecl, bool headshot );
 
 	virtual bool							WantsToThink( void ) const;
 
@@ -483,7 +540,8 @@ public:
 	virtual sdGuiInterface*					GetGuiInterface( void ) { return guiInterface; }
 	virtual sdNetworkInterface*				GetNetworkInterface( void ) { return networkInterface; }
 	virtual sdTaskInterface*				GetTaskInterface( void ) { return taskInterface; }
-	virtual sdUsableInterface*				GetUsableInterface( void ) { return usableInterface; }	virtual sdInteractiveInterface*			GetInteractiveInterface( void ) { return interactiveInterface; }
+	virtual sdUsableInterface*				GetUsableInterface( void ) { return usableInterface; }	
+	virtual sdInteractiveInterface*			GetInteractiveInterface( void ) { return interactiveInterface; }
 
 	idLinkList< sdScriptedEntityHelper >&	GetHelpers( void ) { return helpers; }
 
@@ -517,6 +575,9 @@ public:
 	virtual void							GetImpactInfo( idEntity *ent, int id, const idVec3 &point, impactInfo_s* info );
 	virtual	bool							IsCollisionPushable( void );
 
+	void									Event_EnableCollisionPush( void );
+	void									Event_DisableCollisionPush( void );
+
 	sdMotorSoundGroup&						GetMotorSounds( void ) { return motorSounds; }
 
 	virtual void							UpdateModelTransform( void );
@@ -541,6 +602,17 @@ public:
 
 	virtual bool							DisableClipOnRemove( void ) const { return true; }
 
+	virtual sdEntityDisplayIconInterface*	GetDisplayIconInterface( void ) { return &displayIconInterface; }
+	
+	void									Event_SetIconMaterial( const char* materialName );
+	void									Event_SetIconSize( float width, float height );
+	void									Event_SetIconColorMode( int mode );
+	void									Event_SetIconPosition( int pos );
+	void									Event_SetIconEnabled( bool _enabled );
+	void									Event_SetIconCutoff( float distance );
+	void									Event_SetIconAlphaScale( float scale );
+
+
 protected:
 	virtual bool							OnApplyPain( idEntity *inflictor, idEntity *attacker, int damage, const idVec3 &dir, int location, const sdDeclDamage* damageDecl );
 
@@ -556,6 +628,7 @@ protected:
 	sdTaskInterface*						taskInterface;
 	sdScriptedUsableInterface*				usableInterface;
 	sdScriptedInteractiveInterface*			interactiveInterface;
+	sdScriptEntityDisplayIconInterface		displayIconInterface;
 
 	int										health;
 	int										maxHealth;
@@ -610,6 +683,8 @@ protected:
 	const sdDeclDeployableObject*			deployObject;
 
 	idLinkList< idEntity >					postThinkEntNode;
+
+	idLinkList< idEntity >					iconNode;
 
 	idLinkList< sdScriptedEntityHelper >	helpers;
 

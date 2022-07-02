@@ -56,6 +56,11 @@ bool sdDeclToolTip::Parse( const char *text, const int textLength ) {
 	idToken token;
 	idParser src;
 
+	timeline.Clear();
+	useSoundLength = false;
+	singlePlayerToolTip = false;
+	unpauseWeaponSlot = -1;
+
 	src.SetFlags( DECL_LEXER_FLAGS );
 //	src.LoadMemory( text, textLength, GetFileName(), GetLineNum() );
 //	src.AddIncludes( GetFileLevelIncludeDependencies() );
@@ -112,9 +117,13 @@ bool sdDeclToolTip::Parse( const char *text, const int textLength ) {
 
 		} else if( !token.Icmp( "length" ) ) {
 
-
 			if ( !src.ExpectTokenType( TT_NUMBER, 0, &token )  ) {
 				src.Error( "sdDeclToolTip::Parse Invalid Parm For 'length'" );
+				return false;
+			}
+
+			if ( timeline.Num() > 0 ) {
+				src.Error( "sdDeclToolTip::Parse length should be set before the tooltip timeline" );
 				return false;
 			}
 
@@ -151,6 +160,29 @@ bool sdDeclToolTip::Parse( const char *text, const int textLength ) {
 				return false;
 			}
 
+		} else if ( !token.Icmp( "timeline" ) ) {
+
+			if ( !ParseTimeline( src ) ) {
+				return false;
+			}
+
+		} else if ( !token.Icmp( "useSoundLength" ) ) {
+
+			if ( timeline.Num() > 0 ) {
+				src.Error( "sdDeclToolTip::Parse useSoundLength should be set before the tooltip timeline" );
+				return false;
+			}
+
+			useSoundLength = true;
+
+		} else if ( !token.Icmp( "singlePlayerToolTip" ) ) {
+
+			singlePlayerToolTip = true;
+
+		} else if ( !token.Icmp( "lookAtObjective" ) ) {
+
+			lookAtObjective = true;
+
 		} else if( !token.Cmp( "}" ) ) {
 
 			break;
@@ -158,6 +190,130 @@ bool sdDeclToolTip::Parse( const char *text, const int textLength ) {
 		} else {
 
 			src.Error( "sdDeclToolTip::Parse Invalid Token '%s'", token.c_str() );
+			return false;
+
+		}
+	}
+
+	return true;
+}
+
+/*
+================
+sdDeclToolTip::ParseTimeline
+================
+*/
+bool sdDeclToolTip::ParseTimeline( idParser& src ) {
+	idToken token;
+
+	src.SkipUntilString( "{", &token );
+
+	while ( true ) {
+		if( !src.ReadToken( &token ) ) {
+			return false;
+		}
+
+		if ( !token.Icmp( "onTime" ) ) {
+		
+			src.ReadToken( &token );
+
+			int time;
+			if ( token.type == TT_NUMBER ) {
+				time = ( token.GetIntValue() / 100.0f ) * GetLength();
+			} else if ( token.type == TT_NAME && !token.Icmp( "end" )  ) {
+				time = TLTIME_END;
+			} else {
+				src.Error( "sdDeclToolTip::ParseTimeline number expected for 'onTime'" );
+				return false;
+			}
+
+			timelinePair_t event;
+			event.first = time;
+
+			if ( timeline.Num() > 0 ) {
+				timelinePair_t lastEvent = timeline.Back();
+				if ( lastEvent.first > time && time != TLTIME_END ) {
+					src.Error( "sdDeclToolTip::ParseTimeline time  events must be in increasing order: '%i'", time );
+					return false;
+				}
+			}
+
+			src.ReadToken( &token );
+
+			if ( !token.Icmp( "guiEvent" ) ) {
+				
+				event.second.eventType = TL_GUIEVENT;
+
+				if( !src.ExpectTokenType( TT_STRING, 0, &token ) ) {
+					src.Error( "sdDeclToolTip::ParseTimeline string expected after 'guiEvent'" );
+					return false;
+				}
+
+				event.second.arg1 = token;
+
+			} else if ( !token.Icmp( "pause" ) ) {
+				event.second.eventType = TL_PAUSE;
+			} else if ( !token.Icmp( "unpause" ) ) {
+				event.second.eventType = TL_UNPAUSE;
+			} else if ( !token.Icmp( "showInventory" ) ) {
+
+				event.second.eventType = TL_SHOWINVENTORY;
+
+				if( !src.ExpectTokenType( TT_STRING, 0, &token ) ) {
+					src.Error( "sdDeclToolTip::ParseTimeline string expected after 'guiEvent'" );
+					return false;
+				}
+
+				event.second.arg1 = token;
+
+			} else if ( !token.Icmp( "hideInventory" ) ) {
+				event.second.eventType = TL_HIDEINVENTORY;
+			} else if ( !token.Icmp( "waypointHighlight" ) )  {
+
+				event.second.eventType = TL_WAYPOINTHIGHLIGHT;
+
+				if( !src.ExpectTokenType( TT_STRING, 0, &token ) ) {
+					src.Error( "sdDeclToolTip::ParseTimeline string expected after 'guiEvent'" );
+					return false;
+				}
+
+				event.second.arg1 = token;
+
+			} else if ( !token.Icmp( "lookAtTask" ) ) {
+
+				event.second.eventType = TL_LOOKATTASK;
+
+			} else {
+				src.Error( "sdDeclToolTip::ParseTimeline unexpected timeline event '%s'", token.c_str() );
+				return false;
+			}
+
+
+			timeline.Append( event );
+
+		} else if ( !token.Icmp( "unpauseWeaponSlot" ) ) {
+
+			if( !src.ExpectTokenType( TT_NUMBER, 0, &token ) ) {
+				src.Error( "sdDeclToolTip::ParseTimeline number expected after 'unpauseWeaponSlot'" );
+				return false;
+			}
+
+			unpauseWeaponSlot = token.GetIntValue();
+
+			if ( unpauseWeaponSlot > 9 || unpauseWeaponSlot < 0 ) {
+				src.Warning( "sdDeclToolTip::ParseTimeline 0-9 expected as value for 'unpauseWeaponSlot'" );
+				unpauseWeaponSlot = -1;
+			}
+
+			unpauseKeyString.SetKey( va( "_weapon%i", unpauseWeaponSlot - 1 ) );
+
+		} else if( !token.Cmp( "}" ) ) {
+
+			break;
+
+		} else {
+
+			src.Error( "sdDeclToolTip::ParseTimeline Invalid Token '%s'", token.c_str() );
 			return false;
 
 		}
@@ -250,6 +406,7 @@ void sdDeclToolTip::FreeData( void ) {
 	maxPlayCount	= 3;
 	nextShowDelay	= SEC2MS( 10 );
 	icon			= NULL;
+	lookAtObjective	= false;
 }
 
 /*
@@ -347,6 +504,11 @@ sdDeclToolTip::SetLastTimeUsed
 void sdDeclToolTip::SetLastTimeUsed( void ) const {
 	lastTimeUsed = sys->Milliseconds();
 	gameLocal.SetCookieInt( va( "%s_play_count", GetName() ), GetCurrentPlayCount() + 1 );
+
+	// don't play the tooltip again if already played in single player
+	if ( singlePlayerToolTip && gameLocal.GetLocalPlayer() && gameLocal.isServer ) {
+		gameLocal.SetCookieInt( va( "%s_sp_play_count", GetName() ), 1 );
+	}
 }
 
 /*
@@ -360,14 +522,26 @@ int sdDeclToolTip::GetCurrentPlayCount( void ) const {
 
 /*
 ================
+sdDeclToolTip::GetCurrentSinglePlayerPlayCount
+================
+*/
+int sdDeclToolTip::GetCurrentSinglePlayerPlayCount( void ) const {
+	return gameLocal.GetCookieInt( va( "%s_sp_play_count", GetName() ) );
+}
+
+/*
+================
 sdDeclToolTip::ClearCookies
 ================
 */
 void sdDeclToolTip::ClearCookies( void ) const {
-	if ( GetCurrentPlayCount() == 0 ) {
-		return;
+	if ( GetCurrentPlayCount() != 0 ) {
+		gameLocal.SetCookieInt( va( "%s_play_count", GetName() ), 0 );
 	}
-	gameLocal.SetCookieInt( va( "%s_play_count", GetName() ), 0 );
+
+	if ( GetCurrentSinglePlayerPlayCount() != 0 ) {
+		gameLocal.SetCookieInt( va( "%s_sp_play_count", GetName() ), 0 );
+	}
 }
 
 
@@ -385,6 +559,9 @@ sdDeclToolTipOptionKey::GetText
 ================
 */
 const wchar_t* sdDeclToolTipOptionKey::GetText( sdToolTipParms* formatting ) const {
+	if ( key.Length() <= 0 ) {
+		return L"";
+	}
 	keyInputManager->KeysFromBinding( gameLocal.GetDefaultBindContext(), key, true, cache );
 	return cache.c_str();
 }

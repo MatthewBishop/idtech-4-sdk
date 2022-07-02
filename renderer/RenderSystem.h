@@ -70,6 +70,7 @@ struct glconfig_t {
 	bool				blendEquationAvailable;
 	bool				shadowMappingHardwareAvailable; // We have all extensions needed to do percentage closer filtering with R-compare in the texture samplers
 	bool				multiSampleAvailable;
+	bool				csaaAvailable;
 	bool				ARBShaderObjectsAvailable;
 	bool				ARBVertexShaderAvailable;
 	bool				ARBFragmentShaderAvailable;
@@ -223,6 +224,9 @@ public:
 	virtual idImage			*LoadImageFromFile( const char *filename, struct imageParams_t &ip ) = 0;
 
 	virtual bool			IsDisplayModeAvailable( int width, int height ) const = 0;
+
+	virtual int				GetNumMSAAModes( void ) const = 0;
+	virtual const char *	GetMSAAMode( int idx, int &val ) const = 0;
 	virtual bool			IsMSAACountAvailable( int msaa ) const = 0;
 
 	virtual void			LockThreads( void ) = 0;

@@ -7,7 +7,7 @@
 
 class idEventDef;
 
-const int COMPILED_SCRIPT_INTERFACE_VERSION = 1;
+const int COMPILED_SCRIPT_INTERFACE_VERSION = 2;
 
 class sdCSTypeInfo {
 public:
@@ -242,6 +242,8 @@ public:
 	virtual const idEventDef*			FindEvent( const char* name ) = 0;
 	virtual int							AllocThread( sdProcedureCall* call ) = 0;
 	virtual int							AllocThread( sdCompiledScript_ClassBase* object, const char* name, sdProcedureCall* call ) = 0;
+	virtual int							AllocGuiThread( sdProcedureCall* call ) = 0;
+	virtual int							AllocGuiThread( sdCompiledScript_ClassBase* object, const char* name, sdProcedureCall* call ) = 0;
 	virtual sdCompiledScript_ClassBase*	AllocObject( const char* name ) = 0;
 	virtual void						FreeObject( sdCompiledScript_ClassBase* object ) = 0;
 	virtual sdCompiledScript_ClassBase*	GetObject( int handle ) = 0;

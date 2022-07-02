@@ -36,6 +36,12 @@ public:
 
 	void	SetSelf( idEntity* e );
 
+	void	Clear() { collection.AssureSize( MAX_GENTITIES ); collection.SetNum( 0, false ); }
+	void	AddClipModel( const idClipModel* model ) { collection.Append( model ); }
+	void	RemoveClipModel( const idClipModel* model ) { collection.RemoveFast( model ); }
+	bool	ContainsClipModel( const idClipModel* model ) const { return collection.FindIndex( model ) != -1; }
+	idList< const idClipModel* >&	GetCollection() { return collection; }
+
 	// tracing functions to trace against the collection
 	bool	TracePoint( CLIP_DEBUG_PARMS_DECLARATION trace_t &results, const idVec3 &start, const idVec3 &end, int contentMask ) const;
 

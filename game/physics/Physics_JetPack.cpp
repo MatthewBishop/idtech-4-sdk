@@ -1571,6 +1571,7 @@ VEC_CHECK_BAD( current.velocity );
 		float oldMoveDirSpeed = current.velocity * moveDirection;
 FLOAT_CHECK_BAD( oldMoveDirSpeed );
 		current.pushVelocity = ( moveNeeded - oldMoveDirSpeed ) * moveDirection;
+		current.pushVelocity.FixDenormals();
 VEC_CHECK_BAD( current.pushVelocity );
 		current.velocity += current.pushVelocity ;
 VEC_CHECK_BAD( current.velocity );

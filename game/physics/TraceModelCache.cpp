@@ -162,45 +162,77 @@ int idTraceModelCache::GetTraceModelHashKey( const idTraceModel &trm ) {
 }
 
 
-
-
-
-
-struct polyPoint_t {
-	idVec3						xyz;
-	float						weight;
-	float						squareWeight;
-	idLinkList< polyPoint_t >	node;
-};
-
-typedef polyPoint_t* polyPointPtr_t;
-
 /*
 ============
-G_FindClosestPoint
+NewPolyPoint
 ============
 */
-polyPoint_t* G_FindClosestPoint( polyPoint_t& point, idLinkList< polyPoint_t >& points ) {
-	polyPoint_t*	closePoint = NULL;
-	float			closeDist = idMath::INFINITY;
+idTraceModelCache::polyPoint_t	idTraceModelCache::polyPointPool[ MAX_TRACEMODEL_WATER_POINTS_POOL ];
+idTraceModelCache::polyPoint_t*	idTraceModelCache::freePolyPoints[ MAX_TRACEMODEL_WATER_POINTS_POOL ];
+int								idTraceModelCache::numFreePolyPoints = 0;
+bool							idTraceModelCache::polyPointPoolValid = false;
 
-	for ( polyPoint_t* next = points.Next(); next; next = next->node.Next() ) {
-		float dist = ( next->xyz - point.xyz ).LengthSqr() * next->squareWeight;
-		if ( dist < closeDist ) {
-			closeDist	= dist;
-			closePoint	= next;
+idTraceModelCache::polyPoint_t* idTraceModelCache::NewPolyPoint( void ) {
+/*	polyPoint_t* point = new polyPoint_t;
+	numPolyPoints++;
+	if ( numPolyPoints > maxNumPolyPoints ) {
+		maxNumPolyPoints = numPolyPoints;
+		gameLocal.Printf( "***************** maxNumPolyPoints = %i\n", maxNumPolyPoints );
+	}*/
+
+	if ( !polyPointPoolValid ) {
+		for ( int i = 0; i < MAX_TRACEMODEL_WATER_POINTS_POOL; i++ ) {
+			freePolyPoints[ i ] = &polyPointPool[ i ];
 		}
+		polyPointPoolValid = true;
+		numFreePolyPoints = MAX_TRACEMODEL_WATER_POINTS_POOL;
 	}
 
-	return closePoint;
+	if ( numFreePolyPoints == 0 ) {
+		return NULL;
+	}
+
+	numFreePolyPoints--;
+	polyPoint_t* point = freePolyPoints[ numFreePolyPoints ];
+	return point;
 }
 
 /*
 ============
-G_FindClosestPoints
+DeletePolyPoint
 ============
 */
-void G_FindClosestPoints( idLinkList< polyPoint_t >& points, polyPointPtr_t& closePoint1, polyPointPtr_t& closePoint2 ) {
+void idTraceModelCache::DeletePolyPoint( polyPoint_t* point ) {
+/*	delete point;
+	numPolyPoints--;*/
+	for ( int i = 0; i < numFreePolyPoints; i++ ) {
+		if ( freePolyPoints[ i ] == point ) {
+			// WTF - shouldn't happen!
+			int poo = 3;
+		}
+	}
+
+	freePolyPoints[ numFreePolyPoints++ ] = point;
+	point->node.Clear();
+}
+
+/*
+============
+DeletePointList
+============
+*/
+void idTraceModelCache::DeletePointList( idLinkList< polyPoint_t >& points ) {
+	while ( polyPoint_t* next = points.Next() ) {
+		DeletePolyPoint( next );
+	}
+}
+
+/*
+============
+FindClosestPoints
+============
+*/
+void idTraceModelCache::FindClosestPoints( idLinkList< polyPoint_t >& points, polyPointPtr_t& closePoint1, polyPointPtr_t& closePoint2 ) {
 	closePoint1 = NULL;
 	closePoint2 = NULL;
 	float closeDist	= idMath::INFINITY;
@@ -220,33 +252,6 @@ void G_FindClosestPoints( idLinkList< polyPoint_t >& points, polyPointPtr_t& clo
 
 /*
 ============
-G_AddPointToList
-============
-*/
-void G_AddPointToList( polyPoint_t& point, idLinkList< polyPoint_t >& points ) {
-	for ( polyPoint_t* next = points.Next(); next; next = next->node.Next() ) {
-		if ( point.weight <= next->weight ) {
-			point.node.InsertBefore( next->node );
-			return;
-		}
-	}
-
-	point.node.AddToEnd( points );
-}
-
-/*
-============
-G_DeletePointList
-============
-*/
-void G_DeletePointList( idLinkList< polyPoint_t >& points ) {
-	while ( polyPoint_t* next = points.Next() ) {
-		delete next;
-	}
-}
-
-/*
-============
 idTraceModelCache::SetupWaterPoints
 ============
 */
@@ -256,6 +261,7 @@ void idTraceModelCache::SetupWaterPoints( trmCache_t& entry ) {
 		return;
 	}
 
+	numFreePolyPoints = MAX_TRACEMODEL_WATER_POINTS_POOL;
 	idLinkList< polyPoint_t > points;
 
 	const int numPoints = MAX_TRACEMODEL_WATER_POINTS;
@@ -280,7 +286,11 @@ void idTraceModelCache::SetupWaterPoints( trmCache_t& entry ) {
 					if ( !trm.ContainsPoint( xyz ) ) {
 						continue;
 					}
-					polyPoint_t* point = new polyPoint_t;
+					polyPoint_t* point = NewPolyPoint();
+					if ( point == NULL ) {
+						continue;
+					}
+
 					point->node.SetOwner( point );
 					point->weight = 1.f;
 					point->xyz = xyz;
@@ -292,7 +302,7 @@ void idTraceModelCache::SetupWaterPoints( trmCache_t& entry ) {
 		}
 
 		if ( count < numPoints ) {
-			G_DeletePointList( points );
+			DeletePointList( points );
 		} else {
 			break;
 		}
@@ -312,12 +322,12 @@ void idTraceModelCache::SetupWaterPoints( trmCache_t& entry ) {
 		polyPoint_t* point1;
 		polyPoint_t* point2;
 			
-		G_FindClosestPoints( points, point1, point2 );
+		FindClosestPoints( points, point1, point2 );
 
 		point1->xyz		= ( point1->xyz + point2->xyz ) * 0.5f;
 		point1->weight	+= point2->weight;
 		point1->squareWeight = Square( point1->weight );
-		delete point2;
+		DeletePolyPoint( point2 );
 		count--;
 	}
 
@@ -329,7 +339,7 @@ void idTraceModelCache::SetupWaterPoints( trmCache_t& entry ) {
 	}
 	entry.hasWater = true;
 
-	G_DeletePointList( points );
+	DeletePointList( points );
 }
 
 /*

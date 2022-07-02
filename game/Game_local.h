@@ -25,6 +25,7 @@ void gameError( const char *fmt, ... );
 #include "proficiency/ProficiencyManager.h"
 #include "PlayerView.h"
 #include "AORManager.h"
+#include "proficiency/StatsTracker.h"
 
 #ifndef _XENON
 #include "sdnet/SDNetManager.h"
@@ -417,7 +418,8 @@ public:
 
 							sdEntityNetEvent( void );
 
-	void					Create( const idEntity* _entity, int _event, const idBitMsg* _msg );
+	void					Create( const idEntity* _entity, int _event, bool _saveEvent, const idBitMsg* _msg );
+	void					Create( const sdEntityNetEvent& other );
 
 	void					Read( const idBitMsg& msg );
 	void					Write( idBitMsg& msg ) const;
@@ -434,6 +436,8 @@ public:
 	int						GetParamsSize( void ) const { return paramsSize; }
 	const byte*				GetParams( void ) const { return paramsBuf; }
 
+	bool					ShouldSaveEvent( void ) const { return saveEvent; }
+
 	int						GetTotalSize( void ) const;
 
 	nodeType_t&				GetNode( void ) { return node; }
@@ -443,6 +447,7 @@ private:
 	int						spawnId;
 	int						event;
 	int						time;
+	bool					saveEvent;
 	int						paramsSize;
 	byte					paramsBuf[ MAX_EVENT_PARAM_SIZE ];
 
@@ -458,20 +463,28 @@ class sdUnreliableEntityNetEvent : public sdEntityNetEvent {
 public:
 	typedef idLinkList< sdUnreliableEntityNetEvent > unreliableNodeType_t;
 
-							sdUnreliableEntityNetEvent( void );
+									sdUnreliableEntityNetEvent( void );
 
-	void					ClearSent( void );
-	void					SetSent( int clientTo );
-	bool					GetSent( int clientTo ) const;
-	bool					HasExpired( void ) const;
+	void							ClearSent( void );
+	void							SetSent( int clientTo );
+	bool							GetSent( int clientTo ) const;
+#ifdef SD_SUPPORT_REPEATER
+	void							SetRepeaterSent( int clientTo );
+	bool							GetRepeaterSent( int clientTo ) const;
+#endif // SD_SUPPORT_REPEATER
+	bool							HasExpired( void ) const;
 
 	unreliableNodeType_t&			GetUnreliableNode( void ) { return unreliableNode; }
 	const unreliableNodeType_t&		GetUnreliableNode( void ) const { return unreliableNode; }
 
 private:
-	sdBitField< MAX_CLIENTS >	sentClients;
+	sdBitField< MAX_CLIENTS+1 >		sentClients;
+#ifdef SD_SUPPORT_REPEATER
+	sdBitField_Dynamic				sentRepeaterClients;
+	int								numRepeaterClients;
+#endif // SD_SUPPORT_REPEATER
 
-	unreliableNodeType_t	unreliableNode;
+	unreliableNodeType_t			unreliableNode;
 };
 
 /*
@@ -511,6 +524,7 @@ struct savedPlayerStat_t {
 	const sdTeamInfo*		team;
 	idStr					name;
 	float					value;
+	float					data[ MAX_CLIENTS ];
 };
 
 //===============================================================
@@ -529,6 +543,17 @@ struct persistentRank_t {
 	bool					calculated;
 };
 
+struct lifeStat_t {
+	idStr					stat;
+	const sdDeclLocStr*		text;			// used for lists
+	const sdDeclLocStr*		textLong;		// used for in-game announcements
+	bool					isTimeBased;
+};
+
+struct quickChatMuteEntry_t {
+	idStr					name;
+};
+
 class idGameLocal : public idGame {
 public:
 	idDict					serverInfo;				// all the tunable parameters, like numclients, etc
@@ -540,15 +565,20 @@ public:
 	sdDeployRequest*		deployRequests[ NUM_DEPLOY_REQUESTS ];
 	bool					clientConnected[ MAX_CLIENTS ];
 	persistentRank_t		clientRanks[ MAX_CLIENTS ];
+	sdNetStatKeyValList		clientStatsList[ MAX_CLIENTS ];
+	idHashIndex				clientStatsHash[ MAX_CLIENTS ];
+	int						clientLastBanIndexReceived[ MAX_CLIENTS ];
+	bool					clientStatsRequestsPending;
+
 #if !defined( SD_DEMO_BUILD )
 	sdNetTask*				clientStatsRequestTask;
-	sdNetStatKeyValList		clientStartRequestList;
 	int						clientStatsRequestIndex;
-	bool					clientStatsRequestsPending;
 #endif /* !SD_DEMO_BUILD */
 	int						clientCompaintCount[ MAX_CLIENTS ];
 	idList< sdNetClientId >	clientUniqueComplaints[ MAX_CLIENTS ];
 	sdBitField< MAX_CLIENTS >clientMuteMask[ MAX_CLIENTS ]; // Mask of people who have muted this player
+
+	idList< quickChatMuteEntry_t > clientQuickChatMuteList;		// List of players the local client has muted for quickchat
 	// ]
 
 	// [
@@ -574,6 +604,7 @@ public:
 
 	idTraceModelCache		traceModelCache;
 
+	sdLock						clientEntLock;
 	class rvClientEntity*		clientEntities[ MAX_CENTITIES ];	// index to client entities
 	int							clientSpawnIds[ MAX_CENTITIES ];	// for use in idClientEntityPtr
 	idLinkList<rvClientEntity>	clientSpawnedEntities;			// all client side entities
@@ -627,17 +658,32 @@ public:
 	int						numServerTimers;
 
 	idList< savedPlayerStat_t > endGameStats;
+	idList< lifeStat_t >		lifeStats;
 
 	int						framenum;
 	int						startTime;
 	int						previousTime;			// time in msec of last frame
 	int						time;					// in msec
+	int						timeOffset;				// 
 	int						msec;					// time since last update in milliseconds
 	int						localViewChangedTime;	// time that the local player view changed
 	int						playerSpawnTime;		// time at which players are allowed to spawn again
 
+	int						nextTeamBalanceCheckTime;
+
 	bool					isServer;				// set if the game is run for a dedicated or listen server
 	bool					isClient;				// set if the game is run for a client
+	bool					isRepeater;
+	bool					serverIsRepeater;
+	bool					snapShotClientIsRepeater;
+	mutable int				repeaterClientFollowIndex;
+
+	bool					isPaused;
+	bool					pauseViewInited;
+	idVec3					pauseViewOrg;
+	idAngles				pauseViewAngles;
+	idAngles				pauseViewAnglesBase;
+	int						pauseStartGuiTime;
 
 													// discriminates between the RunFrame path and the ClientPrediction path
 													// NOTE: on a listen server, isClient is false
@@ -707,13 +753,17 @@ public:
 
 	static void				CleanName( idStr& name );
 
+	bool					IsMultiPlayer( void );
+	bool					IsMetaDataValidForPlay( const metaDataContext_t& context, bool checkBrowserStatus );
+
 	virtual void			Init( void );
 	virtual void			Shutdown( void );
-	virtual void			ThrottleUserInfo( void );
 	virtual void			UserInfoChanged( int clientNum );
 	virtual bool			ValidateUserInfo( int clientNum, idDict& _userInfo );
 	virtual void			SetServerInfo( const idDict &serverInfo );
 	void					ParseServerInfo( void );
+
+	void					LoadLifeStatsData( void );
 
 	void					PushChangedEntity( idEntity* ent );
 
@@ -721,6 +771,26 @@ public:
 
 	void					MakeRules( void );
 	idTypeInfo*				GetRulesType( bool errorOnFail );
+
+	void					ChangeLocalSpectateClient( int spectateeNum );
+	int						GetRepeaterFollowClientIndex( void ) const;
+
+#ifdef SD_SUPPORT_REPEATER
+	virtual void			RepeaterClientDisconnect( int clientNum );
+	virtual void			RepeaterWriteInitialReliableMessages( int clientNum );
+	virtual void			RepeaterWriteSnapshot( int clientNum, int sequence, idBitMsg &msg, idBitMsg &ucmdmsg, const repeaterUserOrigin_t& userOrigin, bool clientIsRepeater );
+	virtual allowReply_t	RepeaterAllowClient( int numViewers, int maxViewers, const clientNetworkAddress_t& address, const sdNetClientId& netClientId, const char *guid, const char *password, allowFailureReason_t& reason, bool isRepeater );
+	virtual void			RepeaterClientBegin( int clientNum );
+	virtual void			SetRepeaterState( bool isRepeater );
+	virtual bool			RepeaterApplySnapshot( int clientNum, int sequence );
+	virtual void			RepeaterProcessReliableMessage( int clientNum, const idBitMsg &msg );
+	void					BuildRepeaterInfo( idDict &repeaterInfo );
+	void					UpdateRepeaterInfo( void );
+	int						GetNumRepeaterClients( void ) const;
+	bool					IsRepeaterClientConnected( int clientNum ) const;
+	void					ShutdownRepeatersNetworkStates( void );
+	void					ShutdownRepeatersNetworkState( int clientNum );
+#endif // SD_SUPPORT_REPEATER
 
 	virtual void			InitFromNewMap( const char *mapName, idRenderWorld *renderWorld, idSoundWorld *soundWorld, bool isServer, bool isClient, int randSeed, int startTime, bool isUserChange );
 	virtual void			MapShutdown( void );
@@ -733,6 +803,14 @@ public:
 	virtual void			RunFrame( const usercmd_t* clientCmds, int elapsedTime );
 	virtual bool			Draw();
 	virtual bool			Draw2D();
+
+	bool					IsPaused( void );
+	void					SetPaused( bool value );
+	void					OnPausedChanged( void );
+	void					SendPauseInfo( const sdReliableMessageClientInfoBase& info );
+	int						ToGuiTime( int time ) { return time + timeOffset; }
+	void					GetPausedView( idVec3& origin, idMat3& axis );
+	void					UpdatePauseNoClip( usercmd_t& cmd );
 
 	void					SetActionCommand( const char* action );
 
@@ -750,7 +828,7 @@ public:
 	virtual void			PacifierUpdate();
 
 	sdNetworkStateObject&	GetGameStateObject( extNetworkStateMode_t mode );
-	void					WriteGameState( extNetworkStateMode_t mode, snapshot_t* snapshot, int clientNum, idBitMsg& msg );
+	void					WriteGameState( extNetworkStateMode_t mode, snapshot_t* snapshot, clientNetworkInfo_t& info, idBitMsg& msg );
 	void					ReadGameState( extNetworkStateMode_t mode, snapshot_t* snapshot, const idBitMsg& msg );
 	void					ResetGameState( extNetworkStateMode_t mode );
 
@@ -765,12 +843,19 @@ public:
 	void					ClientSpawn( int entityNum, int spawnId, int typeNum, int entityDefNumber, int mapSpawnId );
 	void					OnEntityCreateMessage( const idBitMsg& msg );
 
+	snapshot_t*				AllocateSnapshot( int sequence, clientNetworkInfo_t& nwInfo );
+	void					WriteSnapshotGameStates( snapshot_t* snapshot, clientNetworkInfo_t& nwInfo, idBitMsg& msg );
+	void					WriteSnapshotEntityStates( snapshot_t* snapshot, clientNetworkInfo_t& nwInfo, int clientNum, idBitMsg& msg, bool useAOR );
+	void					WriteSnapshotUserCmds( snapshot_t* snapshot, idBitMsg& msg, int ignoreClientNum, bool useAOR );
+	void					WriteInitialReliableMessages( const sdReliableMessageClientInfoBase& target );
+	void					HandleNewEntityEvent( const idBitMsg &msg );
+
 	virtual void			ServerClientConnect( int clientNum );
 	virtual void			ServerClientBegin( int clientNum, bool isBot );
 	virtual void			SetClientNum( int clientNum, bool server );
 	virtual void			ServerClientDisconnect( int clientNum );
 	virtual void			ServerWriteInitialReliableMessages( int clientNum );
-	virtual void			ServerWriteSnapshot( int clientNum, int sequence, idBitMsg &msg, idBitMsg &ucmdmsg, float* elapsed );
+	virtual void			ServerWriteSnapshot( int clientNum, int sequence, idBitMsg &msg, idBitMsg &ucmdmsg );
 	virtual bool			ServerApplySnapshot( int clientNum, int sequence );
 	virtual void			ServerProcessReliableMessage( int clientNum, const idBitMsg &msg );
 	void					EnsureAlloced( int entityNum, idEntity* ent, const char* oldState, const char* currentState );
@@ -779,7 +864,7 @@ public:
 	bool					SetupClientAoR( void );
 	virtual bool			ClientReadSnapshot( int sequence, const int gameFrame, const int gameTime, const int numDuplicatedUsercmds, const int aheadOfServer, const idBitMsg &msg, const idBitMsg &ucmdmsg );
 	virtual bool			ClientApplySnapshot( int sequence );
-	virtual void			ClientProcessReliableMessage( const idBitMsg &msg, bool local );
+	virtual void			ClientProcessReliableMessage( const idBitMsg &msg );
 	virtual void			ClientPrediction( const usercmd_t* clientCmds, const usercmd_t* demoCmd );
 	virtual void			OnSnapshotHitch( int snapshotTime );
 	virtual void			OnClientDisconnected( void );
@@ -792,6 +877,7 @@ public:
 	virtual void			CreateStatusResponseDict( const idDict& serverInfo, idDict& statusResponseDict );
 	virtual int				GetProbeTime() const;
 	virtual byte			GetProbeState() const;
+	virtual void			WriteExtendedProbeData( idBitMsg& msg );
 
 	void					LogComplaint( idPlayer* player, idPlayer* attacker );
 	bool					DoSkyCheck( const idVec3& location ) const;
@@ -810,10 +896,13 @@ public:
 
 	virtual void			AddChatLine( const wchar_t* text );
 
-	virtual bool			OnUserStartMap( const char* text, idStr& reason, idStr& mapName );
+	virtual userMapChangeResult_e OnUserStartMap( const char* text, idStr& reason, idStr& mapName );
 	virtual void			ArgCompletion_StartGame( const idCmdArgs& args, argCompletionCallback_t callback );
 
 	virtual void			RunFrame();
+
+	virtual bool			DownloadRequest( const char *IP, const char *guid, const char *paks, char urls[ MAX_STRING_CHARS ] );
+	virtual bool			HTTPRequest( const char *IP, const char *file, bool isGamePak );
 
 #ifdef ID_DEBUG_MEMORY
 	virtual void			MemDump( const char* fileName ) { Mem_Dump( fileName ); }
@@ -821,10 +910,12 @@ public:
 	virtual void			MemDumpPerClass( const char* fileName ) { Mem_DumpPerClass( fileName ); }
 #endif
 
-	virtual void				GetClientName( int clientIndex, idStr& name );
-
 	virtual void				OnInputInit( void );
 	virtual void				OnInputShutdown( void );
+
+	virtual void				OnLanguageInit( void );
+	virtual void				OnLanguageShutdown( void );
+
 	virtual sdKeyCommand*		Translate( const idKey& key );
 	virtual usercmdbuttonType_t	SetupBinding( const char* binding, int& action );
 	virtual void				HandleLocalImpulse( int action, bool down );
@@ -869,6 +960,7 @@ public:
 
 	virtual void				SetUpdateAvailability( updateAvailability_t type );
 	virtual void				SetUpdateState( updateState_t state );
+	virtual void				SetUpdateFromServer( bool fromServer );
 	virtual guiUpdateResponse_t	GetUpdateResponse();
 	virtual void				SetUpdateProgress( float percent );
 	virtual void				SetUpdateMessage( const wchar_t* text );
@@ -927,6 +1019,11 @@ public:
 
 	void							MutePlayerLocal( idPlayer* player, int clientIndex );
 	void							UnMutePlayerLocal( idPlayer* player, int clientIndex );
+	void							MutePlayerQuickChatLocal( int clientIndex );
+	void							UnMutePlayerQuickChatLocal( int clientIndex );
+	bool							IsClientQuickChatMuted( idPlayer* player );
+
+	void							OnUserNameChanged( idPlayer* player, idStr oldName, idStr newName );
 
 	guiHandle_t						LoadUserInterface( const char* name, bool requireUnique, bool permanent, const char* theme = "default", sdHudModule* module = NULL );
 	void							FreeUserInterface( guiHandle_t handle );
@@ -951,8 +1048,8 @@ public:
 	float							GetGUIFloat( int handle, const char* name );
 
 	void							ResetEntityStates( void );
-	void							SetupGameStateBase( int clientNum );
-	void							SetupEntityStateBase( int clientNum );
+	void							SetupGameStateBase( clientNetworkInfo_t& networkInfo );
+	void							SetupEntityStateBase( clientNetworkInfo_t& networkInfo );
 
 	qhandle_t						GetDeploymentMask( const char* name );
 
@@ -978,12 +1075,15 @@ public:
 	void							UnRegisterSpawnPoint( sdSpawnPoint* point );
 
 	void							RegisterTargetEntity( idLinkList< idEntity >& node );
+	void							RegisterIconEntity( idLinkList< idEntity >& node );
 
 	sdEntityState*					AllocEntityState( networkStateMode_t mode, idEntity* ent ) const;
 	sdGameState*					AllocGameState( const sdNetworkStateObject& object ) const;
 
-	void							PushEndGameStat( idPlayer* player, float value );
-	void							SendEndGameStats( int clientNum = -1 );
+	int								AllocEndGameStat( void );
+	void							SetEndGameStatValue( int index, idPlayer* player, float value );
+	void							SetEndGameStatWinner( int statIndex, idPlayer* player );
+	void							SendEndGameStats( const sdReliableMessageClientInfoBase& target );
 	void							ClearEndGameStats( void );
 	void							OnEndGameStatsReceived( void );
 
@@ -1110,8 +1210,22 @@ public:
 
 	void							ResetTeamAssets( void );
 
+	void							CheckTeamBalance( void );
+	sdTeamInfo*						FindUnbalancedTeam( sdTeamInfo** lowest );
+
 	idPlayer*						GetLocalViewPlayer( void ) const;
-	idPlayer*						GetLocalPlayer( void ) const { return localClientNum == ASYNC_DEMO_CLIENT_INDEX ? NULL : GetClient( localClientNum ); }
+	idPlayer*						GetLocalPlayer( void ) const {
+		if ( localClientNum == ASYNC_DEMO_CLIENT_INDEX ) {
+			return NULL;
+		}
+#ifdef SD_SUPPORT_REPEATER
+		if ( localClientNum == REPEATER_CLIENT_INDEX ) {
+			return NULL;
+		}
+#endif // SD_SUPPORT_REPEATER
+		return GetClient( localClientNum );
+	}
+
 	idPlayer*						GetSnapshotPlayer( void ) const { return snapShotPlayer; }
 	void							SetSnapShotPlayer( idPlayer* player );
 	idPlayer*						GetSnapshotClient( void ) const { return snapShotClient; }
@@ -1137,26 +1251,56 @@ public:
 	int								GetNumPlayerClassBits( void ) const { return numPlayerClassBits; }
 	int								GetNumClientIndexBits( void ) const { return numClientIndexBits; }
 
+	bool							SelectInitialSpawnPointForRepeaterClient( idVec3& outputOrg, idAngles& outputAngles );
 	const sdSpawnPoint*				SelectInitialSpawnPoint( idPlayer *player, idVec3& outputOrg, idAngles& outputAngles );
 	static int						SortSpawnsByAge( const void* a, const void* b );
 
 	void							SetPortalState( qhandle_t portal, int blockingBits );
-	void							SaveEntityNetworkEvent( const idEntity *ent, int event, const idBitMsg *msg );
+	void							SaveEntityNetworkEvent( const sdEntityNetEvent& oldEvent );
 	void							FreeEntityNetworkEvents( const idEntity *ent, int event );
 	void							SendUnreliableEntityNetworkEvent( const idEntity *ent, int event, const idBitMsg *msg );
-	void							WriteUnreliableEntityNetEvents( int clientNum, idBitMsg &msg );
+	void							SendUnreliableEntityNetworkEvent( const sdUnreliableEntityNetEvent& oldEvent );
+	void							WriteUnreliableEntityNetEvents( int clientNum, bool repeaterClient, idBitMsg &msg );
 
 	void							SetGlobalMaterial( const idMaterial *mat );
 	const idMaterial *				GetGlobalMaterial();
 
 	void							ServerSendQuickChatMessage( idPlayer* player, const sdDeclQuickChat* quickChat, idPlayer* recipient = NULL, idEntity* target = NULL );
 
+#ifdef SD_SUPPORT_REPEATER
+	clientNetworkInfo_t&			GetRepeaterNetworkInfo( int clientNum ) {
+		assert( repeaterNetworkInfo[ clientNum ] != NULL );
+		return *repeaterNetworkInfo[ clientNum ];
+	}
+
+	const clientNetworkInfo_t&		GetRepeaterNetworkInfo( int clientNum ) const {
+		assert( repeaterNetworkInfo[ clientNum ] != NULL );
+		return *repeaterNetworkInfo[ clientNum ];
+	}
+#endif // SD_SUPPORT_REPEATER
+
 	clientNetworkInfo_t&			GetNetworkInfo( int clientNum ) {
-										return clientNum == ASYNC_DEMO_CLIENT_INDEX ? demoClientNetworkInfo : clientNetworkInfo[ clientNum ];
-									}
+		if ( clientNum == ASYNC_DEMO_CLIENT_INDEX ) {
+			return demoClientNetworkInfo;
+		}
+#ifdef SD_SUPPORT_REPEATER
+		if ( clientNum == REPEATER_CLIENT_INDEX ) {
+			return repeaterClientNetworkInfo;
+		}
+#endif // SD_SUPPORT_REPEATER
+		return clientNetworkInfo[ clientNum ];
+	}
 	const clientNetworkInfo_t&		GetNetworkInfo( int clientNum ) const  {
-										return clientNum == ASYNC_DEMO_CLIENT_INDEX ? demoClientNetworkInfo : clientNetworkInfo[ clientNum ];
-									}
+		if ( clientNum == ASYNC_DEMO_CLIENT_INDEX ) {
+			return demoClientNetworkInfo;
+		}
+#ifdef SD_SUPPORT_REPEATER
+		if ( clientNum == REPEATER_CLIENT_INDEX ) {
+			return repeaterClientNetworkInfo;
+		}
+#endif // SD_SUPPORT_REPEATER
+		return clientNetworkInfo[ clientNum ];
+	}
 
 	enum {
 		EVENT_MAXEVENTS
@@ -1182,8 +1326,7 @@ public:
 	const idList<sdEnvDefinition>&	GetEnvDefinitions( void ) { return envDefs; }
 
 	// GUIs
-	const guiHandle_t&				GetMainMenuGui() const { return uiMainMenuHandle; }
-	const guiHandle_t&				GetScoreBoardGui() const { return scoreBoard; }
+	const guiHandle_t&				GetMainMenuGui() const { return uiMainMenuHandle; }	
 
 	void							ApplyRulesData( const sdEntityStateNetworkData& newState );
 	void							ReadRulesData( const sdEntityStateNetworkData& baseState, sdEntityStateNetworkData& newState, const idBitMsg& msg ) const;
@@ -1192,10 +1335,13 @@ public:
 	sdEntityStateNetworkData*		CreateRulesData( void ) const;
 
 #ifndef _XENON
+	void							UpdateGameSession( void );
+
 	sdNetManager&					GetSDNet() { return sdnet; }
 #endif
 
 	idLinkList< idEntity >*			GetTargetEntities( void ) { return targetEntities.NextNode(); }
+	idLinkList< idEntity >*			GetIconEntities( void ) { return iconEntities.NextNode(); }
 
 	//int								GetBytesNeededForMapLoad( void ) const { return bytesNeededForMapLoad; }
 
@@ -1220,6 +1366,12 @@ public:
 	bool							IsDoingMapRestart( void ) const { return doingMapRestart; }
 
 	int								GetMaxPrivateClients( void );
+
+	void							EnablePlayerHeadModels( void );
+	void							DisablePlayerHeadModels( void );
+
+	void							StartSendingBanList( idPlayer* player );
+	void							SendBanList( idPlayer* player );
 
 private:
 //	int								GetBytesNeededForMapLoad( const char* map );
@@ -1252,6 +1404,7 @@ private:
 	int														commandmapOverlayIndex;
 
 	idLinkList< idEntity >									targetEntities;
+	idLinkList< idEntity >									iconEntities;
 
 	int														numEntityDefBits;		// bits required to store an entity def number
 	int														numDamageDeclBits;		//
@@ -1286,6 +1439,11 @@ private:
 
 	clientNetworkInfo_t										clientNetworkInfo[ MAX_CLIENTS ];
 	clientNetworkInfo_t										demoClientNetworkInfo;
+
+#ifdef SD_SUPPORT_REPEATER
+	clientNetworkInfo_t										repeaterClientNetworkInfo;
+	idList< clientNetworkInfo_t* >							repeaterNetworkInfo;
+#endif // SD_SUPPORT_REPEATER
 
 	sdProficiencyTable										proficiencyTables[ MAX_CLIENTS ];
 
@@ -1325,7 +1483,6 @@ private:
 	guiHandle_t												uiSystemUIHandle;
 	guiHandle_t												uiLevelLoadHandle;
 	guiHandle_t												pureWaitHandle;
-	guiHandle_t												scoreBoard;
 
 	const idMaterial*										lagoMaterial;
 	byte													lagometer[ LAGO_IMG_HEIGHT ][ LAGO_IMG_WIDTH ][ 4 ];
@@ -1390,13 +1547,19 @@ public:
 	void					InitConsoleCommands( void );
 	void					ShutdownConsoleCommands( void );
 
-#if !defined( SD_DEMO_BUILD )
 	void					UpdateServerRankStats( void );
+
+#if !defined( SD_DEMO_BUILD )
 	void					FreeClientStatsRequestTask( void );
 	void					FinishClientStatsRequest( void );
 	bool					StartClientStatsRequest( int clientIndex );
 #endif /* !SD_DEMO_BUILD */
+
+	void					CreateClientStatsHash( int clientIndex );
+	void					GetGlobalStatsValueMax( int clientIndex, const char* name, sdPlayerStatEntry::statValue_t& value );
 	void					SetupFixedClientRank( int clientIndex );
+
+	const sdDeclRank*		FindRankForLevel( int rankLevel );
 
 	void					UpdateLoggedDecals( void );
 
@@ -1404,7 +1567,7 @@ public:
 	void					ShutdownAsyncNetwork( void );
 	void					InitLocalClient( int clientNum, bool server );
 	void					FreeSnapshotsOlderThanSequence( clientNetworkInfo_t& nwInfo, int sequence );
-	bool					ApplySnapshot( int clientNum, int sequence );
+	bool					ApplySnapshot( clientNetworkInfo_t& nwInfo, int sequence );
 
 	void					ClientProcessEntityNetworkEventQueue( void );
 	void					ClientShowSnapshot( int clientNum ) const;
@@ -1414,6 +1577,8 @@ public:
 
 							// call after any change to serverInfo. Will update various quick-access flags
 	void					UpdateServerInfoFlags( void );
+
+	void					UpdateHudStats( idPlayer* player );
 
 	static void				CreateDemoList( sdUIList* list );
 	static void				CreateModList( sdUIList* list );
@@ -1446,6 +1611,10 @@ public:
 	static void				CreateFireTeamList_Kick( sdUIList* list );
 	static void				CreateFireTeamList_Promote( sdUIList* list );
 	static void				CreateFireTeamList_Manage( sdUIList* list );
+
+	static void				CreateLifeStatsList( sdUIList* list );
+	static void				CreatePredictedUpgradesList( sdUIList* list );
+	static void				CreateUpgradesReviewList( sdUIList* list );
 
 	static void				GeneratePlayerListForTask( idStr& playerList, const sdPlayerTask* task );
 	static int				InsertTask( sdUIList* list, const sdPlayerTask* task, bool highlightActive );
@@ -1578,6 +1747,8 @@ typedef enum {
 	SND_PLAYER_TARGETLOCK,
 	SND_PLAYER_TOOLTIP,
 	SND_PLAYER_FALL,
+	SND_PLAYER_MOVE,
+	SND_PLAYER_ALARM,
 
 	//
 	// Weapon sounds

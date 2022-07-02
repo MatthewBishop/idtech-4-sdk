@@ -1134,7 +1134,7 @@ Mem_Free
 ==================
 */
 void Mem_Free( void *ptr ) {
-	if ( !ptr ) {
+	if ( ptr == NULL ) {
 		return;
 	}
 #if 0 // used to catch memory allocated with Mem_AllocAligned

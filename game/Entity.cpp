@@ -138,7 +138,7 @@ const idEventDef EV_SetCrosshairLineFraction( "chSetLineFraction", '\0', DOC_TEX
 const idEventDef EV_SetCrosshairLineType( "chSetLineType", '\0', DOC_TEXT( "Sets the type of the specified crosshair info line." ), 2, "Setting an unknown type will cause the line to not be visible.\nThis is only valid within the OnUpdateCrosshairInfo function, if called outside of this, the game will crash.", "d", "index", "Index of the line to set the type of.", "d", "type", "Type to set. Accepted values are CI_BAR, CI_TEXT or CI_IMAGE." );
 
 const idEventDef EV_SendNetworkCommand( "sendNetworkCommand", '\0', DOC_TEXT( "Sends a message from a network client to this entity." ), 1, NULL, "s", "message", "Message to send." );
-const idEventDef EV_SendNetworkEvent( "sendNetworkEvent", '\0', DOC_TEXT( "Sends a message from the server to this object on the specified client." ), 2, NULL, "E", "player", "Player to send the message to, or $null$ for all clients.", "s", "message", "Message to send." );
+const idEventDef EV_SendNetworkEvent( "sendNetworkEvent", '\0', DOC_TEXT( "Sends a message from the server to this object on the specified client." ), 3, NULL, "d", "clientIndex", "Index of the client to send the message to, or -1 for all clients.", "b", "isRepeater", "Whether this is the index of a repeater client, or a regular client.", "s", "message", "Message to send." );
 
 const idEventDef EV_GetNextKey( "getNextKey", 's', DOC_TEXT( "Finds the next key with the given prefix on the entity's metadata." ), 2, "To find the first key that matches, pass an empty string as the previous match.", "s", "prefix", "Prefix of the keys to match.", "s", "lastMatch", "Last key that was found." );
 const idEventDef EV_SetKey( "setKey", '\0', DOC_TEXT( "Sets the given key on the entity's metadata to the specified value." ), 2, NULL, "s", "key", "Key to set.", "s", "value", "Value to set the key to." );
@@ -1062,33 +1062,33 @@ idEntity::~idEntity( void ) {
 idEntity::WriteCreateEvent
 ================
 */
-void idEntity::WriteCreateEvent( idBitMsg* msg, int clientNum ) {
-	if ( gameLocal.isClient ) {
-		return;
+void idEntity::WriteCreateEvent( idBitMsg* msg, const sdReliableMessageClientInfoBase& target ) {
+	if ( gameLocal.isServer || msg != NULL ) {
+		sdReliableServerMessage _msg( GAME_RELIABLE_SMESSAGE_CREATE_ENT );
+		if ( msg == NULL ) {
+			msg = &_msg;
+		}
+
+		msg->WriteLong( gameLocal.GetSpawnId( this ) );
+		if ( mapSpawnId != -1 ) {
+			msg->WriteBits( 0, 2 );
+			msg->WriteBits( mapSpawnId, idMath::BitsForInteger( gameLocal.GetNumMapEntities() ) );
+		} else if ( entityDefNumber != -1 ) {
+			msg->WriteBits( 1, 2 );
+			msg->WriteBits( entityDefNumber + 1, gameLocal.GetNumEntityDefBits() );
+		} else {
+			msg->WriteBits( 2, 2 );
+			msg->WriteBits( GetType()->typeNum, idClass::GetTypeNumBits() );
+		}
+
+		if ( msg == &_msg ) {
+			_msg.Send( target );
+		}
 	}
 
-	sdReliableServerMessage _msg( GAME_RELIABLE_SMESSAGE_CREATE_ENT );
-	if ( msg == NULL ) {
-		msg = &_msg;
+	if ( gameLocal.isServer ) {
+		gameLocal.CreateNetworkState( entityNumber );
 	}
-
-	msg->WriteLong( gameLocal.GetSpawnId( this ) );
-	if ( mapSpawnId != -1 ) {
-		msg->WriteBits( 0, 2 );
-		msg->WriteBits( mapSpawnId, idMath::BitsForInteger( gameLocal.GetNumMapEntities() ) );
-	} else if ( entityDefNumber != -1 ) {
-		msg->WriteBits( 1, 2 );
-		msg->WriteBits( entityDefNumber + 1, gameLocal.GetNumEntityDefBits() );
-	} else {
-		msg->WriteBits( 2, 2 );
-		msg->WriteBits( GetType()->typeNum, idClass::GetTypeNumBits() );
-	}
-
-	if ( msg == &_msg ) {
-		_msg.Send( clientNum );
-	}
-
-	gameLocal.CreateNetworkState( entityNumber );
 }
 
 /*
@@ -1173,7 +1173,7 @@ void idEntity::WriteDestroyEvent( void ) {
 
 	sdReliableServerMessage outMsg( GAME_RELIABLE_SMESSAGE_DELETE_ENT );
 	outMsg.WriteBits( gameLocal.GetSpawnId( this ), 32 );
-	outMsg.Send();
+	outMsg.Send( sdReliableMessageClientInfoAll() );
 
 	gameLocal.FreeNetworkState( entityNumber );
 }
@@ -1700,7 +1700,7 @@ void idEntity::SetNetworkSynced( bool value ) {
 
 	if ( value ) {
 		networkNode.AddToEnd( gameLocal.networkedEntities );
-		WriteCreateEvent( NULL );
+		WriteCreateEvent( NULL, sdReliableMessageClientInfoAll() );
 	} else {
 		networkNode.AddToEnd( gameLocal.nonNetworkedEntities );
 		WriteDestroyEvent();
@@ -1734,7 +1734,7 @@ void idEntity::Present( void ) {
 	}
 	BecomeInactive( TH_UPDATEVISUALS );
 
-	if ( gameLocal.isClient && gameLocal.com_unlockFPS->GetBool() && g_unlock_interpolateMoving.GetBool() ) {
+	if ( gameLocal.com_unlockFPS->GetBool() && g_unlock_interpolateMoving.GetBool() ) {
 		// it should be possible to keep entities back one frame and record their positions while we can't unlock frames
 		// have to watch out not to do that to an entity we're bound to however (like riding the icarus)
 		// without constantly keeping origins one frame behind, some might jump a bit when we go in and out of unlock mode
@@ -3223,6 +3223,10 @@ idEntity::SendCommandMapInfo
 ================
 */
 bool idEntity::SendCommandMapInfo( idPlayer* player ) {
+	if ( player == NULL ) {
+		return false;
+	}
+
 	if ( fl.spotted ) {
 		return true;
 	}
@@ -3444,6 +3448,11 @@ bool idEntity::RunPhysics( void ) {
 
 	startTime = gameLocal.previousTime;
 	endTime = gameLocal.time;
+	if ( gameLocal.IsPaused() ) {
+		if ( RunPausedPhysics() ) { // Gordon: Hack to let spectators move in pause
+			startTime = endTime - USERCMD_MSEC;
+		}
+	}
 
 	gameLocal.push.InitSavingPushedEntityPositions();
 	blockedPart = NULL;
@@ -5636,31 +5645,29 @@ idEntity::BroadcastEvent
    always receive the events nomatter what time they join the game.
 ================
 */
-void idEntity::BroadcastEvent( int eventId, const idBitMsg *msg, bool saveEvent, bool freeSameType, int clientNum ) const {
+void idEntity::BroadcastEvent( int eventId, const idBitMsg *msg, bool saveEvent, const sdReliableMessageClientInfoBase& target ) const {
 	if ( !gameLocal.isServer ) {
 		return;
 	}
 
 	sdReliableServerMessage outMsg( GAME_RELIABLE_SMESSAGE_ENTITY_EVENT );
 	sdEntityNetEvent event;
-	event.Create( this, eventId, msg );
+	event.Create( this, eventId, saveEvent, msg );
 	event.Write( outMsg );
-	outMsg.Send( clientNum );
+	outMsg.Send( target );
 
-	if ( clientNum == -1 && g_debugNetworkWrite.GetBool() ) {
+	if ( target.SendToClients() && target.SendToAll() && g_debugNetworkWrite.GetBool() ) {
 		gameLocal.LogNetwork( va( "Entity Broadcast: %s %d Size: %d bits\n", GetType()->classname, eventId, outMsg.GetNumBitsWritten() ) );
 	}
 
-	if ( freeSameType ) {
-		gameLocal.FreeEntityNetworkEvents( this, eventId );
-	}
+	gameLocal.FreeEntityNetworkEvents( this, eventId );
 
 	if ( saveEvent ) {
-		if ( clientNum != -1 ) {
+		if ( !target.SendToAll() || !target.SendToClients() || !target.SendToRepeaterClients() ) {
 			gameLocal.Error( "idEntity::BroadcastEvent() - can't save an event going to a specific client!" );
 		}
 
-		gameLocal.SaveEntityNetworkEvent( this, eventId, msg );
+		gameLocal.SaveEntityNetworkEvent( event );
 	}
 }
 
@@ -6670,7 +6677,7 @@ void idEntity::Event_GetGUI( const char* name ) {
 	} else if( !idStr::Cmp( name, "2" ) ) {
 		retVal = GetEntityGuiHandle( 2 );
 	} else if( !idStr::Cmp( name, "scoreboard" ) ) {
-		retVal = gameLocal.GetScoreBoardGui();
+		retVal = gameLocal.localPlayerProperties.GetScoreBoard();
 	} else if( !idStr::Cmp( name, "hud" ) ) {
 		sdPlayerHud* hud = gameLocal.localPlayerProperties.GetPlayerHud();
 		if ( hud ) {
@@ -6844,21 +6851,27 @@ void idEntity::Event_SetCrosshairLineType( int index, int type ) {
 idEntity::Event_SendNetworkEvent
 ================
 */
-void idEntity::Event_SendNetworkEvent( idEntity* other, const char* message ) {
-	if ( other && ( other->entityNumber < 0 || other->entityNumber >= MAX_CLIENTS ) ) {
-		gameLocal.Warning( "idEntity::Event_SendNetworkEvent - tried to send network event to non-player!" );
-		return;
+void idEntity::Event_SendNetworkEvent( int clientIndex, bool isRepeaterClient, const char* message ) {
+	if ( !isRepeaterClient ) {
+		if ( clientIndex == -1 ) {
+			if ( gameLocal.GetLocalPlayer() != NULL ) {
+				gameLocal.HandleNetworkEvent( this, message );
+			}
+		} else {
+			idPlayer* player = gameLocal.GetClient( clientIndex );
+			if ( player != NULL && gameLocal.IsLocalPlayer( player ) ) {
+				gameLocal.HandleNetworkEvent( this, message );
+			}
+		}
 	}
 
-	if ( other && gameLocal.IsLocalPlayer( other ) ) {
-		gameLocal.HandleNetworkEvent( other, message );
+	sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_NETWORKEVENT );
+	msg.WriteLong( gameLocal.GetSpawnId( this ) );
+	msg.WriteString( message );
+	if ( isRepeaterClient ) {
+		msg.Send( sdReliableMessageClientInfoRepeater( clientIndex ) );
 	} else {
-		assert( gameLocal.isServer );
-
-		sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_NETWORKEVENT );
-		msg.WriteLong( gameLocal.GetSpawnId( this ) );
-		msg.WriteString( message );
-		msg.Send( other ? other->entityNumber : -1 );
+		msg.Send( sdReliableMessageClientInfo( clientIndex ) );
 	}
 }
 
@@ -6961,11 +6974,14 @@ const idVec4& idEntity::GetColorForAllegiance( idEntity* other ) const {
 	return GetColorForAllegiance( GetEntityAllegiance( other ) );
 }
 
-idCVar g_friendlyColor( "g_friendlyColor", ".5 .83 0 1", CVAR_GAME | CVAR_ARCHIVE, "color of friendly units" );
-idCVar g_neutralColor( "g_neutralColor", "0.75 0.75 0.75", CVAR_GAME | CVAR_ARCHIVE, "color of neutral units" );
-idCVar g_enemyColor( "g_enemyColor", "0.9 0.1 0.1 1", CVAR_GAME | CVAR_ARCHIVE, "color of enemy units" );
-idCVar g_fireteamColor( "g_fireteamColor", "1 1 0 1", CVAR_GAME | CVAR_ARCHIVE, "color of fireteam units" );
+idCVar g_friendlyColor( "g_friendlyColor", ".5 .83 0 1", CVAR_GAME | CVAR_ARCHIVE | CVAR_PROFILE, "color of friendly units" );
+idCVar g_neutralColor( "g_neutralColor", "0.75 0.75 0.75", CVAR_GAME | CVAR_ARCHIVE | CVAR_PROFILE, "color of neutral units" );
+idCVar g_enemyColor( "g_enemyColor", "0.9 0.1 0.1 1", CVAR_GAME | CVAR_ARCHIVE | CVAR_PROFILE, "color of enemy units" );
+idCVar g_fireteamColor( "g_fireteamColor", "1 1 1 1", CVAR_GAME | CVAR_ARCHIVE | CVAR_PROFILE, "color of fireteam units" );
+idCVar g_fireteamLeaderColor( "g_fireteamLeaderColor", "1 1 0 1", CVAR_GAME | CVAR_ARCHIVE | CVAR_PROFILE, "color of fireteam leader" );
+idCVar g_buddyColor( "g_buddyColor", "0 1 1 1", CVAR_GAME | CVAR_ARCHIVE | CVAR_PROFILE, "color of buddies" );
 idCVar g_cheapDecalsMaxDistance( "g_cheapDecalsMaxDistance", "16384", CVAR_GAME | CVAR_ARCHIVE, "max distance decals are created" );
+
 /*
 ============
 idEntity::GetColorForAllegiance
@@ -6998,6 +7014,30 @@ const idVec4& idEntity::GetFireteamColor( void ) {
 	static idVec4 color;
 	color.w = 1.0f;
 	sdProperties::sdFromString( color.ToVec3(), g_fireteamColor.GetString() );
+	return color;
+}
+
+/*
+============
+idEntity::GetFireteamLeaderColor
+============
+*/
+const idVec4& idEntity::GetFireteamLeaderColor( void ) {
+	static idVec4 color;
+	color.w = 1.0f;
+	sdProperties::sdFromString( color.ToVec3(), g_fireteamLeaderColor.GetString() );
+	return color;
+}
+
+/*
+============
+idEntity::GetBuddyColor
+============
+*/
+const idVec4& idEntity::GetBuddyColor( void ) {
+	static idVec4 color;
+	color.w = 1.0f;
+	sdProperties::sdFromString( color.ToVec3(), g_buddyColor.GetString() );
 	return color;
 }
 
@@ -7268,7 +7308,7 @@ bool idEntity::LaunchBullet( idEntity* owner, idEntity* ignoreEntity, const idDi
 	if ( bulletDamage->GetRecordHitStats() ) {
 		if ( playerOwner != NULL ) {
 			if ( gameLocal.totalShotsFiredStat != NULL ) {
-				gameLocal.totalShotsFiredStat->IncreaseInteger( playerOwner->entityNumber, 1 );
+				gameLocal.totalShotsFiredStat->IncreaseValue( playerOwner->entityNumber, 1 );
 			}
 		}
 	}
@@ -7346,25 +7386,30 @@ bool idEntity::LaunchBullet( idEntity* owner, idEntity* ignoreEntity, const idDi
 	const int serverMask = MASK_SHOT_RENDERMODEL | MASK_SHOT_BOUNDINGBOX;
 	const int clientMask = serverMask | CONTENTS_WATER;
 
+	gameLocal.EnablePlayerHeadModels();
+
+	bool hit = false;
 	if ( doImpact ) {
 		if ( doEffects ) {
 			DoLaunchBullet( owner, ignoreEntity, projectileDict, startPos, endPos, tracerMuzzleOrigin, tracerMuzzleAxis, damagePower, forceTracer, tracerOut, clientMask, NULL, true, false, useAntiLag );
 		}
-		bool hit = DoLaunchBullet( owner, ignoreEntity, projectileDict, startPos, endPos, tracerMuzzleOrigin, tracerMuzzleAxis, damagePower, false, NULL, serverMask, bulletDamage, false, true, useAntiLag );
+		hit = DoLaunchBullet( owner, ignoreEntity, projectileDict, startPos, endPos, tracerMuzzleOrigin, tracerMuzzleAxis, damagePower, false, NULL, serverMask, bulletDamage, false, true, useAntiLag );
 		if ( hit ) {
 			if ( bulletDamage->GetRecordHitStats() ) {
 				if ( playerOwner != NULL ) {
 					if ( gameLocal.totalShotsHitStat != NULL ) {
-						gameLocal.totalShotsHitStat->IncreaseInteger( playerOwner->entityNumber, 1 );
+						gameLocal.totalShotsHitStat->IncreaseValue( playerOwner->entityNumber, 1 );
 					}
 				}
 			}
 		}
-		return hit;
+	} else {
+		DoLaunchBullet( owner, ignoreEntity, projectileDict, startPos, endPos, tracerMuzzleOrigin, tracerMuzzleAxis, damagePower, forceTracer, tracerOut, clientMask, bulletDamage, true, true, useAntiLag );
 	}
 
-	DoLaunchBullet( owner, ignoreEntity, projectileDict, startPos, endPos, tracerMuzzleOrigin, tracerMuzzleAxis, damagePower, forceTracer, tracerOut, clientMask, bulletDamage, true, true, useAntiLag );
-	return false;
+	gameLocal.DisablePlayerHeadModels();
+
+	return hit;
 }
 
 static const float COS_75 = 0.258819f;
@@ -7433,7 +7478,7 @@ bool idEntity::DoLaunchBullet( idEntity* owner, idEntity* ignoreEntity, const id
 		if ( doImpact ) {
 			if ( collisionEnt != NULL ) {
 				if ( !gameLocal.isClient && collisionEnt->fl.takedamage ) {
-					idVec3 dir = collisionEnt->GetPhysics()->GetOrigin() - startPos;
+					idVec3 dir = endPos - startPos;
 					dir.Normalize();
 
 					float power = damagePower;

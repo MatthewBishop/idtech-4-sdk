@@ -40,6 +40,8 @@ public:
 	idVec3					velocity;
 	idCQuat					orientation;
 	idVec3					angularVelocity;
+	int						atRest;
+	bool					locked;
 };
 
 class sdSimplePhysicsBroadcastData : public sdEntityStateNetworkData {

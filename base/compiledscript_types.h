@@ -1,3 +1,6 @@
+// Copyright (C) 2007 Id Software, Inc.
+//
+
 
 #ifndef __COMPILEDSCRIPT_TYPES_H__
 #define __COMPILEDSCRIPT_TYPES_H__
@@ -370,7 +373,7 @@ public:
 	inline bool		operator!( void ) { return GetObject() == NULL; }
 	inline 			operator T*( void ) { return GetObject(); }
 	inline T*		operator->( void ) { return GetObject(); }
-	inline T*		GetObject( void ) { return compilerInterface->GetObject( handle )->Cast< T >(); }
+	inline T*		GetObject( void ) { sdCompiledScript_ClassBase* temp = compilerInterface->GetObject( handle ); return temp->Cast< T >(); }
 	inline void		SetObject( sdCompiledScript_ClassBase* _value ) { handle = _value ? _value->__S_GetHandle() : 0; }
 
 	inline const byte* FromData( const byte* p ) {

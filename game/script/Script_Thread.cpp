@@ -70,8 +70,9 @@ idThread::idThread() {
 idThread::Init
 ================
 */
-void idThread::Init( idInterpreter *source, const sdProgram::sdFunction* func, int args ) {
+void idThread::Init( idInterpreter *source, const sdProgram::sdFunction* func, int args, bool guiThread ) {
 	Init();
+	this->guiThread = guiThread;
 	interpreter.ThreadCall( source, reinterpret_cast< const function_t* >( func ), args );
 	if ( g_debugScript.GetBool() ) {
 		gameLocal.Printf( "%d: create thread (%d) '%s'\n", gameLocal.time, threadNum, threadName.c_str() );
@@ -163,6 +164,7 @@ void idThread::Init( void ) {
 	creationTime = gameLocal.time;
 	lastExecuteTime = 0;
 	manualControl = false;
+	guiThread = false;
 
 	ClearWaitFor();
 }
@@ -283,7 +285,11 @@ void idThread::DelayedStart( int delay ) {
 	if ( gameLocal.time <= 0 ) {
 		delay++;
 	}
-	PostEventMS( &EV_Thread_Execute, delay );
+	if ( guiThread ) {
+		PostGUIEventMS( &EV_Thread_Execute, delay );
+	} else {
+		PostEventMS( &EV_Thread_Execute, delay );
+	}
 }
 
 /*
@@ -356,14 +362,19 @@ bool idThread::Execute( void ) {
 	idThread	*oldThread;
 	bool		done;
 
-	if ( manualControl && ( waitingUntil > gameLocal.time ) ) {
+	int now = gameLocal.time;
+	if ( guiThread ) {
+		now = gameLocal.ToGuiTime( now );
+	}
+
+	if ( manualControl && ( waitingUntil > now ) ) {
 		return false;
 	}
 
 	oldThread = currentThread;
 	currentThread = this;
 
-	lastExecuteTime = gameLocal.time;
+	lastExecuteTime = now;
 	ClearWaitFor();
 	done = interpreter.Execute();
 	if ( done ) {
@@ -373,10 +384,18 @@ bool idThread::Execute( void ) {
 		}
 	} else if ( !manualControl ) {
 		if ( waitingUntil > lastExecuteTime ) {
-			PostEventMS( &EV_Thread_Execute, waitingUntil - lastExecuteTime );
+			if ( guiThread ) {
+				PostGUIEventMS( &EV_Thread_Execute, waitingUntil - lastExecuteTime );
+			} else {
+				PostEventMS( &EV_Thread_Execute, waitingUntil - lastExecuteTime );
+			}
 		} else if ( waitFrame ) {
 			waitFrame = false;
-			PostEventMS( &EV_Thread_Execute, NEXT_FRAME_EVENT_TIME );
+			if ( guiThread ) {
+				PostGUIEventMS( &EV_Thread_Execute, NEXT_FRAME_EVENT_TIME );
+			} else {
+				PostEventMS( &EV_Thread_Execute, NEXT_FRAME_EVENT_TIME );
+			}
 		}
 	}
 
@@ -494,7 +513,11 @@ void idThread::WaitMS( int time ) {
 	}
 
 	Pause();
-	waitingUntil = gameLocal.time + time;
+	int now = gameLocal.time;
+	if ( guiThread ) {
+		now = gameLocal.ToGuiTime( now );
+	}
+	waitingUntil = now + time;
 }
 
 /*

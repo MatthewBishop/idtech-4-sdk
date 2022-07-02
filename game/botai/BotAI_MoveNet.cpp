@@ -34,19 +34,21 @@ bool idBotAI::Run_And_Gun_Movement() {		//mal: like the name says, just a basic,
 	float chaseDist = ( botInfo->weapInfo.weapon == ROCKET ) ? 500.0f : 300.0f;
 	float tooCloseDist = ( botInfo->weapInfo.weapon == ROCKET ) ? 450.0f : 125.0f;
 
-	if ( botInfo->weapInfo.isReloading ) {	//mal: what should the bot do while they're reloading their gun.
-		COMBAT_MOVEMENT_STATE = NULL;
-		return false;
-	}
+	if ( botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) {
+		if ( botInfo->weapInfo.isReloading ) {	//mal: what should the bot do while they're reloading their gun.
+			COMBAT_MOVEMENT_STATE = NULL;
+			return false;
+		}
 
-	if ( botInfo->weapInfo.weapon == SNIPERRIFLE ) {
-		COMBAT_MOVEMENT_STATE = NULL;
-		return false;
-	}
+		if ( botInfo->weapInfo.weapon == SNIPERRIFLE ) {
+			COMBAT_MOVEMENT_STATE = NULL;
+			return false;
+		}
 
-	if ( botInfo->weapInfo.weapon == KNIFE ) {
-		COMBAT_MOVEMENT_STATE = NULL;
-		return false;
+		if ( botInfo->weapInfo.weapon == KNIFE ) {
+			COMBAT_MOVEMENT_STATE = NULL;
+			return false;
+		}
 	}
 
 	if ( enemyInfo.enemyDist > 1200.0f ) {
@@ -63,7 +65,7 @@ bool idBotAI::Run_And_Gun_Movement() {		//mal: like the name says, just a basic,
 
 		if ( combatMoveTime < botWorld->gameLocalInfo.time ) {
 			if ( botThreadData.random.RandomInt( 100 ) > 90 && botInfo->weapInfo.isReloading != true ) {
-				if ( Bot_CanProne( enemy )) {
+				if ( Bot_CanProne( enemy ) && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) {
                     combatMoveFlag = PRONE;
 				} else {
 					combatMoveFlag = RUN;
@@ -211,7 +213,7 @@ idBotAI::Knife_Attack_Movement
 */
 bool idBotAI::Knife_Attack_Movement() {
 
-	if ( botInfo->weapInfo.weapon != KNIFE ) {
+	if ( botInfo->weapInfo.weapon != KNIFE && !botWorld->gameLocalInfo.inWarmup ) {
 		COMBAT_MOVEMENT_STATE = NULL;
 		return false;
 	}
@@ -687,12 +689,14 @@ bool idBotAI::Stand_Ground_Attack_Movement() {
 	float tooCloseDist = ( botInfo->weapInfo.weapon == ROCKET ) ? 450.0f : 300.0f;
 	idVec3 vec;
 
-	if ( botInfo->weapInfo.weapon == KNIFE ) {
-		COMBAT_MOVEMENT_STATE = NULL;
-		return false;
+	if ( botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) {
+		if ( botInfo->weapInfo.weapon == KNIFE ) {
+			COMBAT_MOVEMENT_STATE = NULL;
+			return false;
+		}
 	}
 
-	if ( combatDangerExists ) {
+	if ( combatDangerExists && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) {
 		Bot_SetupQuickMove( botInfo->origin, false ); //mal: just path to itself, if its in an obstacle, it will freak and avoid it.
 
 		if ( MoveIsInvalid() ) {
@@ -709,7 +713,7 @@ bool idBotAI::Stand_Ground_Attack_Movement() {
 		return true;
 	}
 
-	if ( botInfo->weapInfo.isReloading && botThreadData.GetBotSkill() > BOT_SKILL_EASY && botInfo->weapInfo.weapon != SNIPERRIFLE ) {	//mal: what should the bot do while they're reloading their gun.
+	if ( botInfo->weapInfo.isReloading && botThreadData.GetBotSkill() > BOT_SKILL_EASY && botInfo->weapInfo.weapon != SNIPERRIFLE && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) {	//mal: what should the bot do while they're reloading their gun.
 		COMBAT_MOVEMENT_STATE = NULL;
 		return false;
 	}

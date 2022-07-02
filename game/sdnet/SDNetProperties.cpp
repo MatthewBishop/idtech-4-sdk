@@ -67,6 +67,7 @@ sdProperties::sdProperty* sdNetProperties::GetProperty( const char* name, sdProp
 sdNetProperties::Init
 ================
 */
+SD_UI_PUSH_CLASS_TAG( sdNetProperties )
 void sdNetProperties::Init() {
 	properties.RegisterProperty( "state",						state );
 	properties.RegisterProperty( "disconnectReason",			disconnectReason );
@@ -74,6 +75,7 @@ void sdNetProperties::Init() {
 	properties.RegisterProperty( "connectFailed",				connectFailed );
 
 	properties.RegisterProperty( "serverRefreshComplete",		serverRefreshComplete );
+	properties.RegisterProperty( "hotServersRefreshComplete",	hotServersRefreshComplete );
 	properties.RegisterProperty( "findingServers",				findingServers );
 #if !defined( SD_DEMO_BUILD )
 	properties.RegisterProperty( "initializingTeams",			initializingTeams );
@@ -95,6 +97,11 @@ void sdNetProperties::Init() {
 	properties.RegisterProperty( "numAvailableLANServers",		numAvailableLANServers );
 	properties.RegisterProperty( "numAvailableHistoryServers",	numAvailableHistoryServers );
 	properties.RegisterProperty( "numAvailableFavoritesServers",numAvailableFavoritesServers );
+
+#if !defined( SD_DEMO_BUILD )
+	properties.RegisterProperty( "numAvailableRepeaters",		numAvailableRepeaters );
+	properties.RegisterProperty( "numAvailableLANRepeaters",	numAvailableLANRepeaters );
+#endif /* !SD_DEMO_BUILD */
 
 #if !defined( SD_DEMO_BUILD )
 	properties.RegisterProperty( "numPendingClanInvites",		numPendingClanInvites );
@@ -123,6 +130,7 @@ void sdNetProperties::Init() {
 
 	uiManager->RegisterListEnumerationCallback( "sdnetUsers",				CreateUserList );
 	uiManager->RegisterListEnumerationCallback( "sdnetServers",				CreateServerList );
+	uiManager->RegisterListEnumerationCallback( "sdnetHotServers",			CreateHotServerList );
 	uiManager->RegisterListEnumerationCallback( "sdnetServerClients",		CreateServerClientsList );
 	uiManager->RegisterListEnumerationCallback( "sdnetUpdateServer",		UpdateServer );
 #if !defined( SD_DEMO_BUILD )
@@ -137,148 +145,420 @@ void sdNetProperties::Init() {
 
 #define SDNET_DEFINE( definition, enumeration ) sdDeclGUI::AddDefine( va( #definition " %i", enumeration ) );
 
+	SD_UI_PUSH_GROUP_TAG( "Service State" )
+
+	SD_UI_ENUM_TAG( SS_DISABLED, "Network service is disabled." )
 	SDNET_DEFINE( SS_DISABLED,			sdNetService::SS_DISABLED );
+
+	SD_UI_ENUM_TAG( SS_INITIALIZED, "Network service is initialized." )
 	SDNET_DEFINE( SS_INITIALIZED,		sdNetService::SS_INITIALIZED );
+
+	SD_UI_ENUM_TAG( SS_CONNECTING, "Connecting to demonware." )
 	SDNET_DEFINE( SS_CONNECTING,		sdNetService::SS_CONNECTING );
+
+	SD_UI_ENUM_TAG( SS_ONLINE, "Conntected to demonware." )
 	SDNET_DEFINE( SS_ONLINE,			sdNetService::SS_ONLINE );
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "User State" )
+
+	SD_UI_ENUM_TAG( US_INACTIVE, "No active user." )
 	SDNET_DEFINE( US_INACTIVE,			sdNetUser::US_INACTIVE );
+
+	SD_UI_ENUM_TAG( US_ACTIVE, "User is active but not online." )
 	SDNET_DEFINE( US_ACTIVE, 			sdNetUser::US_ACTIVE );
+
+	SD_UI_ENUM_TAG( US_ONLINE, "User is online." )
 	SDNET_DEFINE( US_ONLINE, 			sdNetUser::US_ONLINE );
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Block State" )
+
 #if !defined( SD_DEMO_BUILD )
+	SD_UI_ENUM_TAG( BS_NO_BLOCK, "Friend not blocked." )
 	SDNET_DEFINE( BS_NO_BLOCK,			sdNetFriend::BS_NO_BLOCK );
+
+	SD_UI_ENUM_TAG( BS_FULL_BLOCK, "Friend blocked from messages and invites." )
 	SDNET_DEFINE( BS_FULL_BLOCK,		sdNetFriend::BS_FULL_BLOCK );
+
+	SD_UI_ENUM_TAG( BS_INVITES_BLOCK, "Friend blocked from invites." )
 	SDNET_DEFINE( BS_INVITES_BLOCK,		sdNetFriend::BS_INVITES_BLOCK );
 #endif /* !SD_DEMO_BUILD */
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Find Server Source." )
+
+	SD_UI_ENUM_TAG( FS_LAN, "Searching LAN." )
 	SDNET_DEFINE( FS_LAN,				sdNetManager::FS_LAN )
+
+	SD_UI_ENUM_TAG( FS_INTERNET, "Searching internet." )
 	SDNET_DEFINE( FS_INTERNET,			sdNetManager::FS_INTERNET )
+
+#if !defined( SD_DEMO_BUILD ) && !defined( SD_DEMO_BUILD_CONSTRUCTION )
+	SD_UI_ENUM_TAG( FS_LAN_REPEATER, "Searching LAN repeaters." )
+	SDNET_DEFINE( FS_LAN_REPEATER,		sdNetManager::FS_LAN_REPEATER )
+
+	SD_UI_ENUM_TAG( FS_INTERNET_REPEATER, "Searching internet repeaters." )
+	SDNET_DEFINE( FS_INTERNET_REPEATER,	sdNetManager::FS_INTERNET_REPEATER )
+#endif /* !SD_DEMO_BUILD && !SD_DEMO_BUILD_CONSTRUCTION */
+
+	SD_UI_ENUM_TAG( FS_HISTORY, "Searching history." )
 	SDNET_DEFINE( FS_HISTORY,			sdNetManager::FS_HISTORY )
+	
+	SD_UI_ENUM_TAG( FS_CURRENT, "Searching current selection" )
 	SDNET_DEFINE( FS_CURRENT,			sdNetManager::FS_CURRENT )
+	
+	SD_UI_ENUM_TAG( FS_FAVORITES, "Searching favorites" )
 	SDNET_DEFINE( FS_FAVORITES,			sdNetManager::FS_FAVORITES )
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Server Filter State" )
+
+	SD_UI_ENUM_TAG( SFS_MIN, "Search filter min value." )
 	SDNET_DEFINE( SFS_MIN,				sdNetManager::SFS_MIN )
+	
+	SD_UI_ENUM_TAG( SFS_DONTCARE, "Don't care about filtering for this item." )
 	SDNET_DEFINE( SFS_DONTCARE,			sdNetManager::SFS_DONTCARE )
+	
+	SD_UI_ENUM_TAG( SFS_HIDE, "Hide servers which filter by this item." )
 	SDNET_DEFINE( SFS_HIDE, 			sdNetManager::SFS_HIDE )
+	
+	SD_UI_ENUM_TAG( SFS_SHOWONLY, "Only show servers that filter by this item." )
 	SDNET_DEFINE( SFS_SHOWONLY, 		sdNetManager::SFS_SHOWONLY )
+	
+	SD_UI_ENUM_TAG( SFS_MAX, "Search filter max value." )
 	SDNET_DEFINE( SFS_MAX,				sdNetManager::SFS_MAX )
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Server Filter Opcode" )
+
+	SD_UI_ENUM_TAG( SFO_EQUAL, "Filtering opcode for item." )
 	SDNET_DEFINE( SFO_EQUAL,			sdNetManager::SFO_EQUAL )
+	
+	SD_UI_ENUM_TAG( SFO_NOT_EQUAL, "Filtering opcode for item." )
 	SDNET_DEFINE( SFO_NOT_EQUAL,		sdNetManager::SFO_NOT_EQUAL )
+	
+	SD_UI_ENUM_TAG( SFO_LESS, "Filtering opcode for item." )
 	SDNET_DEFINE( SFO_LESS,				sdNetManager::SFO_LESS )
+	
+	SD_UI_ENUM_TAG( SFO_GREATER, "Filtering opcode for item." )
 	SDNET_DEFINE( SFO_GREATER, 			sdNetManager::SFO_GREATER )
+	
+	SD_UI_ENUM_TAG( SFO_CONTAINS, "Filtering opcode for item." )
 	SDNET_DEFINE( SFO_CONTAINS,			sdNetManager::SFO_CONTAINS )
+	
+	SD_UI_ENUM_TAG( SFO_NOT_CONTAINS, "Filtering opcode for item." )
 	SDNET_DEFINE( SFO_NOT_CONTAINS,		sdNetManager::SFO_NOT_CONTAINS )
+	
+	SD_UI_ENUM_TAG( SFO_NOOP, "Filtering opcode for item." )
 	SDNET_DEFINE( SFO_NOOP,				sdNetManager::SFO_NOOP )
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Server Filter Result" )
+
+	SD_UI_ENUM_TAG( SFR_OR, "OR opcode." )
 	SDNET_DEFINE( SFR_OR,				sdNetManager::SFR_OR )
+	
+	SD_UI_ENUM_TAG( SFR_AND, "AND opcode." )
 	SDNET_DEFINE( SFR_AND,				sdNetManager::SFR_AND )
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Server Filter" )
+
+	SD_UI_ENUM_TAG( SF_PASSWORDED, "Server is passworded filter." )
 	SDNET_DEFINE( SF_PASSWORDED,		sdNetManager::SF_PASSWORDED )
+	
+	SD_UI_ENUM_TAG( SF_PUNKBUSTER, "Server has punkbuster filter." )
 	SDNET_DEFINE( SF_PUNKBUSTER,		sdNetManager::SF_PUNKBUSTER )
+	
+	SD_UI_ENUM_TAG( SF_FRIENDLYFIRE, "Server has friendly fire filter." )
 	SDNET_DEFINE( SF_FRIENDLYFIRE,		sdNetManager::SF_FRIENDLYFIRE )
+	
+	SD_UI_ENUM_TAG( SF_AUTOBALANCE, "Server has auto balancing of teams filter." )
 	SDNET_DEFINE( SF_AUTOBALANCE,		sdNetManager::SF_AUTOBALANCE )
+	
+	SD_UI_ENUM_TAG( SF_EMPTY, "Server is empty filter." )
 	SDNET_DEFINE( SF_EMPTY,				sdNetManager::SF_EMPTY )
+	
+	SD_UI_ENUM_TAG( SF_FULL, "Server is  full filter." )
 	SDNET_DEFINE( SF_FULL,				sdNetManager::SF_FULL )
+	
+	SD_UI_ENUM_TAG( SF_PING, "Server ping filter." )
 	SDNET_DEFINE( SF_PING,				sdNetManager::SF_PING )
+	
+	SD_UI_ENUM_TAG( SF_BOTS, "Server has bots filter." )
 	SDNET_DEFINE( SF_BOTS,				sdNetManager::SF_BOTS )
+
+	SD_UI_ENUM_TAG( SF_MODS, "Server has mods filter." )
 	SDNET_DEFINE( SF_MODS,				sdNetManager::SF_MODS )
+	
+	SD_UI_ENUM_TAG( SF_PURE, "Server is pure filter." )
 	SDNET_DEFINE( SF_PURE,				sdNetManager::SF_PURE )
+	
+	SD_UI_ENUM_TAG( SF_LATEJOIN, "Server has late join filter." )
 	SDNET_DEFINE( SF_LATEJOIN,			sdNetManager::SF_LATEJOIN )
+	
+	SD_UI_ENUM_TAG( SF_FAVORITE, "Server is in favorites filter." )
 	SDNET_DEFINE( SF_FAVORITE,			sdNetManager::SF_FAVORITE )
-#if !defined( SD_DEMO_BUILD )
+
+#if !defined( SD_DEMO_BUILD ) && !defined( SD_DEMO_BUILD_CONSTRUCTION )
+	SD_UI_ENUM_TAG( SF_RANKED, "Server is ranked filter." )
 	SDNET_DEFINE( SF_RANKED,			sdNetManager::SF_RANKED )
+	
+	SD_UI_ENUM_TAG( SF_FRIENDS, "Server has friends playing on it filter." )
 	SDNET_DEFINE( SF_FRIENDS,			sdNetManager::SF_FRIENDS )
-#endif /* !SD_DEMO_BUILD */
+#endif /* !SD_DEMO_BUILD && !SD_DEMO_BUILD_CONSTRUCTION */
+
+	SD_UI_ENUM_TAG( SF_PLAYERCOUNT, "Server player count filter." )
 	SDNET_DEFINE( SF_PLAYERCOUNT,		sdNetManager::SF_PLAYERCOUNT )
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Clan Member Status" )
+
 #if !defined( SD_DEMO_BUILD )
+	SD_UI_ENUM_TAG( MS_ADMIN, "Member is an admin." )
 	SDNET_DEFINE( MS_ADMIN,				sdNetTeamMember::MS_ADMIN )
+	
+	SD_UI_ENUM_TAG( MS_MEMBER, "Member is a regular member." )
 	SDNET_DEFINE( MS_MEMBER,			sdNetTeamMember::MS_MEMBER )
+	
+	SD_UI_ENUM_TAG( MS_OWNER, "Member is an owner." )
 	SDNET_DEFINE( MS_OWNER,				sdNetTeamMember::MS_OWNER )
 #endif /* !SD_DEMO_BUILD */
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Player Stat" )
+
+	SD_UI_ENUM_TAG( PS_NAME, "For getting player name." )
 	SDNET_DEFINE( PS_NAME,				sdNetManager::PS_NAME )
+	
+	SD_UI_ENUM_TAG( PS_XP, "For getting player XP." )
 	SDNET_DEFINE( PS_XP,				sdNetManager::PS_XP )
+	
+	SD_UI_ENUM_TAG( PS_RANK, "For getting player rank." )
 	SDNET_DEFINE( PS_RANK,				sdNetManager::PS_RANK )
+	
+	SD_UI_ENUM_TAG( PS_TEAM, "For getting player team." )
 	SDNET_DEFINE( PS_TEAM,				sdNetManager::PS_TEAM )
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Player Reward" )
+
+	SD_UI_ENUM_TAG( PR_MOST_XP, "Player with most XP." )
 	SDNET_DEFINE( PR_MOST_XP,			sdNetManager::PR_MOST_XP )
+	
+	SD_UI_ENUM_TAG( PR_LEAST_XP, "Player with least XP." )
 	SDNET_DEFINE( PR_LEAST_XP,			sdNetManager::PR_LEAST_XP )
+	
+	SD_UI_ENUM_TAG( PR_BEST_SOLDIER, "Best soldier reward." )
 	SDNET_DEFINE( PR_BEST_SOLDIER,		sdNetManager::PR_BEST_SOLDIER )
+	
+	SD_UI_ENUM_TAG( PR_BEST_MEDIC, "Best medic reward." )
 	SDNET_DEFINE( PR_BEST_MEDIC,		sdNetManager::PR_BEST_MEDIC )
+	
+	SD_UI_ENUM_TAG( PR_BEST_ENGINEER, "Best engineer reward." )
 	SDNET_DEFINE( PR_BEST_ENGINEER,		sdNetManager::PR_BEST_ENGINEER )
+	
+	SD_UI_ENUM_TAG( PR_BEST_FIELDOPS, "Best field ops reward." )
 	SDNET_DEFINE( PR_BEST_FIELDOPS,		sdNetManager::PR_BEST_FIELDOPS )
+	
+	SD_UI_ENUM_TAG( PR_BEST_COVERTOPS, "Best covert ops reward." )
 	SDNET_DEFINE( PR_BEST_COVERTOPS,	sdNetManager::PR_BEST_COVERTOPS )
+	
+	SD_UI_ENUM_TAG( PR_BEST_LIGHTWEAPONS, "Best light weapons reward." )
 	SDNET_DEFINE( PR_BEST_LIGHTWEAPONS,	sdNetManager::PR_BEST_LIGHTWEAPONS )
+	
+	SD_UI_ENUM_TAG( PR_BEST_BATTLESENSE, "Best battlesense  reward." )
 	SDNET_DEFINE( PR_BEST_BATTLESENSE,	sdNetManager::PR_BEST_BATTLESENSE )
+	
+	SD_UI_ENUM_TAG( PR_BEST_VEHICLE, "Best vehicle reward." )
 	SDNET_DEFINE( PR_BEST_VEHICLE,		sdNetManager::PR_BEST_VEHICLE )
+	
+	SD_UI_ENUM_TAG( PR_ACCURACY_HIGH, "Highest accuracy reward." )
 	SDNET_DEFINE( PR_ACCURACY_HIGH,		sdNetManager::PR_ACCURACY_HIGH )
-	SDNET_DEFINE( PR_ACCURACY_LOW,		sdNetManager::PR_ACCURACY_LOW )
+	
+	SD_UI_ENUM_TAG( PR_MOST_OBJECTIVES, "Most objectives completed reward." )
+	SDNET_DEFINE( PR_MOST_OBJECTIVES,	sdNetManager::PR_MOST_OBJECTIVES )
+	
+	SD_UI_ENUM_TAG( PR_PROFICIENCY, "Most upgrades reward." )
 	SDNET_DEFINE( PR_PROFICIENCY,		sdNetManager::PR_PROFICIENCY )
 
+	SD_UI_ENUM_TAG( PR_MOST_KILLS, "Most kills reward." )
 	SDNET_DEFINE( PR_MOST_KILLS,		sdNetManager::PR_MOST_KILLS )
+	
+	SD_UI_ENUM_TAG( PR_MOST_DAMAGE, "Most damage reward." )
 	SDNET_DEFINE( PR_MOST_DAMAGE,		sdNetManager::PR_MOST_DAMAGE )
+	
+	SD_UI_ENUM_TAG( PR_MOST_TEAMKILLS, "Most teamkills reward." )
 	SDNET_DEFINE( PR_MOST_TEAMKILLS,	sdNetManager::PR_MOST_TEAMKILLS )
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Find Server Mode" )
+
+	SD_UI_ENUM_TAG( FSM_NEW, "Getting new list of servers." )
 	SDNET_DEFINE( FSM_NEW,				sdNetManager::FSM_NEW )
+	
+	SD_UI_ENUM_TAG( FSM_REFRESH, "Refresing current list of servers." )
 	SDNET_DEFINE( FSM_REFRESH,			sdNetManager::FSM_REFRESH )
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Browser Column" )
+
+	SD_UI_ENUM_TAG( BC_IP, "IP column." )
 	SDNET_DEFINE( BC_IP,				sdNetManager::BC_IP )
+	
+	SD_UI_ENUM_TAG( BC_FAVORITE, "Favorites column." )
 	SDNET_DEFINE( BC_FAVORITE,			sdNetManager::BC_FAVORITE )
+	
+	SD_UI_ENUM_TAG( BC_PASSWORD, "Password column." )
 	SDNET_DEFINE( BC_PASSWORD,			sdNetManager::BC_PASSWORD )
+	
+	SD_UI_ENUM_TAG( BC_RANKED, "Ranked column." )
 	SDNET_DEFINE( BC_RANKED,			sdNetManager::BC_RANKED )
+	
+	SD_UI_ENUM_TAG( BC_NAME, "Server name column." )
 	SDNET_DEFINE( BC_NAME,				sdNetManager::BC_NAME )
+	
+	SD_UI_ENUM_TAG( BC_MAP, "Server map column." )
 	SDNET_DEFINE( BC_MAP,				sdNetManager::BC_MAP )
+	
+	SD_UI_ENUM_TAG( BC_GAMETYPE_ICON, "Gametype icon column." )
 	SDNET_DEFINE( BC_GAMETYPE_ICON,		sdNetManager::BC_GAMETYPE_ICON )
+	
+	SD_UI_ENUM_TAG( BC_GAMETYPE, "Gametype column." )
 	SDNET_DEFINE( BC_GAMETYPE,			sdNetManager::BC_GAMETYPE )
+	
+	SD_UI_ENUM_TAG( BC_TIMELEFT, "Time left on map column." )
 	SDNET_DEFINE( BC_TIMELEFT,			sdNetManager::BC_TIMELEFT )
+	
+	SD_UI_ENUM_TAG( BC_PLAYERS, "Players on server column." )
 	SDNET_DEFINE( BC_PLAYERS,			sdNetManager::BC_PLAYERS )
+	
+	SD_UI_ENUM_TAG( BC_PING, "Server ping column." )
 	SDNET_DEFINE( BC_PING,				sdNetManager::BC_PING )
 
 #undef SDNET_DEFINE
 
 #define SDNET_DEFINE( enumeration ) sdDeclGUI::AddDefine( va( #enumeration " %i", enumeration ) );
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "SDNet Error Codes" )
+
+	SD_UI_ENUM_TAG( SDNET_NO_ERROR, "No error." )
 	SDNET_DEFINE( SDNET_NO_ERROR )
+	
+	SD_UI_ENUM_TAG( SDNET_UNKNOWN_ERROR, "Unknown error occured." )
 	SDNET_DEFINE( SDNET_UNKNOWN_ERROR )
+	
+	SD_UI_ENUM_TAG( SDNET_BAD_PARAMETERS, "Bad parameters." )
 	SDNET_DEFINE( SDNET_BAD_PARAMETERS )
+	
+	SD_UI_ENUM_TAG( SDNET_CANCELLED, "Cancelled." )
 	SDNET_DEFINE( SDNET_CANCELLED )
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Friend Context Action" )
+
+	SD_UI_ENUM_TAG( FCA_NONE, "No friend context action." )
 	SDNET_DEFINE( FCA_NONE )
+	
+	SD_UI_ENUM_TAG( FCA_RESPOND_TO_PROPOSAL, "Respond to invitation proposal." )
 	SDNET_DEFINE( FCA_RESPOND_TO_PROPOSAL )
+	
+	SD_UI_ENUM_TAG( FCA_SEND_IM, "Send instant message to friend." )
 	SDNET_DEFINE( FCA_SEND_IM )
+	
+	SD_UI_ENUM_TAG( FCA_READ_IM, "Read instant message from friend." )
 	SDNET_DEFINE( FCA_READ_IM )
+	
+	SD_UI_ENUM_TAG( FCA_RESPOND_TO_INVITE, "Respond to invite." )
 	SDNET_DEFINE( FCA_RESPOND_TO_INVITE )
+	
+	SD_UI_ENUM_TAG( FCA_BLOCKED, "You have been blocked." )
 	SDNET_DEFINE( FCA_BLOCKED )
+	
+	SD_UI_ENUM_TAG( FCA_UNBLOCKED, "You have been unblocked." )
 	SDNET_DEFINE( FCA_UNBLOCKED )
+	
+	SD_UI_ENUM_TAG( FCA_SESSION_INVITE, "You have been invited to a game." )
 	SDNET_DEFINE( FCA_SESSION_INVITE )
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Clan Context Action" )
+
+	SD_UI_ENUM_TAG( TCA_NONE, "No clan context action." )
 	SDNET_DEFINE( TCA_NONE )
+	
+	SD_UI_ENUM_TAG( TCA_SEND_IM, "Send instant message to clan member." )
 	SDNET_DEFINE( TCA_SEND_IM )
+	
+	SD_UI_ENUM_TAG( TCA_READ_IM, "Read instant message from clan member." )
 	SDNET_DEFINE( TCA_READ_IM )
+	
+	SD_UI_ENUM_TAG( TCA_NOTIFY_OWNER, "Notify clan member of promotion to owner." )
 	SDNET_DEFINE( TCA_NOTIFY_OWNER )
+	
+	SD_UI_ENUM_TAG( TCA_NOTIFY_ADMIN, "Notify clan member of promotion to admin." )
 	SDNET_DEFINE( TCA_NOTIFY_ADMIN )
+	
+	SD_UI_ENUM_TAG( TCA_SESSION_INVITE, "Invite a clan member to a game." )
 	SDNET_DEFINE( TCA_SESSION_INVITE )
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Username Validation" )
+
+	SD_UI_ENUM_TAG( UV_VALID, "Username valid. Used during the creation of an account." )
 	SDNET_DEFINE( UV_VALID )
+	
+	SD_UI_ENUM_TAG( UV_DUPLICATE_NAME, "Username already registered. Used during the creation of an account." )
 	SDNET_DEFINE( UV_DUPLICATE_NAME )
+	
+	SD_UI_ENUM_TAG( UV_EMPTY_NAME, "Tried registering empty name. Used during the creation of an account." )
 	SDNET_DEFINE( UV_EMPTY_NAME )
+	
+	SD_UI_ENUM_TAG( UV_INVALID_NAME, "Used during the creation of an account." )
 	SDNET_DEFINE( UV_INVALID_NAME )
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Email Validation" )
+
+	SD_UI_ENUM_TAG( EV_VALID, "Valid email address. Used during the creation of an account." )
 	SDNET_DEFINE( EV_VALID )
+	
+	SD_UI_ENUM_TAG( EV_EMPTY_MAIL, "Empty email address supplied. Used during the creation of an account." )
 	SDNET_DEFINE( EV_EMPTY_MAIL )
+	
+	SD_UI_ENUM_TAG( EV_INVALID_MAIL, "Invalid email address supplied. Used during the creation of an account." )
 	SDNET_DEFINE( EV_INVALID_MAIL )
+	
+	SD_UI_ENUM_TAG( EV_CONFIRM_MISMATCH, "Confirmation mismatch of email address. Used during the creation of an account." )
 	SDNET_DEFINE( EV_CONFIRM_MISMATCH )
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Stats Request State" )
+
+	SD_UI_ENUM_TAG( SR_EMPTY, "No current stats request." )
 	SDNET_DEFINE( SR_EMPTY );
+	
+	SD_UI_ENUM_TAG( SR_REQUESTING, "Currently requesting stats." )
 	SDNET_DEFINE( SR_REQUESTING );
+	
+	SD_UI_ENUM_TAG( SR_COMPLETED, "Completed stats request." )
 	SDNET_DEFINE( SR_COMPLETED );
+	
+	SD_UI_ENUM_TAG( SR_FAILED, "Failed requesting stats." )
 	SDNET_DEFINE( SR_FAILED );
 
+	SD_UI_POP_GROUP_TAG
+	SD_UI_PUSH_GROUP_TAG( "Message History Source" )
+
+	SD_UI_ENUM_TAG( MHS_FRIEND, "A friend message." )
 	SDNET_DEFINE( MHS_FRIEND );
+	
+	SD_UI_ENUM_TAG( MHS_TEAM, "A clan message." )
 	SDNET_DEFINE( MHS_TEAM );
+
+	SD_UI_POP_GROUP_TAG
 
 #undef SDNET_DEFINE
 
@@ -289,6 +569,7 @@ void sdNetProperties::Init() {
 #endif /* !SD_DEMO_BUILD */
 	connectFailed = 0.0f;
 
+#if !defined( SD_DEMO_BUILD )
 	steamActive = networkService->IsSteamActive();
 
 	if( steamActive ) {
@@ -301,7 +582,9 @@ void sdNetProperties::Init() {
 			storedLicenseCodeChecksum = code[ 1 ];
 		}	
 	}
+#endif /* !SD_DEMO_BUILD */
 }
+SD_UI_POP_CLASS_TAG
 
 /*
 ================
@@ -443,16 +726,17 @@ void sdNetProperties::UpdateProperties() {
 #endif /* !SD_DEMO_BUILD */
 
 	serverRefreshComplete = 0.0f;
+	hotServersRefreshComplete = 0.0f;
 
 	systemNotifications = gameLocal.GetSystemNotifications();
 
 	if( activeUser != NULL ) {
 		int numNotifications = notificationSystem->GetNumNotifications();
+#if !defined( SD_DEMO_BUILD )
 		for( int i = 0; i < numNotifications; i++ ) {
 			const notification_t* notification = notificationSystem->GetNotification( i );
 
 			switch( notification->id ) {
-#if !defined( SD_DEMO_BUILD )
 				case NID_SDNET_FRIEND_STATE_CHANGED: {
 					friendStateChangedNotifications.Alloc() = *notification_cast< const sdnetFriendStateChangedNotification_t >( notification );
 					break;
@@ -489,11 +773,11 @@ void sdNetProperties::UpdateProperties() {
 					teamKickNotifications.Alloc() = *notification_cast< const sdnetTeamKickNotification_t >( notification );
 					break;
 				 }
-#endif /* !SD_DEMO_BUILD */
 				default:
 					gameLocal.Warning( "sdNetProperties::UpdateProperties: unknown notification type '%i'", notification->id );
 			}
 		}
+#endif /* !SD_DEMO_BUILD */
 	}
 
 	int totalPause = SEC2MS( gui_notificationPause.GetFloat() + gui_notificationTime.GetFloat() );
@@ -700,7 +984,7 @@ void sdNetProperties::UpdateProperties() {
 	if( now >= nextNotifyTime || nextNotifyTime == 0 ) {
 		int numOnline = 0;
 		for( int i = 0; i < friendStateChangedNotifications.Num(); i++ ) {
-			if( friendStateChangedNotifications[ i ].state == sdNetTeamMember::OS_ONLINE ) {
+			if( friendStateChangedNotifications[ i ].state == sdNetFriend::OS_ONLINE ) {
 				numOnline++;
 			}
 		}
@@ -713,7 +997,7 @@ void sdNetProperties::UpdateProperties() {
 			notificationText = common->LocalizeText( "guis/mainmenu/notify/multiple/friendsonline", args );
 
 			for( int i = friendStateChangedNotifications.Num() - 1; i >= 0; i-- ) {
-				if( friendStateChangedNotifications[ i ].state == sdNetTeamMember::OS_ONLINE ) {
+				if( friendStateChangedNotifications[ i ].state == sdNetFriend::OS_ONLINE ) {
 					friendStateChangedNotifications.RemoveIndex( i );
 				}
 			}
@@ -809,6 +1093,24 @@ void sdNetProperties::CreateServerList( sdUIList* list ) {
 	}
 
 	gameLocal.GetSDNet().CreateServerList( list, source, mode, flagOffline );
+}
+
+/*
+============
+sdNetProperties::CreateHotServerList
+============
+*/
+void sdNetProperties::CreateHotServerList( sdUIList* list ) {
+	int iSource;
+	list->GetUI()->PopScriptVar( iSource );
+
+	sdNetManager::findServerSource_e source;
+	if( !sdIntToContinuousEnum< sdNetManager::findServerSource_e >( iSource, sdNetManager::FS_MIN, sdNetManager::FS_MAX, source ) ) {
+		gameLocal.Error( "CreateServerList: source '%i' out of range", iSource );
+		return;
+	}
+
+	gameLocal.GetSDNet().CreateHotServerList( list, source );
 }
 
 /*
@@ -923,12 +1225,12 @@ void sdNetProperties::CreateFriendsList( sdUIList* list ) {
 					break;
 				case sdNetMessage::MT_BLOCKED:		// FALL THROUGH
 					material	= "friends/newevent";
-					string		= "guis/mainmenu/friends/unblockedby";
+					string		= "guis/mainmenu/friends/blockedby";
 					status	= SP_NEW_MESSAGE;
 					break;
 				case sdNetMessage::MT_UNBLOCKED:
 					material	= "friends/newevent";
-					string		= "guis/mainmenu/friends/blockedby";
+					string		= "guis/mainmenu/friends/unblockedby";
 					status	= SP_NEW_MESSAGE;
 					break;
 				}
@@ -1001,7 +1303,7 @@ void sdNetProperties::CreateTeamList( sdUIList* list ) {
 		const char* string	= "guis/mainmenu/friends/offline";
 		const char* material = "friends/offline";
 
-		if( mate->GetState() == sdNetFriend::OS_ONLINE ) {
+		if( mate->GetState() == sdNetTeamMember::OS_ONLINE ) {
 			sdNetClientId id;
 			mate->GetNetClientId( id );
 			const idDict* profile = networkService->GetProfileProperties( id );
@@ -1298,6 +1600,9 @@ void sdNetProperties::FormatTimeStamp( const sysTime_t& time, idWStr& str ) {
 sdNetProperties::CreateRetrievedUserNameList
 ============
 */
+
+#if !defined( SD_DEMO_BUILD )
 void sdNetProperties::CreateRetrievedUserNameList( sdUIList* list ) {
 	gameLocal.GetSDNet().CreateRetrievedUserNameList( list );
 }
+#endif /* !SD_DEMO_BUILD */

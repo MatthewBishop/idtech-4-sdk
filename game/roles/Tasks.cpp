@@ -41,6 +41,8 @@ const idEventDef EV_PlayerTask_SetWayPointState( "setWayPointState", '\0', DOC_T
 
 const idEventDef EV_PlayerTask_GiveObjectiveProficiency( "giveObjectiveProficiency", '\0', DOC_TEXT( "Gives class XP to all players elligible for the task." ), 2, NULL, "f", "count", "Amount of XP to give.", "s", "reason", "Reason to record in log." );
 
+const idEventDef EV_PlayerTask_FlashIcon( "flashWorldIcon", '\0', DOC_TEXT( "Flash the icon for a set time." ), 1, NULL, "d", "time", "Time to flash in milliseconds." );
+
 CLASS_DECLARATION( idClass, sdPlayerTask )
 	EVENT( EV_PlayerTask_Complete,				sdPlayerTask::Event_Complete )
 	EVENT( EV_PlayerTask_SetTimeout,			sdPlayerTask::Event_SetTimeout )
@@ -64,7 +66,8 @@ CLASS_DECLARATION( idClass, sdPlayerTask )
 	EVENT( EV_GetFloatKeyWithDefault,			sdPlayerTask::Event_GetFloatKeyWithDefault )
 	EVENT( EV_GetVectorKeyWithDefault,			sdPlayerTask::Event_GetVectorKeyWithDefault )
 
-	EVENT( EV_PlayerTask_GiveObjectiveProficiency, sdPlayerTask::Event_GiveObjectiveProficiency )
+	EVENT( EV_PlayerTask_GiveObjectiveProficiency,	sdPlayerTask::Event_GiveObjectiveProficiency )
+	EVENT( EV_PlayerTask_FlashIcon,					sdPlayerTask::Event_FlashIcon )
 END_CLASS
 
 /*
@@ -134,7 +137,7 @@ sdPlayerTask::~sdPlayerTask( void ) {
 
 	if ( gameLocal.isServer ) {
 		sdTaskMessage msg( this, TM_REMOVE );
-		msg.Send();
+		msg.Send( sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -406,14 +409,13 @@ const wchar_t* sdPlayerTask::GetTitle( idPlayer* player ) const {
 	const sdDeclLocStr* title = NULL;
 
 	if ( IsObjective() ) {
-		if( player == NULL ) {
+		title = _taskInfo->GetFriendlyTitle();
+		if ( player == NULL ) {
 			player = gameLocal.GetLocalPlayer();
 		}
 		if ( player != NULL ) {
 			if ( IsPlayerEligible( player ) ) {
 				title = _taskInfo->GetTitle();
-			} else {
-				title = _taskInfo->GetFriendlyTitle();
 			}
 		}
 	} else {
@@ -531,7 +533,7 @@ void sdPlayerTask::SetComplete( void ) {
 
 	if ( gameLocal.isServer ) {
 		sdTaskMessage msg( this, TM_COMPLETE );
-		msg.Send();
+		msg.Send( sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -549,7 +551,7 @@ void sdPlayerTask::SetUserCreated( void ) {
 
 	if ( gameLocal.isServer ) {
 		sdTaskMessage msg( this, TM_USER_CREATED );
-		msg.Send();
+		msg.Send( sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -744,7 +746,7 @@ void sdPlayerTask::Read( idFile* file ) {
 sdPlayerTask::WriteInitialState
 ================
 */
-void sdPlayerTask::WriteInitialState( int clientNum ) const {
+void sdPlayerTask::WriteInitialState( const sdReliableMessageClientInfoBase& target ) const {
 	sdTaskMessage msg( this, TM_FULLSTATE );
 	msg.WriteBits( _taskInfo->Index(), idMath::BitsForInteger( gameLocal.declPlayerTaskType.Num() ) );
 	msg.WriteLong( _entity.GetSpawnId() );
@@ -758,7 +760,7 @@ void sdPlayerTask::WriteInitialState( int clientNum ) const {
 		}
 	}
 
-	msg.Send( clientNum );
+	msg.Send( target );
 }
 
 /*
@@ -793,6 +795,19 @@ void sdPlayerTask::ReadInitialState( idFile* file ) {
 		file->ReadBool( _wayPointInfo[ i ].enabled );
 		file->ReadBool( _wayPointInfo[ i ].fixed );
 		file->ReadVec3( _wayPointInfo[ i ].offset );
+	}
+}
+
+/*
+================
+sdPlayerTask::FlashIcon
+================
+*/
+void sdPlayerTask::FlashIcon( int time ) {
+	for ( int i = 0; i < _wayPointInfo.Num(); i++ ) {
+		if ( _wayPointInfo[ i ].wayPoint != NULL ) {
+			_wayPointInfo[ i ].wayPoint->SetFlashEndTime( gameLocal.ToGuiTime( gameLocal.time ) + time );
+		}
 	}
 }
 
@@ -860,7 +875,7 @@ void sdPlayerTask::Event_SetTargetPos( int index, const idVec3& position ) {
 			sdTaskMessage msg( this, TM_SETLOCATIION );
 			msg.WriteLong( index );
 			msg.WriteVector( position );
-			msg.Send();		
+			msg.Send( sdReliableMessageClientInfoAll() );
 		}
 	}
 }
@@ -881,7 +896,7 @@ void sdPlayerTask::Event_SetWayPointState( int index, bool state ) {
 			sdTaskMessage msg( this, TM_VISSTATE );
 			msg.WriteLong( index );
 			msg.WriteBool( state );
-			msg.Send();		
+			msg.Send( sdReliableMessageClientInfoAll() );
 		}
 	}
 }
@@ -1021,6 +1036,15 @@ void sdPlayerTask::Event_IsUserCreated( void ) {
 }
 
 /*
+================
+sdPlayerTask::Event_FlashIcon
+================
+*/
+void sdPlayerTask::Event_FlashIcon( int time ) {
+	FlashIcon( time );
+}
+
+/*
 ===============================================================================
 
 	sdTaskManagerLocal
@@ -1138,7 +1162,7 @@ sdPlayerTask* sdTaskManagerLocal::AllocTask( const sdDeclPlayerTask* taskInfo, i
 	_taskList[ index ] = new sdPlayerTask();
 	_taskList[ index ]->Create( index, taskInfo );
 	_taskList[ index ]->SetEntity( gameLocal.GetSpawnId( object ) );
-	_taskList[ index ]->WriteInitialState( -1 );
+	_taskList[ index ]->WriteInitialState( sdReliableMessageClientInfoAll() );
 
 	OnNewTask( _taskList[ index ] );
 
@@ -1325,9 +1349,9 @@ void sdTaskManagerLocal::SelectTask( idPlayer* player, taskHandle_t taskHandle )
 sdTaskManagerLocal::WriteInitialReliableMessages
 ================
 */
-void sdTaskManagerLocal::WriteInitialReliableMessages( int clientNum ) const {
+void sdTaskManagerLocal::WriteInitialReliableMessages( const sdReliableMessageClientInfoBase& target ) const {
 	for ( sdPlayerTask* task = _activeTasks.Next(); task; task = task->GetNode().Next() ) {
-		task->WriteInitialState( clientNum );
+		task->WriteInitialState( target );
 	}
 }
 

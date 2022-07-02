@@ -301,14 +301,12 @@ idWeapon::idWeapon() {
 	aimValues[ WAV_IRONSIGHTS ].lagscaleyaw		= 0.9f;
 	aimValues[ WAV_IRONSIGHTS ].lagscalepitch	= 0.9f;
 	aimValues[ WAV_IRONSIGHTS ].speedlr			= 0.f;
-	aimValues[ WAV_IRONSIGHTS ].bobscale		= 0.1f;
 
 	aimValues[ WAV_NORMAL ].bobscaleyaw			= -0.1f;
 	aimValues[ WAV_NORMAL ].bobscalepitch		= 0.2f;
 	aimValues[ WAV_NORMAL ].lagscaleyaw			= 0.91f;
 	aimValues[ WAV_NORMAL ].lagscalepitch		= 0.91f;
 	aimValues[ WAV_NORMAL ].speedlr				= 0.01f;
-	aimValues[ WAV_NORMAL ].bobscale			= 0.1f;
 
 	driftScale				= 1.f;
 
@@ -505,8 +503,6 @@ void idWeapon::Clear( void ) {
 	playerViewOrigin.Zero();
 	viewWeaponAxis.Identity();
 	viewWeaponOrigin.Zero();
-	muzzleAxis.Identity();
-	muzzleOrigin.Zero();
 
 	status			= WP_HOLSTERED;
 	state			= "";
@@ -617,7 +613,7 @@ void idWeapon::LogTimeUsed( void ) {
 	}
 
 	int t = MS2SEC( gameLocal.time - timeStartedUsing );
-	stats.timeUsed->IncreaseInteger( owner->entityNumber, t );
+	stats.timeUsed->IncreaseValue( owner->entityNumber, t );
 }
 
 /*
@@ -803,17 +799,15 @@ void idWeapon::GetWeaponDef( const sdDeclInvItem* item ) {
 
 	aimValues[ WAV_IRONSIGHTS ].bobscaleyaw = spawnArgs.GetFloat( "wbobscaleyaw_aim", "-0.01f" );
 	aimValues[ WAV_IRONSIGHTS ].bobscalepitch = spawnArgs.GetFloat( "wbobscalepitch_aim", "0.005" );
-	aimValues[ WAV_IRONSIGHTS ].lagscaleyaw = spawnArgs.GetFloat( "wbobscaleyaw_aim", "0.9" );
-	aimValues[ WAV_IRONSIGHTS ].lagscalepitch = spawnArgs.GetFloat( "wbobscalepitch_aim", "0.9" );
+	aimValues[ WAV_IRONSIGHTS ].lagscaleyaw = spawnArgs.GetFloat( "wlagscaleyaw_aim", "0.9" );
+	aimValues[ WAV_IRONSIGHTS ].lagscalepitch = spawnArgs.GetFloat( "wlagscalepitch_aim", "0.9" );
 	aimValues[ WAV_IRONSIGHTS ].speedlr = spawnArgs.GetFloat( "wspeedrl_aim", "0" );
-	aimValues[ WAV_IRONSIGHTS ].bobscale = spawnArgs.GetFloat( "wbobscale_aim", "0.1" );
 
 	aimValues[ WAV_NORMAL ].bobscaleyaw = spawnArgs.GetFloat( "wbobscaleyaw", "-0.1" );
 	aimValues[ WAV_NORMAL ].bobscalepitch = spawnArgs.GetFloat( "wbobscalepitch", "0.2" );
-	aimValues[ WAV_NORMAL ].lagscaleyaw = spawnArgs.GetFloat( "wbobscaleyaw", "0.91" );
-	aimValues[ WAV_NORMAL ].lagscalepitch = spawnArgs.GetFloat( "wbobscalepitch", "0.91" );
+	aimValues[ WAV_NORMAL ].lagscaleyaw = spawnArgs.GetFloat( "wlagscaleyaw", "0.91" );
+	aimValues[ WAV_NORMAL ].lagscalepitch = spawnArgs.GetFloat( "wlagscalepitch", "0.91" );
 	aimValues[ WAV_NORMAL ].speedlr = spawnArgs.GetFloat( "wspeedrl", "0.01" );
-	aimValues[ WAV_NORMAL ].bobscale = spawnArgs.GetFloat( "wbobscale", "0.1" );
 
 	spreadCurrentValue = spreadValues[ WSV_STANDING ].min;
 
@@ -1606,7 +1600,7 @@ idWeapon::UpdateScript
 ================
 */
 void idWeapon::UpdateScript( void ) {
-	if ( !isLinked ) {
+	if ( !isLinked || gameLocal.IsPaused() ) {
 		return;
 	}
 
@@ -1726,6 +1720,7 @@ void idWeapon::PresentWeapon( void ) {
 	// set the physics position and orientation
 	GetPhysics()->SetOrigin( viewWeaponOrigin );
 	GetPhysics()->SetAxis( viewForeShortenAxis );
+
 	UpdateVisuals();
 
 	if ( gameLocal.isNewFrame ) {
@@ -2101,7 +2096,7 @@ void idWeapon::Event_WeaponReloading( void ) {
 	if ( gameLocal.isServer ) {
 		sdEntityBroadcastEvent msg( this, EVENT_RELOAD );
 		msg.WriteLong( weaponItem->Index() );
-		msg.Send( false, false );
+		msg.Send( false, sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -2497,7 +2492,7 @@ void idWeapon::Event_LaunchProjectiles( int numProjectiles, int projectileIndex,
 	// set the shader parm to the time of last projectile firing,
 	// which the gun material shaders can reference for single shot barrel glows, etc
 	renderEntity.shaderParms[ SHADERPARM_DIVERSITY ] = missileRandom.CRandomFloat();
-	renderEntity.shaderParms[ SHADERPARM_TIMEOFFSET ] = -MS2SEC( gameLocal.realClientTime );
+	renderEntity.shaderParms[ SHADERPARM_TIMEOFFSET ] = -MS2SEC( gameLocal.time );
 
 	for ( int i = 0; i < worldModels.Num(); i++ ) {
 		sdClientAnimated* worldModel = worldModels[ i ];
@@ -2506,6 +2501,10 @@ void idWeapon::Event_LaunchProjectiles( int numProjectiles, int projectileIndex,
 		worldRenderEnt->shaderParms[ SHADERPARM_DIVERSITY ]	= renderEntity.shaderParms[ SHADERPARM_DIVERSITY ];
 		worldRenderEnt->shaderParms[ SHADERPARM_TIMEOFFSET ] = renderEntity.shaderParms[ SHADERPARM_TIMEOFFSET ];
 	}
+
+	// the muzzle bone's position, used for launching projectiles and trailing smoke
+	idVec3 muzzleOrigin;
+	idMat3 muzzleAxis;
 
 	// calculate the muzzle position
 	if ( barrelJointView != INVALID_JOINT && projectileDict.GetBool( "launchFromBarrel" ) ) {
@@ -2544,19 +2543,19 @@ void idWeapon::Event_LaunchProjectiles( int numProjectiles, int projectileIndex,
 	}
 
 	// add some to the kick time, incrementally moving repeat firing weapons back
-	if ( kick_endtime < gameLocal.realClientTime ) {
-		kick_endtime = gameLocal.realClientTime;
+	if ( kick_endtime < gameLocal.time ) {
+		kick_endtime = gameLocal.time;
 	}
 	kick_endtime += muzzle_kick_time;
-	if ( kick_endtime > gameLocal.realClientTime + muzzle_kick_maxtime ) {
-		kick_endtime = gameLocal.realClientTime + muzzle_kick_maxtime;
+	if ( kick_endtime > gameLocal.time + muzzle_kick_maxtime ) {
+		kick_endtime = gameLocal.time + muzzle_kick_maxtime;
 	}
 
 	{
 		idBounds ownerBounds = owner->GetPhysics()->GetAbsBounds();
 
 		if ( stats.shotsFired != NULL ) {
-			stats.shotsFired->IncreaseInteger( owner->entityNumber, numProjectiles );
+			stats.shotsFired->IncreaseValue( owner->entityNumber, numProjectiles );
 		}
 			
 		float spreadRad = DEG2RAD( spread );
@@ -2926,7 +2925,7 @@ void idWeapon::Event_MeleeAttack( float damageScale ) {
 	bool hit = false;
 
 	if ( stats.shotsFired != NULL ) {
-		stats.shotsFired->IncreaseInteger( owner->entityNumber, 1 );
+		stats.shotsFired->IncreaseValue( owner->entityNumber, 1 );
 	}
 
 	const sdDeclDamage* damage = meleeDamage;
@@ -2944,7 +2943,7 @@ void idWeapon::Event_MeleeAttack( float damageScale ) {
 
 	if ( damage->GetRecordHitStats() ) {
 		if ( gameLocal.totalShotsFiredStat != NULL ) {
-			gameLocal.totalShotsFiredStat->IncreaseInteger( owner->entityNumber, 1 );
+			gameLocal.totalShotsFiredStat->IncreaseValue( owner->entityNumber, 1 );
 		}
 	}
 
@@ -2965,15 +2964,13 @@ void idWeapon::Event_MeleeAttack( float damageScale ) {
 			ent->ApplyImpulse( this, meleeTrace.c.id, meleeTrace.c.point, impulse );
 
 			if ( ent->fl.takedamage ) {
-				idVec3 globalKickDir;
-
-				globalKickDir = muzzleAxis * damage->GetKickDir();
-				ent->Damage( this, owner, globalKickDir, damage, damageScale, &meleeTrace );
+				idVec3 damageDir = playerViewAxis.ToAngles().ToForward();
+				ent->Damage( this, owner, damageDir, damage, damageScale, &meleeTrace );
 				hit = true;
 
 				if ( damage->GetRecordHitStats() ) {
 					if ( gameLocal.totalShotsHitStat != NULL ) {
-						gameLocal.totalShotsHitStat->IncreaseInteger( owner->entityNumber, 1 );
+						gameLocal.totalShotsHitStat->IncreaseValue( owner->entityNumber, 1 );
 					}
 				}
 			}
@@ -3313,8 +3310,8 @@ void idWeapon::SetupStats( const char* statName ) {
 	if ( *statName ) {
 		sdStatsTracker& tracker = sdGlobalStatsTracker::GetInstance();
 
-		stats.shotsFired		= tracker.GetStat( tracker.AllocStat( va( "%s_shots_fired", statName ), "int" ) );
-		stats.timeUsed			= tracker.GetStat( tracker.AllocStat( va( "%s_time_used", statName ), "int" ) );
+		stats.shotsFired		= tracker.GetStat( tracker.AllocStat( va( "%s_shots_fired", statName ), sdNetStatKeyValue::SVT_INT ) );
+		stats.timeUsed			= tracker.GetStat( tracker.AllocStat( va( "%s_time_used", statName ), sdNetStatKeyValue::SVT_INT ) );
 	} else {
 		stats.shotsFired		= NULL;
 		stats.timeUsed			= NULL;

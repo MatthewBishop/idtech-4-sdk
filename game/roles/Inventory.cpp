@@ -1646,6 +1646,9 @@ void sdInventory::SetupModel( const sdDeclPlayerClass* cls ) {
 	owner->SetHandJoint( 1, GetPlayerJoint( dict, "bone_right_hand" ) );
 	owner->SetFootJoint( 1, GetPlayerJoint( dict, "bone_right_foot" ) );
 
+	owner->SetHeadModelJoint( GetPlayerJoint( dict, "bone_head_model" ) );
+	owner->SetHeadModelOffset( dict.GetVector( "head_offset" ) );
+
 	SetupLocationalDamage( dict );
 
 	sdScriptHelper h;
@@ -1884,7 +1887,7 @@ void sdInventory::SendClassInfo( bool cached ) {
 			msg.WriteBits( setup.GetOptions()[ i ], idMath::BitsForInteger( option.Num() ) );
 		}
 	}
-	msg.Send( true, true );
+	msg.Send( true, sdReliableMessageClientInfoAll() );
 }
 
 /*
@@ -1928,7 +1931,7 @@ void sdInventory::LogClassTime( void ) {
 		const sdDeclPlayerClass::stats_t& stats = pc->GetStats();
 		if ( stats.timePlayed ) {
 			int t = MS2SEC( gameLocal.time - timeClassChanged );
-			stats.timePlayed->IncreaseInteger( owner->entityNumber, t );
+			stats.timePlayed->IncreaseValue( owner->entityNumber, t );
 		}
 	}
 	timeClassChanged = gameLocal.time;
@@ -2341,7 +2344,7 @@ void sdInventory::ApplyNetworkState( const sdInventoryBroadcastData& newData ) {
 		items[ i ].SetDisabled( newData.disabledMask.Get( i ) != 0 );
 	}
 
-	if ( !owner->ShouldWritePlayerState() ) {
+	if ( !owner->ShouldReadPlayerState() ) {
 		assert( sdBitField_Dynamic::SizeForBits( gameLocal.declAmmoTypeType.Num() ) == newData.ammoMask.GetSize() );
 		for ( int i = 0; i < gameLocal.declAmmoTypeType.Num(); i++ ) {
 			ammo[ i ] = ( newData.ammoMask[ i ] != 0 ) ? 999 : 0;
@@ -2368,7 +2371,7 @@ void sdInventory::ReadNetworkState( const sdInventoryBroadcastData& baseData, sd
 		}
 	}
 
-	if ( !owner->ShouldWritePlayerState() ) {
+	if ( !owner->ShouldReadPlayerState() ) {
 		newData.ammoMask.Init( gameLocal.declAmmoTypeType.Num() );
 		for ( int i = 0; i < newData.ammoMask.GetSize(); i++ ) {
 			if ( i < baseData.ammoMask.GetSize() ) {
@@ -2639,7 +2642,7 @@ void sdInventory::LogSuicide( void ) {
 
 	const sdDeclPlayerClass::stats_t& stats = pc->GetStats();
 	if ( stats.suicides ) {
-		stats.suicides->IncreaseInteger( owner->entityNumber, 1 );
+		stats.suicides->IncreaseValue( owner->entityNumber, 1 );
 	}
 }
 
@@ -2656,7 +2659,7 @@ void sdInventory::LogDeath( void ) {
 
 	const sdDeclPlayerClass::stats_t& stats = pc->GetStats();
 	if ( stats.deaths != NULL ) {
-		stats.deaths->IncreaseInteger( owner->entityNumber, 1 );
+		stats.deaths->IncreaseValue( owner->entityNumber, 1 );
 	}
 }
 
@@ -2673,7 +2676,7 @@ void sdInventory::LogRevive( void ) {
 
 	const sdDeclPlayerClass::stats_t& stats = pc->GetStats();
 	if ( stats.revived ) {
-		stats.revived->IncreaseInteger( owner->entityNumber, 1 );
+		stats.revived->IncreaseValue( owner->entityNumber, 1 );
 	}
 }
 
@@ -2690,7 +2693,7 @@ void sdInventory::LogTapOut( void ) {
 
 	const sdDeclPlayerClass::stats_t& stats = pc->GetStats();
 	if ( stats.tapouts ) {
-		stats.tapouts->IncreaseInteger( owner->entityNumber, 1 );
+		stats.tapouts->IncreaseValue( owner->entityNumber, 1 );
 	}
 }
 
@@ -2707,7 +2710,7 @@ void sdInventory::LogRespawn( void ) {
 
 	const sdDeclPlayerClass::stats_t& stats = pc->GetStats();
 	if ( stats.respawns != NULL ) {
-		stats.respawns->IncreaseInteger( owner->entityNumber, 1 );
+		stats.respawns->IncreaseValue( owner->entityNumber, 1 );
 	}
 }
 

@@ -305,6 +305,7 @@ idEventDefInternal::idEventDefInternal( const char* _command, const char* _forma
 
 idLinkList< idEvent >	idEvent::freeEvents;
 idLinkList< idEvent >	idEvent::eventQueue;
+idLinkList< idEvent >	idEvent::guiEventQueue;
 idLinkList< idEvent >	idEvent::frameEventQueue[ 2 ];
 int						idEvent::frameQueueIndex;
 idEvent					idEvent::eventPool[ MAX_EVENTS ];
@@ -405,7 +406,7 @@ bool idEvent::ArgsMatch( char format, const idEventArg* arg ) {
 idEvent::Alloc
 ================
 */
-idEvent *idEvent::Alloc( const idEventDef *evdef, int numargs, va_list args ) {
+idEvent *idEvent::Alloc( const idEventDef *evdef, int numargs, va_list args, bool guiEvent ) {
 	idEvent		*ev;
 	size_t		size;
 	const char	*format;
@@ -428,6 +429,7 @@ idEvent *idEvent::Alloc( const idEventDef *evdef, int numargs, va_list args ) {
 
 	ev = freeEvents.Next();
 	ev->eventNode.Remove();
+	ev->isGuiEvent = guiEvent;
 
 	ev->eventdef = evdef;
 
@@ -563,10 +565,13 @@ void idEvent::Schedule( idClass *obj, const idTypeInfo *type, int time ) {
 
 	// wraps after 24 days...like I care. ;)
 	this->time = gameLocal.time + time;
+	if ( isGuiEvent ) {
+		this->time = gameLocal.ToGuiTime( this->time );
+	}
 
 	eventNode.Remove();
 
-	idEvent* event = eventQueue.Next();
+	idEvent* event = isGuiEvent ? guiEventQueue.Next() : eventQueue.Next();
 	while( ( event != NULL ) && ( this->time >= event->time ) ) {
 		event = event->eventNode.Next();
 	}
@@ -574,7 +579,7 @@ void idEvent::Schedule( idClass *obj, const idTypeInfo *type, int time ) {
 	if ( event ) {
 		eventNode.InsertBefore( event->eventNode );
 	} else {
-		eventNode.AddToEnd( eventQueue );
+		eventNode.AddToEnd( isGuiEvent ? guiEventQueue : eventQueue );
 	}
 }
 
@@ -699,13 +704,36 @@ void idEvent::ServiceEvents( void ) {
 
 	eventsToRun.SetNum( 0, false );
 
+	if ( gameLocal.IsPaused() ) {
+		for ( idEvent* evt = frameEventQueue[ oldFrameQueueIndex ].Next(); evt != NULL; evt = evt->eventNode.Next() ) {
+			if ( evt->isGuiEvent ) {
+				continue;
+			}
+			evt->eventNode.Remove();
+			evt->eventNode.AddToEnd( frameEventQueue[ frameQueueIndex ] );
+		}
+	}
+
 	for ( idEvent* evt = frameEventQueue[ oldFrameQueueIndex ].Next(); evt != NULL; evt = evt->eventNode.Next() ) {
 		evt->activeEventIndex = eventsToRun.Num();
 		eventsToRun.Alloc() = evt;
 	}
 
+	int now;
+	
+	now = gameLocal.time;
 	for ( idEvent* evt = eventQueue.Next(); evt != NULL; evt = evt->eventNode.Next() ) {
-		if ( evt->time > gameLocal.time ) {
+		if ( evt->time > now ) {
+			break;
+		}
+
+		evt->activeEventIndex = eventsToRun.Num();
+		eventsToRun.Alloc() = evt;
+	}
+
+	now = gameLocal.ToGuiTime( gameLocal.time );
+	for ( idEvent* evt = guiEventQueue.Next(); evt != NULL; evt = evt->eventNode.Next() ) {
+		if ( evt->time > now ) {
 			break;
 		}
 

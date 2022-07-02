@@ -265,6 +265,10 @@
 					>
 				</File>
 				<File
+					RelativePath=".\game\Game_Repeater.h"
+					>
+				</File>
+				<File
 					RelativePath=".\game\GameEdit.h"
 					>
 				</File>
@@ -356,6 +360,10 @@
 				</File>
 				<File
 					RelativePath=".\game\Game_local.cpp"
+					>
+				</File>
+				<File
+					RelativePath=".\game\Game_Repeater.cpp"
 					>
 				</File>
 				<File
@@ -1701,6 +1709,10 @@
 					>
 				</File>
 				<File
+					RelativePath=".\game\guis\UINews.h"
+					>
+				</File>
+				<File
 					RelativePath=".\game\guis\UIObject.h"
 					>
 				</File>
@@ -1816,6 +1828,10 @@
 				</File>
 				<File
 					RelativePath=".\game\guis\UIMarquee.cpp"
+					>
+				</File>
+				<File
+					RelativePath=".\game\guis\UINews.cpp"
 					>
 				</File>
 				<File

@@ -136,6 +136,7 @@ public:
 	void								SetPropertyExpression( int propertyKey, int propertyIndex, sdUIExpression* expression, sdUserInterfaceScope* scope );
 	void								Clear( void );
 	void								ClearPropertyExpression( int propertyKey, int propertyIndex );
+	sdProperties::sdProperty*			PropertyForKey( int propertyKey ) { return indexedProperties[ propertyKey ].first; }
 
 private:
 	typedef sdPair< sdProperties::sdProperty*, int > boundProperty_t;
@@ -185,7 +186,7 @@ public:
 
 	void								Clear( void ) { floatStack.SetNum( 0 ); stringStack.SetNum( 0 ); wstringStack.SetNum( 0 ); }
 
-	bool								Empty( void ) { return floatStack.Empty() && stringStack.Empty() && wstringStack.Empty(); }
+	bool								Empty( void ) const { return floatStack.Empty() && stringStack.Empty() && wstringStack.Empty(); }
 
 	void								SetID( const char* id ) { identifier = id; }
 	const char*							GetID() const { return identifier.c_str(); }
@@ -249,6 +250,9 @@ public:
 	virtual void								ClearPropertyExpression( int propertyKey, int propertyIndex ) = 0;
 	virtual void								RunFunction( int expressionIndex ) = 0;
 
+	virtual const char*							FindPropertyNameByKey( int propertyKey, sdUserInterfaceScope*& scope ) = 0;
+	virtual const char*							FindPropertyName( sdProperties::sdProperty* property, sdUserInterfaceScope*& scope ) = 0;
+
 	virtual sdUIEventHandle						GetEvent( const sdUIEventInfo& info ) const = 0;
 	virtual void								AddEvent( const sdUIEventInfo& info, sdUIEventHandle scriptHandle ) = 0;
 
@@ -294,6 +298,8 @@ public:
 	virtual void						ClearPropertyExpression( int propertyKey, int propertyIndex ) { assert( false ); }
 	virtual void						RunFunction( int expressionIndex ) { assert( false ); }
 
+	virtual const char*					FindPropertyNameByKey( int propertyKey, sdUserInterfaceScope*& scope ) { return NULL; }
+
 	virtual sdUIEventHandle				GetEvent( const sdUIEventInfo& info ) const { return sdUIEventHandle(); }
 	virtual void						AddEvent( const sdUIEventInfo& info, sdUIEventHandle scriptHandle ) { assert( false ); }
 
@@ -321,6 +327,8 @@ public:
 	virtual int							IndexForProperty( sdProperties::sdProperty*	property ) { return boundProperties.IndexForProperty( property ); }
 	virtual void						SetPropertyExpression( int propertyKey, int propertyIndex, sdUIExpression* expression ) { boundProperties.SetPropertyExpression( propertyKey, propertyIndex, expression, this ); }
 	virtual void						ClearPropertyExpression( int propertyKey, int propertyIndex ) { boundProperties.ClearPropertyExpression( propertyKey, propertyIndex ); }
+
+	virtual const char*					FindPropertyNameByKey( int propertyKey, sdUserInterfaceScope*& scope ) { return FindPropertyName( boundProperties.PropertyForKey( propertyKey ), scope ); }
 
 private:
 	sdPropertyBinder					boundProperties;

@@ -269,7 +269,7 @@ bool idBotAI::Enter_VLTG_RoamGoal() {
 			int matesInArea = ClientsInArea( botNum, botInfo->origin, 1200.0f, botInfo->team, NOCLASS, false, false, false, true, true );
 
 			if ( matesInArea > 0 ) {
-				vLTGPauseTime = botWorld->gameLocalInfo.time + 5000;
+				vLTGPauseTime = botWorld->gameLocalInfo.time + ( botWorld->gameLocalInfo.botPauseInVehicleTime * 1000 );
 
 				if ( TeamHumanNearLocation( botInfo->team, botInfo->origin, 1200.0f ) ) {
 					botUcmd->botCmds.honkHorn = true; //mal: honk our horn to get the humans attention.
@@ -339,7 +339,8 @@ bool idBotAI::VLTG_RoamGoal() {
 
 	if ( botWorld->gameLocalInfo.time < vLTGPauseTime ) { //mal: since bot code takes a frame or two to update, make sure still have a free seat before chat and wait....
 		if ( botVehicleInfo->hasFreeSeat ) {
-			Bot_MoveToGoal( vec3_zero, vec3_zero, NULLMOVEFLAG, LAND );
+			botMoveTypes_t moveType = ( botVehicleInfo->type > ICARUS ) ? LAND : FULL_STOP;
+			Bot_MoveToGoal( vec3_zero, vec3_zero, NULLMOVEFLAG, moveType );
             if ( vLTGChat ) {
 				Bot_AddDelayedChat( botNum, NEED_LIFT, 1 );
 				vLTGChat = false;
@@ -359,7 +360,7 @@ bool idBotAI::VLTG_RoamGoal() {
 
 	dist = vec.LengthSqr();
 
-	int matesInArea = VehiclesInArea( botNum, botThreadData.botActions[ actionNum ]->GetActionOrigin(), botThreadData.botActions[ actionNum ]->GetRadius(), botInfo->team, false );
+	int matesInArea = VehiclesInArea( botNum, botThreadData.botActions[ actionNum ]->GetActionOrigin(), botThreadData.botActions[ actionNum ]->GetRadius(), botInfo->team, false, botVehicleInfo->entNum );
 
 	if ( matesInArea > 0 && dist < Square( botThreadData.botActions[ actionNum ]->GetRadius() + 950.0f ) ) {
 		Bot_ExitVehicleAINode( true );
@@ -683,10 +684,17 @@ bool idBotAI::VLTG_RideWithMate() {
 	}
 
 	if ( botWorld->clientInfo[ vLTGTarget ].proxyInfo.entNum == CLIENT_HAS_NO_VEHICLE ) { //mal: our escort target left our ride, see if hes important enough to follow!
-		if ( Client_IsCriticalForCurrentObj( vLTGTarget, -1.0f ) || ClientHasObj( vLTGTarget ) ) {
+		if ( !Bot_IsInHeavyAttackVehicle() && ( Client_IsCriticalForCurrentObj( vLTGTarget, 3000.0f ) || ClientHasObj( vLTGTarget ) ) ) {
 			Bot_ExitVehicle();
+			Bot_ExitVehicleAINode( true );
+			ltgTarget = vLTGTarget; 
+			ltgType = FOLLOW_TEAMMATE;
+			ltgTargetSpawnID = botWorld->clientInfo[ vLTGTarget ].spawnID;
+			ROOT_AI_NODE = &idBotAI::Run_LTG_Node;
+			LTG_AI_SUB_NODE = &idBotAI::Enter_LTG_FollowMate;
+		} else {
+			Bot_ExitVehicleAINode( true );
 		}
-        Bot_ExitVehicleAINode( true );
 		return false;
 	}
  
@@ -739,6 +747,10 @@ bool idBotAI::Enter_VLTG_StopVehicle() {
 	V_LTG_AI_SUB_NODE = &idBotAI::VLTG_StopVehicle;
 
 	lastAINode = "Stopping Vehicle";
+
+	if ( botVehicleInfo->driverEntNum != botNum && botInfo->classType == ENGINEER ) {
+		Bot_AddDelayedChat( botNum, STOP_WILL_FIX_RIDE, 1 );
+	}
 
 	vehicleAINodeSwitch.nodeSwitchCount++;
 
@@ -794,7 +806,7 @@ bool idBotAI::Enter_VLTG_CampGoal() {
 			int matesInArea = ClientsInArea( botNum, botInfo->origin, 1200.0f, botInfo->team, NOCLASS, false, false, false, true, true );
 
 			if ( matesInArea > 0 ) {
-				vLTGPauseTime = botWorld->gameLocalInfo.time + 5000;
+				vLTGPauseTime = botWorld->gameLocalInfo.time + ( botWorld->gameLocalInfo.botPauseInVehicleTime * 1000 );
 
 				if ( TeamHumanNearLocation( botInfo->team, botInfo->origin, 1200.0f ) ) {
 					botUcmd->botCmds.honkHorn = true; //mal: honk our horn to get the humans attention.
@@ -872,7 +884,8 @@ bool idBotAI::VLTG_CampGoal() {
 
 	if ( botWorld->gameLocalInfo.time < vLTGPauseTime ) { //mal: since bot code takes a frame or two to update, make sure still have a free seat before chat and wait....
 		if ( botVehicleInfo->hasFreeSeat ) {
-			Bot_MoveToGoal( vec3_zero, vec3_zero, NULLMOVEFLAG, LAND );
+			botMoveTypes_t moveType = ( botVehicleInfo->type > ICARUS ) ? LAND : FULL_STOP;
+			Bot_MoveToGoal( vec3_zero, vec3_zero, NULLMOVEFLAG, moveType );
             if ( vLTGChat ) {
 				Bot_AddDelayedChat( botNum, NEED_LIFT, 1 );
 				vLTGChat = false;
@@ -892,7 +905,7 @@ bool idBotAI::VLTG_CampGoal() {
 
 	dist = vec.LengthSqr();
 
-	int matesInArea = VehiclesInArea( botNum, botThreadData.botActions[ actionNum ]->GetActionOrigin(), botThreadData.botActions[ actionNum ]->GetRadius(), botInfo->team, false );
+	int matesInArea = VehiclesInArea( botNum, botThreadData.botActions[ actionNum ]->GetActionOrigin(), botThreadData.botActions[ actionNum ]->GetRadius(), botInfo->team, false, botVehicleInfo->entNum );
 
 	if ( matesInArea > 0 && dist < Square( botThreadData.botActions[ actionNum ]->GetRadius() + 950.0f ) ) {
 		Bot_ExitVehicleAINode( true );
@@ -1321,6 +1334,8 @@ bool idBotAI::Enter_VLTG_AircraftDestroyDeployable() {
 
 	rocketTime = 0;
 
+	vLTGMoveActionGoal = ACTION_NULL;
+
 	V_LTG_AI_SUB_NODE = &idBotAI::VLTG_AircraftDestroyDeployable;
 
 	if ( botInfo->proxyInfo.weapon != LAW ) { //mal: always make sure to have LAW ready to fire.
@@ -1405,7 +1420,7 @@ bool idBotAI::VLTG_AircraftDestroyDeployable() {
 
 	bool overRideLook = false;
 	float desiredRange = WEAPON_LOCK_DIST;
-	float tooCloseRange = ( botVehicleInfo->type == ANANSI ) ? 3500.0f : 2500.0f;
+	float tooCloseRange = ( botVehicleInfo->type == ANANSI ) ? 3500.0f : 4500.0f;
 
 //mal: pick whats our best weapon
 	if ( botInfo->proxyInfo.weapon == LAW ) { 
@@ -1432,66 +1447,82 @@ bool idBotAI::VLTG_AircraftDestroyDeployable() {
 		}
 	}
 
-	if ( botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) {
+	if ( botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) {
 		botUcmd->botCmds.launchDecoys = true; //mal: we're exposing our flank, so fire some decoys to cover our move.
 	}
 
-//mal: we're too close, so manuever around and fire. low skill bots need not apply.
-	if ( distSqr < Square( tooCloseRange ) && vLTGMoveTime < botWorld->gameLocalInfo.time && botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY ) {
-		int n = botThreadData.random.RandomInt( 3 );
+//mal: we're too close, so manuever around and fire.
+	if ( distSqr < Square( tooCloseRange ) && vLTGMoveTime < botWorld->gameLocalInfo.time ) {
+		int actionNumber = ACTION_NULL;
 
-		if ( n == 0 ) {
-			vLTGMoveDir = BACK;
-		} else if ( n == 1 ) {
-			vLTGMoveDir = RIGHT;
-		} else {
-			vLTGMoveDir = LEFT;
+		if ( botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) {
+			actionNumber = Bot_FindNearbySafeActionToMoveToward( botInfo->origin, desiredRange );
 		}
 
-		vLTGMoveTime = botWorld->gameLocalInfo.time + 5000;
+		if ( actionNumber != -1 ) {
+			vLTGMoveActionGoal = actionNumber;
+			vLTGMoveTime = botWorld->gameLocalInfo.time + 10000;
+			vLTGMoveTooCloseRange = tooCloseRange + ( ( botVehicleInfo->type == ANANSI ) ? 4500.0f : 3000.0f );
+		} else {
+			int n = botThreadData.random.RandomInt( 3 );
+
+			if ( n == 0 ) {
+				vLTGMoveDir = BACK;
+			} else if ( n == 1 ) {
+				vLTGMoveDir = RIGHT;
+			} else {
+				vLTGMoveDir = LEFT;
+			}
+
+			vLTGMoveTime = botWorld->gameLocalInfo.time + 5000;
+			vLTGMoveTooCloseRange = tooCloseRange;
+		}
 	}
 
 	if ( vLTGMoveTime > botWorld->gameLocalInfo.time ) {
-		if ( distSqr > Square( tooCloseRange ) ) { //mal: we're far enough away to get a shot - attack.
+		if ( distSqr > Square( vLTGMoveTooCloseRange ) ) { //mal: we're far enough away to get a shot - attack.
 			vLTGMoveTime = 0;
+			vLTGMoveActionGoal = ACTION_NULL;
 			overRideLook = true;
 		}
 	}
 
 	if ( vLTGMoveTime > 0 ) {
-		vec = deployableOrigin;
+		if ( vLTGMoveActionGoal != ACTION_NULL ) {
+			Bot_SetupVehicleMove( vec3_zero, -1, vLTGMoveActionGoal );
+			if ( botWorld->gameLocalInfo.botSkill > BOT_SKILL_EASY && botWorld->gameLocalInfo.botSkill != BOT_SKILL_DEMO ) {
+				botUcmd->botCmds.launchDecoysNow = true; //mal: we're exposing our flank, so fire some decoys to cover our move.
+			}
+		} else {
+			vec = deployableOrigin;
 
-		if ( vLTGMoveDir == BACK ) {
-			vec += ( -tooCloseRange * botVehicleInfo->axis[ 0 ] /* deployable.axis[ 0 ]*/ );
-		} else if ( vLTGMoveDir == RIGHT ) {
-			vec += ( tooCloseRange * ( botVehicleInfo->axis[ 1 ] * -1 /*deployable.axis[ 1 ] * -1 */ ) );
-		} else if ( vLTGMoveDir == LEFT ) {
-			vec += ( -tooCloseRange * ( botVehicleInfo->axis[ 1 ] * -1 /*deployable.axis[ 1 ] * -1 */ ) );
+			if ( vLTGMoveDir == BACK ) {
+				vec += ( -tooCloseRange * botVehicleInfo->axis[ 0 ] );
+			} else if ( vLTGMoveDir == RIGHT ) {
+				vec += ( tooCloseRange * ( botVehicleInfo->axis[ 1 ] * -1 ) );
+			} else if ( vLTGMoveDir == LEFT ) {
+				vec += ( -tooCloseRange * ( botVehicleInfo->axis[ 1 ] * -1 ) );
+			}
+
+			if ( botVehicleInfo->type != ANANSI ) {
+				vec.z = botVehicleInfo->origin.z;
+			}
+
+			aasTrace_t trace;
+			botAAS.aas->Trace( trace, botInfo->aasVehicleOrigin, vec );
+
+			if ( trace.fraction != 1.0f ) {
+				vLTGMoveTime = 0;
+				vLTGMoveActionGoal = ACTION_NULL;
+				return true;
+			}
+
+			Bot_SetupVehicleMove( vec, -1, ACTION_NULL );
 		}
-
-		if ( botVehicleInfo->type != ANANSI ) {
-			vec.z = botVehicleInfo->origin.z;
-		}
-
-		aasTrace_t trace;
-		botAAS.aas->Trace( trace, botInfo->aasVehicleOrigin, vec );
-
-		if ( trace.fraction != 1.0f ) {
-			vLTGMoveTime = 0;
-			return true;
-		}
-
-		/*
-		if ( !botThreadData.Nav_IsDirectPath( AAS_VEHICLE, botInfo->team, botInfo->areaNumVehicle, botInfo->aasVehicleOrigin, vec ) ) {
-			vLTGMoveTime = 0;
-			return true;
-		}
-		*/
-
-		Bot_SetupVehicleMove( vec, -1, ACTION_NULL );
 
 		if ( MoveIsInvalid() ) {
 			vLTGMoveTime = 0;
+			vLTGMoveActionGoal = ACTION_NULL;
 			return true;
 		}
 

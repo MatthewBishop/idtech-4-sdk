@@ -38,6 +38,7 @@ static char THIS_FILE[] = __FILE__;
 #include "Waypoints/LocationMarker.h"
 #include "proficiency/StatsTracker.h"
 #include "../framework/async/Demo.h"
+#include "../sys/sys_local.h"
 
 #ifndef _XENON
 #include "../sdnet/SDNet.h"
@@ -54,14 +55,28 @@ idGameLocal::HandleGuiEvent
 ================
 */
 bool idGameLocal::HandleGuiEvent( const sdSysEvent* event ) {
+	if ( networkSystem->IsDedicated() ) {
+		return false;
+	}
+
 	ON_UIVALID( uiMainMenuHandle, ui ) {
 		if ( ui->IsActive() ) {
 			return ui->PostEvent( event );
 		}
 	}
 
+	sdHudModule* module = localPlayerProperties.GetActiveHudModule();
+	if ( module && module->HandleGuiEvent( event ) ) {
+		return true;
+	}
+
 	idPlayer* localPlayer = gameLocal.GetLocalPlayer();
 	if ( localPlayer ) {
+		if( isServer && event->GetKey() == K_F1 && event->IsKeyDown() && isPaused && localPlayer->IsSinglePlayerToolTipPlaying() ) { 
+			cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "unPauseGame\n" ); 
+			return true; 
+		}
+
 		if ( localPlayer->HandleGuiEvent( event ) ) {
 			return true;
 		}
@@ -84,6 +99,16 @@ idGameLocal::TranslateGuiBind
 bool idGameLocal::TranslateGuiBind( const idKey& key, sdKeyCommand** cmd ) {
 	ON_UIVALID( uiMainMenuHandle, ui ) {
 		if ( ui->IsActive() ) {
+			if ( ui->Translate( key, cmd ) ) {
+				return true;
+			}
+		}
+	}
+
+	sdHudModule* module = gameLocal.localPlayerProperties.GetActiveHudModule();
+	if ( module != NULL ) {
+		sdUserInterfaceLocal* ui = module->GetGui();
+		if ( ui != NULL ) {
 			if ( ui->Translate( key, cmd ) ) {
 				return true;
 			}
@@ -303,26 +328,28 @@ void idGameLocal::CreateDemoList( sdUIList* list ) {
 	idStr fullPath;
 	sysTime_t time;
 
-	list->BeginBatch();
-	list->SetItemGranularity( files->GetNumFiles() );
-	for( int i = 0; i < files->GetNumFiles(); i++ ) {
-		file = files->GetFile( i );
-		if( networkSystem->CanPlayDemo( file.c_str() ) ) {
-			unsigned int timeStamp;
+	if( files->GetNumFiles() > 0 ) {
+		list->BeginBatch();
+		list->SetItemGranularity( files->GetNumFiles() );
+		for( int i = 0; i < files->GetNumFiles(); i++ ) {
+			file = files->GetFile( i );
+			if( networkSystem->CanPlayDemo( file.c_str() ) ) {
+				unsigned int timeStamp;
 
-			fullPath = files->GetBasePath();
-			fullPath += "/" + file;
-			fileSystem->ReadFile( fullPath, NULL, &timeStamp );
+				fullPath = files->GetBasePath();
+				fullPath += "/" + file;
+				fileSystem->ReadFile( fullPath, NULL, &timeStamp );
 
-			sys->SecondsToTime( timeStamp, time );
-			sdNetProperties::FormatTimeStamp( time, date );
+				sys->SecondsToTime( timeStamp, time );
+				sdNetProperties::FormatTimeStamp( time, date );
 
-			file.StripFileExtension();
-			int index = sdUIList::InsertItem( list, va( L"%hs\t%ls\t%hs", file.c_str(), date.c_str(), fullPath.c_str() ), -1, 0 );
-			list->SetItemDataInt( timeStamp, index, 1, true );
+				file.StripFileExtension();
+				int index = sdUIList::InsertItem( list, va( L"%hs\t%ls\t%hs", file.c_str(), date.c_str(), fullPath.c_str() ), -1, 0 );
+				list->SetItemDataInt( timeStamp, index, 1, true );
+			}
 		}
+		list->EndBatch();
 	}
-	list->EndBatch();
 
 	fileSystem->FreeFileList( files );
 }
@@ -398,6 +425,7 @@ void idGameLocal::CreateScoreboardList( sdUIList* list ) {
 		if( sdUserInterfaceLocal* ui = list->GetUI() ) {
 			idStr name;
 			ui->PopScriptVar( name );
+			ui->PushScriptVar( 0.0f );
 			ui->PushScriptVar( 0.0f );
 			ui->PushScriptVar( 0.0f );
 		}
@@ -484,17 +512,17 @@ idGameLocal::CreateFireTeamList
 void idGameLocal::CreateFireTeamList( sdUIList* list ) {
 	sdUIList::ClearItems( list );
 
+	int listType;
+	if( sdUserInterfaceLocal* ui = list->GetUI() ) {
+		ui->PopScriptVar( listType );
+	}
+
 	if ( gameLocal.rules == NULL ) {
 		return;
 	}
 
 	if ( gameLocal.GetLocalPlayer() == NULL ) {
 		return;
-	}
-
-	int listType;
-	if( sdUserInterfaceLocal* ui = list->GetUI() ) {
-		ui->PopScriptVar( listType );
 	}
 
 	if ( listType == FIRETEAMLIST_MYFIRETEAM ) {
@@ -589,9 +617,11 @@ void idGameLocal::CreateFireTeamList_Main( sdUIList* list ) {
 	bool canCreate = false;
 	for ( int i = 0; i < sdTeamInfo::MAX_FIRETEAMS; i++ ) {
 		sdFireTeam& fireTeam = localPlayer->GetTeam()->GetFireTeam( i );
-		if ( !fireTeam.IsPrivate() && fireTeam.GetNumMembers() > 0 ) {
-			if ( fireTeam.MaxMembers() - fireTeam.GetNumMembers() > 0 ) {
-				canJoin = true;
+		if ( fireTeam.GetNumMembers() > 0 ) {
+			if ( !fireTeam.IsPrivate() ) {
+				if ( fireTeam.MaxMembers() - fireTeam.GetNumMembers() > 0 ) {
+					canJoin = true;
+				}
 			}
 		} else {
 			canCreate = true;
@@ -890,11 +920,10 @@ void idGameLocal::CreateActiveTaskList( sdUIList* list ) {
 	list->GetUI()->PopScriptVar( showAll );
 
 	idPlayer* localPlayer = gameLocal.GetLocalPlayer();
-	if ( localPlayer == NULL ) {
+	idPlayer* localPlayerView = gameLocal.GetLocalViewPlayer();
+	if ( localPlayerView == NULL ) {
 		return;
 	}
-
-	idPlayer* localPlayerView = localPlayer->GetSpectateClient() != NULL ? localPlayer->GetSpectateClient() : localPlayer;
 
 	if ( g_debugPlayerList.GetInteger() ) {
 		sdUIList::InsertItem( list, L"Task 1", 0, 1 );
@@ -1362,10 +1391,11 @@ idGameLocal::CreateCampaignList
 void idGameLocal::CreateCampaignList( sdUIList* list ) {
 	sdUIList::ClearItems( list );
 	for( int i = 0; i < gameLocal.campaignMetaDataList->GetNumMetaData(); i++ ) {
-		const idDict& dict = gameLocal.campaignMetaDataList->GetMetaData( i );
-		if( !dict.GetBool( "show_in_browser" ) ) {
+		const metaDataContext_t& metaDataContext = gameLocal.campaignMetaDataList->GetMetaDataContext( i );
+		if ( !gameLocal.IsMetaDataValidForPlay( metaDataContext, true ) ) {
 			continue;
 		}
+		const idDict& dict = *metaDataContext.meta;
 
 		const char* materialName = dict.GetString( "server_shot_thumb" );
 		const char* prettyName = dict.GetString( "pretty_name" );
@@ -1384,10 +1414,11 @@ void idGameLocal::CreateMapList( sdUIList* list ) {
 
 	sdAddonMetaDataList* metaData = fileSystem->ListAddonMetaData( "mapMetaData" );
 	for( int i = 0; i < metaData->GetNumMetaData(); i++ ) {
-		const idDict& data = metaData->GetMetaData( i );
-		if( !data.GetBool( "show_in_browser" ) ) {
+		const metaDataContext_t& metaDataContext = metaData->GetMetaDataContext( i );
+		if ( !gameLocal.IsMetaDataValidForPlay( metaDataContext, true ) ) {
 			continue;
 		}
+		const idDict& data = *metaDataContext.meta;
 
 		const char* materialName = data.GetString( "server_shot_thumb", "levelshots/thumbs/generic.tga" );
 		const char* defName = data.GetString( "metadata_name" );
@@ -2147,12 +2178,12 @@ idGameLocal::CreateMSAAList
 ============
 */
 void idGameLocal::CreateMSAAList( sdUIList* list ) {
-	// skip over 0, let the UI handle the disabled case as it needs to
-	for( int i = 1; i <= 16; i++ ) {
-		if( renderSystem->IsMSAACountAvailable( i ) ) {
-			int index = sdUIList::InsertItem( list, va( L"%ix", i ), -1, 0 );
-			list->SetItemDataInt( i, index, 0, true );
-		}
+	int num = renderSystem->GetNumMSAAModes();
+	for (int i=0; i<num; i++) {
+		int val;
+		const char *msaaName = renderSystem->GetMSAAMode( i, val );
+		int index = sdUIList::InsertItem( list, va( L"%hs", msaaName ), -1, 0 );
+		list->SetItemDataInt( val, index, 0, true );
 	}
 }
 
@@ -2164,10 +2195,12 @@ idGameLocal::CreateSoundPlaybackList
 */
 void idGameLocal::CreateSoundPlaybackList( sdUIList* list ) {
 	sdUIList::ClearItems( list );
-	const idStrList* devices = soundSystem->ListSoundPlaybackDevices();
-
+	const idWStrList* devices = soundSystem->ListSoundPlaybackDevices();
+	
 	for( int i = 0; devices != NULL && i < devices->Num(); i++ ) {
-		sdUIList::InsertItem( list, va( L"%hs", (*devices)[ i ].c_str() ), -1, 0 );
+		const idWStr& str = (*devices)[ i ];
+		int hash = soundSystem->GetAudioDeviceHash( str.c_str() );
+		sdUIList::InsertItem( list, va( L"%ls\t%d", str.c_str(), hash ), -1, 0 );
 	}
 
 	soundSystem->FreeDeviceList( devices );
@@ -2182,10 +2215,12 @@ idGameLocal::CreateSoundCaptureList
 void idGameLocal::CreateSoundCaptureList( sdUIList* list ) {
 	sdUIList::ClearItems( list );
 
-	const idStrList* devices = soundSystem->ListSoundCaptureDevices();
+	const idWStrList* devices = soundSystem->ListSoundCaptureDevices();
 
 	for( int i = 0; devices != NULL && i < devices->Num(); i++ ) {
-		sdUIList::InsertItem( list, va( L"%hs", (*devices)[ i ].c_str() ), -1, 0 );
+		const idWStr& str = (*devices)[ i ];
+		int hash = soundSystem->GetAudioDeviceHash( str.c_str() );
+		sdUIList::InsertItem( list, va( L"%ls\t%d", str.c_str(), hash ), -1, 0 );
 	}
 
 	soundSystem->FreeDeviceList( devices );
@@ -2207,6 +2242,200 @@ void idGameLocal::CreateModList( sdUIList* list ) {
 		}
 		fileSystem->FreeModList( mods );
 	}
+}
+
+static void AddLifeStatsItems( sdUIList* list, const char* material, const idList< const sdStatsTracker::lifeStatsData_t* >& data ) {
+	for( int i = 0; i < data.Num(); i++ ) {
+		const sdStatsTracker::lifeStatsData_t* item = data[ i ];
+		const lifeStat_t& stat = gameLocal.lifeStats[ item->index ];
+
+		
+		switch( item->newValue.GetType() ) {
+			case sdNetStatKeyValue::SVT_INT:
+			case sdNetStatKeyValue::SVT_INT_MAX:
+				if( stat.isTimeBased ) {
+					idStr::hmsFormat_t format;
+					format.showZeroMinutes = true;
+
+					sdUIList::InsertItem( list, va( L"<material = '%hs'>\t<loc = '%hs'>\t%hs (%hs)", material, stat.text->GetName(), idStr::MS2HMS( item->newValue.GetInt() * 1000, format ), idStr::MS2HMS( item->oldValue.GetInt() * 1000, format ) ), -1, 0 );
+				} else {
+					sdUIList::InsertItem( list, va( L"<material = '%hs'>\t<loc = '%hs'>\t%i (%i)", material, stat.text->GetName(), item->newValue.GetInt(), item->oldValue.GetInt() ), -1, 0 );
+				}
+				break;
+			case sdNetStatKeyValue::SVT_FLOAT:
+			case sdNetStatKeyValue::SVT_FLOAT_MAX:
+				sdUIList::InsertItem( list, va( L"<material = '%hs'>\t<loc = '%hs'>\t%i (%i)", material, stat.text->GetName(), idMath::Ftoi( idMath::Ceil( item->newValue.GetFloat() ) ), idMath::Ftoi( idMath::Ceil( item->oldValue.GetFloat() ) ) ), -1, 0 );
+				break;
+		}
+	}
+}
+
+/*
+============
+idGameLocal::CreateLifeStatsList
+============
+*/
+void idGameLocal::CreateLifeStatsList( sdUIList* list ) {
+	sdUIList::ClearItems( list );
+
+	idList< const sdStatsTracker::lifeStatsData_t* > improved;
+	idList< const sdStatsTracker::lifeStatsData_t* > unchanged;
+	idList< const sdStatsTracker::lifeStatsData_t* > worse;
+
+	sdGlobalStatsTracker::GetInstance().GetTopLifeStats( improved, unchanged, worse );
+
+
+	AddLifeStatsItems( list, "improved", improved );
+	AddLifeStatsItems( list, "unchanged", unchanged );
+	AddLifeStatsItems( list, "nodraw", worse );
+}
+
+
+class sdSortCategories {
+public:
+	sdSortCategories( const sdProficiencyTable& table ) : table( table ) {}
+	int operator()( const sdDeclPlayerClass::proficiencyCategory_t* lhs, const sdDeclPlayerClass::proficiencyCategory_t* rhs ) {
+		float lhsPercent = table.GetPercent( lhs->index );
+		float rhsPercent = table.GetPercent( rhs->index );
+
+		return ( idMath::Ftoi( rhsPercent * 100 ) ) - ( idMath::Ftoi( lhsPercent * 100 ) );
+	}
+
+	const sdProficiencyTable& table;
+};
+
+/*
+============
+idGameLocal::CreatePredictedUpgradesList
+============
+*/
+void idGameLocal::CreatePredictedUpgradesList( sdUIList* list ) {
+	sdUIList::ClearItems( list );
+
+	idPlayer* localPlayer = gameLocal.GetLocalPlayer();
+	if( localPlayer == NULL ) {	
+		return;
+	}
+
+	const sdTeamInfo* ti = localPlayer->GetGameTeam();
+	idList< const sdDeclPlayerClass::proficiencyCategory_t* > bestCategories;
+
+	const sdProficiencyTable& table = localPlayer->GetProficiencyTable();
+
+	for( int i = 0; i < gameLocal.declPlayerClassType.Num(); i++ ) {
+		const sdDeclPlayerClass* pc = gameLocal.declPlayerClassType.LocalFindByIndex( i );
+		if( pc->GetTeam() != ti && ti != NULL ) {
+			continue;
+		}
+
+		for ( int j = 0; j < pc->GetNumProficiencies(); j++ ) {
+			const sdDeclPlayerClass::proficiencyCategory_t& category = pc->GetProficiency( j );
+
+			float percent = table.GetPercent( category.index );
+			if( percent >= 1.0f ) {
+				continue;
+			}
+
+			int k;
+			for( k = 0; k < bestCategories.Num(); k++ ) {
+				if( bestCategories[ k ]->index == category.index ) {
+					break;
+				}
+			}
+			if( k >= bestCategories.Num() ) {
+				bestCategories.Append( &category );
+			}
+		}
+	}
+
+	sdQuickSort( bestCategories.Begin(), bestCategories.End(), sdSortCategories( table ) );
+
+	int numAdded = 0;
+	for( int i = 0; i < bestCategories.Num() && numAdded < 2; i++ ) {
+		int currentLevel = table.GetLevel( bestCategories[ i ]->index );
+		if( currentLevel < bestCategories[ i ]->upgrades.Num() ) {
+			const sdDeclProficiencyType* type = gameLocal.declProficiencyTypeType.LocalFindByIndex( bestCategories[ i ]->index );
+
+			const sdDeclPlayerClass::proficiencyUpgrade_t& upgrade = bestCategories[ i ]->upgrades[ currentLevel ];
+			int index = sdUIList::InsertItem( list, va( L"<material = '%hs'>\t<loc = '%hs'>\t<flags customdraw>%hs", 
+				upgrade.materialInfo.c_str(), 
+				upgrade.title->GetName(),
+				type->GetName()	),
+				-1, 0 );
+
+			float percent = table.GetPercent( bestCategories[ i ]->index );
+
+			// push some extra data along for the GUI
+			list->SetItemDataInt( percent * 100 , index, 0, true );
+			list->SetItemDataInt( currentLevel, index, 1, true );
+			numAdded++;
+		}
+	}
+}
+
+
+/*
+============
+idGameLocal::CreateUpgradesReviewList
+============
+*/
+void idGameLocal::CreateUpgradesReviewList( sdUIList* list ) {
+	sdUIList::ClearItems( list );
+
+	idPlayer* localPlayer = gameLocal.GetLocalPlayer();
+	if( localPlayer == NULL ) {	
+		return;
+	}
+
+	const sdTeamInfo* ti = localPlayer->GetGameTeam();
+	const sdProficiencyTable& table = localPlayer->GetProficiencyTable();
+
+	idList< const sdDeclPlayerClass::proficiencyCategory_t* > bestCategories;
+
+	for( int i = 0; i < gameLocal.declPlayerClassType.Num(); i++ ) {
+		const sdDeclPlayerClass* pc = gameLocal.declPlayerClassType.LocalFindByIndex( i );
+		if( pc->GetTeam() != ti && ti != NULL ) {
+			continue;
+		}
+
+		for ( int j = 0; j < pc->GetNumProficiencies(); j++ ) {
+			const sdDeclPlayerClass::proficiencyCategory_t& category = pc->GetProficiency( j );
+
+			int k;
+			for( k = 0; k < bestCategories.Num(); k++ ) {
+				if( bestCategories[ k ]->index == category.index ) {
+					break;
+				}
+			}
+			if( k < bestCategories.Num() ) {
+				continue;				
+			}
+
+			bestCategories.Append( &category );
+
+			int currentLevel = table.GetLevel(category.index );
+
+			for ( int level = 0; level < currentLevel && level < category.upgrades.Num(); level++ ) {
+				const sdDeclPlayerClass::proficiencyUpgrade_t& upgrade = category.upgrades[ level ];
+
+				int index = sdUIList::InsertItem( list, va( L"<material = '%hs'>\t<loc = '%hs'>", 
+					upgrade.materialInfo.c_str(), 
+					upgrade.title->GetName()),
+					-1, 0 );
+			}
+		}
+	}
+}
+
+/*
+===============
+idGameLocal::UpdateHudStats
+===============
+*/
+void idGameLocal::UpdateHudStats( idPlayer* player ) {
+	localPlayerProperties.Update( player );
+	limboProperties.Update();
+	sdAdminSystem::GetInstance().UpdateProperties();
 }
 
 #undef ON_UIVALID

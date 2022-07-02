@@ -30,6 +30,8 @@ idCVar g_damageIndicatorWidth( "g_damageIndicatorWidth", "256", CVAR_FLOAT | CVA
 idCVar g_damageIndicatorHeight( "g_damageIndicatorHeight", "128", CVAR_FLOAT | CVAR_GAME | CVAR_NOCHEAT, "height of the damage indicators" );
 idCVar g_damageIndicatorColor( "g_damageIndicatorColor", "1 0 0", CVAR_GAME | CVAR_NOCHEAT, "color of the damage indicators" );
 idCVar g_damageIndicatorAlphaScale( "g_damageIndicatorAlphaScale", "0.3", CVAR_FLOAT | CVAR_GAME | CVAR_NOCHEAT, "alpha of the damage indicators" );
+idCVar g_repairIndicatorColor( "g_repairIndicatorColor", "0 1 0", CVAR_GAME | CVAR_NOCHEAT, "color of the repair indicators" );
+idCVar g_repairIndicatorAlphaScale( "g_repairIndicatorAlphaScale", "0.3", CVAR_FLOAT | CVAR_GAME | CVAR_NOCHEAT, "alpha of the repair indicators" );
 idCVar g_waypointAlphaScale( "g_waypointAlphaScale",	"0.7",	CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE | CVAR_PROFILE,			"alpha to apply to world-based objective icons" );
 idCVar g_showWayPoints( "g_showWayPoints",	"1",	CVAR_GAME | CVAR_BOOL | CVAR_ARCHIVE | CVAR_PROFILE, "show or hide world-based objective icons" );
 idCVar g_waypointSizeMin( "g_waypointSizeMin", "16", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE | CVAR_PROFILE, "min world-view icon size" );
@@ -93,28 +95,23 @@ sdUICrosshairInfo::~sdUICrosshairInfo( void ) {
 
 /*
 ============
-sdUICrosshairInfo::DrawLocal
+sdUICrosshairInfo::GetRepeaterCrosshairInfo
 ============
 */
-void sdUICrosshairInfo::DrawLocal() {
-	if( g_showCrosshairInfo.GetInteger() != 1 ) {
-		return;
-	}
-	
-	idPlayer* player = gameLocal.GetLocalViewPlayer();
-	if( player == NULL ) {
-		return;
-	}
+const sdCrosshairInfo& sdUICrosshairInfo::GetRepeaterCrosshairInfo( void ) {
+	return gameLocal.playerView.CalcRepeaterCrosshairInfo();
+}
 
-	idEntity* entity = DrawContextEntity( player );
-	DrawWayPoints( entity );
-	DrawPlayerIcons2D();
-	ClearInactiveDockIcons();
-	DrawDockedIcons();
-
+/*
+============
+sdUICrosshairInfo::DrawCrosshairInfo
+============
+*/
+void sdUICrosshairInfo::DrawCrosshairInfo( idPlayer* player ) {
 	const float width = SCREEN_WIDTH * 1.0f / deviceContext->GetAspectRatioCorrection();
 
-	const sdCrosshairInfo& info = player->GetCrosshairInfoDirect();	
+	const sdCrosshairInfo& info = gameLocal.serverIsRepeater ? GetRepeaterCrosshairInfo() : player->GetCrosshairInfoDirect();	
+
 	if( info.IsValid() && ( TestCrosshairInfoFlag( CF_CROSSHAIR ) || g_radialMenuStyle.GetInteger() == 1 ) ) {
 		float w, h;
 		idVec4 color;
@@ -174,6 +171,15 @@ void sdUICrosshairInfo::DrawLocal() {
 			}
 		}
 	}
+}
+
+/*
+============
+sdUICrosshairInfo::DrawDamageIndicators
+============
+*/
+void sdUICrosshairInfo::DrawDamageIndicators( idPlayer* player ) {
+	const float width = SCREEN_WIDTH * 1.0f / deviceContext->GetAspectRatioCorrection();
 
 	static idWinding2D drawWinding;
 
@@ -183,9 +189,6 @@ void sdUICrosshairInfo::DrawLocal() {
 	float y = -( h * 0.5f ) - g_damageIndicatorHeight.GetFloat();
 
 	float viewYaw = player->renderView.viewaxis.ToAngles().yaw;
-
-	idVec4 color;
-	color.ToVec3() = sdTypeFromString< idVec3 >( g_damageIndicatorColor.GetString() );
 	
 	float fadeTime = SEC2MS( g_damageIndicatorFadeTime.GetFloat() );
 
@@ -197,8 +200,19 @@ void sdUICrosshairInfo::DrawLocal() {
 			continue;
 		}
 
+		idVec4 color;
+		if ( event.hitDamage > 0 ) {
+			color.ToVec3() = sdTypeFromString< idVec3 >( g_damageIndicatorColor.GetString() );
+		} else {
+			color.ToVec3() = sdTypeFromString< idVec3 >( g_repairIndicatorColor.GetString() );
+		}
+
 		color.w = 1.0f - static_cast< float > ( gameLocal.time - event.hitTime ) / fadeTime;
-		color.w *= g_damageIndicatorAlphaScale.GetFloat();
+		if ( event.hitDamage > 0 ) {
+			color.w *= g_damageIndicatorAlphaScale.GetFloat();
+		} else {
+			color.w *= g_repairIndicatorAlphaScale.GetFloat();
+		}
 		if( color.w <= 0.0f || color.w > 1.0f ) {
 			continue;
 		}
@@ -234,6 +248,34 @@ void sdUICrosshairInfo::DrawLocal() {
 
 		deviceContext->DrawWindingMaterial( drawWinding, part->mi.material, color );
 	}
+}
+
+/*
+============
+sdUICrosshairInfo::DrawLocal
+============
+*/
+void sdUICrosshairInfo::DrawLocal() {
+	if( g_showCrosshairInfo.GetInteger() != 1 ) {
+		return;
+	}
+
+	idPlayer* player = gameLocal.GetLocalViewPlayer();
+	if ( player == NULL ) {
+		if ( gameLocal.serverIsRepeater ) {
+			DrawCrosshairInfo( NULL );
+		}
+		return;
+	}
+
+	idEntity* entity = DrawContextEntity( player );
+	DrawWayPoints( entity );
+	DrawEntityIcons();
+	DrawPlayerIcons2D();
+	ClearInactiveDockIcons();
+	DrawDockedIcons();
+	DrawCrosshairInfo( player );
+	DrawDamageIndicators( player );
 }
 
 /*
@@ -378,6 +420,80 @@ void sdUICrosshairInfo::OnRightBracketMaterialChanged( const idStr& oldValue, co
 
 
 
+/*
+===============
+sdUICrosshairInfo::DrawEntityIcons
+==============
+*/
+void sdUICrosshairInfo::DrawEntityIcons( void ) {	
+	idPlayer* viewPlayer = gameLocal.GetLocalViewPlayer();
+	if ( viewPlayer == NULL ) {
+		return;
+	}
+
+	// TODO: Add crosshair info flag like for player icons?
+	const float width = SCREEN_WIDTH * 1.0f / deviceContext->GetAspectRatioCorrection();
+
+	sdWorldToScreenConverter converter( gameLocal.playerView.GetCurrentView() );
+
+	// find out how many icons we need to draw
+	int numIcons = 0;
+	for ( idLinkList< idEntity >* node = gameLocal.GetIconEntities(); node; node = node->NextNode() ) {
+		idEntity* ent = node->Owner();
+		assert( ent->GetDisplayIconInterface() );
+
+		if ( ent->GetDisplayIconInterface()->HasIcon( viewPlayer, converter ) ) {
+			numIcons++;
+		}
+	}
+
+	if ( numIcons == 0 ) {
+		return;
+	}
+
+	// allocate temporary storage for the icons & fill them in
+	sdEntityDisplayIconInfo* icons = ( sdEntityDisplayIconInfo* )_alloca16( numIcons * sizeof( sdEntityDisplayIconInfo ) );
+	int iconUpto = 0;
+	for ( idLinkList< idEntity >* node = gameLocal.GetIconEntities(); node; node = node->NextNode() ) {
+		idEntity* ent = node->Owner();
+		assert( ent->GetDisplayIconInterface() );
+	
+		if ( ent->GetDisplayIconInterface()->GetEntityDisplayIconInfo( viewPlayer, converter, icons[ iconUpto ] ) ) {
+			iconUpto++;
+		}
+	}
+
+	// sort them by distance
+	sdEntityDisplayIconInfo** sortedIcons = ( sdEntityDisplayIconInfo** )_alloca16( numIcons * sizeof( sdEntityDisplayIconInfo* ) );
+	for ( int i = 0; i < numIcons; i++ ) {
+		sortedIcons[ i ] = &icons[ i ];
+	}
+
+	sdQuickSort( sortedIcons, sortedIcons + numIcons, sdEntityDisplayIconInfo::SortByDistance );
+
+	// now we can draw
+	for ( int i = 0; i < numIcons; i++ ) {
+		sdEntityDisplayIconInfo* icon = sortedIcons[ i ];
+
+		bool draw = true;
+
+		const float MARGIN_OFFSET = ( width * 0.0125f );
+		const float LEFT_MARGIN = MARGIN_OFFSET;
+		const float RIGHT_MARGIN = width - MARGIN_OFFSET;
+
+		if ( icon->origin.x + icon->size.x <= LEFT_MARGIN || icon->origin.x - icon->size.x >= RIGHT_MARGIN ) {
+			draw = false;
+		}
+
+		if ( draw ) {
+			float height = icon->origin.y;
+
+			idVec2 screenPos( icon->origin.x - ( icon->size.x * 0.5f ), height - icon->size.y );
+
+			deviceContext->DrawMaterial( screenPos.x, screenPos.y, icon->size.x, icon->size.y, icon->material, icon->color );
+		}
+	}
+}
 
 /*
 ===============
@@ -636,7 +752,13 @@ void sdUICrosshairInfo::DrawWayPoints( idEntity* exclude ) {
 
 		idVec2 drawCenter = screenBounds.GetCenter();
 
-		idVec2 drawSize( iconWidth, iconWidth );
+		float resize = 0.0f;
+		if ( gameLocal.ToGuiTime( gameLocal.time ) < wayPoint->GetFlashEndTime() ) {
+			resize = 2.0f;
+		}
+
+		idVec2 drawSize( iconWidth + resize, iconWidth + resize );
+
 		idVec2 drawHalfSize = drawSize * 0.5f;
 		idVec2 drawOrigin = drawCenter - ( drawSize * 0.5f );
 		drawOrigin.y = idMath::ClampFloat( MARGIN_SIZE, SCREEN_HEIGHT - MARGIN_SIZE - drawSize.y, drawOrigin.y );
@@ -645,6 +767,11 @@ void sdUICrosshairInfo::DrawWayPoints( idEntity* exclude ) {
 									idMath::Fabs( ( SCREEN_HEIGHT * 0.5f ) - drawCenter.y ) / ( SCREEN_HEIGHT * 0.5f ) );
 
 		idVec4 localColor = colorWhite;
+		
+		if ( gameLocal.ToGuiTime( gameLocal.time ) < wayPoint->GetFlashEndTime() ) {
+			localColor.w = idMath::Cos( gameLocal.ToGuiTime( gameLocal.time ) * 0.02f ) * 0.5f + 0.5f;
+		}
+
 		localColor.w = localColor.w * fadeAlpha * g_waypointAlphaScale.GetFloat();
 
 		iconInfo_t icon;

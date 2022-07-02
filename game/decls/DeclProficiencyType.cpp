@@ -90,8 +90,8 @@ bool sdDeclProficiencyType::Parse( const char *text, const int textLength ) {
 
 			sdStatsTracker& tracker = sdGlobalStatsTracker::GetInstance();
 
-			stats.xp		= tracker.GetStat( tracker.AllocStat( va( "%s_xp", stats.name.c_str() ), "float" ) );
-			stats.totalXP	= tracker.GetStat( tracker.AllocStat( "total_xp", "float" ) );
+			stats.xp		= tracker.GetStat( tracker.AllocStat( va( "%s_xp", stats.name.c_str() ), sdNetStatKeyValue::SVT_FLOAT ) );
+			stats.totalXP	= tracker.GetStat( tracker.AllocStat( "total_xp", sdNetStatKeyValue::SVT_FLOAT ) );
 
 		} else if( !token.Icmp( "level" ) ) {
 

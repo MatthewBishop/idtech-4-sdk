@@ -689,6 +689,9 @@ bool sdPhysics_SimpleRigidBody::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	current.lastTimeStep = timeStep;
 
 	if ( hasMaster ) {
+		if ( timeStepMSec <= 0 ) {
+			return true;
+		}
 		oldOrigin = current.position;
 		oldAxis = current.orientation;
 		self->GetMasterPosition( masterOrigin, masterAxis );

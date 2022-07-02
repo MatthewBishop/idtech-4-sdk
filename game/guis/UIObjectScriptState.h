@@ -39,6 +39,9 @@ public:
 	virtual void							ClearPropertyExpression( int propertyKey, int propertyIndex );
 	virtual void							RunFunction( int expressionIndex );
 
+	virtual const char*						FindPropertyNameByKey( int index, sdUserInterfaceScope*& scope );
+	virtual const char*						FindPropertyName( sdProperties::sdProperty* property, sdUserInterfaceScope*& scope );
+
 	virtual int								AddExpression( sdUIExpression* expression );
 	virtual sdUIExpression*					GetExpression( int index );
 

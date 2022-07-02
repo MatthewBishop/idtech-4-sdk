@@ -343,8 +343,8 @@ void sdScriptExporter::WriteFunctionStub( idFile* file, const functionDef_t& fun
 	file->Printf( ")" );
 }
 
-void sdScriptExporter::WriteThreadCallWrapperClass( idFile* file, const objectDef_t* obj, int index, int baseparm ) {
-	threadDef_t* t = obj->threadCalls[ index ];
+void sdScriptExporter::WriteThreadCallWrapperClass( idFile* file, const objectDef_t* obj, int index, int baseparm, bool gui ) {
+	threadDef_t* t = gui ? obj->guiThreadCalls[ index ] : obj->threadCalls[ index ];
 
 	PrintTabs( file );
 	file->Printf( "class sdProcedureCallLocal : public sdProcedureCall {\r\n" );
@@ -356,7 +356,7 @@ void sdScriptExporter::WriteThreadCallWrapperClass( idFile* file, const objectDe
 
 	PrintTabs( file );
 	file->Printf( "typedef " );
-	WriteThreadCallType( file, obj, index, baseparm, "callback_t" );
+	WriteThreadCallType( file, obj, index, baseparm, "callback_t", gui );
 	file->Printf( ";\r\n" );
 
 	PrintTabs( file );
@@ -443,8 +443,8 @@ void sdScriptExporter::WriteThreadCallWrapperClass( idFile* file, const objectDe
 	file->Printf( "};\r\n" );
 }
 
-void sdScriptExporter::WriteThreadCallType( idFile* file, const objectDef_t* obj, int index, int baseparm, const char* name ) {
-	threadDef_t* t = obj->threadCalls[ index ];
+void sdScriptExporter::WriteThreadCallType( idFile* file, const objectDef_t* obj, int index, int baseparm, const char* name, bool gui ) {
+	threadDef_t* t = gui ? obj->guiThreadCalls[ index ] : obj->threadCalls[ index ];
 
 	file->Printf( "%s ( ", BuildFieldName( t->returnType ) );
 	if ( obj->type != NULL ) {
@@ -467,8 +467,8 @@ void sdScriptExporter::WriteThreadCallType( idFile* file, const objectDef_t* obj
 	file->Printf( ")" );
 }
 
-void sdScriptExporter::WriteThreadCallStub( idFile* file, const objectDef_t* obj, int index, int baseparm, bool clarify, bool includeName ) {
-	threadDef_t* t = obj->threadCalls[ index ];
+void sdScriptExporter::WriteThreadCallStub( idFile* file, const objectDef_t* obj, int index, int baseparm, bool clarify, bool includeName, bool gui ) {
+	threadDef_t* t = gui ? obj->guiThreadCalls[ index ] : obj->threadCalls[ index ];
 
 	file->Printf( "%s ", BuildFieldName( &type_float ) );
 
@@ -476,9 +476,9 @@ void sdScriptExporter::WriteThreadCallStub( idFile* file, const objectDef_t* obj
 		file->Printf( "%s::", BuildClassName( obj->type ) );
 	}
 
-	file->Printf( "CreateThread%d( ", index );
+	file->Printf( "Create%sThread%d( ", gui ? "Gui" : "", index );
 
-	WriteThreadCallType( file, obj, index, baseparm, "parm0" );
+	WriteThreadCallType( file, obj, index, baseparm, "parm0", gui );
 
 	if ( includeName ) {
 		file->Printf( ", const char* name" );
@@ -674,7 +674,13 @@ void sdScriptExporter::WriteClass( const namespaceDef_t* ns, objectDef_t& cls ) 
 
 	for ( int j = 0; j < cls.threadCalls.Num(); j++ ) {
 		PrintTabs( headerFile );
-		WriteThreadCallStub( headerFile, &cls, j, 1, false, true );
+		WriteThreadCallStub( headerFile, &cls, j, 1, false, true, false );
+		headerFile->Printf( ";\r\n" );
+	}
+
+	for ( int j = 0; j < cls.guiThreadCalls.Num(); j++ ) {
+		PrintTabs( headerFile );
+		WriteThreadCallStub( headerFile, &cls, j, 1, false, true, true );
 		headerFile->Printf( ";\r\n" );
 	}
 
@@ -866,15 +872,36 @@ void sdScriptExporter::WriteClass( const namespaceDef_t* ns, objectDef_t& cls ) 
 
 	for ( int j = 0; j < cls.threadCalls.Num(); j++ ) {
 		PrintTabs( cppFile );
-		WriteThreadCallStub( cppFile, &cls, j, 1, true, true );
+		WriteThreadCallStub( cppFile, &cls, j, 1, true, true, false );
 		cppFile->Printf( " {\r\n" );
 
 		tabCount++;
-		WriteThreadCallWrapperClass( cppFile, &cls, j, 1 );
+		WriteThreadCallWrapperClass( cppFile, &cls, j, 1, false );
 
 		PrintTabs( cppFile );
 		cppFile->Printf( "return compilerInterface->AllocThread( this, name, new sdProcedureCallLocal( this, parm0" );
 		for ( int k = 1; k < cls.threadCalls[ j ]->parms.Num(); k++ ) {
+			cppFile->Printf( ", parm%d", k );
+		}
+		cppFile->Printf( " ) );\r\n" );
+
+		tabCount--;
+
+		PrintTabs( cppFile );
+		cppFile->Printf( "}\r\n" );
+	}
+
+	for ( int j = 0; j < cls.guiThreadCalls.Num(); j++ ) {
+		PrintTabs( cppFile );
+		WriteThreadCallStub( cppFile, &cls, j, 1, true, true, true );
+		cppFile->Printf( " {\r\n" );
+
+		tabCount++;
+		WriteThreadCallWrapperClass( cppFile, &cls, j, 1, true );
+
+		PrintTabs( cppFile );
+		cppFile->Printf( "return compilerInterface->AllocGuiThread( this, name, new sdProcedureCallLocal( this, parm0" );
+		for ( int k = 1; k < cls.guiThreadCalls[ j ]->parms.Num(); k++ ) {
 			cppFile->Printf( ", parm%d", k );
 		}
 		cppFile->Printf( " ) );\r\n" );
@@ -1294,7 +1321,12 @@ void sdScriptExporter::WriteNamespaceFunctions( const namespaceDef_t* ns, idFile
 	}
 	for ( int j = 0; j < info.threadCalls.Num(); j++ ) {
 		PrintTabs( headerFile );
-		WriteThreadCallStub( headerFile, &info, j, 0, false, false );
+		WriteThreadCallStub( headerFile, &info, j, 0, false, false, false );
+		headerFile->Printf( ";\r\n" );
+	}
+	for ( int j = 0; j < info.guiThreadCalls.Num(); j++ ) {
+		PrintTabs( headerFile );
+		WriteThreadCallStub( headerFile, &info, j, 0, false, false, true );
 		headerFile->Printf( ";\r\n" );
 	}
 	WriteNamespaceExit( headerFile, ns );
@@ -1316,11 +1348,11 @@ void sdScriptExporter::WriteNamespaceFunctions( const namespaceDef_t* ns, idFile
 	}
 	for ( int j = 0; j < info.threadCalls.Num(); j++ ) {
 		PrintTabs( cppFile );
-		WriteThreadCallStub( cppFile, &info, j, 0, false, false );
+		WriteThreadCallStub( cppFile, &info, j, 0, false, false, false );
 		cppFile->Printf( " {\r\n" );
 
 		tabCount++;
-		WriteThreadCallWrapperClass( cppFile, &info, j, 0 );
+		WriteThreadCallWrapperClass( cppFile, &info, j, 0, false );
 
 		PrintTabs( cppFile );
 		cppFile->Printf( "return compilerInterface->AllocThread( new sdProcedureCallLocal( parm0" );
@@ -1333,26 +1365,47 @@ void sdScriptExporter::WriteNamespaceFunctions( const namespaceDef_t* ns, idFile
 		PrintTabs( cppFile );
 		cppFile->Printf( "}\r\n" );
 	}
+	for ( int j = 0; j < info.guiThreadCalls.Num(); j++ ) {
+		PrintTabs( cppFile );
+		WriteThreadCallStub( cppFile, &info, j, 0, false, false, true );
+		cppFile->Printf( " {\r\n" );
+
+		tabCount++;
+		WriteThreadCallWrapperClass( cppFile, &info, j, 0, true );
+
+		PrintTabs( cppFile );
+		cppFile->Printf( "return compilerInterface->AllocGuiThread( new sdProcedureCallLocal( parm0" );
+		for ( int k = 0; k < info.guiThreadCalls[ j ]->parms.Num(); k++ ) {
+			cppFile->Printf( ", parm%d", k + 1 );
+		}
+		cppFile->Printf( " ) );\r\n" );
+		tabCount--;
+
+		PrintTabs( cppFile );
+		cppFile->Printf( "}\r\n" );
+	}
 	WriteNamespaceExit( cppFile, ns );
 }
 
-int sdScriptExporter::FindThreadCall( const objectDef_t& obj, const function_t* function ) {
-	for ( int i = 0; i < obj.threadCalls.Num(); i++ ) {
-		if ( obj.threadCalls[ i ]->returnType != function->type->ReturnType() ) {
+int sdScriptExporter::FindThreadCall( const objectDef_t& obj, const function_t* function, bool guithreadcall ) {
+	const idList< threadDef_t* >& list = guithreadcall ? obj.guiThreadCalls : obj.threadCalls;
+
+	for ( int i = 0; i < list.Num(); i++ ) {
+		if ( list[ i ]->returnType != function->type->ReturnType() ) {
 			continue;
 		}
 
-		if ( function->type->NumParameters() != obj.threadCalls[ i ]->parms.Num() ) {
+		if ( function->type->NumParameters() != list[ i ]->parms.Num() ) {
 			continue;
 		}
 
 		int j;
-		for ( j = 0; j < obj.threadCalls[ i ]->parms.Num(); j++ ) {
-			if ( obj.threadCalls[ i ]->parms[ j ] != function->type->GetParmType( j ) ) {
+		for ( j = 0; j < list[ i ]->parms.Num(); j++ ) {
+			if ( list[ i ]->parms[ j ] != function->type->GetParmType( j ) ) {
 				break;
 			}
 		}
-		if ( j < obj.threadCalls[ i ]->parms.Num() ) {
+		if ( j < list[ i ]->parms.Num() ) {
 			continue;
 		}
 
@@ -1362,7 +1415,7 @@ int sdScriptExporter::FindThreadCall( const objectDef_t& obj, const function_t* 
 	return -1;
 }
 
-void sdScriptExporter::RegisterClassThreadCall( idTypeDef* type, const function_t* function ) {
+void sdScriptExporter::RegisterClassThreadCall( idTypeDef* type, const function_t* function, bool guithreadcall ) {
 	namespaceDef_t* ns = currentNameSpace;
 	if ( type == NULL ) {
 		ns = &globalNameSpace;
@@ -1370,14 +1423,18 @@ void sdScriptExporter::RegisterClassThreadCall( idTypeDef* type, const function_
 	objectDef_t* o = FindClass( ns, type );
 	assert( o != NULL );
 
-	int index = FindThreadCall( *o, function );
+	int index = FindThreadCall( *o, function, guithreadcall );
 	if ( index == -1 ) {
 		threadDef_t* t = new threadDef_t;
 		t->returnType = function->type->ReturnType();
 		for ( int i = 0; i < function->type->NumParameters(); i++ ) {
 			t->parms.Alloc() = function->type->GetParmType( i );
 		}
-		o->threadCalls.Alloc() = t;
+		if ( guithreadcall ) {
+			o->guiThreadCalls.Alloc() = t;
+		} else {
+			o->threadCalls.Alloc() = t;
+		}
 	}
 }
 
@@ -1575,8 +1632,8 @@ void sdScriptExporter::WriteProjectFile( void ) {
 
 	idFileList* dependencies = fileSystem->ListFiles( "src/base", ".*" );
 	for( int i = 0; i < dependencies->GetNumFiles(); i++ ) {
-		src = fileSystem->BuildOSPath( fileSystem->GetBasePath(), fileSystem->GetGamePath(),dependencies->GetFile( i ) );
-		dest = fileSystem->BuildOSPath( cvarSystem->GetCVarString( "fs_devpath" ), fileSystem->GetGamePath(), dependencies->GetFile( i ) );
+		src = fileSystem->BuildOSPath( fileSystem->GetBasePath(), fileSystem->GetGamePath(),va( "src/base/%s", dependencies->GetFile( i ) ) );
+		dest = fileSystem->BuildOSPath( cvarSystem->GetCVarString( "fs_devpath" ), fileSystem->GetGamePath(), va( "src/base/%s", dependencies->GetFile( i ) ) );
 
 		if( idStr::Cmp( src.c_str(), dest.c_str() ) == 0 ) {
 			continue;
@@ -3564,6 +3621,7 @@ void sdFunctionCompileState::ScanOpCode( int statement ) {
 			return;
 		}
 
+		case OP_GUITHREAD:
 		case OP_THREAD: {
 			const function_t* f = s.a->value.functionPtr;
 
@@ -3571,7 +3629,7 @@ void sdFunctionCompileState::ScanOpCode( int statement ) {
 			assert( compileStack.Num() >= parms );
 
 			sdScriptExporter::objectDef_t* o = program->scriptExporter.FindClass( &program->scriptExporter.GetGlobalNamespace(), NULL );
-			int index = program->scriptExporter.FindThreadCall( *o, f );
+			int index = program->scriptExporter.FindThreadCall( *o, f, s.op == OP_GUITHREAD );
 
 			skipNextStatement = LookAheadStore( statement );
 
@@ -3580,7 +3638,7 @@ void sdFunctionCompileState::ScanOpCode( int statement ) {
 				PrintTabs();
 			}
 
-			output->Printf( "::CreateThread%d( %s", index, program->scriptExporter.BuildGlobalFunctionName( f ) );
+			output->Printf( "::Create%sThread%d( %s", s.op == OP_GUITHREAD ? "Gui" : "", index, program->scriptExporter.BuildGlobalFunctionName( f ) );
 			if ( parms > 0 ) {
 				output->Printf( ", " );
 				for ( int i = 0; i < parms; i++ ) {
@@ -3596,6 +3654,7 @@ void sdFunctionCompileState::ScanOpCode( int statement ) {
 			return;
 		}
 
+		case OP_GUIOBJTHREAD:
 		case OP_OBJTHREAD: {
 			const function_t* f = s.c->value.functionPtr;
 
@@ -3610,11 +3669,11 @@ void sdFunctionCompileState::ScanOpCode( int statement ) {
 			}
 
 			sdScriptExporter::objectDef_t* o = program->scriptExporter.FindClass( nameSpace, f->def->scope->TypeDef() );
-			int index = program->scriptExporter.FindThreadCall( *o, f );
+			int index = program->scriptExporter.FindThreadCall( *o, f, s.op == OP_GUIOBJTHREAD );
 
 			PrintVariable( compileStack[ base ], f->type->GetParmType( 0 )->Type() );
 
-			output->Printf( "->CreateThread%d( &%s::%s, \"%s\"", index, program->scriptExporter.BuildClassName( f->def->scope->TypeDef() ), f->type->Name(), f->type->Name() );
+			output->Printf( "->Create%sThread%d( &%s::%s, \"%s\"", s.op == OP_GUIOBJTHREAD ? "Gui" : "", index, program->scriptExporter.BuildClassName( f->def->scope->TypeDef() ), f->type->Name(), f->type->Name() );
 			if ( parms > 1 ) {
 				output->Printf( ", " );
 				for ( int i = 1; i < parms; i++ ) {

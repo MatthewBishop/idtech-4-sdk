@@ -36,6 +36,8 @@ public:
 	virtual void								Update( bool outOfSequence ) = 0;
 	virtual void								OnInputInit( void ) = 0;
 	virtual void								OnInputShutdown( void ) = 0;
+	virtual void								OnLanguageInit( void ) = 0;
+	virtual void								OnLanguageShutdown( void ) = 0;
 
 	virtual void								BeginLevelLoad( void ) = 0;
 	virtual void								EndLevelLoad( void ) = 0;
@@ -75,6 +77,7 @@ public:
 	virtual int									GetLastNonGameTime() const = 0;
 
 	virtual void								OnSnapshotHitch( int delta ) const = 0;
+	virtual void								OnToolTipEvent( const char* arg ) const = 0;
 	virtual void								InvalidateLayout() = 0;
 };
 

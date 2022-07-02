@@ -146,7 +146,9 @@ opcode_t idCompiler::opcodes[] = {
 	// calls returns REG_RETURN
 	{ "<CALL>", "CALL", -1, false, &def_function, &def_argsize, &def_void },
 	{ "<THREAD>", "THREAD", -1, false, &def_function, &def_argsize, &def_void },
+	{ "<GUITHREAD>", "GUITHREAD", -1, false, &def_function, &def_argsize, &def_void },
 	{ "<THREAD>", "OBJTHREAD", -1, false, &def_function, &def_argsize, &def_void },
+	{ "<GUITHREAD>", "GUIOBJTHREAD", -1, false, &def_function, &def_argsize, &def_void },
 	
 	{ "<PUSH>", "PUSH_F", -1, false, &def_float, &def_float, &def_void },
 	{ "<PUSH>", "PUSH_V", -1, false, &def_vector, &def_vector, &def_void },
@@ -203,6 +205,7 @@ idCompiler::idCompiler( idProgram* _program ) {
 	parserPtr = &parser;
 
 	callthread			= false;
+	callguithread		= false;
 	lastStatementWasReturn	= false;
 	loopDepth			= 0;
 	eof					= false;
@@ -1048,7 +1051,7 @@ idVarDef *idCompiler::EmitFunctionParms( int op, idVarDef *func, int startarg, i
 
 	if ( op == OP_CALL ) {
 		EmitOpcode( op, func, 0 );
-	} else if ( ( op == OP_OBJECTCALL ) || ( op == OP_OBJTHREAD ) ) {
+	} else if ( ( op == OP_OBJECTCALL ) || ( op == OP_OBJTHREAD ) || ( op == OP_GUIOBJTHREAD ) ) {
 		EmitOpcode( op, object, VirtualFunctionConstant( func ) );
 
 		// need arg size seperate since script object may be NULL
@@ -1150,11 +1153,17 @@ idVarDef *idCompiler::ParseFunctionCall( idVarDef *funcDef ) {
 		if ( ( funcDef->settings.initialized != idVarDef::uninitialized ) && funcDef->value.functionPtr->eventdef ) {
 			Error( "Built-in functions cannot be called as threads" );
 		}
-		callthread = false;
+
+		int op = callguithread ? OP_GUITHREAD : OP_THREAD;
+
 		if ( program->IsExporting() ) {
-			program->scriptExporter.RegisterClassThreadCall( NULL, funcDef->value.functionPtr );
+			program->scriptExporter.RegisterClassThreadCall( NULL, funcDef->value.functionPtr, callguithread );
 		}
-		return EmitFunctionParms( OP_THREAD, funcDef, 0, 0, NULL );
+
+		callthread = false;
+		callguithread = false;
+
+		return EmitFunctionParms( op, funcDef, 0, 0, NULL );
 	} else {
 		if ( ( funcDef->settings.initialized != idVarDef::uninitialized ) ) {
 			if ( funcDef->value.functionPtr->eventdef ) {
@@ -1196,14 +1205,16 @@ idCompiler::ParseObjectCall
 idVarDef *idCompiler::ParseObjectCall( idVarDef *object, idVarDef *func ) {
 	EmitPush( object, object->TypeDef() );
 
-	int op = OP_OBJECTCALL ;
+	int op = OP_OBJECTCALL;
 	if ( callthread ) {
-		callthread = false;
-		op = OP_OBJTHREAD;
+		op = callguithread ? OP_GUIOBJTHREAD : OP_OBJTHREAD;
 
 		if ( program->IsExporting() ) {
-			program->scriptExporter.RegisterClassThreadCall( object->TypeDef(), func->value.functionPtr );
+			program->scriptExporter.RegisterClassThreadCall( object->TypeDef(), func->value.functionPtr, callguithread );
 		}
+
+		callthread = false;
+		callguithread = false;
 	}
 
 	return EmitFunctionParms( op, func, 1, type_object.Size(), object );
@@ -1586,6 +1597,7 @@ idVarDef *idCompiler::GetTerm( void ) {
 	
 	if ( CheckToken( "thread" ) ) {
 		callthread = true;
+		callguithread = false;
 		e = GetExpression( FUNCTION_PRIORITY );
 
 		if ( callthread ) {
@@ -1597,6 +1609,20 @@ idVarDef *idCompiler::GetTerm( void ) {
 		return program->returnDef;
 	}
 	
+	if ( CheckToken( "guiThread" ) ) {
+		callthread = true;
+		callguithread = true;
+		e = GetExpression( FUNCTION_PRIORITY );
+
+		if ( callthread ) {
+			Error( "Invalid thread call" );
+		}
+
+		// threads return the thread number
+		program->returnDef->SetTypeDef( &type_float );
+		return program->returnDef;
+	}
+
 	if ( !immediateType && CheckToken( "(" ) ) {
 		e = GetExpression( TOP_PRIORITY );
 		ExpectToken( ")" );
@@ -2897,6 +2923,7 @@ void idCompiler::ParseNamespace( idVarDef *newScope ) {
 	while( !eof ) {
 		scope		= newScope;
 		callthread	= false;
+		callguithread = false;
 
 		if ( ( newScope != &def_namespace ) && CheckToken( "}" ) ) {
 			break;
@@ -2925,6 +2952,7 @@ void idCompiler::CompileFile( const char *text, const char *filename ) {
 	scope				= &def_namespace;
 	basetype			= NULL;
 	callthread			= false;
+	callguithread		= false;
 	loopDepth			= 0;
 	eof					= false;
 	braceDepth			= 0;

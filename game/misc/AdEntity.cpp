@@ -170,11 +170,20 @@ void sdAdEntity::UpdateImpression( impressionInfo_t& impression, const renderVie
 	impression.screenHeight	= viewPort.GetHeight();
 
 	converter.SetExtents( idVec2( impression.screenWidth, impression.screenHeight ) );
-
 	converter.Transform( surfaceBounds, renderEntity.axis, renderEntity.origin, screenBounds );
 	converter.Transform( sufaceCenter, screenCenter );
 
-	impression.size		= ( screenBounds.GetMaxs() - screenBounds.GetMins() ).Length();
+	sdBounds2D clippedImpressionBounds;
+	idFrustum f;
+	f.SetAxis( view.viewaxis );
+	f.SetOrigin( view.vieworg );
+	float dNear = 0.0f;
+	float dFar	= MAX_WORLD_SIZE;
+	float dLeft = idMath::Tan( DEG2RAD( view.fov_x * 0.5f ) ) * dFar;
+	float dUp	= idMath::Tan( DEG2RAD( view.fov_y * 0.5f ) ) * dFar;
+	f.SetSize( dNear, dFar, dLeft, dUp );
+	sdWorldToScreenConverter::TransformClipped( surfaceBounds, renderEntity.axis, renderEntity.origin, clippedImpressionBounds, f, idVec2( impression.screenWidth, impression.screenHeight ) );
+	impression.size		= ( clippedImpressionBounds.GetMaxs() - clippedImpressionBounds.GetMins() ).Length();
 
 	// Angle calculation	
 	idVec3 objectNormal = adSurfaceNormal * renderEntity.axis;

@@ -92,13 +92,14 @@ bool sdAdminSystemCommand_Kick::PerformCommand( const idCmdArgs& cmd, const sdUs
 	clientGUIDLookup_t lookup;
 	lookup.ip	= *( ( int* )netAddr.ip );
 	lookup.pbid	= 0;
+	lookup.name = kickPlayer->userInfo.rawName;
 
 	if ( networkService->GetDedicatedServerState() == sdNetService::DS_ONLINE ) {
 		networkSystem->ServerGetClientNetId( kickPlayer->entityNumber, lookup.clientId );
 	}
 
-	sdPlayerStatEntry* stat = sdGlobalStatsTracker::GetInstance().GetStat( sdGlobalStatsTracker::GetInstance().AllocStat( "times_kicked", "int" ) );
-	stat->IncreaseInteger( kickPlayer->entityNumber, 1 );
+	sdPlayerStatEntry* stat = sdGlobalStatsTracker::GetInstance().GetStat( sdGlobalStatsTracker::GetInstance().AllocStat( "times_kicked", sdNetStatKeyValue::SVT_INT ) );
+	stat->IncreaseValue( kickPlayer->entityNumber, 1 );
 
 	gameLocal.guidFile.BanUser( lookup, ( g_kickBanLength.GetFloat() * 60 ) );
 
@@ -337,13 +338,14 @@ bool sdAdminSystemCommand_Ban::PerformCommand( const idCmdArgs& cmd, const sdUse
 	clientGUIDLookup_t lookup;
 	lookup.ip	= *( ( int* )netAddr.ip );
 	lookup.pbid	= 0;
+	lookup.name = banPlayer->userInfo.rawName;
 
 	if ( networkService->GetDedicatedServerState() == sdNetService::DS_ONLINE ) {
 		networkSystem->ServerGetClientNetId( banPlayer->entityNumber, lookup.clientId );
 	}
 
-	sdPlayerStatEntry* stat = sdGlobalStatsTracker::GetInstance().GetStat( sdGlobalStatsTracker::GetInstance().AllocStat( "times_banned", "int" ) );
-	stat->IncreaseInteger( banPlayer->entityNumber, 1 );
+	sdPlayerStatEntry* stat = sdGlobalStatsTracker::GetInstance().GetStat( sdGlobalStatsTracker::GetInstance().AllocStat( "times_banned", sdNetStatKeyValue::SVT_INT ) );
+	stat->IncreaseValue( banPlayer->entityNumber, 1 );
 
 	gameLocal.guidFile.BanUser( lookup, length );
 
@@ -368,6 +370,53 @@ void sdAdminSystemCommand_Ban::CommandCompletion( const idCmdArgs& args, argComp
 
 		callback( va( "%s %s \"%s\"", args.Argv( 0 ), args.Argv( 1 ), player->userInfo.cleanName.c_str() ) );
 	}	
+}
+
+/*
+===============================================================================
+
+	sdAdminSystemCommand_ListBans
+
+===============================================================================
+*/
+
+/*
+============
+sdAdminSystemCommand_ListBans::PerformCommand
+============
+*/
+bool sdAdminSystemCommand_ListBans::PerformCommand( const idCmdArgs& cmd, const sdUserGroup& userGroup, idPlayer* player ) const {
+	if ( !userGroup.HasPermission( PF_ADMIN_BAN ) ) {
+		Print( player, "guis/admin/system/cannotban" );
+		return false;
+	}
+
+	gameLocal.StartSendingBanList( player );
+	return true;
+}
+
+/*
+===============================================================================
+
+	sdAdminSystemCommand_UnBan
+
+===============================================================================
+*/
+
+/*
+============
+sdAdminSystemCommand_UnBan::PerformCommand
+============
+*/
+bool sdAdminSystemCommand_UnBan::PerformCommand( const idCmdArgs& cmd, const sdUserGroup& userGroup, idPlayer* player ) const {
+	if ( !userGroup.HasPermission( PF_ADMIN_BAN ) ) {
+		Print( player, "guis/admin/system/cannotban" );
+		return false;
+	}
+
+	int banIndex = atoi( cmd.Argv( 2 ) );
+	gameLocal.guidFile.UnBan( banIndex );
+	return true;
 }
 
 /*
@@ -463,8 +512,9 @@ bool sdAdminSystemCommand_SetCampaign::PerformCommand( const idCmdArgs& cmd, con
 	}
 
 	const char* campaignName = cmd.Argv( 2 );
-	const sdDeclCampaign* campaignDecl = gameLocal.declCampaignType[ campaignName ];
-	if ( !campaignDecl ) {
+
+	const metaDataContext_t* metaData = gameLocal.campaignMetaDataList->FindMetaDataContext( campaignName );
+	if ( metaData == NULL || !gameLocal.IsMetaDataValidForPlay( *metaData, false ) ) {
 		idWStrList list( 1 );
 		list.Append( va( L"%hs", campaignName ) );
 		Print( player, "guis/admin/system/notfoundcampaign", list );
@@ -473,17 +523,9 @@ bool sdAdminSystemCommand_SetCampaign::PerformCommand( const idCmdArgs& cmd, con
 
 	sdAdminSystemCommand_KickAllBots::DoKick();
 
-	sdGameRulesCampaign* campaignRules = gameLocal.rules->Cast< sdGameRulesCampaign >();
-	if ( campaignRules == NULL ) {
-		si_rules.SetString( "sdGameRulesCampaign" );
-		gameLocal.MakeRules();
-		campaignRules = gameLocal.rules->Cast< sdGameRulesCampaign >();
-		assert( campaignRules != NULL );
-		sys->FlushServerInfo();
-	}
+	cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "set si_rules sdGameRulesCampaign\n" );
+	cmdSystem->BufferCommandText( CMD_EXEC_APPEND, va( "spawnServer %s\n", campaignName ) );
 
-	campaignRules->SetCampaign( campaignDecl );
-	campaignRules->StartMap();
 	return true;
 }
 
@@ -496,16 +538,21 @@ void sdAdminSystemCommand_SetCampaign::CommandCompletion( const idCmdArgs& args,
 	const char* cmd = args.Argv( 2 );
 	int len = idStr::Length( cmd );
 
-	int num = gameLocal.declCampaignType.Num();
+	int num = gameLocal.campaignMetaDataList->GetNumMetaData();
 	for ( int i = 0; i < num; i++ ) {
-		const sdDeclCampaign* campaignDecl = gameLocal.declCampaignType[ i ];
+		const metaDataContext_t& metaData = gameLocal.campaignMetaDataList->GetMetaDataContext( i );
+		if ( !gameLocal.IsMetaDataValidForPlay( metaData, false ) ) {
+			continue;
+		}
+		const idDict& meta = *metaData.meta;
 		
-		if ( idStr::Icmpn( campaignDecl->GetName(), cmd, len ) ) {
+		const char* metaName = meta.GetString( "metadata_name" );
+		if ( idStr::Icmpn( metaName, cmd, len ) ) {
 			continue;
 		}
 
-		callback( va( "%s %s %s", args.Argv( 0 ), args.Argv( 1 ), campaignDecl->GetName() ) );
-	}
+		callback( va( "%s %s %s", args.Argv( 0 ), args.Argv( 1 ), metaName ) );
+	}	
 }
 
 /*
@@ -529,19 +576,19 @@ bool sdAdminSystemCommand_SetObjectiveMap::PerformCommand( const idCmdArgs& cmd,
 
 	sdAdminSystemCommand_KickAllBots::DoKick();
 
-	sdGameRulesObjective* objectiveRules = gameLocal.rules->Cast< sdGameRulesObjective >();
-	if ( objectiveRules == NULL ) {
-		si_rules.SetString( "sdGameRulesObjective" );
-		gameLocal.MakeRules();
-		objectiveRules = gameLocal.rules->Cast< sdGameRulesObjective >();
-		assert( objectiveRules != NULL );
-		sys->FlushServerInfo();
-	}
+	idStr mapName = cmd.Argv( 2 );
+	sdGameRules_SingleMapHelper::SanitizeMapName( mapName, false );
 
-	if ( !objectiveRules->ChangeMap( cmd.Argv( 2 ) ) ) {
+#if defined( SD_PUBLIC_BUILD )
+	const metaDataContext_t* metaData = gameLocal.mapMetaDataList->FindMetaDataContext( mapName.c_str() );
+	if ( metaData == NULL || !gameLocal.IsMetaDataValidForPlay( *metaData, false ) ) {
 		Print( player, "guis/admin/system/cannotchangethatmap" );
 		return false;
 	}
+#endif // SD_PUBLIC_BUILD
+
+	cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "set si_rules sdGameRulesObjective\n" );
+	cmdSystem->BufferCommandText( CMD_EXEC_APPEND, va( "spawnServer %s\n", mapName.c_str() ) );
 
 	return true;
 }
@@ -575,19 +622,19 @@ bool sdAdminSystemCommand_SetStopWatchMap::PerformCommand( const idCmdArgs& cmd,
 
 	sdAdminSystemCommand_KickAllBots::DoKick();
 
-	sdGameRulesStopWatch* stopWatchRules = gameLocal.rules->Cast< sdGameRulesStopWatch >();
-	if ( stopWatchRules == NULL ) {
-		si_rules.SetString( "sdGameRulesStopWatch" );
-		gameLocal.MakeRules();
-		stopWatchRules = gameLocal.rules->Cast< sdGameRulesStopWatch >();
-		assert( stopWatchRules != NULL );
-		sys->FlushServerInfo();
-	}
+	idStr mapName = cmd.Argv( 2 );
+	sdGameRules_SingleMapHelper::SanitizeMapName( mapName, false );
 
-	if ( !stopWatchRules->ChangeMap( cmd.Argv( 2 ) ) ) {
+#if defined( SD_PUBLIC_BUILD )
+	const metaDataContext_t* metaData = gameLocal.mapMetaDataList->FindMetaDataContext( mapName.c_str() );
+	if ( metaData == NULL || !gameLocal.IsMetaDataValidForPlay( *metaData, false ) ) {
 		Print( player, "guis/admin/system/cannotchangethatmap" );
 		return false;
 	}
+#endif // SD_PUBLIC_BUILD
+
+	cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "set si_rules sdGameRulesStopWatch\n" );
+	cmdSystem->BufferCommandText( CMD_EXEC_APPEND, va( "spawnServer %s\n", mapName.c_str() ) );
 
 	return true;
 }
@@ -1341,7 +1388,7 @@ bool sdAdminSystemCommand_AddBot::PerformCommand( const idCmdArgs& cmd, const sd
 		}
 	}
 
-	int maxGuns;
+	int maxGuns = 1;
 
 	if ( bot_useShotguns.GetBool() ) { //mal: this is mainly for debugging, but may be a popular choice since the shotgun is so range limited.
 		maxGuns = 2;
@@ -1351,8 +1398,6 @@ bool sdAdminSystemCommand_AddBot::PerformCommand( const idCmdArgs& cmd, const sd
 			maxGuns = 1;
 		}
 	} else {
-		maxGuns = 1;
-
 		if ( botClass == SOLDIER ) {
 			maxGuns = 3;
 		} else if ( botClass == COVERTOPS ) {
@@ -1549,6 +1594,7 @@ sdAdminSystemLocal::Init
 ============
 */
 void sdAdminSystemLocal::Init( void ) {
+	commands.PreAllocate( 25 );		// NOTE: if you add more commands increase this number to reflect that
 	commands.Alloc() = new sdAdminSystemCommand_Kick();
 	commands.Alloc() = new sdAdminSystemCommand_Login();
 	commands.Alloc() = new sdAdminSystemCommand_Ban();
@@ -1576,6 +1622,9 @@ void sdAdminSystemLocal::Init( void ) {
 	commands.Alloc() = new sdAdminSystemCommand_SetTimeLimit();
 	commands.Alloc() = new sdAdminSystemCommand_SetTeamDamage();
 	commands.Alloc() = new sdAdminSystemCommand_SetTeamBalance();
+
+	commands.Alloc() = new sdAdminSystemCommand_ListBans();
+	commands.Alloc() = new sdAdminSystemCommand_UnBan();
 
 	properties.RegisterProperties();
 }
@@ -1613,7 +1662,7 @@ void sdAdminSystemLocal::PerformCommand( const idCmdArgs& cmd, idPlayer* player 
 		} else {
 			sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_ADMINFEEDBACK );
 			msg.WriteBool( success );
-			msg.Send( player->entityNumber );
+			msg.Send( sdReliableMessageClientInfo( player->entityNumber ) );
 		}
 		break;
 	}

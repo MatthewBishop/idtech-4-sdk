@@ -51,7 +51,7 @@ class sdDefenceTurret : public sdScriptEntity {
 	void								Event_IsDisabled( void );
 	void								Event_GetTargetPosition( idEntity* entity );
 	void								Event_GetEnemy( void );
-	void								Event_SetEnemy( idEntity* other );
+	void								Event_SetEnemy( idEntity* other, float turnDelay );
 
 	virtual void						WriteDemoBaseData( idFile* file ) const;
 	virtual void						ReadDemoBaseData( idFile* file );
@@ -82,6 +82,7 @@ protected:
 	int									deployableType;
 
 	int									acquireWaitTime;
+	int									startTurn;
 	int									nextTargetAcquireTime;
 
 	idEntityPtr< idEntity >				target;

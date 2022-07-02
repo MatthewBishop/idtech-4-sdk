@@ -574,13 +574,13 @@ void sdProficiencyManagerLocal::GiveMissionProficiency( sdPlayerTask* task, floa
 		return;
 	}
 
-	sdPlayerStatEntry* stat = sdGlobalStatsTracker::GetInstance().GetStat( sdGlobalStatsTracker::GetInstance().AllocStat( "mission_bonus_given", "int" ) );
+	sdPlayerStatEntry* stat = sdGlobalStatsTracker::GetInstance().GetStat( sdGlobalStatsTracker::GetInstance().AllocStat( "mission_bonus_given", sdNetStatKeyValue::SVT_INT ) );
 
 	float split = 1 / ( float )playerList.Num();
 	for ( int i = 0; i < playerList.Num(); i++ ) {
 		idPlayer* player = playerList[ i ];
 
-		stat->IncreaseInteger( player->entityNumber, 1 );
+		stat->IncreaseValue( player->entityNumber, 1 );
 
 		const sdDeclPlayerClass* pc = player->GetInventory().GetClass();
 		if ( pc == NULL ) {
@@ -675,7 +675,7 @@ void sdProficiencyManagerLocal::GiveProficiency( const sdDeclProficiencyItem* pr
 
 	sdPlayerStatEntry* stat = proficiency->GetStat();
 	if ( stat ) {
-		stat->IncreaseFloat( player->entityNumber, count );
+		stat->IncreaseValue( player->entityNumber, count );
 	}
 	LogProficiency( proficiency->GetName(), count );
 	GiveProficiency( proficiency->GetProficiencyType()->Index(), proficiency->GetProficiencyCount(), player, scale, reason );
@@ -1082,6 +1082,9 @@ float sdPersistentRankInfo::FindData( const char* key, const idHashIndex& hash, 
 				return list[ index ].val.i;
 			case sdNetStatKeyValue::SVT_FLOAT:
 				return list[ index ].val.f;
+			default:
+				assert( false );
+				break;
 		}
 	}
 

@@ -152,12 +152,15 @@ public:
 
 	const char*				GetActionName() const { return name.c_str(); }
 
+	int						GetActionSpawnControllerEntNum() const { return spawnControllerEntityNum; }
+
 	int						GetDeployableType() const { return deployableType; }
 
 	const idVec3&			GetActionOrigin() const { return origin; }
 
 	int						GetActionAreaNum() const { return areaNum; }
 	int						GetActionVehicleAreaNum() const { return areaNumVehicle; }
+	void					SetActionActivateTime( int newTime ) { actionActivateTime = newTime; }
 
 	botActionType_t			GetBaseActionType() const { return baseActionType; }
 
@@ -182,6 +185,7 @@ private:
 	int						routeID;
 	int						deployableType;						// what kind of deployable belongs here.
 	int						spawnControllerEntityNum;			// only used for forward spawns - points to the entity that the action encompansses.
+	int						actionActivateTime;
 	float					radius;								// this actions range of effect
 	
 	botChatTypes_t			VOChatFlag;							// what chat the bot should play when selecting this action.

@@ -35,6 +35,7 @@ static char THIS_FILE[] = __FILE__;
 #include "UICinematic.h"
 #include "UILayout.h"
 #include "UICreditScroll.h"
+#include "UINews.h"
 
 #include "../demos/DemoManager.h"
 
@@ -236,6 +237,7 @@ void sdUserInterfaceManagerLocal::Init( void ) {
 	windowFactory.RegisterType( "layoutVertical",	sdUIObjectFactory::Allocator< sdUILayout_Vertical > );
 	windowFactory.RegisterType( "layoutHorizontal",	sdUIObjectFactory::Allocator< sdUILayout_Horizontal > );
 	windowFactory.RegisterType( "creditScroll",		sdUIObjectFactory::Allocator< sdUICreditScroll > );
+	windowFactory.RegisterType( "news",				sdUIObjectFactory::Allocator< sdUINews > );
 
 	sdUITypeInfo::Init();
 
@@ -256,6 +258,7 @@ void sdUserInterfaceManagerLocal::Init( void ) {
 	sdUICrosshairInfo::InitFunctions();
 	sdUIProgress::InitFunctions();
 	sdUICreditScroll::InitFunctions();
+	sdUINews::InitFunctions();
 
 	sdUserInterfaceLocal::InitFunctions();
 	sdUserInterfaceLocal::InitEvaluators();
@@ -274,6 +277,10 @@ void sdUserInterfaceManagerLocal::Init( void ) {
 	cmdSystem->AddCommand( "printGuiStats", PrintGuiStats, CMD_FL_CHEAT | CMD_FL_GAME, "Prints statistics for a gui" );
 
 	r_aspectRatio.RegisterCallback( &invalidateLayout );
+
+#if defined( SD_DEMO_BUILD ) || defined( SD_DEMO_BUILD_CONSTRUCTION )
+	sdDeclGUI::AddDefine( va( "SD_DEMO_BUILD %i", 1 ) );
+#endif
 }
 
 /*
@@ -303,6 +310,7 @@ void sdUserInterfaceManagerLocal::Shutdown( void ) {
 	sdUICrosshairInfo::ShutdownFunctions();
 	sdUIProgress::ShutdownFunctions();
 	sdUICreditScroll::ShutdownFunctions();
+	sdUINews::ShutdownFunctions();
 
 	renderCallbacks.DeleteValues();
 
@@ -351,7 +359,7 @@ void sdUserInterfaceManagerLocal::Update( bool outOfSequence ) {
 			}
 			ui->SetCurrentTime( lastNonGameGuiTime );
 		} else {
-			ui->SetCurrentTime( gameLocal.time );
+			ui->SetCurrentTime( gameLocal.time + gameLocal.timeOffset );
 		}
 
 		ui->Update();
@@ -974,6 +982,33 @@ void sdUserInterfaceManagerLocal::OnInputShutdown( void ) {
 	}
 }
 
+/*
+============
+sdUserInterfaceManagerLocal::OnLanguageShutdown
+============
+*/
+void sdUserInterfaceManagerLocal::OnLanguageInit( void ) {
+	for ( int i = 0; i < instances.Num(); i++ ) {
+		if ( instances[ i ] == NULL ) {
+			continue;
+		}
+		instances[ i ]->OnLanguageInit();
+	}
+}
+
+/*
+============
+sdUserInterfaceManagerLocal::OnLanguageShutdown
+============
+*/
+void sdUserInterfaceManagerLocal::OnLanguageShutdown( void ) {
+	for ( int i = 0; i < instances.Num(); i++ ) {
+		if ( instances[ i ] == NULL ) {
+			continue;
+		}
+		instances[ i ]->OnLanguageShutdown();
+	}
+}
 
 /*
 ============
@@ -1022,5 +1057,25 @@ void sdUserInterfaceManagerLocal::InvalidateLayout() {
 			continue;
 		}
 		uiManagerLocal.instances[ i ]->MakeLayoutDirty();
+	}
+}
+
+/*
+============
+sdUserInterfaceManagerLocal::OnToolTipEvent
+============
+*/
+void sdUserInterfaceManagerLocal::OnToolTipEvent( const char* arg ) const {
+	for( int i = 0; i < instances.Num(); i++ ) {
+		if( instances[ i ] == NULL ) {
+			continue;
+		}
+
+		sdUserInterfaceLocal* ui = instances[ i ];
+		if( ui->TestGUIFlag( sdUserInterfaceLocal::GUI_FRONTEND ) ) {
+			continue;
+		}
+
+		ui->OnToolTipEvent( arg );
 	}
 }

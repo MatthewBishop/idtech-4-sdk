@@ -4,6 +4,11 @@
 #ifndef __NETWORKSYSTEM_H__
 #define __NETWORKSYSTEM_H__
 
+struct repeaterUserOrigin_t {
+	idVec3	origin;
+	int		followClient;
+};
+
 #ifdef _XENON
 
 const int MAX_ASYNC_CLIENTS			= 16;
@@ -13,6 +18,12 @@ const int MAX_ASYNC_CLIENTS			= 16;
 const int MAX_ASYNC_CLIENTS			= 32;
 
 #endif
+
+#ifdef SD_SUPPORT_REPEATER
+
+const int REPEATER_CLIENT_INDEX		= -1;
+
+#endif // SD_SUPPORT_REPEATER
 
 /*
 ===============================================================================
@@ -46,19 +57,36 @@ struct sdNetClientId;
 class usercmd_t;
 
 // packed up version for deltification and compression
-typedef struct {
-	short			angles[2];
+struct net_usercmd_t {
+	short			angles[ 2 ];
 	unsigned short	buttons;
 	signed char		forwardmove;
 	signed char		rightmove;
 	signed char		upmove;
-} net_usercmd_t;
+};
+
+struct usercmdDeltaInfo_t {
+private:
+	net_usercmd_t	usercmd;
+	bool			isValid;
+
+public:
+					usercmdDeltaInfo_t( void ) { isValid = false; }
+	void			Invalidate( void ) { isValid = false; }
+
+	void			WriteDelta( const usercmd_t& cmd, idBitMsg& msg );
+	void			ReadDelta( usercmd_t& cmd, const idBitMsg& msg );
+};
 
 class idNetworkSystem {
 public:
 	virtual					~idNetworkSystem( void );
 
-	virtual void			ServerSendReliableMessage( int clientNum, const idBitMsg &msg );
+	virtual void			ServerSendReliableMessage( int clientNum, const idBitMsg& msg );
+#ifdef SD_SUPPORT_REPEATER
+	virtual void			RepeaterSendReliableMessage( int clientNum, const idBitMsg& msg, bool ignoreRelays );
+#endif // SD_SUPPORT_REPEATER
+
 	virtual int				ServerGetClientPing( int clientNum );
 	virtual int				ServerGetClientPrediction( int clientNum );
 	virtual int				ServerGetClientTimeSinceLastPacket( int clientNum );
@@ -123,6 +151,18 @@ public:
 	virtual float			GetSoundTestProgress( void );
 
 	virtual voiceMode_t		GetVoiceMode( void );
+
+	virtual void			RegisterServerInterest( const netadr_t& address );
+
+#if !defined( SD_PUBLIC_TOOLS )
+	virtual bool			HTTPEnable( bool enable );
+#endif // !SD_PUBLIC_TOOLS
+
+#ifdef SD_SUPPORT_REPEATER
+	virtual void			RepeaterSetInfo( const idDict& info );
+	virtual const idDict&	RepeaterGetClientInfo( int clientNum );
+	virtual void			SetClientRepeaterUserOrigin( const repeaterUserOrigin_t& origin );
+#endif // SD_SUPPORT_REPEATER
 };
 
 extern idNetworkSystem *	networkSystem;

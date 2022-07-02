@@ -1,3 +1,6 @@
+// Copyright (C) 2007 Id Software, Inc.
+//
+
 
 #ifndef __COMPILEDSCRIPT_CLASS_H__
 #define __COMPILEDSCRIPT_CLASS_H__

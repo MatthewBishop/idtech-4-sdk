@@ -192,6 +192,8 @@ public:
 
 	bool						RespondsTo( const idEventDef &ev ) const;
 
+	bool						PostGUIEventMS( const idEventDef *ev, int time );
+
 	bool						PostEventMS( const idEventDef *ev, int time );
 	bool						PostEventMS( const idEventDef *ev, int time, idEventArg arg1 );
 	bool						PostEventMS( const idEventDef *ev, int time, idEventArg arg1, idEventArg arg2 );
@@ -262,7 +264,7 @@ public:
 private:
 	classSpawnFunc_t			CallSpawnFunc( idTypeInfo *cls );
 
-	bool						PostEventArgs( const idEventDef *ev, int time, int numargs, ... );
+	bool						PostEventArgs( const idEventDef *ev, int time, int numargs, bool guiEvent, ... );
 	bool						ProcessEventArgs( const idEventDef *ev, int numargs, ... );
 
 	void						Event_IsClass( int typeNumber );

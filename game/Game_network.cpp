@@ -79,11 +79,18 @@ const int CLIENTBITS					= idMath::BitsForInteger( MAX_CLIENTS );
 
 ===============================================================================
 */
-void sdReliableServerMessage::Send( int clientNum ) const {
-	if ( clientNum == -1 && g_debugNetworkWrite.GetBool() ) {
-		gameLocal.LogNetwork( va( "Reliable Broadcast: %d Size: %d bits\n", type, GetNumBitsWritten() ) );
+void sdReliableServerMessage::Send( const sdReliableMessageClientInfoBase& info ) const {
+#ifdef SD_SUPPORT_REPEATER
+	if ( info.SendToRepeaterClients() ) {
+		networkSystem->RepeaterSendReliableMessage( info.GetClientNum(), *this, info.DontSendToRelays() );
 	}
-	networkSystem->ServerSendReliableMessage( clientNum, *this );
+#endif // SD_SUPPORT_REPEATER
+	if ( info.SendToClients() ) {
+		networkSystem->ServerSendReliableMessage( info.GetClientNum(), *this );
+		if ( info.SendToAll() && g_debugNetworkWrite.GetBool() ) {
+			gameLocal.LogNetwork( va( "Reliable Broadcast: %d Size: %d bits\n", type, GetNumBitsWritten() ) );
+		}
+	}
 }
 
 /*
@@ -123,6 +130,7 @@ void sdEntityNetEvent::Read( const idBitMsg& msg ) {
 	spawnId		= msg.ReadLong();
 	event		= msg.ReadByte();
 	time		= msg.ReadLong();
+	saveEvent	= msg.ReadBool();
 	paramsSize	= msg.ReadBits( idMath::BitsForInteger( MAX_EVENT_PARAM_SIZE ) );
 
 	if ( paramsSize ) {
@@ -140,7 +148,7 @@ sdEntityNetEvent::GetTotalSize
 ================
 */
 int sdEntityNetEvent::GetTotalSize( void ) const {
-	return 4 + 1 + 4 + ( ( idMath::BitsForInteger( MAX_EVENT_PARAM_SIZE ) + 7 ) >> 3 ) + paramsSize;
+	return 4 + 1 + 4 + ( ( ( idMath::BitsForInteger( MAX_EVENT_PARAM_SIZE ) + 1 ) + 7 ) >> 3 ) + paramsSize;
 }
 
 /*
@@ -152,6 +160,7 @@ void sdEntityNetEvent::Write( idBitMsg& msg ) const {
 	msg.WriteLong( spawnId );
 	msg.WriteByte( event );
 	msg.WriteLong( time );
+	msg.WriteBool( saveEvent );
 	msg.WriteBits( paramsSize, idMath::BitsForInteger( MAX_EVENT_PARAM_SIZE ) );
 	if ( paramsSize ) {
 		msg.WriteData( paramsBuf, paramsSize );
@@ -168,6 +177,7 @@ void sdEntityNetEvent::Read( idFile* file ) {
 	file->ReadInt( event );
 	file->ReadInt( time );
 	file->ReadInt( paramsSize );
+	file->ReadBool( saveEvent );
 	if ( paramsSize ) {
 		file->Read( paramsBuf, paramsSize );
 	}
@@ -183,6 +193,7 @@ void sdEntityNetEvent::Write( idFile* file ) const {
 	file->WriteInt( spawnId );
 	file->WriteInt( event );
 	file->WriteInt( time );
+	file->WriteBool( saveEvent );
 	file->WriteInt( paramsSize );
 	if ( paramsSize ) {
 		file->Write( paramsBuf, paramsSize );
@@ -194,10 +205,11 @@ void sdEntityNetEvent::Write( idFile* file ) const {
 sdEntityNetEvent::Create
 ================
 */
-void sdEntityNetEvent::Create( const idEntity* _entity, int _event, const idBitMsg* _msg ) {
-	spawnId	= gameLocal.GetSpawnId( _entity );
-	event	= _event;
-	time	= gameLocal.time;
+void sdEntityNetEvent::Create( const idEntity* _entity, int _event, bool _saveEvent, const idBitMsg* _msg ) {
+	spawnId		= gameLocal.GetSpawnId( _entity );
+	event		= _event;
+	time		= gameLocal.time;
+	saveEvent	= _saveEvent; 
 
 	if ( _msg ) {
 		paramsSize = _msg->GetSize();
@@ -207,6 +219,19 @@ void sdEntityNetEvent::Create( const idEntity* _entity, int _event, const idBitM
 	}
 }
 
+/*
+================
+sdEntityNetEvent::Create
+================
+*/
+void sdEntityNetEvent::Create( const sdEntityNetEvent& other ) {
+	spawnId		= other.spawnId;
+	event		= other.event;
+	time		= other.time;
+	saveEvent	= other.saveEvent;
+	paramsSize	= other.paramsSize;
+	memcpy( paramsBuf, other.paramsBuf, other.paramsSize );
+}
 
 /*
 ===============================================================================
@@ -223,6 +248,9 @@ sdUnreliableEntityNetEvent::sdUnreliableEntityNetEvent
 */
 sdUnreliableEntityNetEvent::sdUnreliableEntityNetEvent( void ) {
 	unreliableNode.SetOwner( this );
+#ifdef SD_SUPPORT_REPEATER
+	numRepeaterClients = 0;
+#endif // SD_SUPPORT_REPEATER
 }
 
 /*
@@ -234,12 +262,28 @@ void sdUnreliableEntityNetEvent::ClearSent( void ) {
 	// mark client slots that aren't occupied as already having been sent
 	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
 		idPlayer* client = gameLocal.GetClient( i );
-		if ( client != NULL && client != gameLocal.GetLocalPlayer() ) {
+		if ( client != NULL && client != gameLocal.GetLocalPlayer() && gameLocal.isServer ) {
 			sentClients.Clear( i );
 		} else {
 			sentClients.Set( i );
 		}
 	}
+	if ( sdDemoManager::GetInstance().GetState() == sdDemoManagerLocal::DS_RECORDING && gameLocal.localClientNum == ASYNC_DEMO_CLIENT_INDEX ) {
+		sentClients.Clear( MAX_CLIENTS );
+	} else {
+		sentClients.Set( MAX_CLIENTS );
+	}
+
+#ifdef SD_SUPPORT_REPEATER
+	numRepeaterClients = gameLocal.GetNumRepeaterClients();
+	sentRepeaterClients.Init( numRepeaterClients );
+	sentRepeaterClients.SetAll();
+	for ( int i = 0; i < numRepeaterClients; i++ ) {
+		if ( gameLocal.IsRepeaterClientConnected( i ) ) {
+			sentRepeaterClients.Clear( i );
+		}
+	}
+#endif // SD_SUPPORT_REPEATER
 }
 
 /*
@@ -248,7 +292,7 @@ sdUnreliableEntityNetEvent::SetSent
 ================
 */
 void sdUnreliableEntityNetEvent::SetSent( int clientTo ) {
-	assert( clientTo >= 0 && clientTo < MAX_CLIENTS );
+	assert( clientTo >= 0 && clientTo < ( MAX_CLIENTS + 1 ) );
 	sentClients.Set( clientTo );
 }
 
@@ -259,11 +303,21 @@ sdUnreliableEntityNetEvent::HasExpired
 */
 bool sdUnreliableEntityNetEvent::HasExpired( void ) const {
 	bool allSent = true;
-	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
-		if ( !sentClients.Get( i ) ) {
+	for ( int i = 0; i < MAX_CLIENTS + 1; i++ ) {
+		if ( sentClients.Get( i ) != 0 ) {
 			allSent = false;
+			break;
 		}
 	}
+
+#ifdef SD_SUPPORT_REPEATER
+	for ( int i = 0; i < numRepeaterClients; i++ ) {
+		if ( sentRepeaterClients.Get( i ) != 0 ) {
+			allSent = false;
+			break;
+		}
+	}
+#endif // SD_SUPPORT_REPEATER
 
 	if ( allSent ) {
 		return true;
@@ -286,6 +340,32 @@ bool sdUnreliableEntityNetEvent::GetSent( int clientTo ) const {
 	return sentClients.Get( clientTo ) != 0;
 }
 
+#ifdef SD_SUPPORT_REPEATER
+/*
+================
+sdUnreliableEntityNetEvent::SetRepeaterSent
+================
+*/
+void sdUnreliableEntityNetEvent::SetRepeaterSent( int clientTo ) {
+	if ( clientTo >= numRepeaterClients ) {
+		assert( false );
+		return;
+	}
+	sentRepeaterClients.Set( clientTo );
+}
+
+/*
+================
+sdUnreliableEntityNetEvent::GetRepeaterSent
+================
+*/
+bool sdUnreliableEntityNetEvent::GetRepeaterSent( int clientTo ) const {
+	if ( clientTo >= numRepeaterClients ) {
+		return true;
+	}
+	return sentRepeaterClients.Get( clientTo ) != 0;
+}
+#endif // SD_SUPPORT_REPEATER
 
 /*
 ===============================================================================
@@ -319,12 +399,12 @@ void idGameLocal::InitAsyncNetwork( void ) {
 	numServerTimers = 0;
 
 	if ( isClient ) {
-		SetupGameStateBase( localClientNum );
-		SetupEntityStateBase( localClientNum );
+		SetupGameStateBase( GetNetworkInfo( localClientNum ) );
+		SetupEntityStateBase( GetNetworkInfo( localClientNum ) );
 	}
 
-	SetupGameStateBase( ASYNC_DEMO_CLIENT_INDEX );
-	SetupEntityStateBase( ASYNC_DEMO_CLIENT_INDEX );
+	SetupGameStateBase( GetNetworkInfo( ASYNC_DEMO_CLIENT_INDEX ) );
+	SetupEntityStateBase( GetNetworkInfo( ASYNC_DEMO_CLIENT_INDEX ) );
 }
 
 /*
@@ -337,6 +417,10 @@ void idGameLocal::ShutdownAsyncNetwork( void ) {
 		ShutdownClientNetworkState( i );
 	}
 	ShutdownClientNetworkState( ASYNC_DEMO_CLIENT_INDEX );
+#ifdef SD_SUPPORT_REPEATER
+	ShutdownClientNetworkState( REPEATER_CLIENT_INDEX );
+	ShutdownRepeatersNetworkStates();
+#endif // SD_SUPPORT_REPEATER
 
 	for ( int i = 0; i < ENSM_NUM_MODES; i++ ) {
 		sdNetworkStateObject& object = GetGameStateObject( ( extNetworkStateMode_t )i );
@@ -357,12 +441,15 @@ void idGameLocal::InitLocalClient( int clientNum, bool server ) {
 	isServer = server;
 	isClient = !server;
 	localClientNum = clientNum;
+#ifdef SD_SUPPORT_REPEATER
+	serverIsRepeater = clientNum == REPEATER_CLIENT_INDEX;
+#else
+	serverIsRepeater = false;
+#endif // SD_SUPPORT_REPEATER
 
 	if ( isClient ) {
-		if ( clientNum != -1 ) {
-			SetupGameStateBase( clientNum );
-			SetupEntityStateBase( clientNum );
-		}
+		SetupGameStateBase( GetNetworkInfo( clientNum ) );
+		SetupEntityStateBase( GetNetworkInfo( clientNum ) );
 	}
 	sdFireTeamManager::GetInstance().Clear();
 }
@@ -382,9 +469,14 @@ void idGameLocal::OnServerShutdown() {
 #endif /* !SD_DEMO_BUILD */
 		sdnet.SignOutDedicated();
 	}
+#endif
+
+	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+		ServerClientDisconnect( i );
+	}
 
 	reservedClientSlots.Clear();
-#endif
+	isServer = false;
 }
 
 /*
@@ -497,8 +589,10 @@ allowReply_t idGameLocal::ServerAllowClient( int numClients, int numBots, const 
 	}
 	int numAvailableSlots = maxRegularPlayers - numReservedSlots;
 
+	bool isPrivateClient = false;
 	const char* privatePass = g_privatePassword.GetString();
 	if ( *privatePass != '\0' && idStr::Cmp( privatePass, password ) == 0 ) {
+		isPrivateClient = true;
 		numAvailableSlots = maxPlayers; // with private password, any slot is available
 	} else if ( numReservedSlots > 0 ) {
 		for ( int i = 0; i < reservedClientSlots.Num(); i++ ) {
@@ -519,21 +613,23 @@ allowReply_t idGameLocal::ServerAllowClient( int numClients, int numBots, const 
 		return ALLOW_BADPASS;
 	}
 
-	if ( si_needPass.GetBool() ) {
-		const char* pass = g_password.GetString();
-		if ( *pass == '\0' ) {
-			// Gordon: FIXME: This is rubbish
-			gameLocal.Warning( "si_needPass is set but g_password is empty" );
-			cmdSystem->BufferCommandText( CMD_EXEC_NOW, "say si_needPass is set but g_password is empty" );
-			// avoids silent misconfigured state
-			reason = ALLOWFAIL_SERVERMISCONFIGURED;
-			return ALLOW_NOTYET;
-		}
+	if ( !isPrivateClient ) {
+		if ( si_needPass.GetBool() ) {
+			const char* pass = g_password.GetString();
+			if ( *pass == '\0' ) {
+				// Gordon: FIXME: This is rubbish
+				gameLocal.Warning( "si_needPass is set but g_password is empty" );
+				cmdSystem->BufferCommandText( CMD_EXEC_NOW, "say si_needPass is set but g_password is empty" );
+				// avoids silent misconfigured state
+				reason = ALLOWFAIL_SERVERMISCONFIGURED;
+				return ALLOW_NOTYET;
+			}
 
-		if ( idStr::Cmp( pass, password ) != 0 ) {
-			reason = ALLOWFAIL_INVALIDPASSWORD;
-			Printf( "Rejecting client %s from IP '%i.%i.%i.%i': invalid password\n", guid, address.ip[ 0 ], address.ip[ 1 ], address.ip[ 2 ], address.ip[ 3 ] );
-			return ALLOW_BADPASS;
+			if ( idStr::Cmp( pass, password ) != 0 ) {
+				reason = ALLOWFAIL_INVALIDPASSWORD;
+				Printf( "Rejecting client %s from IP '%i.%i.%i.%i': invalid password\n", guid, address.ip[ 0 ], address.ip[ 1 ], address.ip[ 2 ], address.ip[ 3 ] );
+				return ALLOW_BADPASS;
+			}
 		}
 	}
 
@@ -567,11 +663,14 @@ void idGameLocal::ServerClientConnect( int clientNum ) {
 		clientConnected[ clientNum ] = true;
 		clientRanks[ clientNum ].calculated = false;
 		clientRanks[ clientNum ].rank = -1;
-#if !defined( SD_DEMO_BUILD )
 		clientStatsRequestsPending = true;
+#if !defined( SD_DEMO_BUILD )
+		clientStatsList[ clientNum ].SetNum( 0, false );
+		clientStatsHash[ clientNum ].Clear();
 #endif /* !SD_DEMO_BUILD */
 		clientCompaintCount[ clientNum ] = 0;
 		clientUniqueComplaints[ clientNum ].SetNum( 0, false );
+		clientLastBanIndexReceived[ clientNum ] = -1;
 
 		clientGUIDLookup_t lookup;
 
@@ -609,9 +708,9 @@ void idGameLocal::ServerClientBegin( int clientNum, bool isBot ) {
 		sdReliableServerMessage ruleMsg( GAME_RELIABLE_SMESSAGE_RULES_DATA );
 		ruleMsg.WriteLong( sdGameRules::EVENT_CREATE );
 		ruleMsg.WriteLong( rules->GetType()->typeNum );
-		ruleMsg.Send( clientNum );
+		ruleMsg.Send( sdReliableMessageClientInfo( clientNum ) );
 
-		rules->WriteInitialReliableMessages( clientNum );
+		rules->WriteInitialReliableMessages( sdReliableMessageClientInfo( clientNum ) );
 	}
 
 	// spawn the player
@@ -678,7 +777,9 @@ void idGameLocal::ServerClientDisconnect( int clientNum ) {
 			player->SetSpectateClient( player );
 		}
 
-		sdProficiencyManager::GetInstance().CacheProficiency( disconnectClient );		
+		if ( disconnectClient->userInfo.isBot ) {
+			sdProficiencyManager::GetInstance().CacheProficiency( disconnectClient );
+		}
 		disconnectClient->PostEventMS( &EV_Remove, 0 );
 	}
 
@@ -689,11 +790,20 @@ void idGameLocal::ServerClientDisconnect( int clientNum ) {
 	Printf( "client %d disconnected.\n", clientNum );
 
 	clientConnected[ clientNum ] = false;
+#if !defined( SD_DEMO_BUILD )
+	clientStatsList[ clientNum ].SetNum( 0, false );
+	clientStatsHash[ clientNum ].Clear();
+#endif // SD_DEMO_BUILD
 	clientRanks[ clientNum ].calculated = false;
 	clientRanks[ clientNum ].rank = -1;
+	clientLastBanIndexReceived[ clientNum ] = -1;
 	clientMuteMask[ clientNum ].Clear();
 	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
 		clientMuteMask[ i ].Clear( clientNum );
+	}
+
+	for ( int i = 0; i < endGameStats.Num(); i++ ) {
+		endGameStats[ i ].data[ clientNum ] = -1.f;
 	}
 
 	if ( botThreadData.GetGameWorldState() != NULL ) {
@@ -725,16 +835,31 @@ idGameLocal::ServerWriteInitialReliableMessages
 ================
 */
 void idGameLocal::ServerWriteInitialReliableMessages( int clientNum ) {
-	idPlayer* player = GetClient( clientNum );
-	if ( player == NULL ) {
-		Error( "idGameLocal::ServerWriteInitialReliableMessages Client '%d' was NULL", clientNum );
+	WriteInitialReliableMessages( sdReliableMessageClientInfo( clientNum ) );
+}
+
+/*
+================
+idGameLocal::WriteInitialReliableMessages
+================
+*/
+void idGameLocal::WriteInitialReliableMessages( const sdReliableMessageClientInfoBase& target ) {
+	assert( !target.SendToAll() );
+
+	if ( target.SendToClients() ) {
+		idPlayer* player = GetClient( target.GetClientNum() );
+		if ( player == NULL ) {
+			Error( "idGameLocal::ServerWriteInitialReliableMessages Client '%d' was NULL", target.GetClientNum() );
+		}
 	}
+
+	SendPauseInfo( target );
 
 	for ( int i = 0; i < targetTimers.Num(); i++ ) {
 		sdReliableServerMessage outMsg( GAME_RELIABLE_SMESSAGE_CREATEPLAYERTARGETTIMER );
 		outMsg.WriteString( targetTimers[ i ].name );
 		outMsg.WriteShort( i );
-		outMsg.Send( clientNum );
+		outMsg.Send( target );
 	}
 
 	int count = 0;
@@ -763,11 +888,11 @@ void idGameLocal::ServerWriteInitialReliableMessages( int clientNum ) {
 		entMsg.WriteLong( use );
 
 		for ( int j = 0; j < use; j++ ) {
-			ent->WriteCreateEvent( &entMsg, clientNum );
+			ent->WriteCreateEvent( &entMsg, target );
 			ent = ent->networkNode.Next();
 		}
 
-		entMsg.Send( clientNum );
+		entMsg.Send( target );
 
 		totalBits += entMsg.GetNumBitsWritten();
 		count -= use;
@@ -780,12 +905,13 @@ void idGameLocal::ServerWriteInitialReliableMessages( int clientNum ) {
 
 
 	// send all saved events
-	count = 0;
 	totalCount = 0;
 	batchCount = 0;
 
 	sdEntityNetEvent* start = savedEntityNetEventQueue.Next();
 	while ( start != NULL ) {
+		count = 0;
+
 		const int maxEventSizeTotal = MAX_GAME_MESSAGE_SIZE - 16;
 
 		sdEntityNetEvent* last = start;
@@ -818,7 +944,7 @@ void idGameLocal::ServerWriteInitialReliableMessages( int clientNum ) {
 			start = start->GetNode().Next();
 		}
 
-		evtMsg.Send( clientNum );
+		evtMsg.Send( target );
 
 		totalBits += evtMsg.GetNumBitsWritten();
 	}
@@ -830,27 +956,22 @@ void idGameLocal::ServerWriteInitialReliableMessages( int clientNum ) {
 
 
 	for ( idEntity* ent = networkedEntities.Next(); ent; ent = ent->networkNode.Next() ) {
-		ent->WriteInitialReliableMessages( clientNum );
+		ent->WriteInitialReliableMessages( target );
 	}
 
 	for ( int i = 0; i < NUM_DEPLOY_REQUESTS; i++ ) {
 		if ( !deployRequests[ i ] ) {
 			continue;
 		}
-		deployRequests[ i ]->WriteCreateEvent( i, clientNum );
+		deployRequests[ i ]->WriteCreateEvent( i, target );
 	}
 
-	sdTaskManager::GetInstance().WriteInitialReliableMessages( clientNum );
-	sdFireTeamManager::GetInstance().WriteInitialReliableMessages( clientNum );
-	sdObjectiveManager::GetInstance().WriteInitialReliableMessages( clientNum );
-	sdUserGroupManager::GetInstance().WriteNetworkData( clientNum );
+	sdTaskManager::GetInstance().WriteInitialReliableMessages( target );
+	sdFireTeamManager::GetInstance().WriteInitialReliableMessages( target );
+	sdObjectiveManager::GetInstance().WriteInitialReliableMessages( target );
+	sdUserGroupManager::GetInstance().WriteNetworkData( target );
 
-	SendEndGameStats( clientNum );
-
-	player = GetClient( clientNum );
-	if ( player == NULL ) {
-		Warning( "idGameLocal::ServerWriteInitialReliableMessages Client Did Not Survive Initial Reliable Messages" );
-	}
+	SendEndGameStats( target );
 }
 
 /*
@@ -859,6 +980,10 @@ idGameLocal::ClientWriteGameState
 ================
 */
 void idGameLocal::ClientWriteGameState( idFile* file ) {
+	file->WriteBool( isPaused );
+	file->WriteInt( time );
+	file->WriteInt( timeOffset );
+
 	assert( rules != NULL );
 	file->WriteInt( rules->GetType()->typeNum );
 
@@ -909,6 +1034,10 @@ idGameLocal::ClientReadGameState
 ================
 */
 void idGameLocal::ClientReadGameState( idFile* file ) {
+	file->ReadBool( isPaused );
+	file->ReadInt( time );
+	file->ReadInt( timeOffset );
+
 	int rulesTypeNum;
 	file->ReadInt( rulesTypeNum );
 	SetRules( idClass::GetType( rulesTypeNum ) );
@@ -1015,10 +1144,10 @@ void idGameLocal::FreeEntityNetworkEvents( const idEntity *ent, int eventId ) {
 idGameLocal::SaveEntityNetworkEvent
 ================
 */
-void idGameLocal::SaveEntityNetworkEvent( const idEntity *ent, int eventId, const idBitMsg *msg ) {
+void idGameLocal::SaveEntityNetworkEvent( const sdEntityNetEvent& oldEvent ) {
 	sdEntityNetEvent* event;
 	event = entityNetEventAllocator.Alloc();
-	event->Create( ent, eventId, msg );
+	event->Create( oldEvent );
 	event->GetNode().AddToEnd( savedEntityNetEventQueue );
 }
 
@@ -1030,7 +1159,20 @@ idGameLocal::SendUnreliableEntityNetworkEvent
 void idGameLocal::SendUnreliableEntityNetworkEvent( const idEntity *ent, int eventId, const idBitMsg *msg ) {
 	sdUnreliableEntityNetEvent* event;
 	event = unreliableEntityNetEventAllocator.Alloc();
-	event->Create( ent, eventId, msg );
+	event->Create( ent, eventId, false, msg );
+	event->ClearSent();
+	event->GetUnreliableNode().AddToEnd( unreliableEntityNetEventQueue );
+}
+
+/*
+================
+idGameLocal::SendUnreliableEntityNetworkEvent
+================
+*/
+void idGameLocal::SendUnreliableEntityNetworkEvent( const sdUnreliableEntityNetEvent& oldEvent ) {
+	sdUnreliableEntityNetEvent* event;
+	event = unreliableEntityNetEventAllocator.Alloc();
+	event->Create( oldEvent );
 	event->ClearSent();
 	event->GetUnreliableNode().AddToEnd( unreliableEntityNetEventQueue );
 }
@@ -1040,7 +1182,7 @@ void idGameLocal::SendUnreliableEntityNetworkEvent( const idEntity *ent, int eve
 idGameLocal::WriteUnreliableEntityEvents
 ================
 */
-void idGameLocal::WriteUnreliableEntityNetEvents( int clientNum, idBitMsg &msg ) {
+void idGameLocal::WriteUnreliableEntityNetEvents( int clientNum, bool repeaterClient, idBitMsg &msg ) {
 	// write unreliable entity network events to the snapshot
 	// first count them up
 	int numEvents = 0;
@@ -1049,8 +1191,17 @@ void idGameLocal::WriteUnreliableEntityNetEvents( int clientNum, idBitMsg &msg )
 	for ( event = unreliableEntityNetEventQueue.Next(); event != NULL; event = nextEvent ) {
 		nextEvent = event->GetUnreliableNode().Next();
 
-		if ( !event->GetSent( clientNum ) ) {
-			numEvents++;
+#ifdef SD_SUPPORT_REPEATER
+		if ( repeaterClient ) {
+			if ( !event->GetRepeaterSent( clientNum ) ) {
+				numEvents++;
+			}
+		} else
+#endif // SD_SUPPORT_REPEATER
+		{
+			if ( !event->GetSent( clientNum ) ) {
+				numEvents++;
+			}
 		}
 	}
 
@@ -1059,9 +1210,19 @@ void idGameLocal::WriteUnreliableEntityNetEvents( int clientNum, idBitMsg &msg )
 	for ( event = unreliableEntityNetEventQueue.Next(); event != NULL; event = nextEvent ) {
 		nextEvent = event->GetUnreliableNode().Next();
 
-		if ( !event->GetSent( clientNum ) ) {
-			event->Write( msg );
-			event->SetSent( clientNum );
+#ifdef SD_SUPPORT_REPEATER
+		if ( repeaterClient ) {
+			if ( !event->GetRepeaterSent( clientNum ) ) {
+				event->Write( msg );
+				event->SetRepeaterSent( clientNum );
+			}
+		} else
+#endif // SD_SUPPORT_REPEATER
+		{
+			if ( !event->GetSent( clientNum ) ) {
+				event->Write( msg );
+				event->SetSent( clientNum );
+			}
 		}
 
 		// check if the event has expired
@@ -1128,10 +1289,8 @@ void idGameLocal::FreeSnapshotsOlderThanSequence( clientNetworkInfo_t& nwInfo, i
 idGameLocal::ApplySnapshot
 ================
 */
-bool idGameLocal::ApplySnapshot( int clientNum, int sequence ) {
+bool idGameLocal::ApplySnapshot( clientNetworkInfo_t& nwInfo, int sequence ) {
 	snapshot_t *snapshot, *lastSnapshot, *nextSnapshot;
-
-	clientNetworkInfo_t& nwInfo = GetNetworkInfo( clientNum );
 
 	FreeSnapshotsOlderThanSequence( nwInfo, sequence );
 
@@ -1205,54 +1364,41 @@ bool idGameLocal::ApplySnapshot( int clientNum, int sequence ) {
 /*
 ================
 idGameLocal::ServerWriteSnapshot
-
-  Write a snapshot of the current game state for the given client.
 ================
 */
-void idGameLocal::ServerWriteSnapshot( int clientNum, int sequence, idBitMsg &msg, idBitMsg &ucmdmsg, float *elapsed ) {
-	int oldBitsMain = msg.GetNumBitsWritten();
-	if ( g_debugNetworkWrite.GetBool() ) {
-		gameLocal.LogNetwork( va( "Writing Network State for client %d\n\n", clientNum ) );
-	}
-
-	SetSnapShotClient( NULL );
-	SetSnapShotPlayer( NULL );
-	if ( clientNum != ASYNC_DEMO_CLIENT_INDEX ) {
-		idPlayer* player = GetClient( clientNum );
-		if ( !player ) {
-			return;
-		}		
-		SetSnapShotClient( player );
-		SetSnapShotPlayer( player->GetSpectateClient() );
-
-		aorManager.SetClient( snapShotPlayer );
-	}
-
-	clientNetworkInfo_t&	nwInfo = GetNetworkInfo( clientNum );
-
-	// free too old snapshots
-	FreeSnapshotsOlderThanSequence( nwInfo, sequence - 64 );
-
+snapshot_t* idGameLocal::AllocateSnapshot( int sequence, clientNetworkInfo_t& nwInfo ) {
 	// allocate new snapshot
 	snapshot_t* snapshot = snapshotAllocator.Alloc();
-	snapshot->Init( sequence, gameLocal.time );
+	snapshot->Init( sequence, time );
 	snapshot->next = nwInfo.snapshots;
 	nwInfo.snapshots = snapshot;
-
 	activeSnapshot = snapshot;
-	
-//	ASYNC_SECURITY_WRITE( msg )
-	WriteGameState( ENSM_TEAM, snapshot, clientNum, msg );
-//	ASYNC_SECURITY_WRITE( msg )
-
-//	ASYNC_SECURITY_WRITE( msg )
-	WriteGameState( ENSM_RULES, snapshot, clientNum, msg );
-//	ASYNC_SECURITY_WRITE( msg )
-
-	bool useAOR = net_useAOR.GetBool() && ( clientNum != ASYNC_DEMO_CLIENT_INDEX );
-
 	snapshot->visibleEntities.SetNum( 0, false );
+	snapshot->clientUserCommands.Clear();
+	return snapshot;
+}
 
+/*
+================
+idGameLocal::WriteSnapshotGameStates
+================
+*/
+void idGameLocal::WriteSnapshotGameStates( snapshot_t* snapshot, clientNetworkInfo_t& nwInfo, idBitMsg& msg ) {
+//	ASYNC_SECURITY_WRITE( msg )
+	WriteGameState( ENSM_TEAM, snapshot, nwInfo, msg );
+//	ASYNC_SECURITY_WRITE( msg )
+
+//	ASYNC_SECURITY_WRITE( msg )
+	WriteGameState( ENSM_RULES, snapshot, nwInfo, msg );
+//	ASYNC_SECURITY_WRITE( msg )
+}
+
+/*
+================
+idGameLocal::WriteSnapshotEntityStates
+================
+*/
+void idGameLocal::WriteSnapshotEntityStates( snapshot_t* snapshot, clientNetworkInfo_t& nwInfo, int clientNum, idBitMsg& msg, bool useAOR ) {
 	idStaticList< idEntity*, MAX_GENTITIES > visibleEntities;
 	idStaticList< idEntity*, MAX_GENTITIES > broadcastEntities;
 
@@ -1351,14 +1497,18 @@ void idGameLocal::ServerWriteSnapshot( int clientNum, int sequence, idBitMsg &ms
 		snapshot->firstEntityState[ NSM_BROADCAST ] = newState;
 	}
 	msg.WriteBits( ENTITYNUM_NONE, GENTITYNUM_BITS );
+}
 
-	WriteUnreliableEntityNetEvents( clientNum, msg );
-
+/*
+================
+idGameLocal::WriteSnapshotUserCmds
+================
+*/
+void idGameLocal::WriteSnapshotUserCmds( snapshot_t* snapshot, idBitMsg& msg, int ignoreClientNum, bool useAOR ) {
 	// write the latest user commands from the other clients in the PVS to the snapshot
 	// written to a seperate idBitMsg, which uses a different compression strategy
-	snapshot->clientUserCommands.Clear();
 	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
-		if ( i == clientNum ) {
+		if ( i == ignoreClientNum ) {
 			continue;
 		}
 
@@ -1379,17 +1529,61 @@ void idGameLocal::ServerWriteSnapshot( int clientNum, int sequence, idBitMsg &ms
 			}
 		}
 
-		ucmdmsg.WriteBits( i, CLIENTBITS );
-		networkSystem->WriteClientUserCmds( i, ucmdmsg );
+		msg.WriteBits( i, CLIENTBITS );
+		networkSystem->WriteClientUserCmds( i, msg );
 
 		// record that this client had its user command's sent with this snapshot
 		snapshot->clientUserCommands.Set( i );
-		sdAntiLagManager::GetInstance().CreateUserCommandBranch( otherPlayer );
+		if ( !IsPaused() ) {
+			sdAntiLagManager::GetInstance().CreateUserCommandBranch( otherPlayer );
+		}
 	}
-	ucmdmsg.WriteBits( MAX_CLIENTS, CLIENTBITS );
+	msg.WriteBits( MAX_CLIENTS, CLIENTBITS );
+}
 
-	*elapsed = 0.f;
+/*
+================
+idGameLocal::ServerWriteSnapshot
 
+  Write a snapshot of the current game state for the given client.
+================
+*/
+void idGameLocal::ServerWriteSnapshot( int clientNum, int sequence, idBitMsg &msg, idBitMsg &ucmdmsg ) {
+	int oldBitsMain = msg.GetNumBitsWritten();
+	if ( g_debugNetworkWrite.GetBool() ) {
+		gameLocal.LogNetwork( va( "Writing Network State for client %d\n\n", clientNum ) );
+	}
+
+	bool useAOR = net_useAOR.GetBool();
+
+	snapShotClientIsRepeater = false; // Gordon: Main server will never have repeaters connected to it
+	SetSnapShotClient( NULL );
+	SetSnapShotPlayer( NULL );
+	if ( clientNum != ASYNC_DEMO_CLIENT_INDEX ) {
+		idPlayer* player = GetClient( clientNum );
+		if ( !player ) {
+			return;
+		}		
+		SetSnapShotClient( player );
+		SetSnapShotPlayer( player->GetSpectateClient() );
+
+		aorManager.SetClient( snapShotPlayer );
+	} else {
+		useAOR = false;
+	}
+
+	clientNetworkInfo_t&	nwInfo = GetNetworkInfo( clientNum );
+
+	// free too old snapshots
+	FreeSnapshotsOlderThanSequence( nwInfo, sequence - 64 );
+
+	snapshot_t* snapshot = AllocateSnapshot( sequence, nwInfo );
+	WriteSnapshotGameStates( snapshot, nwInfo, msg );
+	WriteSnapshotEntityStates( snapshot, nwInfo, clientNum, msg, useAOR );
+	WriteUnreliableEntityNetEvents( clientNum, false, msg );
+	WriteSnapshotUserCmds( snapshot, ucmdmsg, clientNum, useAOR );
+
+	snapShotClientIsRepeater = false;
 	SetSnapShotClient( NULL );
 	SetSnapShotPlayer( NULL );
 
@@ -1405,7 +1599,7 @@ idGameLocal::ServerApplySnapshot
 ================
 */
 bool idGameLocal::ServerApplySnapshot( int clientNum, int sequence ) {
-	return ApplySnapshot( clientNum, sequence );
+	return ApplySnapshot( GetNetworkInfo( clientNum ), sequence );
 }
 
 /*
@@ -1753,6 +1947,12 @@ void idGameLocal::ServerProcessReliableMessage( int clientNum, const idBitMsg &m
 			sdAntiLagManager::GetInstance().OnNetworkEvent( clientNum, msg );
 			break;
 		}
+		case GAME_RELIABLE_CMESSAGE_ACKNOWLEDGEBANLIST: {
+			if ( clientLastBanIndexReceived[ clientNum ] != -1 ) {
+				SendBanList( client );
+			}
+			break;
+		}
 		default: {
 			Warning( "Unknown client->server reliable message: %d", id );
 			break;
@@ -1787,6 +1987,8 @@ idGameLocal::ClientShowSnapshot
 void idGameLocal::ClientShowSnapshot( int clientNum ) const {
 }
 
+
+// Gordon: FIXME: This is a maintenance nightmare
 /*
 ================
 idGameLocal::ResetGameState
@@ -1799,12 +2001,25 @@ void idGameLocal::ResetGameState( extNetworkStateMode_t mode ) {
 		FreeGameState( clientNetworkInfo[ i ].gameStates[ mode ] );
 	}
 	FreeGameState( demoClientNetworkInfo.gameStates[ mode ] );
+#ifdef SD_SUPPORT_REPEATER
+	FreeGameState( repeaterClientNetworkInfo.gameStates[ mode ] );
+	for ( int i = 0; i < repeaterNetworkInfo.Num(); i++ ) {
+		if ( repeaterNetworkInfo[ i ] == NULL ) {
+			continue;
+		}
+		FreeGameState( repeaterNetworkInfo[ i ]->gameStates[ mode ] );
+	}
+#endif // SD_SUPPORT_REPEATER
 
 	while ( object.freeStates ) {
 		sdGameState* nextState = object.freeStates->next;
 		FreeGameState( object.freeStates );
 		object.freeStates = nextState;
 	}
+
+
+
+
 
 	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
 		sdGameState* newState = AllocGameState( object );
@@ -1819,6 +2034,25 @@ void idGameLocal::ResetGameState( extNetworkStateMode_t mode ) {
 		newState->data->MakeDefault();
 	}
 	demoClientNetworkInfo.gameStates[ mode ] = newState;	
+
+#ifdef SD_SUPPORT_REPEATER
+	newState = AllocGameState( object );
+	if ( newState->data ) {
+		newState->data->MakeDefault();
+	}
+	repeaterClientNetworkInfo.gameStates[ mode ] = newState;	
+
+	for ( int i = 0; i < repeaterNetworkInfo.Num(); i++ ) {
+		if ( repeaterNetworkInfo[ i ] == NULL ) {
+			continue;
+		}
+		sdGameState* newState = AllocGameState( object );
+		if ( newState->data ) {
+			newState->data->MakeDefault();
+		}
+		( *repeaterNetworkInfo[ i ] ).gameStates[ mode ] = newState;
+	}
+#endif // SD_SUPPORT_REPEATER
 }
 
 /*
@@ -1844,8 +2078,8 @@ sdNetworkStateObject& idGameLocal::GetGameStateObject( extNetworkStateMode_t mod
 idGameLocal::WriteGameState
 ================
 */
-void idGameLocal::WriteGameState( extNetworkStateMode_t mode, snapshot_t* snapshot, int clientNum, idBitMsg& msg ) {
-	sdGameState* baseState = GetNetworkInfo( clientNum ).gameStates[ mode ];
+void idGameLocal::WriteGameState( extNetworkStateMode_t mode, snapshot_t* snapshot, clientNetworkInfo_t& nwInfo, idBitMsg& msg ) {
+	sdGameState* baseState = nwInfo.gameStates[ mode ];
 
 	const sdNetworkStateObject& object = GetGameStateObject( mode );
 	if ( !object.CheckNetworkStateChanges( *baseState->data ) ) {
@@ -1952,6 +2186,8 @@ bool idGameLocal::ClientReadSnapshot( int sequence, const int gameFrame, const i
 	snapshot_t*				snapshot;
 	clientNetworkInfo_t&	nwInfo = GetNetworkInfo( localClientNum );
 
+	g_trainingMode.SetBool( false );
+
 	sdPhysicsEvent* physicsEvent;
 	sdPhysicsEvent* nextPhysicsEvent;
 	for ( physicsEvent = physicsEvents.Next(); physicsEvent; physicsEvent = nextPhysicsEvent ) {
@@ -2007,8 +2243,13 @@ bool idGameLocal::ClientReadSnapshot( int sequence, const int gameFrame, const i
 
 	// update the game time
 	framenum = gameFrame;
-	time = gameTime;
-	previousTime = time - msec;
+	if ( !IsPaused() ) {
+		time = gameTime - timeOffset;
+		previousTime = time - networkSystem->ClientGetFrameTime();
+	} else {
+		timeOffset = gameTime - time;
+		previousTime = time;
+	}
 	isNewFrame = true;
 	predictionUpdateRequired = true;
 
@@ -2023,6 +2264,11 @@ bool idGameLocal::ClientReadSnapshot( int sequence, const int gameFrame, const i
 	nwInfo.snapshots = snapshot;
 
 	activeSnapshot = snapshot;
+
+	int followPlayer = 0;
+	if ( serverIsRepeater ) {
+		followPlayer = msg.ReadByte() - 1;
+	}
 
 //	ASYNC_SECURITY_READ( msg )
 	ReadGameState( ENSM_TEAM, snapshot, msg );
@@ -2039,13 +2285,18 @@ bool idGameLocal::ClientReadSnapshot( int sequence, const int gameFrame, const i
 	// process entity events
 	ClientProcessEntityNetworkEventQueue();
 
-	idPlayer* localPlayer = GetLocalPlayer();
-	if ( localPlayer ) {
-		SetSnapShotClient( localPlayer );
-		SetSnapShotPlayer( localPlayer->GetSpectateClient() );
-	} else {
+	if ( serverIsRepeater ) {
 		SetSnapShotClient( NULL );
-		SetSnapShotPlayer( NULL );
+		SetSnapShotPlayer( followPlayer == -1 ? NULL : GetClient( followPlayer ) );
+	} else {
+		idPlayer* localPlayer = GetLocalPlayer();
+		if ( localPlayer ) {
+			SetSnapShotClient( localPlayer );
+			SetSnapShotPlayer( localPlayer->GetSpectateClient() );
+		} else {
+			SetSnapShotClient( NULL );
+			SetSnapShotPlayer( NULL );
+		}
 	}
 
 	// read visible states
@@ -2127,6 +2378,10 @@ bool idGameLocal::ClientReadSnapshot( int sequence, const int gameFrame, const i
 		sdUnreliableEntityNetEvent* event = unreliableEntityNetEventAllocator.Alloc();
 		event->GetUnreliableNode().AddToEnd( unreliableEntityNetEventQueue );
 		event->Read( msg );
+
+		if ( gameLocal.isRepeater ) {
+			gameLocal.SendUnreliableEntityNetworkEvent( *event );
+		}
 	}
 
 	// read user commands
@@ -2166,6 +2421,12 @@ bool idGameLocal::SetupClientAoR( void ) {
 		return true;
 	}
 
+	if ( serverIsRepeater ) {
+		playerView.CalculateRepeaterView( view );
+		aorManager.SetPosition( view.vieworg );
+		return true;
+	}
+
 	return false;
 }
 
@@ -2175,7 +2436,7 @@ idGameLocal::ClientApplySnapshot
 ================
 */
 bool idGameLocal::ClientApplySnapshot( int sequence ) {
-	return ApplySnapshot( localClientNum, sequence );
+	return ApplySnapshot( GetNetworkInfo( localClientNum ), sequence );
 }
 
 /*
@@ -2488,6 +2749,13 @@ void idGameLocal::ClientProcessEntityNetworkEventQueue( void ) {
 		if( !entity ) {
 			NetworkEventWarning( *event, "unknown entity" );
 		} else {
+			if ( gameLocal.isRepeater ) { // Gordon: Save any off that we need to send to clients which connect later
+				gameLocal.FreeEntityNetworkEvents( entity, event->GetEvent() );
+				if ( event->ShouldSaveEvent() ) {
+					gameLocal.SaveEntityNetworkEvent( *event );
+				}
+			}
+
 			idBitMsg eventMsg;
 			event->OutputParms( eventMsg );
 
@@ -2590,6 +2858,16 @@ void idGameLocal::CreateNetworkState( int entityNum ) {
 		}
 		CreateNetworkState( demoClientNetworkInfo, entityNum );
 	}
+
+#ifdef SD_SUPPORT_REPEATER
+	for ( int i = 0; i < repeaterNetworkInfo.Num(); i++ ) {
+		if ( repeaterNetworkInfo[ i ] == NULL ) {
+			continue;
+		}
+
+		CreateNetworkState( *repeaterNetworkInfo[ i ], entityNum );
+	}
+#endif // SD_SUPPORT_REPEATER
 }
 
 /*
@@ -2629,6 +2907,16 @@ void idGameLocal::FreeNetworkState( int entityNum ) {
 		}
 		FreeNetworkState( demoClientNetworkInfo, entityNum );
 	}
+
+#ifdef SD_SUPPORT_REPEATER
+	for ( int i = 0; i < repeaterNetworkInfo.Num(); i++ ) {
+		if ( repeaterNetworkInfo[ i ] == NULL ) {
+			continue;
+		}
+
+		FreeNetworkState( *repeaterNetworkInfo[ i ], entityNum );
+	}
+#endif // SD_SUPPORT_REPEATER
 }
 
 /*
@@ -2698,9 +2986,7 @@ void idGameLocal::ClientSpawn( int entityNum, int spawnId, int typeNum, int enti
 idGameLocal::SetupGameStateBase
 ================
 */
-void idGameLocal::SetupGameStateBase( int clientNum ) {
-	clientNetworkInfo_t& networkInfo = GetNetworkInfo( clientNum );
-
+void idGameLocal::SetupGameStateBase( clientNetworkInfo_t& networkInfo ) {
 	for ( int i = 0; i < ENSM_NUM_MODES; i++ ) {
 		FreeGameState( networkInfo.gameStates[ i ] );
 
@@ -2718,9 +3004,7 @@ void idGameLocal::SetupGameStateBase( int clientNum ) {
 idGameLocal::SetupEntityStateBase
 ================
 */
-void idGameLocal::SetupEntityStateBase( int clientNum ) {
-	clientNetworkInfo_t& networkInfo = GetNetworkInfo( clientNum );
-
+void idGameLocal::SetupEntityStateBase( clientNetworkInfo_t& networkInfo ) {
 	idEntity* ent;
 	for ( ent = networkedEntities.Next(); ent; ent = ent->networkNode.Next() ) {
 		for ( int i = 0; i < NSM_NUM_MODES; i++ ) {
@@ -2768,8 +3052,23 @@ void idGameLocal::OnEntityCreateMessage( const idBitMsg& msg ) {
 			break;
 	}
 
+	if ( entities[ entityNum ] == NULL ) {
+		Error( "idGameLocal::OnEntityCreateMessage Failed To Create Entity" );
+		return;
+	}
 	entities[ entityNum ]->networkNode.AddToEnd( networkedEntities );
 	CreateNetworkState( entityNum );
+}
+
+/*
+================
+idGameLocal::HandleNewEntityEvent
+================
+*/
+void idGameLocal::HandleNewEntityEvent( const idBitMsg &msg ) {
+	sdEntityNetEvent* event = entityNetEventAllocator.Alloc();
+	event->GetNode().AddToEnd( entityNetEventQueue );
+	event->Read( msg );
 }
 
 /*
@@ -2777,7 +3076,7 @@ void idGameLocal::OnEntityCreateMessage( const idBitMsg& msg ) {
 idGameLocal::ClientProcessReliableMessage
 ================
 */
-void idGameLocal::ClientProcessReliableMessage( const idBitMsg &msg, bool ) {
+void idGameLocal::ClientProcessReliableMessage( const idBitMsg &msg ) {
 	gameLocal.isNewFrame = true;
 
 	idPlayer* localPlayer = GetLocalPlayer();
@@ -2843,16 +3142,12 @@ void idGameLocal::ClientProcessReliableMessage( const idBitMsg &msg, bool ) {
 		case GAME_RELIABLE_SMESSAGE_MULTI_ENTITY_EVENT: {
 			int count = msg.ReadLong();
 			for ( int i = 0; i < count; i++ ) {
-				sdEntityNetEvent* event = entityNetEventAllocator.Alloc();
-				event->GetNode().AddToEnd( entityNetEventQueue );
-				event->Read( msg );
+				HandleNewEntityEvent( msg );
 			}
 			break;
 		}
 		case GAME_RELIABLE_SMESSAGE_ENTITY_EVENT: {
-			sdEntityNetEvent* event = entityNetEventAllocator.Alloc();
-			event->GetNode().AddToEnd( entityNetEventQueue );
-			event->Read( msg );
+			HandleNewEntityEvent( msg );
 			break;
 		}
 		case GAME_RELIABLE_SMESSAGE_TOOLTIP: {
@@ -3052,6 +3347,10 @@ void idGameLocal::ClientProcessReliableMessage( const idBitMsg &msg, bool ) {
 				endGameStats[ i ].name = buffer;
 
 				endGameStats[ i ].value = msg.ReadFloat();
+				float localValue = msg.ReadFloat();
+				if ( localClientNum >= 0 && localClientNum < MAX_CLIENTS ) {
+					endGameStats[ i ].data[ localClientNum ] = localValue;
+				}
 			}
 
 			OnEndGameStatsReceived();
@@ -3072,7 +3371,41 @@ void idGameLocal::ClientProcessReliableMessage( const idBitMsg &msg, bool ) {
 			OnLocalMapRestart();
 			break;
 		}
+		case GAME_RELIABLE_SMESSAGE_PAUSEINFO: {
+			bool paused = msg.ReadBool();
+			int newTime = msg.ReadLong();
+			int newTimeOffset = msg.ReadLong();
 
+			isPaused = paused;
+			time = newTime;
+			timeOffset = newTimeOffset;
+			break;
+		}
+#ifdef SD_SUPPORT_REPEATER
+		case GAME_RELIABLE_SMESSAGE_REPEATER_CHAT: {
+			char playerName[ 128 ];
+			msg.ReadString( playerName, sizeof( playerName ) );
+
+			int clientIndex = msg.ReadLong();
+
+			wchar_t textBuffer[ 128 ];
+			msg.ReadString( textBuffer, sizeof( textBuffer ) / sizeof( textBuffer[ 0 ] ) );
+
+			rules->AddRepeaterChatLine( playerName, clientIndex, textBuffer );
+
+			break;
+		}
+#endif // SD_SUPPORT_REPEATER
+		case GAME_RELIABLE_SMESSAGE_BANLISTMESSAGE: {
+			sdReliableClientMessage outMsg( GAME_RELIABLE_CMESSAGE_ACKNOWLEDGEBANLIST );
+			outMsg.Send();
+
+			guidFile.ListBans( msg );
+			break;
+		}
+		case GAME_RELIABLE_SMESSAGE_BANLISTFINISHED: {
+			break;
+		}
 		default: {
 			Warning( "idGameLocal::ClientProcessReliableMessage: Unknown reliable message: %d", id );
 			break;
@@ -3105,6 +3438,10 @@ void idGameLocal::OnClientDisconnected( void ) {
 	isClient = false;
 	realClientTime = 0;
 	time = 0;
+
+	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+		GetProficiencyTable( i ).Clear( true );
+	}
 }
 
 /*
@@ -3133,32 +3470,30 @@ void idGameLocal::ClientPrediction( const usercmd_t* clientCmds, const usercmd_t
 		gameRenderWorld->DebugClearLines( 0 );
 	}
 
-	// update frame step
-	msec = networkSystem->ClientGetFrameTime();
-
-	UpdateDeploymentRequests();
-
-	// check for local client lag
-	if ( player ) {
-		player->SetLagged( networkSystem->ClientGetTimeSinceLastPacket() >= net_clientMaxPrediction.GetInteger() );
+	if ( serverIsRepeater && demoCmd != NULL ) {
+		playerView.SetRepeaterUserCmd( *demoCmd );
 	}
 
-	// update the game time
 	framenum++;
-	previousTime = time;
-	time += msec;
 
-	gameRenderWorld->DebugClearLines( time );
-	gameRenderWorld->DebugClearPolygons( time );
+	int frameTime = networkSystem->ClientGetFrameTime();
 
-#ifdef CLIP_DEBUG_EXTREME
-	clip.UpdateTraceLogging();
-#endif
-	sdProfileHelperManager::GetInstance().Update();
+	if ( IsPaused() ) {
+		msec = 0;
+		previousTime = time;
+		time += 0;
+		timeOffset += frameTime;
+	} else {
+		msec = frameTime;
+		previousTime = time;
+		time += frameTime;
+		timeOffset += 0;
+	}
 
+	int now = gameLocal.ToGuiTime( time );
 	// update the real client time and the new frame flag
-	if ( time > realClientTime ) {
-		realClientTime = time;
+	if ( now > realClientTime ) {
+		realClientTime = now;
 		isNewFrame = true;
 
 		if ( predictionUpdateRequired ) {
@@ -3171,6 +3506,21 @@ void idGameLocal::ClientPrediction( const usercmd_t* clientCmds, const usercmd_t
 		isNewFrame = false;
 	}
 
+	UpdateDeploymentRequests();
+
+	// check for local client lag
+	if ( player ) {
+		player->SetLagged( networkSystem->ClientGetTimeSinceLastPacket() >= net_clientMaxPrediction.GetInteger() );
+	}
+
+	gameRenderWorld->DebugClearLines( time );
+	gameRenderWorld->DebugClearPolygons( time );
+
+#ifdef CLIP_DEBUG_EXTREME
+	clip.UpdateTraceLogging();
+#endif
+	sdProfileHelperManager::GetInstance().Update();
+
 	if ( isNewFrame ) {
 		bse->StartFrame();
 	}
@@ -3179,129 +3529,143 @@ void idGameLocal::ClientPrediction( const usercmd_t* clientCmds, const usercmd_t
 	memcpy( usercmds, clientCmds, numClients * sizeof( usercmds[ 0 ] ) );
 
 	// update demo state
-	demoManager.RunDemoFrame( localClientNum, demoCmd );
+	demoManager.RunDemoFrame( demoCmd );
 
-	sdPhysicsEvent* physicsEvent;
-	for ( physicsEvent = physicsEvents.Next(); physicsEvent; physicsEvent = physicsEvent->GetNode().Next() ) {
-		if ( physicsEvent->GetCreationTime() != time ) {
-			continue;
-		}
-		physicsEvent->Apply();
-	}
-
-	for ( int i = 0; i < changedEntities.Num(); i++ ) {
-		idEntity* ent = changedEntities[ i ];
-		if ( !ent ) {
-			continue;
+	if ( !isRepeater ) {
+		sdPhysicsEvent* physicsEvent;
+		for ( physicsEvent = physicsEvents.Next(); physicsEvent; physicsEvent = physicsEvent->GetNode().Next() ) {
+			if ( physicsEvent->GetCreationTime() != time ) {
+				continue;
+			}
+			physicsEvent->Apply();
 		}
 
-		if ( !ent->thinkFlags || ent->NoThink() ) {
-			ent->activeNode.Remove();
-			ent->activeNetworkNode.Remove();
-		} else {
-			if ( ent->IsNetSynced() ) {
-				if ( !ent->activeNetworkNode.InList() ) {
-					ent->activeNetworkNode.AddToEnd( gameLocal.activeNetworkEntities );
+		for ( int i = 0; i < changedEntities.Num(); i++ ) {
+			idEntity* ent = changedEntities[ i ];
+			if ( !ent ) {
+				continue;
+			}
+
+			if ( !ent->thinkFlags || ent->NoThink() ) {
+				ent->activeNode.Remove();
+				ent->activeNetworkNode.Remove();
+			} else {
+				if ( ent->IsNetSynced() ) {
+					if ( !ent->activeNetworkNode.InList() ) {
+						ent->activeNetworkNode.AddToEnd( gameLocal.activeNetworkEntities );
+					}
+				}
+				if ( !ent->activeNode.InList() ) {
+					ent->activeNode.AddToEnd( gameLocal.activeEntities );
 				}
 			}
-			if ( !ent->activeNode.InList() ) {
-				ent->activeNode.AddToEnd( gameLocal.activeEntities );
-			}
 		}
-	}
-	changedEntities.Clear();
+		changedEntities.Clear();
 
-	idEntity::ClearEntityCaches();
+		idEntity::ClearEntityCaches();
 
-	if ( !isNewFrame ) {
-		idEntity* nextEnt;
-		for( ent = activeNetworkEntities.Next(); ent != NULL; ent = nextEnt ) {
-			nextEnt = ent->activeNetworkNode.Next();
-			if ( ( ent->snapshotPVSFlags & PVS_DEFERRED_VISIBLE ) == 0 ) {
+		if ( !isNewFrame ) {
+			idEntity* nextEnt;
+			for( ent = activeNetworkEntities.Next(); ent != NULL; ent = nextEnt ) {
+				nextEnt = ent->activeNetworkNode.Next();
+				if ( ( ent->snapshotPVSFlags & PVS_DEFERRED_VISIBLE ) == 0 ) {
+					sdProfileHelper_ScopeTimer( "EntityThink", ent->spawnArgs.GetString( "classname" ), g_profileEntityThink.GetBool() );
+					ent->Think();
+				} else {
+					ent->UpdateVisuals();
+				}
+			}
+		} else {
+			// sort the active entity list
+			SortActiveEntityList();
+
+			idEntity* nextEnt;
+			for( ent = activeEntities.Next(); ent != NULL; ent = nextEnt ) {
 				sdProfileHelper_ScopeTimer( "EntityThink", ent->spawnArgs.GetString( "classname" ), g_profileEntityThink.GetBool() );
+				nextEnt = ent->activeNode.Next();
 				ent->Think();
-			} else {
-				ent->UpdateVisuals();
 			}
 		}
-	} else {
-		idEntity* nextEnt;
-		for( ent = activeEntities.Next(); ent != NULL; ent = nextEnt ) {
-			sdProfileHelper_ScopeTimer( "EntityThink", ent->spawnArgs.GetString( "classname" ), g_profileEntityThink.GetBool() );
-			nextEnt = ent->activeNode.Next();
-			ent->Think();
+
+		idPlayer* viewPlayer = GetLocalViewPlayer();
+		if ( viewPlayer != gameLocal.localPlayerProperties.GetActivePlayer() ) {
+			gameLocal.OnLocalViewPlayerChanged();
 		}
-
-		// sort the active entity list
-		SortActiveEntityList();
-	}
-
-	idPlayer* viewPlayer = GetLocalViewPlayer();
-	if ( viewPlayer != NULL ) {
 		playerView.UpdateProxyView( viewPlayer, false );
-	}
 
-	if ( isNewFrame || demoManager.GetState() == sdDemoManagerLocal::DS_PAUSED ) {
-		for( ent = postThinkEntities.Next(); ent; ent = ent->GetPostThinkNode()->Next() ) {
-			ent->PostThink();
+		if ( isNewFrame || demoManager.GetState() == sdDemoManagerLocal::DS_PAUSED ) {
+			for( ent = postThinkEntities.Next(); ent; ent = ent->GetPostThinkNode()->Next() ) {
+				ent->PostThink();
+			}
 		}
 	}
 
-	if ( isNewFrame ) {
-		rvClientEntity* cent;
-		for( cent = clientSpawnedEntities.Next(); cent != NULL; cent = cent->spawnNode.Next() ) {
-			cent->Think();
+	{
+		if ( isNewFrame ) {
+			rvClientEntity* cent;
+			for( cent = clientSpawnedEntities.Next(); cent != NULL; cent = cent->spawnNode.Next() ) {
+				cent->Think();
+			}
+
+			localPlayerProperties.UpdateHudModules();
+
+			// Some will remove themselves
+			sdEffect::UpdateDeadEffects();
+
+			// service any pending events
+			idEvent::ServiceEvents();
+
+			sdTeamManager::GetInstance().Think();
+			sdTaskManager::GetInstance().Think();
+			sdObjectiveManager::GetInstance().Think();
+			sdWayPointManager::GetInstance().Think();
+			sdWakeManager::GetInstance().Think();
+			sdAntiLagManager::GetInstance().Think();
+			tireTreadManager->Think();
+			footPrintManager->Think();
+			sdGlobalStatsTracker::GetInstance().UpdateStatsRequests();
+
+			if ( gameLocal.serverIsRepeater ) {
+				playerView.UpdateRepeaterView();
+			}
+
+			idPlayer* viewPlayer = GetLocalViewPlayer();
+			if ( viewPlayer != NULL ) {
+				playerView.CalculateShake( viewPlayer );
+
+				// fps unlock: record view position
+				int index = framenum & 1;
+				unlock.originlog[ index ] = viewPlayer->GetRenderView()->vieworg;
+			}
+
+			bse->EndFrame();
+
+			UpdateLoggedDecals();
+
+			// Run multiplayer game rules
+			if ( rules ) {
+				rules->Run();
+			}
+
+			// decrease deleted clip model reference counts
+			clip.ThreadDeleteClipModels();
+
+			// delete clip models without references for real
+			clip.ActuallyDeleteClipModels();
 		}
 
-		localPlayerProperties.UpdateHudModules();
+		demoManager.EndDemoFrame();
 
-		// Some will remove themselves
-		sdEffect::UpdateDeadEffects();
-
-		// service any pending events
-		idEvent::ServiceEvents();
-
-		sdTeamManager::GetInstance().Think();
-		sdTaskManager::GetInstance().Think();
-		sdObjectiveManager::GetInstance().Think();
-		sdWayPointManager::GetInstance().Think();
-		sdWakeManager::GetInstance().Think();
-		sdAntiLagManager::GetInstance().Think();
-		tireTreadManager->Think();
-		footPrintManager->Think();
-		sdGlobalStatsTracker::GetInstance().UpdateStatsRequests();
-
-		if ( viewPlayer != NULL ) {
-			playerView.CalculateShake( viewPlayer );
-
-			// fps unlock: record view position
-			int index = framenum & 1;
-			unlock.originlog[ index ] = viewPlayer->GetRenderView()->vieworg;
+		if ( isNewFrame || demoManager.GetState() == sdDemoManagerLocal::DS_PAUSED ) {
+			// show any debug info for this frame
+			RunDebugInfo();
+			D_DrawDebugLines();
 		}
-
-		bse->EndFrame();
-
-		UpdateLoggedDecals();
-
-		// Run multiplayer game rules
-		if ( rules ) {
-			rules->Run();
-		}
-
-		// decrease deleted clip model reference counts
-		clip.ThreadDeleteClipModels();
-
-		// delete clip models without references for real
-		clip.ActuallyDeleteClipModels();
 	}
 
-	demoManager.EndDemoFrame();
-
-	if ( isNewFrame || demoManager.GetState() == sdDemoManagerLocal::DS_PAUSED ) {
-		// show any debug info for this frame
-		RunDebugInfo();
-		D_DrawDebugLines();
-	}
+#ifndef _XENON
+	UpdateGameSession();
+#endif // _XENON
 }
 
 /*

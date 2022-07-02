@@ -18,6 +18,7 @@ public:
 	virtual sdProperties::sdProperty*			GetProperty( const char* name );
 	virtual sdProperties::sdProperty*			GetProperty( const char* name, sdProperties::ePropertyType type );
 	virtual sdProperties::sdPropertyHandler&	GetProperties() { return properties; }
+	virtual const char*							FindPropertyName( sdProperties::sdProperty* property, sdUserInterfaceScope*& scope ) { scope = this; return properties.NameForProperty( property ); }
 
 	virtual const char*							GetName() const { return "demoProperties"; }
 
@@ -86,7 +87,7 @@ public:
 	void								StartDemo();
 	void								EndDemo();
 
-	void								RunDemoFrame( int clientNum, const usercmd_t* demoCmd  );
+	void								RunDemoFrame( const usercmd_t* demoCmd );
 	void								EndDemoFrame();
 
 	void								SetActiveCamera( sdDemoCamera* camera );

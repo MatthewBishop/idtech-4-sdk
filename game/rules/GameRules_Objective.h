@@ -46,13 +46,15 @@ public:
 	virtual sdEntityStateNetworkData*	CreateNetworkStructure( void ) const;
 
 	virtual bool						ChangeMap( const char* mapName );
-	virtual bool						OnUserStartMap( const char* text, idStr& reason, idStr& mapName );
+	virtual userMapChangeResult_e		OnUserStartMap( const char* text, idStr& reason, idStr& mapName );
 
 	virtual const sdDeclLocStr*			GetTypeText( void ) const;
 
 	virtual int							GetGameTime( void ) const;
 
 	virtual void						UpdateClientFromServerInfo( const idDict& serverInfo, bool allowMedia );
+
+	virtual int							GetServerBrowserScore( const sdNetSession& session ) const;
 
 protected:
 	virtual void			GameState_Review( void );

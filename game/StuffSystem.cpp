@@ -45,7 +45,6 @@ void sdStuffSystem::Spawn() {
 	renderEntity.hModel = renderModelManager->FindModel( va( "stuff/%s/stuff.clust", mapdir.c_str() ) );
 	renderEntity.bounds = renderEntity.hModel->Bounds();
 	renderEntity.suppressSurfaceInViewID = MIRROR_VIEW_ID;
-	//renderEntity.maxVisDist = 4200;
 
 	BecomeActive( TH_UPDATEVISUALS );
 	Present();

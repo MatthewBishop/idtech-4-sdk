@@ -523,7 +523,7 @@ bool sdDeclGUIProperty::Parse( idLexer& src, const idToken& typeName ) {
 */
 
 
-idStrList sdDeclGUI::defines;
+idStrList sdDeclGUI::defines( 32 );
 
 /*
 ================

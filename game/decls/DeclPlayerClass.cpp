@@ -366,12 +366,12 @@ void sdDeclPlayerClass::ReadFromDict( const idDict& info ) {
 	if ( info.GetString( "stat_name", "", &text ) ) {
 		sdStatsTracker& tracker = sdGlobalStatsTracker::GetInstance();
 
-		stats.timePlayed	= tracker.GetStat( tracker.AllocStat( va( "%s_time_used", text ), "int" ) );
-		stats.deaths		= tracker.GetStat( tracker.AllocStat( va( "%s_deaths", text ), "int" ) );
-		stats.suicides		= tracker.GetStat( tracker.AllocStat( va( "%s_suicides", text ), "int" ) );
-		stats.revived		= tracker.GetStat( tracker.AllocStat( va( "%s_revived", text ), "int" ) );
-		stats.tapouts		= tracker.GetStat( tracker.AllocStat( va( "%s_tapouts", text ), "int" ) );
-		stats.respawns		= tracker.GetStat( tracker.AllocStat( va( "%s_respawns", text ), "int" ) );
+		stats.timePlayed	= tracker.GetStat( tracker.AllocStat( va( "%s_time_used", text ), sdNetStatKeyValue::SVT_INT ) );
+		stats.deaths		= tracker.GetStat( tracker.AllocStat( va( "%s_deaths", text ), sdNetStatKeyValue::SVT_INT ) );
+		stats.suicides		= tracker.GetStat( tracker.AllocStat( va( "%s_suicides", text ), sdNetStatKeyValue::SVT_INT ) );
+		stats.revived		= tracker.GetStat( tracker.AllocStat( va( "%s_revived", text ), sdNetStatKeyValue::SVT_INT ) );
+		stats.tapouts		= tracker.GetStat( tracker.AllocStat( va( "%s_tapouts", text ), sdNetStatKeyValue::SVT_INT ) );
+		stats.respawns		= tracker.GetStat( tracker.AllocStat( va( "%s_respawns", text ), sdNetStatKeyValue::SVT_INT ) );
 	}
 }
 
@@ -406,7 +406,7 @@ void sdDeclPlayerClass::FreeData( void ) {
 	stats.revived		= NULL;
 	stats.tapouts		= NULL;
 	stats.respawns		= NULL;
-	
+
 	playerClassNum      = NOCLASS;
 
 	deadBodyDef		= NULL;
@@ -484,7 +484,21 @@ bool sdDeclPlayerClass::ParseProficiency( proficiencyCategory_t& category, idPar
 			upgrade.text = declHolder.FindLocStr( token );
 
 			if ( upgrade.text->GetState() == DS_DEFAULTED ) {
-				src.Warning( "Defaulted string for proficiency" );
+				src.Warning( "Defaulted text string for proficiency" );
+			}
+
+			continue;
+		}
+
+		if( token.Icmp( "title" ) == 0 ) {
+			if( !src.ReadToken( &token ) ) {
+				return false;
+			}
+
+			upgrade.title = declHolder.FindLocStr( token );
+
+			if ( upgrade.text->GetState() == DS_DEFAULTED ) {
+				src.Warning( "Defaulted title string for proficiency" );
 			}
 
 			continue;
@@ -505,6 +519,21 @@ bool sdDeclPlayerClass::ParseProficiency( proficiencyCategory_t& category, idPar
 			}
 
 			upgrade.toolTip = gameLocal.declToolTipType[ token.c_str() ];
+			continue;
+		}
+
+		if( token.Icmp( "sound" ) == 0 ) {
+			if( !src.ExpectTokenType( TT_STRING, TT_STRING, &token ) ) {
+				return false;
+			}
+
+			// precache sounds
+			const idSoundShader* shader = gameLocal.declSoundShaderType[ token.c_str() ];
+			if ( shader == NULL ) {
+				gameLocal.Warning( "sdDeclPlayerClass: Sound shader not found '%s'", token.c_str() );
+			}
+
+			upgrade.sound = token.c_str();
 			continue;
 		}
 

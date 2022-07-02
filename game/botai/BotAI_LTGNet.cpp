@@ -35,6 +35,12 @@ bool idBotAI::Enter_LTG_FollowMate() {
 
 	ResetRandomLook();
 
+	blockingTeammateCounter = 0;
+
+	ltgMoveDir = NULL_DIR;
+
+	ltgCounter = 25 + ( botThreadData.random.RandomInt( 45 ) );  //mal: just a cute bit to make their crouching look more random
+
 	if ( ClientIsValid( ltgTarget, ltgTargetSpawnID ) ) { //mal: client disconnected/got kicked/went spec, etc.
 		const clientInfo_t& playerInfo = botWorld->clientInfo[ ltgTarget ];
 
@@ -60,7 +66,7 @@ bool idBotAI::LTG_FollowMate() {
 	int attacker;
 	float dist;
 	float maxDist = 475.0f; //mal: the furthest the bot will let you go, before he reacts.
-	float vehicleMaxDist = ( ltgType == FOLLOW_TEAMMATE_BY_REQUEST ) ? ESCORT_RANGE : 1500.0f;
+	float vehicleMaxDist = ( ltgType == FOLLOW_TEAMMATE_BY_REQUEST ) ? ( ESCORT_RANGE * 2.0f ) : 1900.0f;
 	proxyInfo_t vehicleInfo;
 	botMoveFlags_t defaultMove = SPRINT;
 	idVec3 vec;	
@@ -87,10 +93,12 @@ bool idBotAI::LTG_FollowMate() {
 		return false;
 	}
 
-	if ( playerInfo.isDisguised ) { //mal: if a covert decided to disguise himself, dont escort anymore - would give them away.
+	if ( playerInfo.isDisguised || botInfo->isDisguised ) { //mal: if a covert decided to disguise himself, dont escort anymore - would give them away. Also, don't escort if we're disguised.
 		Bot_ExitAINode();
 		return false;
 	}
+
+	int moveAwayFromClientCrossHairCounter = ( playerInfo.weapInfo.isFiringWeap ) ? 1 : 10; //mal: if our friend is shooting, move out of the way quicker!
 
 	vec = playerInfo.origin - botInfo->origin;
 	dist = vec.LengthSqr();
@@ -106,7 +114,7 @@ bool idBotAI::LTG_FollowMate() {
 	if ( playerInfo.proxyInfo.entNum != CLIENT_HAS_NO_VEHICLE && rideVehicle ) { //mal: client jumped into a vehicle/deployable - jump in if we can, or just forget them.
 		GetVehicleInfo( playerInfo.proxyInfo.entNum, vehicleInfo );
 
-		if ( !VehicleIsValid( vehicleInfo.entNum ) || vehicleInfo.flags & PERSONAL ) {
+		if ( !VehicleIsValid( vehicleInfo.entNum, false, true ) || vehicleInfo.flags & PERSONAL ) {
 			Bot_ExitAINode();
 			return false;
 		} //mal: theres no room for us on this ride, so forget following this player.
@@ -137,7 +145,7 @@ bool idBotAI::LTG_FollowMate() {
 		}
 	}
 
-	if ( ( playerInfo.posture == IS_CROUCHED || playerInfo.posture == IS_PRONE ) && playerInfo.crouchCounter > 25 ) {
+	if ( ( playerInfo.posture == IS_CROUCHED || playerInfo.posture == IS_PRONE ) && playerInfo.crouchCounter > ltgCounter ) {
 		if ( dist < Square( maxDist ) ) {
             defaultMove = CROUCH;
 		}
@@ -202,6 +210,65 @@ bool idBotAI::LTG_FollowMate() {
 	if ( blockedClient != -1 ) {
 		ltgTimer = 0;
 		Bot_MoveAwayFromClient( blockedClient );
+		ltgReached = false;
+		return true;
+	}
+
+	bool shouldAvoidTeammate = false;
+
+	if ( !playerInfo.isBot && playerInfo.weapInfo.weapon != HEALTH ) { //mal: dont avoid other bots, or medics trying to help us out.
+		shouldAvoidTeammate = true;
+	}
+
+	if ( shouldAvoidTeammate ) {
+		idVec3 dir = botInfo->origin - playerInfo.origin;
+		dir.NormalizeFast();
+		if ( dir * playerInfo.viewAxis[ 0 ] > 0.98f ) {
+			blockingTeammateCounter++;
+		} else {
+			blockingTeammateCounter = 0;
+			ltgMoveDir = NULL_DIR;
+		}
+	} else {
+		blockingTeammateCounter = 0;
+		ltgMoveDir = NULL_DIR;
+	}
+
+	if ( blockingTeammateCounter > moveAwayFromClientCrossHairCounter ) {
+		if ( ltgMoveDir == NULL_DIR ) {
+			if ( botThreadData.random.RandomInt( 100 ) > 50 ) {
+				if ( Bot_CanMove( RIGHT, 100.0f, true ) ) {
+					ltgMoveDir = RIGHT;
+				} else if ( Bot_CanMove( LEFT, 100.0f, true ) ) {
+					ltgMoveDir = LEFT;
+				} else { 
+					ltgMoveDir = BACK;
+				}
+			} else {
+				if ( Bot_CanMove( LEFT, 100.0f, true ) ) {
+					ltgMoveDir = LEFT;
+				} else if ( Bot_CanMove( RIGHT, 100.0f, true ) ) {
+					ltgMoveDir = RIGHT;
+				} else { 
+					ltgMoveDir = BACK;
+				}
+			}
+		}
+
+		botMoveTypes_t botMoveType;
+
+		if ( ltgMoveDir == RIGHT ) {
+			botMoveType = STRAFE_RIGHT;
+		} else if ( ltgMoveDir == LEFT ) {
+			botMoveType = STRAFE_LEFT;
+		} else {
+			botMoveType = BACKSTEP;
+		}
+
+		Bot_LookAtEntity( ltgTarget, SMOOTH_TURN ); //mal: look at our target for a bit when first reached.
+		Bot_MoveToGoal( vec3_zero, vec3_zero, NULLMOVEFLAG, botMoveType );
+
+		ltgTimer = 0;
 		ltgReached = false;
 		return true;
 	}
@@ -585,9 +652,9 @@ bool idBotAI::Enter_LTG_PlantGoal() {
 
 //mal: let everyone know what he wants to do
 	if ( botThreadData.botActions[ actionNum ]->GetVOChat() != NULL_CHAT ) {
-		Bot_AddDelayedChat( botNum, botThreadData.botActions[ actionNum ]->GetVOChat(), 5 );
+		Bot_AddDelayedChat( botNum, botThreadData.botActions[ actionNum ]->GetVOChat(), 3 );
 	} else {
-		Bot_AddDelayedChat( botNum, GENERIC_PLANT, 5 );
+		Bot_AddDelayedChat( botNum, GENERIC_PLANT, 3 );
 	}
 
 	lastAINode = "Plant Goal";
@@ -1574,12 +1641,19 @@ bool idBotAI::LTG_SpawnPointGoal() {
 				return true;
 			}
 			Bot_ExitAINode();
-			return false;;
+			return false;
 		}
 	} else {
 		if ( botThreadData.botActions[ actionNum ]->GetTeamOwner() == botInfo->team ) { //mal: its ours!
 			Bot_ExitAINode();
-			return false;;
+			return false;
+		}
+	}
+
+	if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO ) {
+		if ( Bot_CheckForHumanInteractingWithEntity( botThreadData.botActions[ actionNum ]->GetActionSpawnControllerEntNum() ) == true ) {
+			Bot_ExitAINode();
+			return false;
 		}
 	}
 
@@ -1911,6 +1985,7 @@ bool idBotAI::Enter_LTG_DeployableGoal() {
 	ltgTarget = Bot_GetDeployableTypeForAction( actionNum );
 
 	if ( ltgTarget == NULL_DEPLOYABLE ) {
+		Bot_IgnoreAction( actionNum, ACTION_IGNORE_TIME );
 		Bot_ExitAINode();
 		return false;
 	}
@@ -2046,6 +2121,13 @@ bool idBotAI::LTG_DestroyDeployable() {
 		return false;
 	}
 
+	if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO ) {
+		if ( Bot_CheckForHumanInteractingWithEntity( deployableInfo.entNum ) == true ) {
+			Bot_ExitAINode();
+			return false;
+		}
+	}
+
 	if ( ClientHasFireSupportInWorld( botNum ) ) { //mal: fire and forget if firesupport on its way.
 		Bot_ExitAINode();
 		Bot_IgnoreDeployable( deployableInfo.entNum, 15000 );
@@ -2178,7 +2260,7 @@ bool idBotAI::LTG_DestroyDeployable() {
 			botUcmd->botCmds.constantFire = true;
 			return true;
 		}
-	} else if ( botInfo->weapInfo.weapon == NADE || botInfo->weapInfo.weapon == EMP ) {
+	} else if ( botInfo->weapInfo.weapon == GRENADE || botInfo->weapInfo.weapon == EMP ) {
 		bool fastNade = true;
 
 		if ( dist > Square( GRENADE_THROW_MAXDIST ) ) {

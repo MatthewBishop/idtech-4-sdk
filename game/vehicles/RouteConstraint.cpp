@@ -221,6 +221,7 @@ void sdRouteConstraintController::Update( sdRouteConstraintTracker* tracker ) {
 		} else if ( tracker->GetCurrentPoint() != newPoint ) {
 			bool warning = false;
 			bool kickPlayer = false;
+			int kickDistance = maxPointDeviance;
 
 			const sdRoutePoint* bestPoint = tracker->GetBestPoint();
 			if ( newPoint != bestPoint ) {
@@ -228,6 +229,7 @@ void sdRouteConstraintController::Update( sdRouteConstraintTracker* tracker ) {
 				if ( distance != -1 ) {
 					if ( !g_noRouteConstraintKick.GetBool() ) {
 						// we've moved backwards
+						kickDistance = maxPointDeviance - distance;
 						if ( distance >= maxPointDeviance ) {
 							kickPlayer = true;
 						} else if ( distance >= warningPointDeviance ) {
@@ -255,11 +257,13 @@ void sdRouteConstraintController::Update( sdRouteConstraintTracker* tracker ) {
 								} else {
 									distance = bestPoint->OnChain( common );
 									if ( !g_noRouteConstraintKick.GetBool() ) {
+										kickDistance = maxPointDeviance - distance;
 										if ( distance >= maxPointDeviance ) {
 											kickPlayer = true;
 										} else if ( distance >= warningPointDeviance ) {
 											warning = true;
 										}
+										// TODO
 									}
 								}
 							} else {
@@ -271,7 +275,12 @@ void sdRouteConstraintController::Update( sdRouteConstraintTracker* tracker ) {
 				}
 			}
 
+			if ( kickDistance < 0 ) {
+				kickDistance = 0;
+			}
+
 			tracker->SetKickPlayer( kickPlayer );
+			tracker->SetKickDistance( kickDistance );
 			tracker->SetPositionWarning( warning );
 		}
 
@@ -665,6 +674,7 @@ sdRouteConstraintTracker::sdRouteConstraintTracker( void ) {
 	positionWarning = false;
 	maskWarning  = false;
 	kickPlayer = false;
+	kickDistance = -1;
 }
 
 /*
@@ -754,6 +764,7 @@ void sdRouteConstraintTracker::SetTrackerEntity( idEntity* entity ) {
 	positionWarning = false;
 	maskWarning = false;
 	kickPlayer = false;
+	kickDistance = -1;
 
 	if ( entity == NULL ) {
 		controller = NULL;

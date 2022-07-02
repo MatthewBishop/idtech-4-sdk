@@ -19,6 +19,11 @@ static char THIS_FILE[] = __FILE__;
 #include "../../sdnet/SDNetStatsManager.h"
 #include "../../sdnet/SDNetAccount.h"
 #include "../../sdnet/SDNetUser.h"
+#include "../../sdnet/SDNetProfile.h"
+
+const char* sdStatsTracker::lifeStatsData_t::GetName( void ) const {
+	return gameLocal.lifeStats[ index ].stat.c_str();
+}
 
 /*
 ===============================================================================
@@ -33,7 +38,8 @@ static char THIS_FILE[] = __FILE__;
 sdPlayerStatEntry_Float::sdPlayerStatEntry_Float
 ================
 */
-sdPlayerStatEntry_Float::sdPlayerStatEntry_Float( void ) {
+sdPlayerStatEntry_Float::sdPlayerStatEntry_Float( sdNetStatKeyValue::statValueType _type ) : sdPlayerStatEntry( _type ) {
+	assert( _type == sdNetStatKeyValue::SVT_FLOAT || _type == sdNetStatKeyValue::SVT_FLOAT_MAX );
 	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
 		Clear( i );
 	}
@@ -46,16 +52,17 @@ sdPlayerStatEntry_Float::Clear
 */
 void sdPlayerStatEntry_Float::Clear( int playerIndex ) {
 	values[ playerIndex ] = 0;
+	baseValues[ playerIndex ] = 0;
 }
 
 /*
 ================
-sdPlayerStatEntry_Float::IncreaseFloat
+sdPlayerStatEntry_Float::IncreaseValue
 ================
 */
-void sdPlayerStatEntry_Float::IncreaseFloat( int playerIndex, float count ) {
+void sdPlayerStatEntry_Float::IncreaseValue( int playerIndex, const statValue_t& value ) {
 	if ( gameLocal.rules->IsGameOn() ) {
-		values[ playerIndex ] += count;
+		values[ playerIndex ] += value.GetFloat();
 	}
 }
 
@@ -68,6 +75,9 @@ void sdPlayerStatEntry_Float::Display( const char* name ) const {
 	gameLocal.Printf( "%s\n", name );
 	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
 		gameLocal.Printf( "%f ", values[ i ] );
+	}
+	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+		gameLocal.Printf( "%f ", baseValues[ i ] );
 	}
 	gameLocal.Printf( "\n" );
 }
@@ -99,7 +109,7 @@ bool sdPlayerStatEntry_Float::Write( sdNetStatKeyValList& kvList, int playerInde
 	sdNetStatKeyValue kv;
 
 	kv.key = globalKeys->AllocString( name );
-	kv.type = sdNetStatKeyValue::SVT_FLOAT;
+	kv.type = type;
 	kv.val.f = values[ playerIndex ];
 
 	kvList.Append( kv );
@@ -112,12 +122,9 @@ bool sdPlayerStatEntry_Float::Write( sdNetStatKeyValList& kvList, int playerInde
 sdPlayerStatEntry_Float::SetValue
 ================
 */
-void sdPlayerStatEntry_Float::SetValue( int playerIndex, const sdNetStatKeyValue& value ) {
-	if ( value.type == sdNetStatKeyValue::SVT_FLOAT ) {
-		values[ playerIndex ] = value.val.f;
-	} else {
-		assert( false );
-	}
+void sdPlayerStatEntry_Float::SetValue( int playerIndex, const statValue_t& value ) {
+	values[ playerIndex ] = value.GetFloat();
+	baseValues[ playerIndex ] = values[ playerIndex ];
 }
 
 /*
@@ -133,7 +140,8 @@ void sdPlayerStatEntry_Float::SetValue( int playerIndex, const sdNetStatKeyValue
 sdPlayerStatEntry_Integer::sdPlayerStatEntry_Integer
 ================
 */
-sdPlayerStatEntry_Integer::sdPlayerStatEntry_Integer( void ) {
+sdPlayerStatEntry_Integer::sdPlayerStatEntry_Integer( sdNetStatKeyValue::statValueType _type ) : sdPlayerStatEntry( _type ) {
+	assert( _type == sdNetStatKeyValue::SVT_INT || _type == sdNetStatKeyValue::SVT_INT_MAX );
 	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
 		Clear( i );
 	}
@@ -146,16 +154,17 @@ sdPlayerStatEntry_Integer::Clear
 */
 void sdPlayerStatEntry_Integer::Clear( int playerIndex ) {
 	values[ playerIndex ] = 0;
+	baseValues[ playerIndex ] = 0;
 }
 
 /*
 ================
-sdPlayerStatEntry_Integer::IncreaseInteger
+sdPlayerStatEntry_Integer::IncreaseValue
 ================
 */
-void sdPlayerStatEntry_Integer::IncreaseInteger( int playerIndex, int count ) {
+void sdPlayerStatEntry_Integer::IncreaseValue( int playerIndex, const statValue_t& value ) {
 	if ( gameLocal.rules->IsGameOn() ) {
-		values[ playerIndex ] += count;
+		values[ playerIndex ] += value.GetInt();
 	}
 }
 
@@ -168,6 +177,9 @@ void sdPlayerStatEntry_Integer::Display( const char* name ) const {
 	gameLocal.Printf( "%s\n", name );
 	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
 		gameLocal.Printf( "%i ", values[ i ] );
+	}
+	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+		gameLocal.Printf( "%i ", baseValues[ i ] );
 	}
 	gameLocal.Printf( "\n" );
 }
@@ -199,7 +211,7 @@ bool sdPlayerStatEntry_Integer::Write( sdNetStatKeyValList& kvList, int playerIn
 	sdNetStatKeyValue kv;
 
 	kv.key = globalKeys->AllocString( name );
-	kv.type = sdNetStatKeyValue::SVT_INT;
+	kv.type = type;
 	kv.val.i = values[ playerIndex ];
 
 	kvList.Append( kv );
@@ -212,12 +224,9 @@ bool sdPlayerStatEntry_Integer::Write( sdNetStatKeyValList& kvList, int playerIn
 sdPlayerStatEntry_Integer::SetValue
 ================
 */
-void sdPlayerStatEntry_Integer::SetValue( int playerIndex, const sdNetStatKeyValue& value ) {
-	if ( value.type == sdNetStatKeyValue::SVT_INT ) {
-		values[ playerIndex ] = value.val.i;
-	} else {
-		assert( false );
-	}
+void sdPlayerStatEntry_Integer::SetValue( int playerIndex, const statValue_t& value ) {
+	values[ playerIndex ] = value.GetInt();
+	baseValues[ playerIndex ] = values[ playerIndex ];
 }
 
 /*
@@ -234,7 +243,7 @@ sdStatsCommand_Request::Run
 ================
 */
 bool sdStatsCommand_Request::Run( sdStatsTracker& tracker, const idCmdArgs& args ) {
-	return sdGlobalStatsTracker::GetInstance().StartStatsRequest();
+	return tracker.StartStatsRequest();
 }
 
 /*
@@ -312,6 +321,29 @@ void sdStatsCommand_Display::CommandCompletion( sdStatsTracker& tracker, const i
 	}
 }
 
+
+/*
+===============================================================================
+
+	sdStatsCommand_ClearUserStats
+
+===============================================================================
+*/
+/*
+================
+sdStatsCommand_ClearUserStats::Run
+================
+*/
+bool sdStatsCommand_ClearUserStats::Run( sdStatsTracker& tracker, const idCmdArgs& args ) {
+	sdNetUser* activeUser = networkService->GetActiveUser();
+	if ( activeUser == NULL ) {
+		gameLocal.Printf( "No Active User\n" );
+		return false;
+	}
+	sdStatsTracker::ClearLocalUserStats( activeUser );
+	return true;
+}
+
 /*
 ===============================================================================
 
@@ -320,7 +352,6 @@ void sdStatsCommand_Display::CommandCompletion( sdStatsTracker& tracker, const i
 ===============================================================================
 */
 
-statFactory_t					sdStatsTracker::s_statFactory;
 idHashMap< sdStatsCommand* >	sdStatsTracker::s_commands;
 
 /*
@@ -352,12 +383,10 @@ sdStatsTracker::Init
 ================
 */
 void sdStatsTracker::Init( void ) {
-	s_statFactory.RegisterType( "int",		statFactory_t::Allocator< sdPlayerStatEntry_Integer > );
-	s_statFactory.RegisterType( "float",	statFactory_t::Allocator< sdPlayerStatEntry_Float > );
-
-	s_commands.Set( "request",	new sdStatsCommand_Request() );
-	s_commands.Set( "get",		new sdStatsCommand_Get() );
-	s_commands.Set( "display",	new sdStatsCommand_Display() );
+	s_commands.Set( "request",			new sdStatsCommand_Request() );
+	s_commands.Set( "get",				new sdStatsCommand_Get() );
+	s_commands.Set( "display",			new sdStatsCommand_Display() );
+	s_commands.Set( "clearUserStats",	new sdStatsCommand_ClearUserStats() );
 }
 
 /*
@@ -383,36 +412,40 @@ statHandle_t sdStatsTracker::GetStat( const char* name ) const {
 sdStatsTracker::AllocStat
 ================
 */
-statHandle_t sdStatsTracker::AllocStat( const char* name, const char* typeName ) {
+statHandle_t sdStatsTracker::AllocStat( const char* name, sdNetStatKeyValue::statValueType type ) {
 	int hashKey = idStr::Hash( name );
 	for ( int index = statHash.GetFirst( hashKey ); index != idHashIndex::NULL_INDEX; index = statHash.GetNext( index ) ) {
 		if ( idStr::Icmp( stats[ index ]->GetName(), name ) != 0 ) {
 			continue;
 		}
 
-#ifdef DEBUG_STATS
-		if ( idStr::Icmp( stats[ index ]->GetTypeName(), typeName ) != 0 ) {
-			gameLocal.Error( "sdStatsTracker::AllocStat Type Mismatch ( '%s' v. '%s' ) On Re-Allocation of '%s'", stats[ index ]->GetTypeName(), typeName, name );
+		if ( stats[ index ]->GetEntry()->GetType() != type ) {
+			gameLocal.Error( "sdStatsTracker::AllocStat Type Mismatch ( '%d' v. '%d' ) On Re-Allocation of '%s'", stats[ index ]->GetEntry()->GetType(), type, name );
 		}
-#endif // DEBUG_STATS
 
 		return index;
 	}
 
 	statHandle_t handle = stats.Num();
 
-	sdPlayerStatEntry* stat = s_statFactory.CreateType( typeName );
-	if ( !stat ) {
-		gameLocal.Error( "sdStatsTracker::AllocStat Failed to Alloc Stat '%s' of type '%s'", name, typeName );
-		return statHandle_t();
+	sdPlayerStatEntry* stat = NULL;
+
+	switch ( type ) {
+		case sdNetStatKeyValue::SVT_INT:
+		case sdNetStatKeyValue::SVT_INT_MAX:
+			stat = new sdPlayerStatEntry_Integer( type );
+			break;
+		case sdNetStatKeyValue::SVT_FLOAT:
+		case sdNetStatKeyValue::SVT_FLOAT_MAX:
+			stat = new sdPlayerStatEntry_Float( type );
+			break;
 	}
 
-	sdStatEntry* entry = new sdStatEntry( name
-										, stat
-#ifdef DEBUG_STATS
-										, typeName
-#endif // DEBUG_STATS
-										);
+	if ( stat == NULL ) {
+		gameLocal.Error( "sdStatsTracker::AllocStat Failed to Alloc Stat '%s' of type '%d'", name, type );
+	}
+
+	sdStatEntry* entry = new sdStatEntry( name, stat );
 	stats.Alloc() = entry;
 	statHash.Add( hashKey, handle );
 
@@ -559,21 +592,29 @@ void sdStatsTracker::Write( int playerIndex, const char* name ) {
 		}
 	}
 
-#if !defined( SD_DEMO_BUILD )
-	if ( networkService->GetDedicatedServerState() == sdNetService::DS_ONLINE ) {
-		sdNetClientId netClientId;
-		networkSystem->ServerGetClientNetId( playerIndex, netClientId );
-
-		if ( netClientId.IsValid() ) {
-			sdNetStatKeyValList kvList;
-			for ( int i = 0; i < stats.Num(); i++ ) {
-				stats[ i ]->Write( kvList, playerIndex );
-			}
-
-			networkService->GetStatsManager().WriteDictionary( netClientId, kvList );
+	idPlayer* localPlayer = gameLocal.GetLocalPlayer();
+	if ( gameLocal.isServer && localPlayer != NULL ) {
+		sdNetUser* activeUser = networkService->GetActiveUser();
+		if ( activeUser != NULL ) {
+			WriteLocalUserStats( activeUser, playerIndex );
 		}
-	}
+	} else {
+#if !defined( SD_DEMO_BUILD )
+		if ( networkService->GetDedicatedServerState() == sdNetService::DS_ONLINE ) {
+			sdNetClientId netClientId;
+			networkSystem->ServerGetClientNetId( playerIndex, netClientId );
+
+			if ( netClientId.IsValid() ) {
+				sdNetStatKeyValList kvList;
+				for ( int i = 0; i < stats.Num(); i++ ) {
+					stats[ i ]->Write( kvList, playerIndex );
+				}
+
+				networkService->GetStatsManager().WriteDictionary( netClientId, kvList );
+			}
+		}
 #endif /* !SD_DEMO_BUILD */
+	}
 }
 
 /*
@@ -604,11 +645,31 @@ void sdStatsTracker::Restore( int playerIndex ) {
 				}
 
 				sdPlayerStatEntry* entry = GetStat( handle );
-				entry->SetValue( playerIndex, kvList[ i ] );
+				switch ( kvList[ i ].type ) {
+					case sdNetStatKeyValue::SVT_INT:
+					case sdNetStatKeyValue::SVT_INT_MAX:
+						entry->SetValue( playerIndex, kvList[ i ].val.i );
+						break;
+					case sdNetStatKeyValue::SVT_FLOAT_MAX:
+					case sdNetStatKeyValue::SVT_FLOAT:
+						entry->SetValue( playerIndex, kvList[ i ].val.f );
+						break;
+				}
 			}
 		}
 	}
 #endif /* !SD_DEMO_BUILD */
+}
+
+/*
+================
+sdStatsTracker::SetStatBaseLine
+================
+*/
+void sdStatsTracker::SetStatBaseLine( int playerIndex ) {
+	for ( int i = 0; i < stats.Num(); i++ ) {
+		stats[ i ]->GetEntry()->SaveBaseLine( playerIndex );
+	}
 }
 
 /*
@@ -655,21 +716,23 @@ void sdStatsTracker::ProcessRemoteStats( int playerIndex ) {
 		msg.WriteByte( list[ i ].type );
 		switch ( list[ i ].type ) {
 			case sdNetStatKeyValue::SVT_INT:
+			case sdNetStatKeyValue::SVT_INT_MAX:
 				msg.WriteLong( list[ i ].val.i );
 				break;
 			case sdNetStatKeyValue::SVT_FLOAT:
+			case sdNetStatKeyValue::SVT_FLOAT_MAX:
 				msg.WriteFloat( list[ i ].val.f );
 				break;
 		}
 	}
 
-	msg.Send( playerIndex );
+	msg.Send( sdReliableMessageClientInfo( playerIndex ) );
 
 	playerRequestState[ playerIndex ] = nextStatToWrite;
 	if ( playerRequestState[ playerIndex ] == stats.Num() ) {
 		sdReliableServerMessage finishMsg( GAME_RELIABLE_SMESSAGE_STATSFINIHED );
 		finishMsg.WriteBool( true );
-		finishMsg.Send( playerIndex );
+		finishMsg.Send( sdReliableMessageClientInfo( playerIndex ) );
 
 		playerRequestState[ playerIndex ] = -1;
 	}
@@ -745,7 +808,7 @@ void sdStatsTracker::CancelStatsRequest( int playerIndex ) {
 		} else {
 			sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_STATSFINIHED );
 			msg.WriteBool( false );
-			msg.Send( playerIndex );
+			msg.Send( sdReliableMessageClientInfo( playerIndex ) );
 		}
 	}
 }
@@ -809,9 +872,11 @@ void sdStatsTracker::OnServerStatsRequestMessage( const idBitMsg& msg ) {
 		kv.key = globalKeys->AllocString( buffer );
 		switch ( kv.type ) {
 			case sdNetStatKeyValue::SVT_FLOAT:
+			case sdNetStatKeyValue::SVT_FLOAT_MAX:
 				kv.val.f = msg.ReadFloat();
 				break;
 			case sdNetStatKeyValue::SVT_INT:
+			case sdNetStatKeyValue::SVT_INT_MAX:
 				kv.val.i = msg.ReadLong();
 				break;
 		}
@@ -832,6 +897,120 @@ sdStatsTracker::OnServerStatsRequestMessage
 */
 void sdStatsTracker::OnServerStatsRequestMessage( const sdNetStatKeyValList& list ) {
 	serverStats.Append( list );
+}
+
+/*
+================
+sdStatsTracker::ClearLocalUserStats
+================
+*/
+void sdStatsTracker::ClearLocalUserStats( sdNetUser* activeUser ) {
+	assert( activeUser != NULL );
+
+	idDict& info = activeUser->GetProfile().GetProperties();
+
+	idStr statPrefix = "localstat_";
+	idStr statTypePrefix = "localstattype_";
+
+	const idKeyValue* kv;
+	while ( ( kv = info.MatchPrefix( statPrefix.c_str(), NULL ) ) != NULL ) {
+		info.Delete( kv->GetKey().c_str() );
+	}
+	while ( ( kv = info.MatchPrefix( statTypePrefix.c_str(), NULL ) ) != NULL ) {
+		info.Delete( kv->GetKey().c_str() );
+	}
+
+	activeUser->Save( sdNetUser::SI_PROFILE );
+}
+
+/*
+================
+sdStatsTracker::ReadLocalUserStats
+================
+*/
+void sdStatsTracker::ReadLocalUserStats( sdNetUser* activeUser, sdNetStatKeyValList& list ) {
+	list.SetNum( 0, false );
+
+	const idDict& info = activeUser->GetProfile().GetProperties();
+
+	idStrPool* globalKeys;
+	idStrPool* globalValues;
+	idDict::GetGlobalPools( globalKeys, globalValues );
+
+	idStr statPrefix = "localstat_";
+	idStr statTypePrefix = "localstattype_";
+	const idKeyValue* kv = NULL;
+	while ( ( kv = info.MatchPrefix( statPrefix.c_str(), kv ) ) != NULL ) {
+		sdNetStatKeyValue statKV;
+		const char* key = kv->GetKey().c_str() + statPrefix.Length();
+		statKV.type = ( sdNetStatKeyValue::statValueType )info.GetInt( va( "%s%s", statTypePrefix.c_str(), key ) );
+		statKV.key = globalKeys->AllocString( key );
+		switch ( statKV.type ) {
+			case sdNetStatKeyValue::SVT_FLOAT:
+			case sdNetStatKeyValue::SVT_FLOAT_MAX:
+				statKV.val.f = info.GetFloat( kv->GetKey() );
+				break;
+			case sdNetStatKeyValue::SVT_INT:
+			case sdNetStatKeyValue::SVT_INT_MAX:
+				statKV.val.i = info.GetInt( kv->GetKey() );
+				break;
+			default:
+				continue;
+		}
+
+		list.Append( statKV );
+	}
+}
+
+/*
+================
+sdStatsTracker::WriteLocalUserStats
+================
+*/
+void sdStatsTracker::WriteLocalUserStats( sdNetUser* activeUser, int playerIndex ) {
+	idDict& info = activeUser->GetProfile().GetProperties();
+
+	idStr statPrefix = "localstat_";
+	idStr statTypePrefix = "localstattype_";
+
+	sdNetStatKeyValList kvList;
+	for ( int i = 0; i < stats.Num(); i++ ) {
+		stats[ i ]->Write( kvList, playerIndex );
+		if ( kvList.Num() == 0 ) {
+			continue;
+		}
+		sdNetStatKeyValue& stat = kvList[ 0 ];
+		info.SetInt( va( "%s%s", statTypePrefix.c_str(), stats[ i ]->GetName() ), stat.type );
+		const char* key = va( "%s%s", statPrefix.c_str(), stats[ i ]->GetName() );
+		switch ( stat.type ) {
+			case sdNetStatKeyValue::SVT_FLOAT: {
+				float old = info.GetFloat( key );
+				info.SetFloat( key, old + stat.val.f );
+				break;
+			}
+			case sdNetStatKeyValue::SVT_FLOAT_MAX: {
+				float old = info.GetFloat( key );
+				if ( stat.val.f > old ) {
+					info.SetFloat( key, stat.val.f );
+				}
+				break;
+			}
+			case sdNetStatKeyValue::SVT_INT: {
+				int old = info.GetInt( key );
+				info.SetInt( key, old + stat.val.i );
+				break;
+			}
+			case sdNetStatKeyValue::SVT_INT_MAX: {
+				int old = info.GetInt( key );
+				if ( stat.val.i > old ) {
+					info.SetInt( key, stat.val.i );
+				}
+				break;
+			}
+		}
+		kvList.SetNum( 0, false );
+	}
+	activeUser->Save( sdNetUser::SI_PROFILE );
 }
 
 idCVar g_useSimpleStats( "g_useSimpleStats", "0", CVAR_BOOL | CVAR_GAME, "only look up local server stats" );
@@ -856,29 +1035,39 @@ bool sdStatsTracker::StartStatsRequest( bool globalOnly ) {
 
 	serverStatsValid = globalOnly ? true : false;
 	serverStats.SetNum( 0, false );
+	serverStatsHash.Clear();
 
 	requestedStatsValid = false;
 	requestedStats.SetNum( 0, false );
+	requestedStatsHash.Clear();
 
 	if ( g_useSimpleStats.GetBool() && !globalOnly ) {
 		requestedStatsValid = true;
 	} else {
-#if !defined( SD_DEMO_BUILD )
 		sdNetUser* activeUser = networkService->GetActiveUser();
 		if ( activeUser != NULL ) {
-			sdNetClientId clientId;
-			activeUser->GetAccount().GetNetClientId( clientId );
-			if ( clientId.IsValid() ) {
-				requestTask = networkService->GetStatsManager().ReadDictionary( clientId, requestedStats );
+			if ( gameLocal.isServer ) {
+				ReadLocalUserStats( activeUser, requestedStats );
+				requestedStatsValid = true;
 			}
-		}
+#if !defined( SD_DEMO_BUILD )
+			else {
+				sdNetClientId clientId;
+				activeUser->GetAccount().GetNetClientId( clientId );
+				if ( clientId.IsValid() ) {
+					requestTask = networkService->GetStatsManager().ReadDictionary( clientId, requestedStats );
+				}
+			}
 #endif /* !SD_DEMO_BUILD */
+		}
 
-		if ( requestTask == NULL ) {
-			if ( !globalOnly ) {
-				requestedStatsValid = true; // Gordon: just default to getting "server" stats if this stuff fails
-			} else {
-				return false;
+		if ( !requestedStatsValid ) {
+			if ( requestTask == NULL ) {
+				if ( !globalOnly ) {
+					requestedStatsValid = true; // Gordon: just default to getting "server" stats if this stuff fails
+				} else {
+					return false;
+				}
 			}
 		}
 	}
@@ -914,9 +1103,6 @@ void sdStatsTracker::UpdateStatsRequest( void ) {
 			
 			if ( errorCode == SDNET_NO_ERROR ) {
 				requestedStatsValid = true;
-				if ( serverStatsValid ) {
-					OnStatsRequestFinished();
-				}
 			} else {
 				requestState = SR_FAILED;
 			}
@@ -924,6 +1110,10 @@ void sdStatsTracker::UpdateStatsRequest( void ) {
 			networkService->FreeTask( requestTask );
 			requestTask = NULL;
 		}
+	}
+
+	if ( requestedStatsValid && serverStatsValid ) {
+		OnStatsRequestFinished();
 	}
 }
 
@@ -941,26 +1131,91 @@ void sdStatsTracker::OnStatsRequestFinished( void ) {
 	completeStats.SetNum( requestedStats.Num() );
 	for( int i = 0; i < requestedStats.Num(); i++ ) {
 		completeStats[ i ] = requestedStats[ i ];
-		int hashKey = completeStatsHash.GenerateKey( completeStats[ i ].key->c_str(), false );
-		completeStatsHash.Add( hashKey, i );
+		completeStatsHash.Add( completeStatsHash.GenerateKey( completeStats[ i ].key->c_str(), false ), i );
+		requestedStatsHash.Add( requestedStatsHash.GenerateKey( completeStats[ i ].key->c_str(), false ), i );
 	}	
 
 	for ( int i = 0; i < serverStats.Num(); i++ ) {
 		sdNetStatKeyValue* kv = GetLocalStat( serverStats[ i ].key->c_str() );
 		if( kv != NULL ) {
-			switch( kv->type ) {
+			// Gordon: We can't tell if the data from DW is a max stat or not, so we rely on the server information
+			// The only case where this matters on the client is this loop, so it doesn't matter anyway
+			switch( serverStats[ i ].type ) {
 				case sdNetStatKeyValue::SVT_FLOAT:
 					kv->val.f += serverStats[ i ].val.f;
 					break;
 				case sdNetStatKeyValue::SVT_INT:
 					kv->val.i += serverStats[ i ].val.i;
 					break;
+				case sdNetStatKeyValue::SVT_FLOAT_MAX:
+					if ( serverStats[ i ].val.f > kv->val.f ) {
+						kv->val.f = serverStats[ i ].val.f;
+					}
+					break;
+				case sdNetStatKeyValue::SVT_INT_MAX:
+					if ( serverStats[ i ].val.i > kv->val.i ) {
+						kv->val.i = serverStats[ i ].val.i;
+					}
+					break;
 			}
 		} else {
-			int hashKey = idStr::Hash( serverStats[ i ].key->c_str() );
-			completeStatsHash.Add( hashKey, completeStats.Append( serverStats[ i ] ) );
+			completeStatsHash.Add( completeStatsHash.GenerateKey( serverStats[ i ].key->c_str(), false ), completeStats.Append( serverStats[ i ] ) );
 		}	
-	}	
+
+		serverStatsHash.Add( serverStatsHash.GenerateKey( serverStats[ i ].key->c_str(), false ), i );
+	}
+
+	lifeStatsData.SetNum( 0, false );
+	lifeStatsDataHash.Clear();
+
+	if ( serverStatsValid && requestedStatsValid ) {
+		const idList< lifeStat_t >& stats = gameLocal.lifeStats;
+		for ( int j = 0; j < stats.Num(); j++ ) {
+			if ( GetLifeStatData( stats[ j ].stat.c_str() ) != NULL ) {
+				continue;
+			}
+
+			const char* lifeStatName = va( "lifestat_%s", stats[ j ].stat.c_str() );
+
+			lifeStatsData_t data;
+			data.index = j;
+
+			const sdNetStatKeyValue* netKV = GetNetStat( lifeStatName );
+			const sdNetStatKeyValue* serverKV = GetServerStat( lifeStatName );
+			if ( netKV == NULL && serverKV == NULL ) {
+				continue;
+			}
+
+			sdNetStatKeyValue::statValueType type = netKV != NULL ? netKV->type : serverKV->type;
+			switch ( type ) {
+				case sdNetStatKeyValue::SVT_INT:
+				case sdNetStatKeyValue::SVT_INT_MAX:
+					data.oldValue = netKV != NULL ? netKV->val.i : 0;
+					data.newValue = serverKV != NULL ? serverKV->val.i : 0;
+					break;
+				case sdNetStatKeyValue::SVT_FLOAT:
+				case sdNetStatKeyValue::SVT_FLOAT_MAX:
+					data.oldValue = netKV != NULL ? netKV->val.f : 0.f;
+					data.newValue = serverKV != NULL ? serverKV->val.f : 0.f;
+					break;
+			}
+
+			lifeStatsDataHash.Add( lifeStatsDataHash.GenerateKey( stats[ j ].stat.c_str(), false ), lifeStatsData.Append( data ) );
+		}
+	}
+
+/*	for ( int i = 0; i < lifeStatsData.Num(); i++ ) {
+		const char* name = lifeStatsData[ i ].GetName();
+
+		switch ( lifeStatsData[ i ].oldValue.GetType() ) {
+			case sdNetStatKeyValue::SVT_INT:
+				gameLocal.Printf( "Life Stat: %s Old: %d New: %d\n", name, lifeStatsData[ i ].oldValue.GetInt(), lifeStatsData[ i ].newValue.GetInt() );
+				break;
+			case sdNetStatKeyValue::SVT_FLOAT:
+				gameLocal.Printf( "Life Stat: %s Old: %f New: %f\n", name, lifeStatsData[ i ].oldValue.GetFloat(), lifeStatsData[ i ].newValue.GetFloat() );
+				break;
+		}
+	}*/
 }
 
 /*
@@ -997,4 +1252,134 @@ sdNetStatKeyValue* sdStatsTracker::GetLocalStat( const char* name ) {
 	}
 
 	return NULL;
+}
+
+/*
+============
+sdStatsTracker::GetNetStat
+============
+*/
+const sdNetStatKeyValue* sdStatsTracker::GetNetStat( const char* name ) const {
+	int hashKey = idStr::Hash( name );
+	for ( int index = requestedStatsHash.GetFirst( hashKey ); index != idHashIndex::NULL_INDEX; index = requestedStatsHash.GetNext( index ) ) {
+		if ( idStr::Icmp( requestedStats[ index ].key->c_str(), name ) != 0 ) {
+			continue;
+		}
+
+		return &requestedStats[ index ];
+	}
+
+	return NULL;
+}
+
+/*
+============
+sdStatsTracker::GetServerStat
+============
+*/
+const sdNetStatKeyValue* sdStatsTracker::GetServerStat( const char* name ) const {
+	int hashKey = idStr::Hash( name );
+	for ( int index = serverStatsHash.GetFirst( hashKey ); index != idHashIndex::NULL_INDEX; index = serverStatsHash.GetNext( index ) ) {
+		if ( idStr::Icmp( serverStats[ index ].key->c_str(), name ) != 0 ) {
+			continue;
+		}
+
+		return &serverStats[ index ];
+	}
+
+	return NULL;
+}
+
+/*
+============
+sdStatsTracker::GetLifeStatData
+============
+*/
+sdStatsTracker::lifeStatsData_t* sdStatsTracker::GetLifeStatData( const char* name ) {
+	int hashKey = idStr::Hash( name );
+	for ( int index = lifeStatsDataHash.GetFirst( hashKey ); index != idHashIndex::NULL_INDEX; index = lifeStatsDataHash.GetNext( index ) ) {
+		if ( idStr::Icmp( lifeStatsData[ index ].GetName(), name ) != 0 ) {
+			continue;
+		}
+
+		return &lifeStatsData[ index ];
+	}
+
+	return NULL;
+}
+
+static const float STATS_EPSILON = 0.01f;
+class sdSortPercentageImprovement {
+public:
+	int operator()( const sdStatsTracker::lifeStatsData_t* lhs, const sdStatsTracker::lifeStatsData_t* rhs ) const {
+		int lhsPercent = CalcPercentage( lhs );
+		int rhsPercent = CalcPercentage( rhs );
+
+		return idMath::FtoiFast( lhsPercent - rhsPercent );
+	}
+
+private:
+	static int CalcPercentage( const sdStatsTracker::lifeStatsData_t* data ) {
+		switch( data->newValue.GetType() ) {
+			case sdNetStatKeyValue::SVT_FLOAT_MAX: {
+					float delta = ( data->newValue.GetFloat() - data->oldValue.GetFloat() );
+					if( idMath::Fabs( data->oldValue.GetFloat() ) >= STATS_EPSILON ) {
+						return ( delta / data->oldValue.GetFloat() ) * 100;
+					}
+				}
+				break;				
+			case sdNetStatKeyValue::SVT_INT_MAX: {
+					float delta = ( data->newValue.GetInt() - data->oldValue.GetInt() );
+					if( idMath::Abs( data->oldValue.GetInt() ) > 0 ) {
+						return ( delta / data->oldValue.GetInt() ) * 100;
+					}					
+				}
+				break;
+		}
+
+		return 0;
+	}
+};
+/*
+============
+sdStatsTracker::GetTopLifeStats
+============
+*/
+void sdStatsTracker::GetTopLifeStats( idList< const lifeStatsData_t* >& improved,
+									  idList< const lifeStatsData_t* >& unchanged,
+									  idList< const lifeStatsData_t* >& worse ) const {
+	improved.SetNum( 0, false );
+	unchanged.SetNum( 0, false );
+	worse.SetNum( 0, false );
+
+	for( int i = 0; i < lifeStatsData.Num(); i++ ) {
+		const lifeStatsData_t& data = lifeStatsData[ i ];
+
+		switch ( data.newValue.GetType() ) {
+			case sdNetStatKeyValue::SVT_FLOAT:
+			case sdNetStatKeyValue::SVT_FLOAT_MAX:
+				if ( data.newValue.GetFloat() > data.oldValue.GetFloat() ) {
+					improved.Append( &data );
+				} else if( idMath::Fabs( data.newValue.GetFloat() - data.oldValue.GetFloat() ) < STATS_EPSILON ) {
+					unchanged.Append( &data );
+				} else {
+					worse.Append( &data );
+				}
+				break;				
+			case sdNetStatKeyValue::SVT_INT:
+			case sdNetStatKeyValue::SVT_INT_MAX:
+				if ( data.newValue.GetInt() > data.oldValue.GetInt() ) {
+					improved.Append( &data );
+				} else if( data.newValue.GetInt() == data.oldValue.GetInt() ) {
+					unchanged.Append( &data );
+				} else {
+					worse.Append( &data );
+				}
+				break;
+			default:
+				assert( false );
+				break;
+		}
+	}
+	sdQuickSort( improved.Begin(), improved.End(), sdSortPercentageImprovement() );
 }

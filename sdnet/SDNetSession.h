@@ -27,7 +27,6 @@ public:
 	struct sessionClientInfo_t {
 						sessionClientInfo_t() :
 							ping( 999 ),
-							rate( 0 ),
 							connected( false ),
 							isBot( false ) {
 							nickname[0] = '\0';
@@ -98,6 +97,18 @@ public:
 
 	// When a client disconnects from this session
 	virtual void				ServerClientDisconnect( const int clientNum ) = 0;
+
+	// Get number of clients considering joining
+	virtual int					GetNumInterestedClients( void ) const = 0;
+
+	// Get repeater status
+	virtual bool				IsRepeater() const = 0;
+
+	// Get number of people on the repeater
+	virtual int					GetNumRepeaterClients( void ) const = 0;
+
+	// Get max number of people on the repeater
+	virtual int					GetMaxRepeaterClients( void ) const = 0;
 
 protected:
 

@@ -47,6 +47,7 @@ idCVar sdUserInterfaceLocal::gui_chatAlpha( "gui_chatAlpha", "1", CVAR_GAME | CV
 idCVar sdUserInterfaceLocal::gui_fireTeamAlpha( "gui_fireTeamAlpha", "1", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE | CVAR_PROFILE, "alpha of fireteam list" );
 idCVar sdUserInterfaceLocal::gui_commandMapAlpha( "gui_commandMapAlpha", "1", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE | CVAR_PROFILE, "alpha of command map" );
 idCVar sdUserInterfaceLocal::gui_objectiveListAlpha( "gui_objectiveListAlpha", "1", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE | CVAR_PROFILE, "alpha of objective list" );
+idCVar sdUserInterfaceLocal::gui_personalBestsAlpha( "gui_personalBestsAlpha", "1", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE | CVAR_PROFILE, "alpha of personal bests display list" );
 idCVar sdUserInterfaceLocal::gui_objectiveStatusAlpha( "gui_objectiveStatusAlpha", "1", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE | CVAR_PROFILE, "alpha of objective status" );
 idCVar sdUserInterfaceLocal::gui_obitAlpha( "gui_obitAlpha", "1", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE | CVAR_PROFILE, "alpha of obituaries" );
 idCVar sdUserInterfaceLocal::gui_voteAlpha( "gui_voteAlpha", "1", CVAR_GAME | CVAR_FLOAT | CVAR_ARCHIVE | CVAR_PROFILE, "alpha of vote" );
@@ -350,6 +351,30 @@ bool sdUserInterfaceState::RunNamedFunction( const char* name, sdUIFunctionStack
 
 /*
 ============
+sdUserInterfaceState::FindPropertyName
+============
+*/
+const char* sdUserInterfaceState::FindPropertyName( sdProperties::sdProperty* property, sdUserInterfaceScope*& scope ) {
+	scope = this;
+
+	const char* name = properties.NameForProperty( property );
+	if ( name != NULL ) {
+		return name;
+	}
+
+	for ( int i = 0 ; i < ui->GetNumWindows(); i++ ) {
+		sdUIObject* obj = ui->GetWindow( i );
+		name = obj->GetScope().FindPropertyName( property, scope );
+		if ( name != NULL ) {
+			return name;
+		}
+	}
+
+	return NULL;
+}
+
+/*
+============
 sdUserInterfaceState::GetEvaluator
 ============
 */
@@ -425,6 +450,8 @@ const char* sdUserInterfaceLocal::eventNames[ GE_NUM_EVENTS ] = {
 	SD_UI_EVENT_TAG( "onPropertyChanged",	"[Property ...]",	"Called when one of the properties specified occurs" ),
 	SD_UI_EVENT_TAG( "onCVarChanged",		"[CVar ...]",		"Called when one of the CVars' value changes" ),
 	SD_UI_EVENT_TAG( "onCancel",			"",					"Called when any key bound to the _menuCancel is pressed" ),
+	SD_UI_EVENT_TAG( "onCancel",			"",					"Called when any key bound to the _menuCancel is pressed" ),
+	SD_UI_EVENT_TAG( "onToolTipEvent",		"",					"Called when a tooltip event occurs" ),
 };
 SD_UI_POP_CLASS_TAG
 
@@ -714,7 +741,7 @@ void sdUserInterfaceLocal::Draw() {
 		assert( !"BREAK_ON_DRAW" );
 	}
 #endif // _DEBUG
-	if( !desktop ) {
+	if ( !desktop ) {
 		return;
 	}
 	
@@ -724,6 +751,7 @@ void sdUserInterfaceLocal::Draw() {
 	if ( IsActive() || !allowScreenSaver ) {
 		desktop->ApplyLayout();
 		desktop->Draw();
+		desktop->FinalDraw();
 
 		if ( TestGUIFlag( GUI_SHOWCURSOR ) ) {
 			deviceContext->DrawMaterial( cursorPos.GetValue().x, cursorPos.GetValue().y, cursorSize.GetValue().x, cursorSize.GetValue().y, cursorMaterial, cursorColor );
@@ -969,7 +997,7 @@ bool sdUserInterfaceLocal::PostEvent( const sdSysEvent* event ) {
 		} else {
 			pos.y += scaledDelta.y;
 		}
-		
+
 		pos.x = idMath::ClampFloat( 0.0f, screenDimensions.GetValue().x, pos.x );
 		pos.y = idMath::ClampFloat( 0.0f, screenDimensions.GetValue().y, pos.y );
 		cursorPos = pos;
@@ -1205,6 +1233,11 @@ void sdUserInterfaceLocal::EnumerateEvents( const char* name, const idList<unsig
 		return;
 	}
 
+	if ( !idStr::Icmp( name, "onToolTipEvent" ) ) {
+		events.Append( sdUIEventInfo( GE_TOOLTIPEVENT, 0 ) );
+		return;
+	}
+
 	if ( !idStr::Icmp( name, "onPropertyChanged" ) ) {
 		int i;
 		for ( i = 0; i < flags.Num(); i++ ) {
@@ -1280,7 +1313,7 @@ void sdUserInterfaceLocal::Activate( void ) {
 	if ( NonGameGui() ) {
 		SetCurrentTime( sys->Milliseconds() );
 	} else {
-		SetCurrentTime( gameLocal.time );
+		SetCurrentTime( gameLocal.time + gameLocal.timeOffset );
 	}
 	Update();
 
@@ -1851,7 +1884,7 @@ sdUserInterfaceLocal::OnInputInit
 ============
 */
 void sdUserInterfaceLocal::OnInputInit( void ) {	
-	if( bindContextName.GetValue().IsEmpty() ) {
+	if ( bindContextName.GetValue().IsEmpty() ) {
 		bindContext = NULL;
 	} else {
 		bindContext = keyInputManager->AllocBindContext( bindContextName.GetValue().c_str() );
@@ -1869,11 +1902,35 @@ void sdUserInterfaceLocal::OnInputShutdown( void ) {
 
 /*
 ============
+sdUserInterfaceLocal::OnLanguageInit
+============
+*/
+void sdUserInterfaceLocal::OnLanguageInit( void ) {
+	if ( desktop != NULL ) {
+		desktop->OnLanguageInit();
+		sdUIObject::OnLanguageInit_r( desktop );
+	}
+}
+
+/*
+============
+sdUserInterfaceLocal::OnLanguageShutdown
+============
+*/
+void sdUserInterfaceLocal::OnLanguageShutdown( void ) {
+	if ( desktop != NULL ) {
+		desktop->OnLanguageShutdown();
+		sdUIObject::OnLanguageShutdown_r( desktop );
+	}
+}
+
+/*
+============
 sdUserInterfaceLocal::MakeLayoutDirty
 ============
 */
 void sdUserInterfaceLocal::MakeLayoutDirty() {
-	if( desktop != NULL ) {
+	if ( desktop != NULL ) {
 		desktop->MakeLayoutDirty();
 		sdUIObject::MakeLayoutDirty_r( desktop );
 	}
@@ -2283,5 +2340,20 @@ void sdUserInterfaceLocal::OnSnapshotHitch( int delta ) {
 	scriptState.OnSnapshotHitch( delta );
 	if( timelines.IsValid() ) {
 		timelines->OnSnapshotHitch( delta );
+	}
+}
+
+/*
+============
+sdUserInterfaceLocal::OnToolTipEvent
+============
+*/
+void sdUserInterfaceLocal::OnToolTipEvent( const char* arg ) {
+	sdUIEventInfo event( GE_TOOLTIPEVENT, 0 );
+
+	if ( event.eventType.IsValid() ) {
+		PushScriptVar( arg );
+		RunEvent( sdUIEventInfo( GE_TOOLTIPEVENT, 0 ) );		
+		ClearScriptStack();
 	}
 }

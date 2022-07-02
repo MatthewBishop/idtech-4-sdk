@@ -28,9 +28,11 @@ class sdDeclPlayerClass : public idDecl {
 public:
 	struct proficiencyUpgrade_t {
 		const sdDeclLocStr* text;
+		const sdDeclLocStr* title;
 		idStr				materialInfo;
 		int					level;
 		const sdDeclToolTip* toolTip;
+		idStr				sound;
 	};
 
 	struct proficiencyCategory_t {

@@ -65,6 +65,7 @@ const idEventDef EV_Thread_StackTrace( "stackTrace", '\0', DOC_TEXT( "Prints a s
 const idEventDef EV_Thread_Assert( "assert", '\0', DOC_TEXT( "Throws an assert in debug mode, if the parameter is false." ), 1, NULL, "b", "value", "Value to check." );
 const idEventDef EV_Thread_Random( "random", 'f', DOC_TEXT( "Returns a random number between 0 and the limit specified." ), 1, NULL, "f", "range", "Maximum number to return." );
 const idEventDef EV_Thread_GetTime( "getTime", 'f', DOC_TEXT( "Returns the current game time in seconds." ), 0, "This value has no bearing on how long the current match has been playing for, this is just the time since this map was loaded." );
+const idEventDef EV_Thread_ToGuiTime( "toGuiTime", 'f', DOC_TEXT( "Returns the time converted to GUI time." ), 1, NULL, "f", "time", "Time to convert." );
 const idEventDef EV_Thread_KillThread( "killThread", '\0', DOC_TEXT( "Terminates all script threads with the specified name." ), 1, "No indication is given as to how many threads, if any, were terminated.", "s", "name", "Name of the thread(s) to terminate." );
 const idEventDef EV_Thread_SetThreadName( "threadName", '\0', DOC_TEXT( "Changes the name of the currently active thread." ), 1, NULL, "s", "name", "New name to set." );
 const idEventDef EV_Thread_GetEntity( "getEntity", 'e', DOC_TEXT( "Finds an entity with the specified name, if no entity is found, the result will be $null$." ), 1, NULL, "s", "name", "Name of the entity to find." );
@@ -262,11 +263,14 @@ const idEventDef EV_CreateMaskEditSession( "createMaskEditSession", 'o', DOC_TEX
 
 const idEventDef EV_GetCVar( "getCVar", 'o', DOC_TEXT( "Returns a cvar wrapper object, which can be used to look up and modify that cvar's value. The returned object will be of type $class:sdCVarWrapper$." ), 2, NULL, "s", "name", "Name of the cvar to look up.", "s", "default", "Default value to assign to the cvar if it doesn't already exist." );
 
+const idEventDef EV_GetStat( "getStat", 'h', DOC_TEXT( "Returns a handle to a given named stat." ), 1, "If no stat exists with the given name, no stat will be created, and an invalid handle will be returned.", "s", "name", "Name of the stat to find." );
 const idEventDef EV_AllocStatInt( "allocStatInt", 'h', DOC_TEXT( "Allocates an integer based stat of the given name, and returns a handle to it." ), 1, "If the stat already exists, a handle to the existing stat will be returned.", "s", "name", "Name of the stat to allocate." );
 const idEventDef EV_AllocStatFloat( "allocStatFloat", 'h', DOC_TEXT( "Allocates an float based stat of the given name, and returns a handle to it." ), 1, "If the stat already exists, a handle to the existing stat will be returned.", "s", "name", "Name of the stat to allocate." );
 const idEventDef EV_IncreaseStatInt( "increaseStatInt", '\0', DOC_TEXT( "Increases the value of a stat for a client by a given value." ), 3, "This stat must have been allocated using $event:allocStatInt$.", "h", "handle", "Handle to the stat.", "d", "index", "Index of the client.", "d", "value", "Value to increase the stat by." );
 const idEventDef EV_IncreaseStatFloat( "increaseStatFloat", '\0', DOC_TEXT( "Increases the value of a stat for a client by a given value." ), 3, "This stat must have been allocated using $event:allocStatFloat$.", "h", "handle", "Handle to the stat.", "d", "index", "Index of the client.", "f", "value", "Value to increase the stat by." );
 const idEventDef EV_GetStatValue( "getStatValue", 'f', DOC_TEXT( "Returns the current value of a stat for a given client." ), 2, NULL, "h", "handle", "Handle to the stat.", "d", "index", "Index of the client." );
+const idEventDef EV_GetStatDelta( "getStatDelta", 'f', DOC_TEXT( "Returns the delta between the current value of a stat and the last baseline that was stored for a given client." ), 2, "You can call $event:setStatBaseLine$ to store the baseline for a player.", "h", "handle", "Handle to the stat.", "d", "index", "Index of the client." );
+const idEventDef EV_SetStatBaseline( "setStatBaseLine", '\0', DOC_TEXT( "Stores the current values of all stats for a client to be used as a baseline." ), 1, "You can call $event:getStatDelta$ to get the delta between the baseline and the current value for a stat entry.", "d", "index", "Index of the client." );
 
 const idEventDef EV_GetClimateSkin( "getClimateSkin", 's', DOC_TEXT( "Looks up the value of a key in the climate skins table for the current map." ), 1, NULL, "s", "key", "Name of the key to look up." );
 
@@ -274,7 +278,9 @@ const idEventDef EV_SendQuickChat( "sendQuickChat", '\0', DOC_TEXT( "Sends a qui
 
 const idEventDef EV_Thread_GetContextEntity( "getContextEntity", 'e', DOC_TEXT( "Returns the entity that the local player used the context menu on, or $null$ if none." ), 0, NULL );
 
-const idEventDef EV_Thread_PushEndGameStatPlayer( "pushEndGameStat", '\0', DOC_TEXT( "Adds an entry to the end game stats list." ), 2, NULL, "E", "player", "Player which won this award.", "f", "value", "Value associated with the award." );
+const idEventDef EV_Thread_SetEndGameStatValue( "setEndGameStatValue", '\0', DOC_TEXT( "Sets the value of an end game stat for a specific client to the specified value." ), 3, NULL, "d", "statIndex", "Index of the stat to set the value of.", "e", "player", "Player to set the value for.", "f", "value", "Value to set." );
+const idEventDef EV_Thread_SetEndGameStatWinner( "setEndGameStatWinner", '\0', DOC_TEXT( "Sets this client as the winner of the specified end game stat." ), 2, NULL, "d", "statIndex", "Index of the stat to set the winner of.", "E", "player", "Player which won this award." );
+const idEventDef EV_Thread_AllocEndGameStat( "allocEndGameStat", 'd', DOC_TEXT( "Allocates an end game stats entry and return its index." ), 0, NULL );
 const idEventDef EV_Thread_SendEndGameStats( "sendEndGameStats", '\0', DOC_TEXT( "Finishes the end game stats list, and sends it to all clients." ), 0, NULL );
 
 const idEventDef EV_Thread_HeightMapTrace( "heightMapTrace", 'f', DOC_TEXT( "Performs a fast heightmap based trace, and returns the fraction which passed." ), 2, "If no appropriate heightmap can be found for the trace, the result will be 1.", "v", "start", "Start point of the trace.", "v", "end", "End point of the trace." );
@@ -284,6 +290,9 @@ const idEventDef EV_Thread_GetNextBotActionIndex( "getNextBotActionIndex", "dd",
 const idEventDef EV_Thread_GetBotActionOrigin( "getBotActionOrigin", "d", 'v' );
 const idEventDef EV_Thread_GetBotActionDeployableType( "getBotActionDeployableType", "d", 'd' );
 const idEventDef EV_Thread_GetBotActionBaseGoalType( "getBotActionBaseGoalType", "do", 'd' );
+
+const idEventDef EV_Thread_EnablePlayerHeadModels( "enablePlayerHeadModels" );
+const idEventDef EV_Thread_DisablePlayerHeadModels( "disablePlayerHeadModels" );
 
 ABSTRACT_DECLARATION( sdProgramThread, sdSysCallThread )
 	EVENT( EV_Thread_Execute,				sdSysCallThread::Event_Execute )
@@ -296,6 +305,7 @@ ABSTRACT_DECLARATION( sdProgramThread, sdSysCallThread )
 	EVENT( EV_Thread_Assert,				sdSysCallThread::Event_Assert )
 	EVENT( EV_Thread_Random,				sdSysCallThread::Event_Random )
 	EVENT( EV_Thread_GetTime,				sdSysCallThread::Event_GetTime )
+	EVENT( EV_Thread_ToGuiTime,				sdSysCallThread::Event_ToGuiTime )
 	EVENT( EV_Thread_KillThread,			sdSysCallThread::Event_KillThread )
 	EVENT( EV_Thread_SetThreadName,			sdSysCallThread::Event_SetThreadName )
 	EVENT( EV_Thread_GetEntity,				sdSysCallThread::Event_GetEntity )
@@ -503,11 +513,14 @@ ABSTRACT_DECLARATION( sdProgramThread, sdSysCallThread )
 
 	EVENT( EV_GetCVar,								sdSysCallThread::Event_GetCVar )
 
+	EVENT( EV_GetStat,								sdSysCallThread::Event_GetStat )
 	EVENT( EV_AllocStatInt,							sdSysCallThread::Event_AllocStatInt )
 	EVENT( EV_AllocStatFloat,						sdSysCallThread::Event_AllocStatFloat )
 	EVENT( EV_IncreaseStatInt,						sdSysCallThread::Event_IncreaseStatInt )
 	EVENT( EV_IncreaseStatFloat,					sdSysCallThread::Event_IncreaseStatFloat )
 	EVENT( EV_GetStatValue,							sdSysCallThread::Event_GetStatValue )
+	EVENT( EV_GetStatDelta,							sdSysCallThread::Event_GetStatDelta )
+	EVENT( EV_SetStatBaseline,						sdSysCallThread::Event_SetStatBaseLine )
 
 	EVENT( EV_GetClimateSkin,						sdSysCallThread::Event_GetClimateSkin )
 
@@ -515,7 +528,9 @@ ABSTRACT_DECLARATION( sdProgramThread, sdSysCallThread )
 
 	EVENT( EV_Thread_GetContextEntity,				sdSysCallThread::Event_GetContextEntity )
 
-	EVENT( EV_Thread_PushEndGameStatPlayer,			sdSysCallThread::Event_PushEndGameStatPlayer )
+	EVENT( EV_Thread_SetEndGameStatValue,			sdSysCallThread::Event_SetEndGameStatValue )
+	EVENT( EV_Thread_SetEndGameStatWinner,			sdSysCallThread::Event_SetEndGameStatWinner )
+	EVENT( EV_Thread_AllocEndGameStat,				sdSysCallThread::Event_AllocEndGameStat )
 	EVENT( EV_Thread_SendEndGameStats,				sdSysCallThread::Event_SendEndGameStats )
 
 	EVENT( EV_Thread_HeightMapTrace,				sdSysCallThread::Event_HeightMapTrace )
@@ -526,6 +541,9 @@ ABSTRACT_DECLARATION( sdProgramThread, sdSysCallThread )
 	EVENT( EV_Thread_GetBotActionOrigin,			sdSysCallThread::Event_GetBotActionOrigin )
 	EVENT( EV_Thread_GetBotActionDeployableType,	sdSysCallThread::Event_GetBotActionDeployableType )
 	EVENT( EV_Thread_GetBotActionBaseGoalType,		sdSysCallThread::Event_GetBotActionBaseGoalType )
+
+	EVENT( EV_Thread_EnablePlayerHeadModels,		sdSysCallThread::Event_EnablePlayerHeadModels )
+	EVENT( EV_Thread_DisablePlayerHeadModels,		sdSysCallThread::Event_DisablePlayerHeadModels )
 END_CLASS
 
 
@@ -644,7 +662,16 @@ sdSysCallThread::Event_GetTime
 ================
 */
 void sdSysCallThread::Event_GetTime( void ) {
-	sdProgram::ReturnFloat( MS2SEC( gameLocal.realClientTime ) );
+	sdProgram::ReturnFloat( MS2SEC( gameLocal.time ) );
+}
+
+/*
+================
+sdSysCallThread::Event_GetTime
+================
+*/
+void sdSysCallThread::Event_ToGuiTime( float time ) const {
+  	sdProgram::ReturnFloat( MS2SEC( gameLocal.ToGuiTime( SEC2MS( time ) ) ) );
 }
 
 /*
@@ -2954,7 +2981,16 @@ sdSysCallThread::Event_AllocStatInt
 ================
 */
 void sdSysCallThread::Event_AllocStatInt( const char* name ) {
-	sdProgram::ReturnHandle( sdGlobalStatsTracker::GetInstance().AllocStat( name, "int" ) );
+	sdProgram::ReturnHandle( sdGlobalStatsTracker::GetInstance().AllocStat( name, sdNetStatKeyValue::SVT_INT ) );
+}
+
+/*
+================
+sdSysCallThread::Event_GetStat
+================
+*/
+void sdSysCallThread::Event_GetStat( const char* name ) {
+	sdProgram::ReturnHandle( sdGlobalStatsTracker::GetInstance().GetStat( name ) );
 }
 
 /*
@@ -2963,7 +2999,7 @@ sdSysCallThread::Event_AllocStatFloat
 ================
 */
 void sdSysCallThread::Event_AllocStatFloat( const char* name ) {
-	sdProgram::ReturnHandle( sdGlobalStatsTracker::GetInstance().AllocStat( name, "float" ) );
+	sdProgram::ReturnHandle( sdGlobalStatsTracker::GetInstance().AllocStat( name, sdNetStatKeyValue::SVT_FLOAT ) );
 }
 
 /*
@@ -2981,7 +3017,7 @@ void sdSysCallThread::Event_IncreaseStatInt( int handle, int playerIndex, int co
 		gameLocal.Warning( "sdSysCallThread::Event_IncreaseStatInt Invalid Player Index '%i'", playerIndex );
 		return;
 	}
-	entry->IncreaseInteger( playerIndex, count );
+	entry->IncreaseValue( playerIndex, count );
 }
 
 /*
@@ -2999,7 +3035,7 @@ void sdSysCallThread::Event_IncreaseStatFloat( int handle, int playerIndex, floa
 		gameLocal.Warning( "sdSysCallThread::Event_IncreaseStatInt Invalid Player Index '%i'", playerIndex );
 		return;
 	}
-	entry->IncreaseFloat( playerIndex, count );
+	entry->IncreaseValue( playerIndex, count );
 }
 
 /*
@@ -3017,7 +3053,55 @@ void sdSysCallThread::Event_GetStatValue( int handle, int playerIndex ) {
 		gameLocal.Warning( "sdSysCallThread::Event_GetStatValue Invalid Player Index '%i'", playerIndex );
 		return;
 	}
-	sdProgram::ReturnFloat( entry->GetValue( playerIndex ) );
+	sdPlayerStatEntry::statValue_t value = entry->GetValue( playerIndex );
+	switch ( entry->GetType() ) {
+		case sdNetStatKeyValue::SVT_INT:
+		case sdNetStatKeyValue::SVT_INT_MAX:
+			sdProgram::ReturnFloat( value.GetInt() );
+			break;
+		case sdNetStatKeyValue::SVT_FLOAT:
+		case sdNetStatKeyValue::SVT_FLOAT_MAX:
+			sdProgram::ReturnFloat( value.GetFloat() );
+			break;
+	}
+}
+
+/*
+================
+sdSysCallThread::Event_GetStatDelta
+================
+*/
+void sdSysCallThread::Event_GetStatDelta( int handle, int playerIndex ) {
+	sdPlayerStatEntry* entry = sdGlobalStatsTracker::GetInstance().GetStat( handle );
+	if ( entry == NULL ) {
+		gameLocal.Warning( "sdSysCallThread::Event_GetStatDelta Invalid Handle '%i'", handle );
+		return;
+	}
+	if ( playerIndex < 0 || playerIndex >= MAX_CLIENTS ) {
+		gameLocal.Warning( "sdSysCallThread::Event_GetStatDelta Invalid Player Index '%i'", playerIndex );
+		return;
+	}
+
+	sdPlayerStatEntry::statValue_t value = entry->GetDeltaValue( playerIndex );
+	switch ( entry->GetType() ) {
+		case sdNetStatKeyValue::SVT_INT:
+		case sdNetStatKeyValue::SVT_INT_MAX:
+			sdProgram::ReturnFloat( value.GetInt() );
+			break;
+		case sdNetStatKeyValue::SVT_FLOAT:
+		case sdNetStatKeyValue::SVT_FLOAT_MAX:
+			sdProgram::ReturnFloat( value.GetFloat() );
+			break;
+	}
+}
+
+/*
+================
+sdSysCallThread::Event_SetStatBaseLine
+================
+*/
+void sdSysCallThread::Event_SetStatBaseLine( int playerIndex ) {
+	sdGlobalStatsTracker::GetInstance().SetStatBaseLine( playerIndex );
 }
 
 /*
@@ -3183,22 +3267,47 @@ void sdSysCallThread::Event_GetContextEntity() {
 	sdProgram::ReturnEntity( gameLocal.localPlayerProperties.GetContextEntity() );
 }
 
+
 /*
 ============
-sdSysCallThread::Event_PushEndGameStatPlayer
+sdSysCallThread::Event_SetEndGameStatValue
 ============
 */
-void sdSysCallThread::Event_PushEndGameStatPlayer( idEntity* other, float value ) {
-	idPlayer* player = NULL;
-	if ( other != NULL ) {
-		player = other->Cast< idPlayer >();
-		if ( player == NULL ) {
-			gameLocal.Warning( "sdSysCallThread::Event_PushEndGameStatPlayer Invalid Entity Passed" );
-			return;
-		}
+void sdSysCallThread::Event_SetEndGameStatValue( int statIndex, idEntity* ent, float value ) {
+	idPlayer* player = ent->Cast< idPlayer >();
+	if ( player == NULL ) {
+		gameLocal.Warning( "sdSysCallThread::Event_SetEndGameStatValue Invalid Player" );
+		return;
 	}
 
-	gameLocal.PushEndGameStat( player, value );
+	gameLocal.SetEndGameStatValue( statIndex, player, value );
+}
+
+/*
+============
+sdSysCallThread::Event_SetEndGameStatWinner
+============
+*/
+void sdSysCallThread::Event_SetEndGameStatWinner( int statIndex, idEntity* ent ) {
+	if ( ent == NULL ) {
+		return;
+	}
+	idPlayer* player = ent->Cast< idPlayer >();
+	if ( player == NULL ) {
+		gameLocal.Warning( "sdSysCallThread::Event_SetEndGameStatWinner Invalid Player" );
+		return;
+	}
+
+	gameLocal.SetEndGameStatWinner( statIndex, player );
+}
+
+/*
+============
+sdSysCallThread::Event_AllocEndGameStat
+============
+*/
+void sdSysCallThread::Event_AllocEndGameStat( void ) {
+	sdProgram::ReturnInteger( gameLocal.AllocEndGameStat() );
 }
 
 /*
@@ -3207,7 +3316,7 @@ sdSysCallThread::Event_SendEndGameStats
 ============
 */
 void sdSysCallThread::Event_SendEndGameStats( void ) {
-	gameLocal.SendEndGameStats();
+	gameLocal.SendEndGameStats( sdReliableMessageClientInfoAll() );
 }
 
 /*
@@ -3307,4 +3416,22 @@ void sdSysCallThread::Event_GetBotActionBaseGoalType( int index, idScriptObject*
 	}
 
 	sdProgram::ReturnInteger( botThreadData.botActions[ index ]->GetBaseObjForTeam( team->GetBotTeam() ) );
+}
+
+/*
+============
+sdSysCallThread::Event_EnablePlayerHeadModels
+============
+*/
+void sdSysCallThread::Event_EnablePlayerHeadModels( void ) {
+	gameLocal.EnablePlayerHeadModels();
+}
+
+/*
+============
+sdSysCallThread::Event_DisablePlayerHeadModels
+============
+*/
+void sdSysCallThread::Event_DisablePlayerHeadModels( void ) {
+	gameLocal.DisablePlayerHeadModels();
 }

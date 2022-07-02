@@ -1903,12 +1903,20 @@ void sdUIList::DrawItemMaterial( int row, int col, const idVec4& rect, const idV
 	idVec4 rectLocal = rect;
 
 	if( columnWidths[ col ] > item->part.width ) {
-		rectLocal.x += ( columnWidths[ col ] - item->part.width ) * 0.5f;
+		if( item->textFlags & DTF_CENTER ) {
+			rectLocal.x += ( columnWidths[ col ] - item->part.width ) * 0.5f;
+		} else if( item->textFlags & DTF_RIGHT ) {
+			rectLocal.x += ( columnWidths[ col ] - item->part.width );
+		}
 	}
 
 	float drawHeight = rowHeights[ row ] - rowSpacing;
 	if( drawHeight > item->part.height ) {
-		rectLocal.y += ( drawHeight - item->part.height ) * 0.5f;
+		if( item->textFlags & DTF_VCENTER ) {
+			rectLocal.y += ( drawHeight - item->part.height ) * 0.5f;
+		} else if( item->textFlags & DTF_BOTTOM ) {
+			rectLocal.y += ( drawHeight - item->part.height );
+		}
 	}
 
 	if ( dropShadowOffsetImage != 0.0f ) {

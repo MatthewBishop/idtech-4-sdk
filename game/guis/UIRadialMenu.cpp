@@ -772,7 +772,7 @@ void sdUIRadialMenu::HandleArcMouseMove( const sdSysEvent* event, const idVec2 d
 	bool dontSnap = false;
 	bool useDelta = false;
 
-	if( event->IsControllerMouseEvent() ) {
+	if ( event->IsControllerMouseEvent() ) {
 	
 	} else {
 		// check whether the player has made a fast movement (to be handled gesturally)
@@ -872,7 +872,7 @@ void sdUIRadialMenu::HandleArcMouseMove( const sdSysEvent* event, const idVec2 d
 		currentItem = newItem;
 //	}
 
-	if( !event->IsControllerMouseEvent() ) {
+	if ( !event->IsControllerMouseEvent() ) {
 		//
 		// OUTPUT
 		// calculate the cursor position

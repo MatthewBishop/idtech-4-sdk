@@ -56,6 +56,11 @@ sdUIEditW::sdUIEditW() {
 	scriptState.GetProperties().RegisterProperty( "cursor", cursorName );
 	scriptState.GetProperties().RegisterProperty( "overwriteCursor", overwriteCursorName );
 
+	scriptState.GetProperties().RegisterProperty( "IMEFillColor", IMEFillColor );
+	scriptState.GetProperties().RegisterProperty( "IMEBorderColor", IMEBorderColor );
+	scriptState.GetProperties().RegisterProperty( "IMESelectionColor", IMESelectionColor );
+	scriptState.GetProperties().RegisterProperty( "IMETextColor", IMETextColor );
+
 	textAlignment.SetIndex( 0, TA_LEFT );
 	maxTextLength = 0;
 	readOnly = 0.0f;
@@ -77,6 +82,9 @@ sdUIEditW::sdUIEditW() {
 
 	SetWindowFlag( WF_ALLOW_FOCUS );
 	SetWindowFlag( WF_CLIP_TO_RECT );
+
+	drawIME = false;
+	composing = false;
 }
 
 /*
@@ -144,7 +152,7 @@ sdUIEditW::DrawLocal
 ============
 */
 void sdUIEditW::DrawLocal() {
-	if( PreDraw() ) {
+	if ( PreDraw() ) {
 		DrawBackground( cachedClientRect );
 
 		deviceContext->PushClipRect( GetDrawRect() );
@@ -158,9 +166,41 @@ void sdUIEditW::DrawLocal() {
 		if ( borderWidth > 0.0f ) {
 			deviceContext->DrawClippedBox( cachedClientRect.x, cachedClientRect.y, cachedClientRect.z, cachedClientRect.w, borderWidth, borderColor );
 		}
+
+		// Can draw the IME elements
+		drawIME = true;
 	}
 
 	PostDraw();	
+}
+
+/*
+============
+sdUIEditW::DrawLocal
+============
+*/
+void sdUIEditW::FinalDraw() {
+	if ( drawIME ) {
+		drawIME = false;
+
+		// Render the IME elements
+		if ( sys->IME().LangSupportsIME() && GetUI()->IsFocused( this ) ) {
+			// Draw the input locale indicator
+			DrawIndicator();
+
+			// Display the composition string
+			//DrawComposition();
+
+			if ( sys->IME().IsReadingWindowActive() ) {
+				// Reading window
+				DrawCandidateReadingWindow( true );
+			} else if ( sys->IME().IsCandidateListActive() ) {
+				DrawCandidateReadingWindow( false );
+			}
+		}
+	}
+
+	sdUIWindow::FinalDraw();
 }
 
 /*
@@ -174,6 +214,45 @@ bool sdUIEditW::PostEvent( const sdSysEvent* event ) {
 	}
 
 	bool retVal = sdUIWindow::PostEvent( event );
+
+	if ( event->IsIMEEvent() ) {
+		switch ( event->GetIMEEvent() ) {
+			case IMEV_COMPOSITION_START:
+				if ( !readOnly ) {
+					// enable composition mode
+					composing = true;
+					helper.QueueEvent( sdUIEditHelper< sdUIEditW, idWStr, wchar_t >::sdUIEditEvent::EE_COMPOSITION_CURSOR_SET );
+					helper.InsertText( L"" );	// makes sure that the current selection gets cleared out
+					compositionString.Clear();
+					return true;
+				}
+				break;
+			case IMEV_COMPOSITION_END:
+				composing = false;
+				compositionString.Clear();
+				return true;
+			case IMEV_COMPOSITION_UPDATE:
+				if ( composing ) {
+					// schedule a recalculation of text wrapping etc
+					compositionString = event->GetCompositionString();
+					MakeLayoutDirty();
+					return true;
+				}
+				break;
+			case IMEV_COMPOSITION_COMMIT:
+				if ( !readOnly ) {
+					int len = idWStr::Length( event->GetCompositionString() );
+
+					size_t dataSize = ( len + 1 ) * sizeof( wchar_t );
+					void* data = Mem_Alloc( dataSize );
+					::memcpy( data, event->GetCompositionString(), dataSize );
+					helper.QueueEvent( sdUIEditHelper< sdUIEditW, idWStr, wchar_t >::sdUIEditEvent::EE_COMPOSITION_COMMIT, 0, 0, 0, 0, 0, dataSize, data );
+					return true;
+				}
+				break;
+		}
+	}
+
 	return helper.PostEvent( retVal, event );
 }
 
@@ -183,7 +262,16 @@ sdUIEditW::Script_ClearText
 ============
 */
 void sdUIEditW::Script_ClearText( sdUIFunctionStack& stack ) {
-	ClearText();	
+	ClearText();
+}
+
+/*
+============
+sdUIEditW::Script_ClearText
+============
+*/
+const wchar_t* sdUIEditW::GetCursorText() const {
+	return ( compositionString.c_str() );
 }
 
 /*
@@ -245,7 +333,8 @@ sdUIEditW::ApplyLayout
 void sdUIEditW::ApplyLayout() {
 	bool needLayout = windowState.recalculateLayout;
 	sdUIWindow::ApplyLayout();
-	if( needLayout ) {
+	helper.ApplyLayout();
+	if ( needLayout ) {
 		helper.TextChanged();
 	}
 }
@@ -267,6 +356,7 @@ sdUIEditW::OnEditTextChanged
 */
 void sdUIEditW::OnEditTextChanged( const idWStr& oldValue, const idWStr& newValue ) {
 	MakeLayoutDirty();
+	helper.MakeTextDirty();
 }
 
 /*
@@ -297,8 +387,6 @@ void sdUIEditW::EndLevelLoad() {
 	sdUserInterfaceLocal::SetupMaterialInfo( overwriteCursor.mi, &overwriteCursor.width, &overwriteCursor.height );
 }
 
-
-
 /*
 ============
 sdUIEditW::EnumerateEvents
@@ -327,7 +415,7 @@ sdUIEditW::OnFlagsChanged
 ============
 */
 void sdUIEditW::OnFlagsChanged( const float oldValue, const float newValue ) {
-	if( FlagChanged( oldValue, newValue, WF_COLOR_ESCAPES ) ) {
+	if ( FlagChanged( oldValue, newValue, WF_COLOR_ESCAPES ) ) {
 		MakeLayoutDirty();
 	}
 }
@@ -353,6 +441,37 @@ void sdUIEditW::Script_IsWhitespace( sdUIFunctionStack& stack ) {
 	stack.Push( true );
 }
 
+/*
+============
+sdUIEditW::OnInputInit
+============
+*/
+void sdUIEditW::OnLanguageInit() {
+	if ( GetUI()->IsFocused( this ) ) {
+		if ( sys->IME().LangSupportsIME() ) {
+			sys->IME().Enable( true );
+		}
+	}
+
+	sdUIWindow::OnLanguageInit();
+}
+
+/*
+============
+sdUIEditW::OnInputShutdown
+============
+*/
+void sdUIEditW::OnLanguageShutdown() {
+	if ( GetUI()->IsFocused( this ) ) {
+		if ( sys->IME().LangSupportsIME() ) {
+			sys->IME().FinalizeString();
+			sys->IME().Enable( false );
+		}
+	}
+
+	sdUIWindow::OnLanguageShutdown();
+}
+
 
 /*
 ============
@@ -362,6 +481,303 @@ sdUIEditW::OnGainFocus
 void sdUIEditW::OnGainFocus( void ) {
 	sdUIWindow::OnGainFocus();
 	helper.OnGainFocus();
+	if ( sys->IME().LangSupportsIME() ) {
+		sys->IME().Enable( true );
+	}
+}
+
+/*
+============
+sdUIEditW::OnLoseFocus
+============
+*/
+void sdUIEditW::OnLoseFocus( void ) {
+	sdUIWindow::OnLoseFocus();
+	if ( sys->IME().LangSupportsIME() ) {
+		sys->IME().FinalizeString();
+		sys->IME().Enable( false );
+	}
+}
+
+/*
+============
+sdUIEditW::DrawIndicator
+============
+*/
+void sdUIEditW::DrawIndicator() {
+	// If IME system is off, draw English indicator
+	const wchar_t* indicator = sys->IME().GetState() == sdIME::IME_STATE_ON ? sys->IME().GetIndicator() : L"A";
+
+	ActivateFont();
+
+	int fontHeight = deviceContext->GetFontHeight( cachedFontHandle, fontSize );
+
+#if 1
+	int heightRequired;
+
+	if ( sys->IME().VerticalCandidateLine() ) {
+		heightRequired = ( fontHeight * sdIME::MAX_CANDLIST ) + 2;
+	} else {
+		heightRequired = fontHeight + 2;
+	}
+
+	sdBounds2D rect( cachedClientRect.x,
+						cachedClientRect.y + cachedClientRect.w,
+						fontHeight + 2,
+						fontHeight + 2 );
+
+	sdUIWindow* desktop = GetUI()->GetDesktop();
+	if ( desktop != NULL ) {
+		if ( rect.GetMins().y + heightRequired > desktop->GetWorldRect().w ) {
+			float height = rect.GetHeight();
+			rect.GetMins().y = cachedClientRect.y - height;
+			rect.GetMaxs().y = rect.GetMins().y + height;
+		}
+	} else {
+		if ( rect.GetMins().y + heightRequired > SCREEN_HEIGHT ) {
+			float height = rect.GetHeight();
+			rect.GetMins().y = cachedClientRect.y - height;
+			rect.GetMaxs().y = rect.GetMins().y + height;
+		}
+	}
+
+	sdBounds2D textRect( rect.GetMins().x + 1,
+						rect.GetMins().y + 1,
+						fontHeight,
+						fontHeight );
+#else
+	sdBounds2D textRect( cachedClientRect.x + cachedClientRect.z + 1,
+						cachedClientRect.y + cachedClientRect.w,
+						fontHeight,
+						fontHeight );
+	sdBounds2D rect( cachedClientRect.x + cachedClientRect.z,
+						cachedClientRect.y + cachedClientRect.w,
+						fontHeight + 2,
+						fontHeight + 2 );
+#endif
+
+	deviceContext->DrawRect( rect.GetMins().x, rect.GetMins().y, rect.GetWidth(), rect.GetHeight(), IMEFillColor );
+	deviceContext->DrawBox( rect.GetMins().x, rect.GetMins().y, rect.GetWidth(), rect.GetHeight(), 1.0f, IMEBorderColor );
+
+	deviceContext->SetFontSize( fontSize );
+
+	deviceContext->SetColor( IMETextColor );
+	deviceContext->DrawText( indicator, textRect, DTF_CENTER | DTF_SINGLELINE | DTF_BOTTOM | DTF_NOCLIPPING );								
+}
+
+#if 0
+/*
+============
+sdUIEditW::DrawComposition
+============
+*/
+void sdUIEditW::DrawComposition() {
+	const wchar_t* compStr = sys->IME().GetCompositionString();
+
+	ActivateFont();
+	deviceContext->SetFontSize( fontSize );
+
+	int textWidth, textHeight;
+	sdBounds2D screenBounds( 0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT );
+
+	deviceContext->GetTextDimensions( compStr, screenBounds, DTF_LEFT | DTF_SINGLELINE | DTF_BOTTOM | DTF_NOCLIPPING, cachedFontHandle, fontSize, textWidth, textHeight );
+
+	// Draw the window and string
+	sdBounds2D rect( cachedClientRect.x,
+						cachedClientRect.y + cachedClientRect.w,
+						textWidth,
+						textHeight );//2 * cachedClientRect.w );
+
+	if ( false /*sys->IME().GetPrimaryLanguage() == sdIME::IME_LANG_KOREAN*/ ) {
+
+	} else {
+		deviceContext->SetColor( idVec4( 1.0f, 1.0f, 1.0f, 0.3f ) );
+		deviceContext->DrawRect( rect.GetMins().x, rect.GetMins().y, rect.GetWidth(), rect.GetHeight(), 0.0f, 0.0f, 1.0f, 1.0f, declHolder.FindMaterial( "_whiteVertexColor" ) );
+	}
+
+	deviceContext->SetColor( colorWhite );
+	deviceContext->DrawText( compStr, rect, DTF_LEFT | DTF_SINGLELINE | DTF_BOTTOM | DTF_NOCLIPPING );		
+}
+#endif
+
+/*
+============
+sdUIEditW::DrawCandidateReadingWindow
+============
+*/
+void sdUIEditW::DrawCandidateReadingWindow( bool reading ) {
+	int numEntries = reading ? 4 : sdIME::MAX_CANDLIST;
+
+	ActivateFont();
+	deviceContext->SetFontSize( fontSize );
+
+	int textWidth, textHeight;
+	sdBounds2D screenBounds( 0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT );
+
+	int widthRequired = 0;
+	int lineHeight = 0;
+	int heightRequired = 0;
+
+	wchar_t candidateString[ sdIME::MAX_CANDIDATE_LENGTH + 4 ];
+	candidateString[ 0 ] = L'\0';
+	int firstSelected = 0;
+	int horizontalSelectedLen = 0;
+
+	int fontHeight = deviceContext->GetFontHeight( cachedFontHandle, fontSize );
+
+	if ( ( sys->IME().VerticalCandidateLine() && !reading ) ||
+		( !sys->IME().IsHorizontalReading() && reading ) ) {
+		// vertical window
+		for ( int i = 0; i < numEntries; i++ ) {
+			if ( *( sys->IME().GetCandidate( i ) ) == L'\0' ) {
+				numEntries = i;
+				break;
+			}
+
+			deviceContext->GetTextDimensions( sys->IME().GetCandidate( i ), screenBounds, DTF_LEFT | DTF_SINGLELINE | DTF_BOTTOM | DTF_NOCLIPPING, cachedFontHandle, fontSize, textWidth, textHeight );
+
+			widthRequired = Max( widthRequired, textWidth );
+			lineHeight = fontHeight;//Max( lineHeight, textHeight );
+		}
+#if 0
+		heightRequired = lineHeight * numEntries;
+#else
+		heightRequired = lineHeight * sdIME::MAX_CANDLIST;
+#endif
+	} else {
+		// horizontal window
+
+		if ( reading ) {
+			//???
+		} else {
+			idWStr::Append( candidateString, sdIME::MAX_CANDIDATE_LENGTH + 2, L"\x00ab" );
+
+			for ( int i = 0; i < sdIME::MAX_CANDLIST; i++ ) {
+				if ( *( sys->IME().GetCandidate( i ) ) == L'\0' ) {
+					break;
+				}
+
+				wchar_t* entry = va( L"%ls", sys->IME().GetCandidate( i ) );
+
+				// If this is the selected entry, mark its character position
+				if ( sys->IME().GetCandidateSelection() == i ) {
+					firstSelected = idWStr::Length( candidateString );
+					horizontalSelectedLen = idWStr::Length( entry );
+				}
+
+				idWStr::Append( candidateString, sdIME::MAX_CANDIDATE_LENGTH + 4, entry );
+			}
+
+			idWStr::Append( candidateString, sdIME::MAX_CANDIDATE_LENGTH + 2, L"\x00bb" );
+
+			deviceContext->GetTextDimensions( candidateString, screenBounds, DTF_LEFT | DTF_SINGLELINE | DTF_BOTTOM | DTF_NOCLIPPING, cachedFontHandle, fontSize, textWidth, textHeight );
+		}
+
+		widthRequired = textWidth;
+		lineHeight = heightRequired = fontHeight;//textHeight;
+	}
+
+	// Draw the elements
+
+#if 0
+	sdUIWindow* desktop = GetUI()->GetDesktop();
+	float textX, textY, rectX, rectY;
+
+	if ( desktop != NULL ) {
+		textX = ( desktop->GetWorldRect().z - ( widthRequired + 2 ) ) + 1;
+		textY = ( desktop->GetWorldRect().w - ( heightRequired + 2 ) ) + 1;
+		rectX = desktop->GetWorldRect().z - ( widthRequired + 2 );
+		rectY = desktop->GetWorldRect().w - ( heightRequired + 2 );
+	} else {
+		textX = ( SCREEN_WIDTH - ( widthRequired + 2 ) ) + 1;
+		textY = ( SCREEN_HEIGHT - ( heightRequired + 2 ) ) + 1;
+		rectX = SCREEN_WIDTH - ( widthRequired + 2 );
+		rectY = SCREEN_HEIGHT - ( heightRequired + 2 );
+	}
+
+	sdBounds2D textRect( textX,
+						textY,
+						widthRequired,
+						heightRequired );
+	sdBounds2D rect( rectX,
+						rectY,
+						widthRequired + 2,
+						heightRequired + 2 );
+#else
+	sdBounds2D rect( cachedClientRect.x + fontHeight + 2,
+						cachedClientRect.y + cachedClientRect.w,
+						widthRequired + 2,
+						heightRequired + 2 );
+
+	sdUIWindow* desktop = GetUI()->GetDesktop();
+	if ( desktop != NULL ) {
+		if ( rect.GetMins().y + rect.GetHeight() > desktop->GetWorldRect().w ) {
+			float height = rect.GetHeight();
+			rect.GetMins().y = cachedClientRect.y - height;
+			rect.GetMaxs().y = rect.GetMins().y + height;
+		}
+	} else {
+		if ( rect.GetMins().y + rect.GetHeight() > SCREEN_HEIGHT ) {
+			float height = rect.GetHeight();
+			rect.GetMins().y = cachedClientRect.y - height;
+			rect.GetMaxs().y = rect.GetMins().y + height;
+		}
+	}
+#endif
+
+	if ( ( sys->IME().VerticalCandidateLine() && !reading ) ||
+		( !sys->IME().IsHorizontalReading() && reading ) ) {
+		// Vertical candidate window
+		deviceContext->DrawRect( rect.GetMins().x, rect.GetMins().y, rect.GetWidth(), rect.GetHeight(), IMEFillColor );
+		deviceContext->DrawBox( rect.GetMins().x, rect.GetMins().y, rect.GetWidth(), rect.GetHeight(), 1.0f, IMEBorderColor );
+
+		for ( int i = 0; i < numEntries; i++ ) {
+			sdBounds2D textRect( rect.GetMins().x + 1,
+								rect.GetMins().y + i * lineHeight + 1,
+								widthRequired,
+								lineHeight );
+
+			if ( sys->IME().GetCandidateSelection() == i ) {
+				deviceContext->DrawRect( textRect.GetMins().x, textRect.GetMins().y, textRect.GetWidth(), textRect.GetHeight(), IMESelectionColor );
+			}
+
+			deviceContext->SetColor( IMETextColor );
+			deviceContext->DrawText( sys->IME().GetCandidate( i ), textRect, DTF_LEFT | DTF_SINGLELINE | DTF_BOTTOM | DTF_NOCLIPPING );
+		}
+	} else {
+		// Horizontal candidate window
+		sdBounds2D textRect( rect.GetMins().x + 1,
+							rect.GetMins().y + 1,
+							widthRequired,
+							heightRequired );
+
+		deviceContext->DrawRect( rect.GetMins().x, rect.GetMins().y, rect.GetWidth(), rect.GetHeight(), IMEFillColor );
+		deviceContext->DrawBox( rect.GetMins().x, rect.GetMins().y, rect.GetWidth(), rect.GetHeight(), 1.0f, IMEBorderColor );
+
+		if ( reading ) {
+
+		} else {
+			if ( horizontalSelectedLen > 0 ) {
+				// Draw selection
+				sdTextDimensionHelper tdh;
+				tdh.Init( candidateString, idWStr::Length( candidateString ), textRect, DTF_LEFT | DTF_SINGLELINE | DTF_BOTTOM | DTF_NOCLIPPING, cachedFontHandle, fontSize );
+
+				idVec2 drawBegin;
+				drawBegin.x = textRect.GetMins().x + tdh.GetWidth( 0, firstSelected - 1 );
+				drawBegin.y = textRect.GetMins().y;
+
+				idVec2 drawEnd;
+				drawEnd.x = drawBegin.x + tdh.GetWidth( firstSelected, firstSelected + horizontalSelectedLen - 1 );
+				drawEnd.y = textRect.GetMins().y;
+				
+				deviceContext->DrawRect( drawBegin.x, drawBegin.y, drawEnd.x - drawBegin.x, textRect.GetHeight(), IMESelectionColor );
+			}
+
+			// Draw text
+			deviceContext->SetColor( IMETextColor );
+			deviceContext->DrawText( candidateString, textRect, DTF_LEFT | DTF_SINGLELINE | DTF_BOTTOM | DTF_NOCLIPPING );
+		}
+	}
 }
 
 /*

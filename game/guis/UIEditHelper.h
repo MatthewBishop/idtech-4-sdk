@@ -231,50 +231,173 @@ sdUIEditHelper
 template < class UIEditClass, class StrClass, typename CharType >
 class sdUIEditHelper {
 public:
+	class sdUIEditEvent {
+	public:
+		enum type_e {
+			EE_DRAG_MOVE,
+			EE_MOUSE,
+			EE_SELECT_CANCEL,
+			EE_SELECT_ALL,
+			EE_MOVE_CURSOR,
+			EE_BACKSPACE,
+			EE_DELETE,
+			EE_UNDO,
+			EE_CLEAR,
+			EE_COPY,
+			EE_CUT,
+			EE_PASTE,
+			EE_CHAR,
+			EE_NEWLINE,
+			EE_INSERT_TEXT,
+			EE_COMPOSITION_CURSOR_SET,
+			EE_COMPOSITION_COMMIT
+		};
+
+		enum flags_e {
+			EF_SHIFT_PRESSED	=  BITT< 0 >::VALUE,
+			EF_CTRL_PRESSED		=  BITT< 1 >::VALUE
+		};
+
+										sdUIEditEvent() :
+											dataSize( 0 ),
+											data( NULL ) {
+										}
+										~sdUIEditEvent() {
+											FreeData();
+										}
+
+		void							Init( type_e type, int value = 0, int value2 = 0, int value3 = 0, int value4 = 0, int flags = 0, size_t dataSize = 0, void* data = NULL ) {
+											FreeData();
+
+											this->type = type;
+
+											this->value = value;
+											this->value2 = value2;
+											this->value3 = value3;
+											this->value4 = value4;
+
+											this->flags = flags;
+
+											this->dataSize = dataSize;
+											this->data = data;
+
+											node.SetOwner( this );
+										}
+
+		void							FreeData() {
+											Mem_Free( data );
+											data = NULL;
+											dataSize = 0;
+										}
+
+		type_e							GetType() const { return type; }
+
+		idLinkList< sdUIEditEvent >&	GetNode() { return node; }
+
+		// flags
+		bool							ShiftPressed() const { return ( flags & EF_SHIFT_PRESSED ) != 0; }
+		bool							CtrlPressed() const { return ( flags & EF_CTRL_PRESSED ) != 0; }
+
+		// EE_DRAG_MOVE, EE_MOUSE
+		float							GetCursorX() const { return *reinterpret_cast<const float *>( &value3 ); }
+		float							GetCursorY() const { return *reinterpret_cast<const float *>( &value4 ); }
+
+		// EE_MOUSE
+		mouseButton_t					GetMouseButton() const { return static_cast< mouseButton_t >( value ); }
+		bool							IsButtonDown() const { return ( value2 & 0x1 ) != 0; }
+
+		// EE_MOVE_CURSOR
+		enum cursoreMoveOp_e {
+			MC_HOME,
+			MC_END,
+			MC_UP,
+			MC_DOWN,
+			MC_RIGHT,
+			MC_LEFT,
+			MC_PAGE_UP,
+			MC_PAGE_DOWN
+		};
+		cursoreMoveOp_e					GetCursorMoveOp() const { return static_cast< cursoreMoveOp_e >( value ); }
+
+		// EE_CHAR
+		CharType						GetChar( void ) const { return static_cast< CharType >( value ); }
+
+		// EE_INSERT_TEXT, EE_COMPOSITION_COMMIT
+		const CharType*					GetText() const { return reinterpret_cast< const CharType* >( data ); }
+
+	protected:
+		type_e							type;
+		int								value;
+		int								value2;
+		int								value3;
+		int								value4;
+		int								flags;
+
+		size_t							dataSize;	// bytes of data pointed to by data
+		void*							data;		// this must be manually freed if not NULL
+
+		idLinkList< sdUIEditEvent >		node;
+	};
+
+public:
 	static const int MAX_TEXT_LENGTH = 1024;		// keep users from causing an allocation failure by pasting an excessive number of characters into an uncapped dialog
-	sdUIEditHelper();
-					~sdUIEditHelper();
 
-	void			Init( UIEditClass* parent );
+							sdUIEditHelper();
+							~sdUIEditHelper();
 
-	bool			PostEvent( bool retVal, const sdSysEvent* event );
-	void			DrawLocal();
-	void			DrawText( const idVec4& color );
-	void			OnGainFocus();
+	void					Init( UIEditClass* parent );
 
-	void			TextChanged();
-	void			ClearText();
+	bool					PostEvent( bool retVal, const sdSysEvent* event );
+	void					DrawLocal();
+	void					DrawText( const idVec4& color );
+	void					OnGainFocus();
 
-	void			InsertText( const CharType* text);
-	void			SurroundSelection( const CharType* prefix, const CharType* suffix );
-	bool			GetSelectionRange( int& start, int& end ) const;
-	void			SelectAll();
+	void					ApplyLayout();
+
+	void					MakeTextDirty() { textDirty = true; }
+	void					TextChanged();
+	void					ClearText();
+
+	void					InsertText( const CharType* text );
+	void					SurroundSelection( const CharType* prefix, const CharType* suffix );
+	bool					GetSelectionRange( int& start, int& end ) const;
+	void					SelectAll();
+
+	void					QueueEvent( typename sdUIEditEvent::type_e type, int value = 0, int value2 = 0, int value3 = 0, int value4 = 0, int flags = 0, size_t dataSize = 0, void* data = NULL );
 
 private:
-	int				EraseSelection();
-	bool			SelectionActive() const { return currentLine->GetStringIndexForCursor() != selectionStart && selectionStart != -1; }
-	void			CancelSelection() { selectionStart = -1; }
-	void			SaveUndo() { undoText = parent->editText; undoCursorPosition = currentLine->GetStringIndexForCursor(); undoAvailable = true; }
-	void			Undo() { if( undoAvailable ) { parent->editText = undoText; currentLine = lines.Next(); currentLine = currentLine->AdvanceCursor( undoCursorPosition ); CursorChanged(); undoCursorPosition = -1; undoAvailable = false; } }
+	int						EraseSelection();
+	bool					SelectionActive() const { return currentLine->GetStringIndexForCursor() != selectionStart && selectionStart != -1; }
+	void					CancelSelection() { selectionStart = -1; }
+	void					SaveUndo() { undoText = parent->editText; undoCursorPosition = currentLine->GetStringIndexForCursor(); undoAvailable = true; }
+	void					Undo() { if( undoAvailable ) { parent->editText = undoText; currentLine = lines.Next(); currentLine = currentLine->AdvanceCursor( undoCursorPosition ); CursorChanged(); undoCursorPosition = -1; undoAvailable = false; } }
 
-	void			MoveLeft();
-	void			MoveRight();
+	void					MoveLeft();
+	void					MoveRight();
 
-	void			UpdateIndexByColorCodes( int start, int& index );
+	void					UpdateIndexByColorCodes( int start, int& index );
 
-	int				GetMaxTextLength() { return ( parent->maxTextLength <= 0.0f ) ? MAX_TEXT_LENGTH : idMath::Ftoi( parent->maxTextLength.GetValue() ); }
+	int						GetMaxTextLength() { return ( parent->maxTextLength <= 0.0f ) ? MAX_TEXT_LENGTH : idMath::Ftoi( parent->maxTextLength.GetValue() ); }
 
-	void			GetVisibleLines( sdTextLine*& firstVisible, sdTextLine*& lastVisible ) const;
-	sdTextLine*		GetLineForPosition( const sdBounds2D& rect, const idVec2& pos ) const;
-	void			CursorChanged( bool adjustVScroll = true );
-	bool			InsertChar( int ch, int& cursorMove );
+	void					GetVisibleLines( sdTextLine*& firstVisible, sdTextLine*& lastVisible ) const;
+	sdTextLine*				GetLineForPosition( const sdBounds2D& rect, const idVec2& pos ) const;
+	void					CursorChanged( bool adjustVScroll = true );
+	bool					CaptureChar( const CharType ch );
+	void					InsertChar( CharType ch, int& cursorMove );
 
-	void			ClearLines();
+	void					DoInsertText( const CharType* text );
 
-	bool			IsFirstLine() const { return currentLine == lines.Next(); }
-	bool			IsLastLine() const { return currentLine == lines.Prev(); }
+	void					ClearLines();
 
-	int				GetCurrentLineIndex() const;
+	bool					IsFirstLine() const { return currentLine == lines.Next(); }
+	bool					IsLastLine() const { return currentLine == lines.Prev(); }
+
+	int						GetCurrentLineIndex() const;
+
+	void					FreeEvent( const sdUIEditEvent* ev );
+	const sdUIEditEvent*	GetEvent();
+	void					ProcessEvent( const sdUIEditEvent& ev );
+	void					RunEventLoop();
 
 private:
 	UIEditClass*	parent;
@@ -285,12 +408,14 @@ private:
 	int				cursorDrawTime;
 	bool			drawCursor;
 
+	// composing
+	int				compositionCursor;
+
 	// selection/scrolling
 	int				selectionStart;
 	float			drawOffset;
 	int				mouseDownCursorPosition;
 	idVec2			mouseClick;
-	bool			allowMouseSelect;
 
 	// undo
 	int				undoCursorPosition;
@@ -304,15 +429,19 @@ private:
 
 	int				cursorMove;
 
-	sdTextDimensionHelper tdh;
+	sdTextDimensionHelper				tdh;
 
-	idListGranularityOne< int >	lineBreaks;
+	idListGranularityOne< int >			lineBreaks;
 	
-	sdTextLine::node_t	lines;
+	sdTextLine::node_t					lines;
+
+	idLinkList< sdUIEditEvent >			eventQueue;
+	idBlockAlloc< sdUIEditEvent, 16 >	eventAllocator;
+
+	bool			textDirty;
 
 	static const int CURSOR_FLASH_TIME = 400;
 };
-
 
 /*
 ============
@@ -321,6 +450,7 @@ sdUIEditHelper::sdUIEditHelper
 */
 template < class UIEditClass, class StrClass, typename CharType >
 sdUIEditHelper< UIEditClass, StrClass, CharType >::sdUIEditHelper() :
+	compositionCursor( -1 ),
 	selectionStart( -1 ),
 	drawOffset( 0.0f ),
 	cursorDrawPosition( vec2_zero ),
@@ -328,11 +458,12 @@ sdUIEditHelper< UIEditClass, StrClass, CharType >::sdUIEditHelper() :
 	undoCursorPosition( 0 ),
 	mouseClick( -1.0f, -1.0f ),
 	mouseDownCursorPosition( -1 ),
-	allowMouseSelect( false ),
 	lastEventWasCharacter( false ),
 	cursorDrawTime( 0 ),
+	drawCursor( true ),
 	cursorMove( 0 ),
-	currentLine( new sdTextLine( 0, 0, 0 ) ) {
+	currentLine( new sdTextLine( 0, 0, 0 ) ),
+	textDirty( false ) {
 
 	currentLine->GetNode().AddToEnd( lines );
 }
@@ -377,101 +508,48 @@ sdUIEditHelper::PostEvent
 */
 template < class UIEditClass, class StrClass, typename CharType >
 bool sdUIEditHelper< UIEditClass, StrClass, CharType >::PostEvent( bool retVal, const sdSysEvent* event ) {
-	bool hitItem = false;
 	bool shiftPressed = keyInputManager->IsDown( K_SHIFT ) || keyInputManager->IsDown( K_RIGHT_SHIFT );
 	bool ctrlPressed = keyInputManager->IsDown( K_CTRL ) || keyInputManager->IsDown( K_RIGHT_CTRL );
-	
-	if( shiftPressed && !SelectionActive() ) {
-		selectionStart = currentLine->GetStringIndexForCursor();
-	}
+	int flags = ( shiftPressed ? sdUIEditEvent::EF_SHIFT_PRESSED : 0 ) | ( ctrlPressed ? sdUIEditEvent::EF_CTRL_PRESSED : 0 );
 
-	if( mouseDownCursorPosition != -1 && event->IsMouseEvent() ) {
-		if( !SelectionActive() ) {
-			selectionStart = currentLine->GetStringIndexForCursor();
-		}
-		mouseClick = parent->GetUI()->cursorPos;
-		allowMouseSelect = true;
-		CursorChanged();
+	if ( event->IsMouseEvent() ) {
+		QueueEvent( sdUIEditEvent::EE_DRAG_MOVE, 0, 0, *reinterpret_cast<const int *>( &parent->GetUI()->cursorPos.GetValue().x ), *reinterpret_cast<const int *>( &parent->GetUI()->cursorPos.GetValue().y ) );
 	} else if ( event->IsMouseButtonEvent() && parent->GetUI()->IsFocused( parent ) ) {
+		QueueEvent( sdUIEditEvent::EE_MOUSE, event->GetMouseButton(), event->IsButtonDown(), *reinterpret_cast<const int *>( &parent->GetUI()->cursorPos.GetValue().x ), *reinterpret_cast<const int *>( &parent->GetUI()->cursorPos.GetValue().y ), flags );
+
 		mouseButton_t mb = event->GetMouseButton();
 
-		if ( !event->IsButtonDown() ) {
-			switch( mb ) {
-				case M_MOUSE1:	// FALL THROUGH			
-				case M_MOUSE2:	// FALL THROUGH				
-				case M_MOUSE3:	// FALL THROUGH
-				case M_MOUSE4:	// FALL THROUGH
-				case M_MOUSE5:	// FALL THROUGH
-				case M_MOUSE6:	// FALL THROUGH
-				case M_MOUSE7:	// FALL THROUGH
-				case M_MOUSE8:
-				case M_MOUSE9:
-				case M_MOUSE10:
-				case M_MOUSE11:
-				case M_MOUSE12:
-					mouseDownCursorPosition = -1;
-					allowMouseSelect = false;
-					break;
-			}
-		} else {
-			switch( mb ) {
-				case M_MOUSE1:	// FALL THROUGH			
-				case M_MOUSE2:	// FALL THROUGH				
-				case M_MOUSE3:	// FALL THROUGH
-				case M_MOUSE4:	// FALL THROUGH
-				case M_MOUSE5:	// FALL THROUGH
-				case M_MOUSE6:	// FALL THROUGH
-				case M_MOUSE7:	// FALL THROUGH
-				case M_MOUSE8:
-				case M_MOUSE9:
-				case M_MOUSE10:
-				case M_MOUSE11:
-				case M_MOUSE12:
-					if( !shiftPressed && SelectionActive() ) {
-						CancelSelection();
-					}
-					allowMouseSelect = false;
-					mouseDownCursorPosition = currentLine->GetStringIndexForCursor();
-					mouseClick = parent->GetUI()->cursorPos;
-					CursorChanged();
+		switch( mb ) {
+			case M_MOUSE1:	// FALL THROUGH
+			case M_MOUSE2:	// FALL THROUGH
+			case M_MOUSE3:	// FALL THROUGH
+			case M_MOUSE4:	// FALL THROUGH
+			case M_MOUSE5:	// FALL THROUGH
+			case M_MOUSE6:	// FALL THROUGH
+			case M_MOUSE7:	// FALL THROUGH
+			case M_MOUSE8:
+			case M_MOUSE9:
+			case M_MOUSE10:
+			case M_MOUSE11:
+			case M_MOUSE12:
+				retVal = true;
+				break;
+			case M_MWHEELUP: 
+				if ( parent->TestFlag( UIEditClass::EF_MULTILINE ) ) {
 					retVal = true;
+				}
+				if ( parent->TestFlag( sdUIWindow::WF_CAPTURE_KEYS ) ) {
+					retVal = true;
+				}
 				break;
-				case M_MWHEELUP: 
-					if( parent->TestFlag( UIEditClass::EF_MULTILINE ) ) {
-						sdTextLine* firstVisible = NULL;
-						sdTextLine* lastVisible = NULL;
-						GetVisibleLines( firstVisible, lastVisible );
-						if( parent->scrollAmount.GetValue().y < 0.0f ) {
-							float amount = idMath::ClampInt( -parent->scrollAmountMax, 0.0f, parent->scrollAmount.GetValue().y + tdh.GetLineHeight() );
-							parent->scrollAmount.SetIndex( 1, amount );
-							CursorChanged( false );
-						}
-						allowMouseSelect = false;
-						retVal = true;
-					}
-					if( parent->TestFlag( sdUIWindow::WF_CAPTURE_KEYS ) ) {
-						retVal = true;
-					}
+			case M_MWHEELDOWN: 
+				if ( parent->TestFlag( UIEditClass::EF_MULTILINE ) ) {
+					retVal = true;
+				}
+				if ( parent->TestFlag( sdUIWindow::WF_CAPTURE_KEYS ) ) {
+					retVal = true;
+				}					
 				break;
-				case M_MWHEELDOWN: 
-					if( parent->TestFlag( UIEditClass::EF_MULTILINE ) ) {
-						sdTextLine* firstVisible = NULL;
-						sdTextLine* lastVisible = NULL;
-						GetVisibleLines( firstVisible, lastVisible );
-
-						if( firstVisible != lastVisible ) {
-							float amount = idMath::ClampFloat( -parent->scrollAmountMax, 0.0f, parent->scrollAmount.GetValue().y - tdh.GetLineHeight() );
-							parent->scrollAmount.SetIndex( 1, amount );
-							CursorChanged( false );
-						}
-						allowMouseSelect = false;
-						retVal = true;
-					}
-					if( parent->TestFlag( sdUIWindow::WF_CAPTURE_KEYS ) ) {
-						retVal = true;
-					}					
-				break;
-			}
 		}
 	} else if ( event->IsKeyEvent() && parent->GetUI()->IsFocused( parent ) ) {
 
@@ -480,221 +558,440 @@ bool sdUIEditHelper< UIEditClass, StrClass, CharType >::PostEvent( bool retVal, 
 		if ( event->IsKeyDown() ) {
 			switch( key ) {
 			case K_ESCAPE:
-				CancelSelection();
+				QueueEvent( sdUIEditEvent::EE_SELECT_CANCEL );
 				retVal = true;
 				break;
 			case K_HOME:
-				if( !shiftPressed ) {
-					CancelSelection();
-				}
-				if( ctrlPressed || lineBreaks.Num() == 0 ) {
-					currentLine = lines.Next();					
-					parent->scrollAmount = vec2_zero;
-				}
-
-				currentLine->SetCursorOnLine( 0 );
-				CursorChanged();
+				QueueEvent( sdUIEditEvent::EE_MOVE_CURSOR, sdUIEditEvent::MC_HOME, 0, 0, 0, flags );
 				retVal = true;
 				break;
 			case K_END:
-				if( !shiftPressed ) {
-					CancelSelection();
-				}
-				if( ctrlPressed || lineBreaks.Num() == 0 ) {
-					currentLine = lines.Next();
-					currentLine->SetCursorOnLine( 0 );
-					currentLine = currentLine->AdvanceCursor( parent->editText.GetValue().Length() );
-				} else {
-					currentLine->SetCursorOnLine( currentLine->GetLength() );
-				}
-				CursorChanged();
+				QueueEvent( sdUIEditEvent::EE_MOVE_CURSOR, sdUIEditEvent::MC_END, 0, 0, 0, flags );
 				retVal = true;
 				break;
 			case K_UPARROW:
-				if( !shiftPressed ) {
-					CancelSelection();
-				}
+				QueueEvent( sdUIEditEvent::EE_MOVE_CURSOR, sdUIEditEvent::MC_UP, 0, 0, 0, flags );
 				retVal = true;
-				currentLine = currentLine->MoveCursorUp();
-				CursorChanged();
 				break;
 			case K_DOWNARROW:
-				if( !shiftPressed ) {
-					CancelSelection();
-				}
+				QueueEvent( sdUIEditEvent::EE_MOVE_CURSOR, sdUIEditEvent::MC_DOWN, 0, 0, 0, flags );
 				retVal = true;
-				currentLine = currentLine->MoveCursorDown();
-				CursorChanged();
 				break;
 			case K_RIGHTARROW:
-				if( !shiftPressed ) {
-					CancelSelection();
-				}
-				MoveRight();
+				QueueEvent( sdUIEditEvent::EE_MOVE_CURSOR, sdUIEditEvent::MC_RIGHT, 0, 0, 0, flags );
 				retVal = true;
 				break;
 			case K_LEFTARROW:
-				if( !shiftPressed ) {
-					CancelSelection();
-				}
-				MoveLeft();
+				QueueEvent( sdUIEditEvent::EE_MOVE_CURSOR, sdUIEditEvent::MC_LEFT, 0, 0, 0, flags );
 				retVal = true;
 				break;
-			case K_BACKSPACE: {
-				if( parent->readOnly == 0.0f ) {
-					SaveUndo();
-					int index = currentLine->GetStringIndexForCursor();
-					if ( !SelectionActive() ) {
-						// the cursor is at the very end
-						if( index >= parent->editText.GetValue().Length() ) {
-							StrClass temp = parent->editText.GetValue().Mid( 0, parent->editText.GetValue().Length() - 1 );							
-							parent->editText = temp;
-						} else {
-							cursorMove = Max( 0, index - 1 ) - index;
-							StrClass temp = parent->editText.GetValue().Mid( 0, index + cursorMove );
-							temp += parent->editText.GetValue().Mid( index, parent->editText.GetValue().Length() - index );
-							parent->editText = temp;
-						}
-					} else {
-						EraseSelection();
-						if ( selectionStart < index ) {
-							cursorMove = selectionStart - index;
-						}
-					}
-
-					lastEventWasCharacter = false;
-					CancelSelection();	// collapse the selection after the deletion
-					}
-					retVal = true;
-				}
-				break;
 			case K_PGUP:
-				if( parent->TestFlag( UIEditClass::EF_MULTILINE ) ) {
-					sdBounds2D drawRect = parent->GetDrawRect();
-					float pageSize = drawRect.GetHeight();
-					float amount = idMath::ClampFloat( -parent->scrollAmountMax, 0.0f, parent->scrollAmount.GetValue().y + pageSize );
-					parent->scrollAmount.SetIndex( 1, amount );
-					CursorChanged( false );
+				if ( parent->TestFlag( UIEditClass::EF_MULTILINE ) ) {
+					QueueEvent( sdUIEditEvent::EE_MOVE_CURSOR, sdUIEditEvent::MC_PAGE_UP );
 				}
 				break;
 			case K_PGDN:
-				if( parent->TestFlag( UIEditClass::EF_MULTILINE ) ) {
-					sdBounds2D drawRect = parent->GetDrawRect();
-					float pageSize = drawRect.GetHeight();
-
-					float amount = idMath::ClampFloat( -parent->scrollAmountMax, 0.0f, parent->scrollAmount.GetValue().y - pageSize );
-					parent->scrollAmount.SetIndex( 1, amount );
-					CursorChanged( false );
+				if ( parent->TestFlag( UIEditClass::EF_MULTILINE ) ) {
+					QueueEvent( sdUIEditEvent::EE_MOVE_CURSOR, sdUIEditEvent::MC_PAGE_DOWN );
 				}
 				break;
-			case K_DEL: {
-				if( parent->readOnly == 0.0f ) {
-					SaveUndo();
-					
-					if ( !SelectionActive() ) {
-						StrClass temp = parent->editText.GetValue().Mid( 0, currentLine->GetStringIndexForCursor() );
-						temp += parent->editText.GetValue().Mid( currentLine->GetStringIndexForCursor() + 1, parent->editText.GetValue().Length() - currentLine->GetStringIndexForCursor() - 1 );
-						parent->editText = temp;
-					} else {
-						EraseSelection();
-						if ( selectionStart < currentLine->GetStringIndexForCursor() ) {
-							cursorMove = selectionStart - currentLine->GetStringIndexForCursor();
-						}
-					}
+			case K_DEL:
+				if ( parent->readOnly == 0.0f ) {
+					QueueEvent( sdUIEditEvent::EE_DELETE );
+				}
 
-					lastEventWasCharacter = false;
-					CancelSelection();	// collapse the selection after the deletion					
-				}
-					retVal = true;
-				}
+				retVal = true;
 				break;
 			default:
-					keyNum_t key = event->GetKey();
-					if( key == K_CTRL || key == K_SHIFT || key == K_ALT || key == K_RIGHT_SHIFT || key == K_RIGHT_CTRL || key == K_RIGHT_ALT ) {
-						break;
-					}
-#define IS_CTRL( character ) ( ( ( key ) == ( character ) ) && ctrlPressed )
-
-					if( IS_CTRL( K_Z )) {
-						// Ctrl+Z = Undo
-						Undo();
-						retVal = true;
-					} else if( IS_CTRL( K_L )) {
-						// Ctrl+L = Clear
-						parent->ClearText();
-						cursorMove = -currentLine->GetStringIndexForCursor();
-						retVal = true;
-					} else if( IS_CTRL( K_A )) {
-						// Ctrl+A = Select All
-						SelectAll();
-						retVal = true;
-					} else if( IS_CTRL( K_C ) || IS_CTRL( K_X )) {
-						// Ctrl+C = Copy, Ctrl+X = Cut
-						if( SelectionActive() ) {
-							int selStart;
-							int selEnd;
-							GetSelectionRange( selStart, selEnd );
-
-							StrClass selectionText = parent->editText.GetValue().Mid( selStart, selEnd - selStart );					
-							idWStr clipboardText;
-							if( parent->password ) {
-								clipboardText.Fill( L'*', selectionText.Length() );
-							} else {
-								clipboardText = sdClipboardConverter< StrClass >::ToClipboard( selectionText );
-							}					
-
-							sys->SetClipboardData( clipboardText.c_str() );
-						}
-						if( IS_CTRL( K_X )) {
-							SaveUndo();
-							EraseSelection();
-							if( selectionStart < currentLine->GetStringIndexForCursor() ) {
-								cursorMove = selectionStart - currentLine->GetStringIndexForCursor();
-							}
-							CancelSelection();
-						}
-						retVal = true;
-					} else if( IS_CTRL( K_V )) {
-						SaveUndo();
-						// Ctrl+V = Paste
-						idWStr pasteText = sys->GetClipboardData();
-						pasteText.Replace( L"\b", L"" );
-						pasteText.Replace( L"\t", L"" );
-						pasteText.Replace( L"\r", L"" );
-
-						if( pasteText.Length() ) {
-							int numErased = 0;
-							if( SelectionActive() ) {
-								numErased = EraseSelection();
-							}
-
-							int selStart;
-							int selEnd;
-							GetSelectionRange( selStart, selEnd );
-							StrClass clipboardTemp( sdClipboardConverter< StrClass >::FromClipboard( pasteText ) );
-							StrClass temp = parent->editText;
-							temp.Insert( clipboardTemp.c_str(), selEnd - numErased );
-
-							if( parent->maxTextLength == 0.0f || temp.LengthWithoutColors() <= parent->maxTextLength ) {
-								if( parent->TestFlag( UIEditClass::EF_UPPERCASE ) ) {
-									for( int i = 0; i < temp.Length(); i++ ) {
-										temp[ i ] = sdCaseConverter< CharType >::ToUpper( temp[ i ] );
-									}
-								}
-								parent->editText = temp;
-
-								CancelSelection();
-								cursorMove = pasteText.Length();
-							}							
-						}
-						retVal = true;
-					}
 				break;
 			}
 		}
 	} else if( !parent->readOnly ) {
 		if ( ( event->IsCharEvent() ) && parent->GetUI()->IsFocused( parent ) ) {
-			int ch = event->GetChar();
+// EE_CHAR + ch + ctrlPressed
+			CharType ch = event->GetChar();
+			if ( ch == '\r' ) {
+				ch = '\n';
+			}
+
+#define TO_CTRL( character ) ( ( ( character ) - 'a' ) + 1 )
+			switch ( ch ) {
+				// ctrl-A through ctrl-Z map to ASCII characters 1 through 26
+				case TO_CTRL( 'z' ):
+					// Ctrl+Z = Undo
+					QueueEvent( sdUIEditEvent::EE_UNDO );
+					retVal = true;
+					break;
+				case TO_CTRL( 'l' ):
+					// Ctrl+L = Clear
+					QueueEvent( sdUIEditEvent::EE_CLEAR );
+					retVal = true;
+					break;
+				case TO_CTRL( 'a' ):
+					// Ctrl+A = Select All
+					QueueEvent( sdUIEditEvent::EE_SELECT_ALL );
+					retVal = true;
+					break;
+				case TO_CTRL( 'c' ):
+				case TO_CTRL( 'x' ):
+					// Ctrl+C = Copy, Ctrl+X = Cut
+					QueueEvent( sdUIEditEvent::EE_COPY );
+					if ( TO_CTRL( 'x' ) == ch ) {
+						QueueEvent( sdUIEditEvent::EE_CUT );
+					}
+					retVal = true;
+					break;
+				case TO_CTRL( 'v' ):
+					// Ctrl+V = Paste
+					QueueEvent( sdUIEditEvent::EE_PASTE );
+					retVal = true;
+					break;
+				case TO_CTRL( 'h' ):
+					// Ctrl+H = Backspace
+					if ( parent->readOnly == 0.0f ) {
+						QueueEvent( sdUIEditEvent::EE_BACKSPACE );
+					}
+					retVal = true;
+					break;
+				default:
+					if ( CaptureChar( ch ) ) {
+						QueueEvent( sdUIEditEvent::EE_CHAR, ch );
+
+						retVal = true;
+					}
+					break;
+#undef TO_CTRL
+			}
+		}
+	} else if ( event->IsGuiEvent() ) {
+		if ( event->GetGuiAction() == ULI_MENU_NEWLINE ) {
+// EE_NEWLINE
+			if ( CaptureChar( '\n' ) ) {
+				QueueEvent( sdUIEditEvent::EE_NEWLINE );
+				retVal = true;
+			}
+		}
+		if ( parent->TestFlag( sdUIWindow::WF_CAPTURE_KEYS ) ) {
+			retVal = true;
+		}
+	}
+
+	if ( !event->IsMouseEvent() && !event->IsMouseButtonEvent() ) {
+		if ( parent->TestFlag( sdUIWindow::WF_CAPTURE_KEYS ) && ( ( event->GetKey() < K_F1 || event->GetKey() > K_F15 ) || event->IsGuiEvent() ) ) {
+			retVal = true;
+		}
+	}
+
+	return retVal;
+}
+
+/*
+============
+sdUIEditHelper::DrawLocal
+============
+*/
+template < class UIEditClass, class StrClass, typename CharType >
+void sdUIEditHelper< UIEditClass, StrClass, CharType >::ProcessEvent( const sdUIEditEvent& ev ) {
+	switch ( ev.GetType() ) {
+		case sdUIEditEvent::EE_DRAG_MOVE: {
+			if ( mouseDownCursorPosition != -1 ) {
+				if ( !SelectionActive() ) {
+					selectionStart = currentLine->GetStringIndexForCursor();
+				}
+				mouseClick.x = ev.GetCursorX();
+				mouseClick.y = ev.GetCursorY();
+				CursorChanged();
+			}
+			break;
+		}
+		case sdUIEditEvent::EE_MOUSE: {
+			mouseButton_t mb = ev.GetMouseButton();
+
+			if ( !ev.IsButtonDown() ) {
+				switch ( mb ) {
+					case M_MOUSE1:	// FALL THROUGH
+					case M_MOUSE2:	// FALL THROUGH
+					case M_MOUSE3:	// FALL THROUGH
+					case M_MOUSE4:	// FALL THROUGH
+					case M_MOUSE5:	// FALL THROUGH
+					case M_MOUSE6:	// FALL THROUGH
+					case M_MOUSE7:	// FALL THROUGH
+					case M_MOUSE8:
+					case M_MOUSE9:
+					case M_MOUSE10:
+					case M_MOUSE11:
+					case M_MOUSE12:
+						mouseDownCursorPosition = -1;
+						break;
+				}
+			} else {
+				switch ( mb ) {
+					case M_MOUSE1:	// FALL THROUGH
+					case M_MOUSE2:	// FALL THROUGH
+					case M_MOUSE3:	// FALL THROUGH
+					case M_MOUSE4:	// FALL THROUGH
+					case M_MOUSE5:	// FALL THROUGH
+					case M_MOUSE6:	// FALL THROUGH
+					case M_MOUSE7:	// FALL THROUGH
+					case M_MOUSE8:
+					case M_MOUSE9:
+					case M_MOUSE10:
+					case M_MOUSE11:
+					case M_MOUSE12:
+						if ( !ev.ShiftPressed() && SelectionActive() ) {
+							CancelSelection();
+						}
+						mouseDownCursorPosition = currentLine->GetStringIndexForCursor();
+						mouseClick.x = ev.GetCursorX();
+						mouseClick.y = ev.GetCursorY();
+						CursorChanged();
+						break;
+					case M_MWHEELUP: {
+						sdTextLine* firstVisible = NULL;
+						sdTextLine* lastVisible = NULL;
+						GetVisibleLines( firstVisible, lastVisible );
+						if ( parent->scrollAmount.GetValue().y < 0.0f ) {
+							float amount = idMath::ClampInt( -parent->scrollAmountMax, 0.0f, parent->scrollAmount.GetValue().y + tdh.GetLineHeight() );
+							parent->scrollAmount.SetIndex( 1, amount );
+							CursorChanged( false );
+						}
+						break;
+					}
+					case M_MWHEELDOWN: {
+						sdTextLine* firstVisible = NULL;
+						sdTextLine* lastVisible = NULL;
+						GetVisibleLines( firstVisible, lastVisible );
+
+						if ( firstVisible != lastVisible ) {
+							float amount = idMath::ClampFloat( -parent->scrollAmountMax, 0.0f, parent->scrollAmount.GetValue().y - tdh.GetLineHeight() );
+							parent->scrollAmount.SetIndex( 1, amount );
+							CursorChanged( false );
+						}
+						break;
+					}
+				}
+			}
+			break;
+		}
+		case sdUIEditEvent::EE_SELECT_CANCEL: {
+			CancelSelection();
+			break;
+		}
+		case sdUIEditEvent::EE_MOVE_CURSOR: {
+			switch ( ev.GetCursorMoveOp() ) {
+				case sdUIEditEvent::MC_HOME:
+					if ( !ev.ShiftPressed() ) {
+						CancelSelection();
+					} else if ( !SelectionActive() ) {
+						selectionStart = currentLine->GetStringIndexForCursor();
+					}
+
+					if ( ev.CtrlPressed() || lineBreaks.Num() == 0 ) {
+						currentLine = lines.Next();
+						parent->scrollAmount = vec2_zero;
+					}
+
+					currentLine->SetCursorOnLine( 0 );
+					CursorChanged();
+					break;
+				case sdUIEditEvent::MC_END:
+					if ( !ev.ShiftPressed() ) {
+						CancelSelection();
+					} else if ( !SelectionActive() ) {
+						selectionStart = currentLine->GetStringIndexForCursor();
+					}
+
+					if ( ev.CtrlPressed() || lineBreaks.Num() == 0 ) {
+						currentLine = lines.Next();
+						currentLine->SetCursorOnLine( 0 );
+						currentLine = currentLine->AdvanceCursor( parent->editText.GetValue().Length() );
+					} else {
+						currentLine->SetCursorOnLine( currentLine->GetLength() );
+					}
+
+					CursorChanged();
+					break;
+				case sdUIEditEvent::MC_UP:
+					if ( !ev.ShiftPressed() ) {
+						if ( parent->TestFlag( UIEditClass::EF_MULTILINE ) == true ) {
+							CancelSelection();
+						}
+					} else if ( !SelectionActive() ) {
+						selectionStart = currentLine->GetStringIndexForCursor();
+					}
+					currentLine = currentLine->MoveCursorUp();
+					CursorChanged();
+					break;
+				case sdUIEditEvent::MC_DOWN:
+					if ( !ev.ShiftPressed() ) {
+						if( parent->TestFlag( UIEditClass::EF_MULTILINE ) == true ) {
+							CancelSelection();
+						}
+					} else if ( !SelectionActive() ) {
+						selectionStart = currentLine->GetStringIndexForCursor();
+					}
+					currentLine = currentLine->MoveCursorDown();
+					CursorChanged();
+					break;
+				case sdUIEditEvent::MC_RIGHT:
+					if ( !ev.ShiftPressed() ) {
+						CancelSelection();
+					} else if ( !SelectionActive() ) {
+						selectionStart = currentLine->GetStringIndexForCursor();
+					}
+					MoveRight();
+					break;
+				case sdUIEditEvent::MC_LEFT:
+					if ( !ev.ShiftPressed() ) {
+						CancelSelection();
+					} else if ( !SelectionActive() ) {
+						selectionStart = currentLine->GetStringIndexForCursor();
+					}
+					MoveLeft();
+					break;
+				case sdUIEditEvent::MC_PAGE_UP: {
+					sdBounds2D drawRect = parent->GetDrawRect();
+					float pageSize = drawRect.GetHeight();
+					float amount = idMath::ClampFloat( -parent->scrollAmountMax, 0.0f, parent->scrollAmount.GetValue().y + pageSize );
+					parent->scrollAmount.SetIndex( 1, amount );
+					CursorChanged( false );
+					break;
+				}
+				case sdUIEditEvent::MC_PAGE_DOWN: {
+					sdBounds2D drawRect = parent->GetDrawRect();
+					float pageSize = drawRect.GetHeight();
+					float amount = idMath::ClampFloat( -parent->scrollAmountMax, 0.0f, parent->scrollAmount.GetValue().y - pageSize );
+					parent->scrollAmount.SetIndex( 1, amount );
+					CursorChanged( false );
+					break;
+				}
+			}
+			break;
+		}
+		case sdUIEditEvent::EE_BACKSPACE: {
+			SaveUndo();
+
+			int index = currentLine->GetStringIndexForCursor();
+			if ( !SelectionActive() ) {
+				// the cursor is at the very end
+				if( index >= parent->editText.GetValue().Length() ) {
+					StrClass temp = parent->editText.GetValue().Mid( 0, parent->editText.GetValue().Length() - 1 );							
+					parent->editText = temp;
+				} else {
+					cursorMove += Max( 0, index - 1 ) - index;
+					StrClass temp = parent->editText.GetValue().Mid( 0, index + cursorMove );
+					temp += parent->editText.GetValue().Mid( index, parent->editText.GetValue().Length() - index );
+					parent->editText = temp;
+				}
+			} else {
+				EraseSelection();
+				if ( selectionStart < index ) {
+					cursorMove += selectionStart - index;
+				}
+			}
+
+			lastEventWasCharacter = false;
+			CancelSelection();	// collapse the selection after the deletion
+
+			break;
+		}
+		case sdUIEditEvent::EE_DELETE: {
+			SaveUndo();
+
+			int index = currentLine->GetStringIndexForCursor();
+			if ( !SelectionActive() ) {
+				StrClass temp = parent->editText.GetValue().Mid( 0, index );
+				temp += parent->editText.GetValue().Mid( index + 1, parent->editText.GetValue().Length() - index - 1 );
+				parent->editText = temp;
+			} else {
+				EraseSelection();
+				if ( selectionStart < index ) {
+					cursorMove += selectionStart - index;
+				}
+			}
+
+			lastEventWasCharacter = false;
+			CancelSelection();	// collapse the selection after the deletion
+
+			break;
+		}
+		case sdUIEditEvent::EE_UNDO: {
+			Undo();
+			break;
+		}
+		case sdUIEditEvent::EE_CLEAR: {
+			parent->ClearText();
+			cursorMove += -currentLine->GetStringIndexForCursor();
+			break;
+		}
+		case sdUIEditEvent::EE_SELECT_ALL: {
+			SelectAll();
+			break;
+		}
+		case sdUIEditEvent::EE_COPY: {
+			if ( SelectionActive() ) {
+				int selStart;
+				int selEnd;
+				GetSelectionRange( selStart, selEnd );
+
+				StrClass selectionText = parent->editText.GetValue().Mid( selStart, selEnd - selStart );
+				idWStr clipboardText;
+				if ( parent->password ) {
+					clipboardText.Fill( L'*', selectionText.Length() );
+				} else {
+					clipboardText = sdClipboardConverter< StrClass >::ToClipboard( selectionText );
+				}					
+
+				sys->SetClipboardData( clipboardText.c_str() );
+			}
+			break;
+		}
+		case sdUIEditEvent::EE_CUT: {
+			SaveUndo();
+			EraseSelection();
+			if ( selectionStart < currentLine->GetStringIndexForCursor() ) {
+				cursorMove += selectionStart - currentLine->GetStringIndexForCursor();
+			}
+			CancelSelection();
+			break;
+		}
+		case sdUIEditEvent::EE_PASTE: {
+			SaveUndo();
+
+			idWStr pasteText = sys->GetClipboardData();
+			pasteText.Replace( L"\b", L"" );
+			pasteText.Replace( L"\t", L"" );
+			pasteText.Replace( L"\r", L"" );
+
+			if ( pasteText.Length() ) {
+				int numErased = 0;
+				if ( SelectionActive() ) {
+					numErased = EraseSelection();
+				}
+
+				int selStart;
+				int selEnd;
+				GetSelectionRange( selStart, selEnd );
+				StrClass clipboardTemp( sdClipboardConverter< StrClass >::FromClipboard( pasteText ) );
+				StrClass temp = parent->editText;
+				temp.Insert( clipboardTemp.c_str(), selEnd - numErased );
+
+				if ( parent->maxTextLength == 0.0f || temp.LengthWithoutColors() <= parent->maxTextLength ) {
+					if ( parent->TestFlag( UIEditClass::EF_UPPERCASE ) ) {
+						for ( int i = 0; i < temp.Length(); i++ ) {
+							temp[ i ] = sdCaseConverter< CharType >::ToUpper( temp[ i ] );
+						}
+					}
+					parent->editText = temp;
+
+					CancelSelection();
+					cursorMove += pasteText.Length();
+				}
+			}
+			break;
+		}
+		case sdUIEditEvent::EE_CHAR: {
+			CharType ch = ev.GetChar();
 			StrClass temp = parent->editText;
 
 			int selStart;
@@ -705,38 +1002,52 @@ bool sdUIEditHelper< UIEditClass, StrClass, CharType >::PostEvent( bool retVal, 
 				temp.EraseRange( selStart, selEnd - selStart );
 			}
 
-			if( ch == '\r' ) {
-				ch = '\n';
-			}
 			temp.Insert( ch, currentLine->GetStringIndexForCursor() - ( selEnd - selStart ) );
-			if( parent->maxTextLength == 0.0f || temp.LengthWithoutColors() <= parent->maxTextLength ) {
-				retVal = InsertChar( ch, cursorMove );
+			if ( parent->maxTextLength == 0.0f || temp.LengthWithoutColors() <= parent->maxTextLength ) {
+				InsertChar( ch, cursorMove );
 			}
 
-			if( !retVal && !ctrlPressed ) {
+			break;
+		}
+		case sdUIEditEvent::EE_NEWLINE: {
+			InsertChar( '\n', cursorMove );
+			break;
+		}
+		default:
+			break;
+	}
+
+	switch ( ev.GetType() ) {
+		case sdUIEditEvent::EE_INSERT_TEXT: {
+			DoInsertText( ev.GetText() );
+			break;
+		}
+		case sdUIEditEvent::EE_COMPOSITION_CURSOR_SET: {
+			compositionCursor = currentLine->GetStringIndexForCursor();
+			break;
+		}
+		case sdUIEditEvent::EE_COMPOSITION_COMMIT: {
+			if ( compositionCursor != -1 ) {
+				// commit composition text
+				currentLine = lines.Next();
+				currentLine->SetCursorOnLine( 0 );
+				currentLine = currentLine->AdvanceCursor( compositionCursor );
+				compositionCursor += StrClass::Length( ev.GetText() );
+				DoInsertText( ev.GetText() );
+			}
+			break;
+		}
+		default: {
+			if ( cursorMove != 0 && !ev.ShiftPressed() && SelectionActive() ) {
 				CancelSelection();
 			}
-		}
-#undef IS_CTRL
-		} else if( event->IsGuiEvent() ) {
-			if( event->GetGuiAction() == ULI_MENU_NEWLINE ) {
-				retVal = InsertChar( '\n', cursorMove );
-			}
-			if( parent->TestFlag( sdUIWindow::WF_CAPTURE_KEYS ) ) {
-				retVal = true;
-			}
-		}
-
-	if( !event->IsMouseEvent() && !event->IsMouseButtonEvent() ) {
-		if ( parent->TestFlag( sdUIWindow::WF_CAPTURE_KEYS ) && ( ( event->GetKey() < K_F1 || event->GetKey() > K_F15 ) || event->IsGuiEvent() ) ) {
-			retVal = true;
-		}
+			break;
+		 }
 	}
 
-	if( cursorMove != 0 && !shiftPressed && SelectionActive() ) {
-		CancelSelection();
+	if ( textDirty ) {
+		TextChanged();
 	}
-	return retVal;
 }
 
 /*
@@ -759,12 +1070,26 @@ void sdUIEditHelper< UIEditClass, StrClass, CharType >::DrawLocal() {
 			drawCursor = !drawCursor;
 			cursorDrawTime = now + CURSOR_FLASH_TIME;
 		}
-		if( drawCursor ) {
+		if ( drawCursor ) {
 			float x = cursorDrawPosition.x;
 			float y = cursorDrawPosition.y;
 			float w = parent->cursor.width;
 			float h = tdh.GetLineHeight() ? tdh.GetLineHeight() : parent->cursor.height;
-			parent->DrawMaterial( parent->cursor.mi, x, y, w, h, parent->foreColor );	
+
+			// highlight whole cursor text if present
+			const wchar_t* cursorText = parent->GetCursorText();
+			if ( *cursorText != L'\0' ) {
+				int currentCursor = currentLine->GetStringIndexForCursor() + cursorMove;	
+
+				w = tdh.GetWidth( currentCursor, currentCursor );
+
+				idVec4 color( parent->foreColor.GetValue().x, parent->foreColor.GetValue().y, parent->foreColor.GetValue().z, 0.25f );
+
+				deviceContext->DrawClippedRect( x, y, w, h, color );
+				deviceContext->DrawClippedBox( x, y, w, h, 1.0f, parent->foreColor );
+			} else {
+				parent->DrawMaterial( parent->cursor.mi, x, y, w, h, parent->foreColor );	
+			}
 		}
 	}
 
@@ -803,7 +1128,7 @@ void sdUIEditHelper< UIEditClass, StrClass, CharType >::DrawLocal() {
 
 /*
 ============
-sdUIEditHelper::DrawLocal
+sdUIEditHelper::DrawText
 ============
 */
 template < class UIEditClass, class StrClass, typename CharType >
@@ -856,14 +1181,16 @@ sdUIEditHelper::GetSelectionRange
 */
 template < class UIEditClass, class StrClass, typename CharType >
 bool sdUIEditHelper< UIEditClass, StrClass, CharType >::GetSelectionRange( int& selStart, int& selEnd ) const {
+	int stringIndex = currentLine->GetStringIndexForCursor() + cursorMove;
+
 	if ( !SelectionActive() ) {
-		selStart = currentLine->GetStringIndexForCursor();
-		selEnd = currentLine->GetStringIndexForCursor();
+		selStart = stringIndex;
+		selEnd = stringIndex;
 		return false;
 	}
 
-	selStart = selectionStart == -1 ? currentLine->GetStringIndexForCursor() : selectionStart;
-	selEnd = selectionStart == -1 ? currentLine->GetStringIndexForCursor() + 1 : currentLine->GetStringIndexForCursor();
+	selStart = selectionStart == -1 ? stringIndex : selectionStart;
+	selEnd = selectionStart == -1 ? stringIndex + 1 : stringIndex;
 	if ( selEnd < selStart ) {
 		Swap( selEnd, selStart );
 	}
@@ -1063,15 +1390,15 @@ void sdUIEditHelper< UIEditClass, StrClass, CharType >::CursorChanged( bool adju
 
 		// see if the click is past the end of the line
 		float width = tdh.GetWidth( clickedRow->GetStart(), clickedRow->GetEnd() );
-		if( offsetClick.x >= width ) {
+		if ( offsetClick.x >= width ) {
 			clickedRow->SetCursorOnLine( clickedRow->GetLength() );
 		} else {
 			int i;
-			for( i = clickedRow->GetStart(); i <= clickedRow->GetEnd(); i++ ) {
+			for ( i = clickedRow->GetStart(); i <= clickedRow->GetEnd(); i++ ) {
 				width = tdh.GetWidth( clickedRow->GetStart(), i - 1 );
 				float charWidth = tdh.ToVirtualScreenSize( tdh.GetAdvance( i ) );
 				float halfWidth = ( charWidth * 0.5f );
-				if( ( offsetClick.x - halfWidth ) < ( width + parent->scrollAmount.GetValue().x + halfWidth ) ) {
+				if ( ( offsetClick.x - halfWidth ) < ( width + parent->scrollAmount.GetValue().x + halfWidth ) ) {
 					clickedRow->SetCursorOnLine( i - clickedRow->GetStart() );
 					break;
 				}
@@ -1139,19 +1466,30 @@ void sdUIEditHelper< UIEditClass, StrClass, CharType >::CursorChanged( bool adju
 
 /*
 ============
-sdUIEditHelper::OnTextChanged
+sdUIEditHelper::TextChanged
 ============
 */
 template < class UIEditClass, class StrClass, typename CharType >
-void sdUIEditHelper< UIEditClass, StrClass, CharType >::TextChanged() {	
+void sdUIEditHelper< UIEditClass, StrClass, CharType >::TextChanged() {
+	textDirty = false;
+
+	int currentCursor = currentLine->GetStringIndexForCursor() + cursorMove;	
+
 	localText = sdClipboardConverter< StrClass >::ToClipboard( parent->editText.GetValue() );
+
+	// insert cursor text if required
+	const wchar_t* cursorText = parent->GetCursorText();
+
+	if ( *cursorText != L'\0' ) {
+		localText.Insert( cursorText, currentCursor );
+	}
+
+	// update text
 	int textLength = localText.Length();
 
 	if ( parent->password != 0.0f ) {
 		localText.Fill( L'*', textLength ); 
 	}
-
-	int currentCursor = currentLine->GetStringIndexForCursor() + cursorMove;	
 
 	ClearLines();
 
@@ -1204,16 +1542,16 @@ void sdUIEditHelper< UIEditClass, StrClass, CharType >::TextChanged() {
 }
 
 template < class UIEditClass, class StrClass, typename CharType >
-bool sdUIEditHelper< UIEditClass, StrClass, CharType >::InsertChar( int ch, int& cursorMove ) {	
+bool sdUIEditHelper< UIEditClass, StrClass, CharType >::CaptureChar( const CharType ch  ) {	
 	bool isNewline = ch == '\n';
-	if( isNewline && !parent->TestFlag( UIEditClass::EF_MULTILINE ) ) {
+	if ( isNewline && !parent->TestFlag( UIEditClass::EF_MULTILINE ) ) {
 		return false;
 	}
 
 	bool retVal = false;
 	unsigned int flags = parent->GetDrawTextFlags();
 
-	if( idStr::CharIsPrintable( ch ) || ( isNewline && ( ( flags & DTF_WORDWRAP ) || !( flags & DTF_SINGLELINE ) ) ) ) {
+	if ( UIEditClass::CharIsPrintable( ch ) || ( isNewline && ( ( flags & DTF_WORDWRAP ) || !( flags & DTF_SINGLELINE ) ) ) ) {
 		bool isNumeric = idStr::CharIsNumeric( ch );
 		bool isDecimal = ch == '.';
 		bool allowInput = true;
@@ -1221,24 +1559,66 @@ bool sdUIEditHelper< UIEditClass, StrClass, CharType >::InsertChar( int ch, int&
 		bool allowDecimal = parent->TestFlag( UIEditClass::EF_ALLOW_DECIMAL );
 		bool acceptOnlyNumbers = parent->TestFlag( UIEditClass::EF_INTEGERS_ONLY );
 
-		if( acceptOnlyNumbers ) {
-			if( !isDecimal && !isNumeric ) {
+		if ( acceptOnlyNumbers ) {
+			if ( !isDecimal && !isNumeric ) {
 				allowInput = false;
-			} else if( isDecimal && !allowDecimal ) {
-				allowInput = false;
-			}
-		}
-
-		if( allowDecimal && isDecimal ) {
-			if( parent->editText.GetValue().Find( static_cast< CharType >( ch ) ) != -1 ) {
+			} else if ( isDecimal && !allowDecimal ) {
 				allowInput = false;
 			}
 		}
 
-		if( allowInput ) {
+		// Can't check for this here as it depends on editText, which is deferred
+		/*if ( allowDecimal && isDecimal ) {
+			if ( parent->editText.GetValue().Find( static_cast< CharType >( ch ) ) != -1 ) {
+				allowInput = false;
+			}
+		}*/
+
+		if ( allowInput ) {
+			retVal = true;
+		}
+	} else {
+		parent->RunEvent( sdUIEventInfo( UIEditClass::EE_INPUT_FAILED, 0 ) );
+	}
+
+	return retVal;
+}
+
+template < class UIEditClass, class StrClass, typename CharType >
+void sdUIEditHelper< UIEditClass, StrClass, CharType >::InsertChar( CharType ch, int& cursorMove ) {	
+	bool isNewline = ch == '\n';
+	if ( isNewline && !parent->TestFlag( UIEditClass::EF_MULTILINE ) ) {
+		return;
+	}
+
+	unsigned int flags = parent->GetDrawTextFlags();
+
+	if ( UIEditClass::CharIsPrintable( ch ) || ( isNewline && ( ( flags & DTF_WORDWRAP ) || !( flags & DTF_SINGLELINE ) ) ) ) {
+		bool isNumeric = idStr::CharIsNumeric( ch );
+		bool isDecimal = ch == '.';
+		bool allowInput = true;
+
+		bool allowDecimal = parent->TestFlag( UIEditClass::EF_ALLOW_DECIMAL );
+		bool acceptOnlyNumbers = parent->TestFlag( UIEditClass::EF_INTEGERS_ONLY );
+
+		if ( acceptOnlyNumbers ) {
+			if ( !isDecimal && !isNumeric ) {
+				allowInput = false;
+			} else if ( isDecimal && !allowDecimal ) {
+				allowInput = false;
+			}
+		}
+
+		if ( allowDecimal && isDecimal ) {
+			if ( parent->editText.GetValue().Find( static_cast< CharType >( ch ) ) != -1 ) {
+				allowInput = false;
+			}
+		}
+
+		if ( allowInput ) {
 			// FIXME: this is wrong for non english-ish languages
 			// don't make a separate undo for an unbroken string of typing
-			if( !lastEventWasCharacter ) {
+			if ( !lastEventWasCharacter ) {
 				SaveUndo();
 			}
 
@@ -1249,7 +1629,7 @@ bool sdUIEditHelper< UIEditClass, StrClass, CharType >::InsertChar( int ch, int&
 
 			GetSelectionRange( selStart, selEnd );
 
-			if( SelectionActive() ) {
+			if ( SelectionActive() ) {
 				numErased = EraseSelection();
 				if( selectionStart < currentLine->GetStringIndexForCursor() ) {
 					cursorMove += selectionStart - currentLine->GetStringIndexForCursor() + 1;
@@ -1262,21 +1642,16 @@ bool sdUIEditHelper< UIEditClass, StrClass, CharType >::InsertChar( int ch, int&
 
 			UpdateIndexByColorCodes( selStart, selEnd );
 
-			if( parent->TestFlag( UIEditClass::EF_UPPERCASE ) ) {
+			if ( parent->TestFlag( UIEditClass::EF_UPPERCASE ) ) {
 				ch = sdCaseConverter< CharType >::ToUpper( ch );
 			}
 
 			StrClass temp = parent->editText;				
 			temp.Insert( static_cast< CharType >( ch ), selEnd - numErased );
 			parent->editText = temp;
-			CancelSelection();	// collapse the selection after the replacement					
-
-			retVal = true;					
-		} else {
-			parent->RunEvent( sdUIEventInfo( UIEditClass::EE_INPUT_FAILED, 0 ) );
-		}			
+			CancelSelection();	// collapse the selection after the replacement
+		}
 	}
-	return retVal;
 }
 
 /*
@@ -1291,7 +1666,6 @@ void sdUIEditHelper< UIEditClass, StrClass, CharType >::OnGainFocus() {
 	}
 }
 
-
 /*
 ============
 sdUIEditHelper::InsertText
@@ -1299,12 +1673,27 @@ sdUIEditHelper::InsertText
 */
 template < class UIEditClass, class StrClass, typename CharType >
 void sdUIEditHelper< UIEditClass, StrClass, CharType >::InsertText( const CharType* text ) {
-	if( parent->readOnly ) {
+	if ( parent->readOnly ) {
 		return;
 	}
 
+	int len = StrClass::Length( text );
+
+	size_t dataSize = ( len + 1 ) * sizeof( CharType );
+	void* data = Mem_Alloc( dataSize );
+	::memcpy( data, text, dataSize );
+	QueueEvent( sdUIEditEvent::EE_INSERT_TEXT, 0, 0, 0, 0, 0, dataSize, data );
+}
+
+/*
+============
+sdUIEditHelper::DoInsertText
+============
+*/
+template < class UIEditClass, class StrClass, typename CharType >
+void sdUIEditHelper< UIEditClass, StrClass, CharType >::DoInsertText( const CharType* text ) {
 	int numErased = 0;
-	if( SelectionActive() ) {
+	if ( SelectionActive() ) {
 		numErased = EraseSelection();
 	}
 
@@ -1314,9 +1703,9 @@ void sdUIEditHelper< UIEditClass, StrClass, CharType >::InsertText( const CharTy
 	StrClass temp = parent->editText;
 	temp.Insert( text, selEnd - numErased );
 
-	if( parent->maxTextLength == 0.0f || temp.LengthWithoutColors() <= parent->maxTextLength ) {
-		if( parent->TestFlag( UIEditClass::EF_UPPERCASE ) ) {
-			for( int i = 0; i < temp.Length(); i++ ) {
+	if ( parent->maxTextLength == 0.0f || temp.LengthWithoutColors() <= parent->maxTextLength ) {
+		if ( parent->TestFlag( UIEditClass::EF_UPPERCASE ) ) {
+			for ( int i = 0; i < temp.Length(); i++ ) {
 				temp[ i ] = sdCaseConverter< CharType >::ToUpper( temp[ i ] );
 			}
 		}
@@ -1324,7 +1713,7 @@ void sdUIEditHelper< UIEditClass, StrClass, CharType >::InsertText( const CharTy
 		parent->editText = temp;
 
 		CancelSelection();
-		cursorMove = StrClass::Length( text );
+		cursorMove += StrClass::Length( text );
 	}
 }
 
@@ -1335,25 +1724,25 @@ sdUIEditHelper::SurroundSelection
 */
 template < class UIEditClass, class StrClass, typename CharType >
 void sdUIEditHelper< UIEditClass, StrClass, CharType >::SurroundSelection( const CharType* prefix, const CharType* suffix ) {
-	if( parent->readOnly ) {
+	if ( parent->readOnly ) {
 		return;
 	}
 	int selStart;
 	int selEnd;
 	GetSelectionRange( selStart, selEnd );
 	StrClass temp = parent->editText;
-	if( selStart < 0 ) {
+	if ( selStart < 0 ) {
 		selStart = 0;
 	}
-	if( selEnd < 0 ) {
+	if ( selEnd < 0 ) {
 		selEnd = temp.Length();
 	}
 	temp.Insert( suffix, selEnd );
 	temp.Insert( prefix, selStart );	
 
-	if( parent->maxTextLength == 0.0f || temp.LengthWithoutColors() <= parent->maxTextLength ) {
-		if( parent->TestFlag( UIEditClass::EF_UPPERCASE ) ) {
-			for( int i = 0; i < temp.Length(); i++ ) {
+	if ( parent->maxTextLength == 0.0f || temp.LengthWithoutColors() <= parent->maxTextLength ) {
+		if ( parent->TestFlag( UIEditClass::EF_UPPERCASE ) ) {
+			for ( int i = 0; i < temp.Length(); i++ ) {
 				temp[ i ] = sdCaseConverter< CharType >::ToUpper( temp[ i ] );
 			}
 		}
@@ -1361,9 +1750,9 @@ void sdUIEditHelper< UIEditClass, StrClass, CharType >::SurroundSelection( const
 		parent->editText = temp;
 		
 		int len = StrClass::Length( prefix );
-		cursorMove = len;
+		cursorMove += len;
 
-		if( selectionStart != -1 ) {
+		if ( selectionStart != -1 ) {
 			selectionStart += len;
 		}
 	}
@@ -1395,6 +1784,70 @@ int sdUIEditHelper< UIEditClass, StrClass, CharType >::GetCurrentLineIndex() con
 		line = line->GetNode().Next();		
 	}
 	return index;
+}
+
+/*
+=================
+sdUIEditHelper::FreeEvent
+=================
+*/
+template < class UIEditClass, class StrClass, typename CharType >
+void sdUIEditHelper< UIEditClass, StrClass, CharType >::FreeEvent( const sdUIEditEvent* ev ) {
+	sdUIEditEvent* event = const_cast< sdUIEditEvent* >( ev );
+	event->GetNode().Remove();
+	eventAllocator.Free( event );
+}
+
+/*
+=================
+sdUIEditHelper::GenerateBlankEvent
+=================
+*/
+template < class UIEditClass, class StrClass, typename CharType >
+void sdUIEditHelper< UIEditClass, StrClass, CharType >::QueueEvent( typename sdUIEditEvent::type_e type, int value, int value2, int value3, int value4, int flags, size_t dataSize, void* data ) {
+	sdUIEditEvent* ev = eventAllocator.Alloc();
+	ev->Init( type, value, value2, value3, value4, flags, dataSize, data );
+	ev->GetNode().AddToEnd( eventQueue );
+}
+
+/*
+=================
+sdUIEditHelper::GetEvent
+=================
+*/
+template < class UIEditClass, class StrClass, typename CharType >
+const typename sdUIEditHelper< UIEditClass, StrClass, CharType >::sdUIEditEvent* sdUIEditHelper< UIEditClass, StrClass, CharType >::GetEvent() {
+	return eventQueue.Next();
+}
+
+/*
+===============
+sdUIEditHelper::RunEventLoop
+===============
+*/
+template < class UIEditClass, class StrClass, typename CharType >
+void sdUIEditHelper< UIEditClass, StrClass, CharType >::RunEventLoop() {
+	while ( true ) {
+		const sdUIEditEvent* ev = GetEvent();
+
+		// if no more events are available
+		if ( ev == NULL ) {
+			return;
+		}
+
+		ProcessEvent( *ev );
+		FreeEvent( ev );
+	}
+}
+
+/*
+===============
+sdUIEditHelper::RunEventLoop
+===============
+*/
+template < class UIEditClass, class StrClass, typename CharType >
+void sdUIEditHelper< UIEditClass, StrClass, CharType >::ApplyLayout() {
+	RunEventLoop();
 }
 
 #endif // ! __GAME_GUIS_USERINTERFACEEDITHELPER_H__

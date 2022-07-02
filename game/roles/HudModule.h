@@ -57,6 +57,7 @@ public:
 	virtual sdProperties::sdProperty*			GetProperty( const char* name );
 	virtual sdProperties::sdPropertyHandler&	GetProperties() { return _properties; }
 	virtual const char*							GetName( void ) const { return "module"; }
+	virtual const char*							FindPropertyName( sdProperties::sdProperty* property, sdUserInterfaceScope*& scope ) { scope = this; return _properties.NameForProperty( property ); }
 
 private:
 	void								Activate( void );

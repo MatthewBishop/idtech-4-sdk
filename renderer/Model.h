@@ -409,6 +409,9 @@ public:
 	virtual idList<int>*		GetFixedAreas( void ) = 0;
 
 	virtual void				SetFixedAreas( idList<int> const &a ) = 0;
+
+	virtual int					NumMeshes( const int lod = 0 ) const = 0;
+	virtual idBounds			CalcMeshBounds( int meshIndex, const idJointMat *joints, const idVec3 &offset, const idMat3 &axis, bool useDefaultAnim ) = 0;
 };
 
 #endif /* !__MODEL_H__ */

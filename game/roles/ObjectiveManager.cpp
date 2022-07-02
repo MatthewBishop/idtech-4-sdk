@@ -185,7 +185,11 @@ const idEventDef EV_ObjManager_ClearBotBoundEntities( "clearTeamBotBoundEntities
 const idEventDef EV_ObjManager_SetBotTeamRetreatTime( "setBotTeamRetreatTime", "dd" );
 const idEventDef EV_ObjManager_SetNodeTeam( "setNodeTeam", "sd" );
 const idEventDef EV_ObjManager_SetTeamMinePlantIsPriority( "setTeamMinePlantIsPriority", "db" );
-const idEventDef EV_ObjManger_DisableAASAreaInLocation( "disableAASAreaInLocation", "fv" );
+const idEventDef EV_ObjManager_DisableAASAreaInLocation( "disableAASAreaInLocation", "fv" );
+const idEventDef EV_ObjManager_GameIsOnFinalObjective( "gameIsOnFinalObjective" );
+
+const idEventDef EV_ObjManager_GetBotCriticalClass( "getBotCriticalClass", "d", 'd' );
+const idEventDef EV_ObjManager_GetNumClassPlayers( "getNumClassPlayers", "dd", 'd' );
 
 CLASS_DECLARATION( idClass, sdObjectiveManagerLocal )
 	EVENT( EV_ObjManager_SetObjectiveState,			sdObjectiveManagerLocal::Event_SetObjectiveState )
@@ -239,11 +243,10 @@ CLASS_DECLARATION( idClass, sdObjectiveManagerLocal )
 	EVENT( EV_ObjManager_SetTeamMinePlantIsPriority,	sdObjectiveManagerLocal::Event_SetTeamMinePlantIsPriority )
 	EVENT( EV_ObjManager_SetBotActionVehicleType,		sdObjectiveManagerLocal::Event_SetBotActionVehicleType )
 	EVENT( EV_ObjManager_SetBotActionGroupVehicleType,	sdObjectiveManagerLocal::Event_SetBotActionGroupVehicleType )
-	EVENT( EV_ObjManger_DisableAASAreaInLocation,		sdObjectiveManagerLocal::Event_DisableAASAreaInLocation )
-
-
-
-
+	EVENT( EV_ObjManager_DisableAASAreaInLocation,		sdObjectiveManagerLocal::Event_DisableAASAreaInLocation )
+	EVENT( EV_ObjManager_GameIsOnFinalObjective,		sdObjectiveManagerLocal::Event_GameIsOnFinalObjective )
+	EVENT( EV_ObjManager_GetBotCriticalClass,			sdObjectiveManagerLocal::Event_GetBotCriticalClass )
+	EVENT( EV_ObjManager_GetNumClassPlayers,			sdObjectiveManagerLocal::Event_GetNumClassPlayers )
 END_CLASS
 
 /*
@@ -567,24 +570,22 @@ void sdObjectiveManagerLocal::Think( void ) {
 sdObjectiveManagerLocal::WriteInitialReliableMessages
 ================
 */
-void sdObjectiveManagerLocal::WriteInitialReliableMessages( int clientNum ) const {
+void sdObjectiveManagerLocal::WriteInitialReliableMessages( const sdReliableMessageClientInfoBase& target ) const {
 	for ( int i = 0; i < nextObjective.Num(); i++ ) {
 		sdTeamInfo& team = sdTeamManager::GetInstance().GetTeamByIndex( i );
 
 		sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_SETNEXTOBJECTIVE );
 		sdTeamManager::GetInstance().WriteTeamToStream( &team, msg );
 		msg.WriteLong( nextObjective[ i ] );
-		msg.Send( -1 );
+		msg.Send( target );
 	}
 
 	if ( scriptObject != NULL ) {
-		idPlayer* player = gameLocal.GetClient( clientNum );
-		if ( player == NULL ) {
-			return; // Gordon: May have been kicked due to a reliable overflow ( which is bad, mkay )
-		}
+		assert( !target.SendToAll() );
 
 		sdScriptHelper h1;
-		h1.Push( player->GetScriptObject() );
+		h1.Push( target.GetClientNum() );
+		h1.Push( target.SendToRepeaterClients() ? 1.f : 0.f );
 		scriptObject->CallNonBlockingScriptEvent( scriptObject->GetFunction( "OnWriteInitialReliableMessages" ), h1 );
 	}
 
@@ -592,14 +593,14 @@ void sdObjectiveManagerLocal::WriteInitialReliableMessages( int clientNum ) cons
 		sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_SETCRITICALCLASS );
 		msg.WriteChar( GDF );
 		msg.WriteChar( gdfCriticalClass );
-		msg.Send();
+		msg.Send( target );
 	}
+
 	{
 		sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_SETCRITICALCLASS );
 		msg.WriteChar( STROGG );
 		msg.WriteChar( stroggCriticalClass );
-		msg.Send();
-
+		msg.Send( target );
 	}
 }
 
@@ -625,7 +626,7 @@ void sdObjectiveManagerLocal::SetNextObjective( sdTeamInfo* team, int objectiveI
 		sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_SETNEXTOBJECTIVE );
 		sdTeamManager::GetInstance().WriteTeamToStream( team, msg );
 		msg.WriteLong( objectiveIndex );
-		msg.Send( -1 );
+		msg.Send( sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -703,19 +704,27 @@ void sdObjectiveManagerLocal::OnNetworkEvent( const char* message ) {
 sdObjectiveManagerLocal::Event_SendNetworkEvent
 ================
 */
-void sdObjectiveManagerLocal::Event_SendNetworkEvent( idEntity* other, const char* message ) {
-	if ( other && ( other->entityNumber < 0 || other->entityNumber >= MAX_CLIENTS ) ) {
-		gameLocal.Warning( "sdObjectiveManagerLocal::Event_SendNetworkEvent - tried to send network event to non-player!" );
-		return;
+void sdObjectiveManagerLocal::Event_SendNetworkEvent( int clientIndex, bool isRepeaterClient, const char* message ) {
+	if ( !isRepeaterClient ) {
+		if ( clientIndex == -1 ) {
+			if ( gameLocal.GetLocalPlayer() != NULL ) {
+				OnNetworkEvent( message );
+			}
+		} else {
+			idPlayer* player = gameLocal.GetClient( clientIndex );
+			if ( player != NULL && gameLocal.IsLocalPlayer( player ) ) {
+				OnNetworkEvent( message );
+			}
+		}
 	}
 
-	if ( ( other && gameLocal.IsLocalPlayer( other ) ) || ( !other && !networkSystem->IsActive() ) ) {
-		OnNetworkEvent( message );
+	sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_NETWORKEVENT );
+	msg.WriteLong( NETWORKEVENT_OBJECTIVE_ID );
+	msg.WriteString( message );
+	if ( isRepeaterClient ) {
+		msg.Send( sdReliableMessageClientInfoRepeater( clientIndex ) );
 	} else {
-		sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_NETWORKEVENT );
-		msg.WriteLong( NETWORKEVENT_OBJECTIVE_ID );
-		msg.WriteString( message );
-		msg.Send( other ? other->entityNumber : -1 );
+		msg.Send( sdReliableMessageClientInfo( clientIndex ) );
 	}
 }
 
@@ -922,6 +931,10 @@ for( int i = 0; i < botThreadData.botActions.Num(); i++ ) {
 			continue;
 		}
 
+		if ( botThreadData.botActions[ i ]->ActionIsActive() == false ) { //mal: some maps will activate actions multiple times.
+			botThreadData.botActions[ i ]->SetActionActivateTime( gameLocal.time );
+		}
+
 		botThreadData.botActions[ i ]->SetActive( true );
 	}
 }
@@ -962,15 +975,17 @@ sdObjectiveManagerLocal::Event_SetBotActionState
 */
 void sdObjectiveManagerLocal::Event_SetBotActionStateForEvent( const botActionStates_t state, idEntity* triggerEntity ) {
 
-	bool foundAction = false;
-	int i, entNum;
-	botActionGoals_t filter;
-	botActionGoals_t filter2 = ACTION_NULL;
-
 	if ( triggerEntity == NULL ) {
 		gameLocal.DWarning( "An invalid entity was passed to \"setBotActionStateForEvent\"!" );
 		return;
 	}
+
+	bool foundAction = false;
+	bool runSecondPass = false;
+	bool expandBox = false;
+	int entNum;
+	botActionGoals_t filter;
+	botActionGoals_t filter2 = ACTION_NULL;
 
 	entNum = triggerEntity->entityNumber;
 
@@ -991,7 +1006,9 @@ void sdObjectiveManagerLocal::Event_SetBotActionStateForEvent( const botActionSt
 		return;
 	}
 
-	for( i = 0; i < botThreadData.botActions.Num(); i++ ) {
+try_again:
+
+	for( int i = 0; i < botThreadData.botActions.Num(); i++ ) {
 
 		if ( foundAction == true ) {
 			break;
@@ -1017,9 +1034,9 @@ void sdObjectiveManagerLocal::Event_SetBotActionStateForEvent( const botActionSt
 
 //mal_TODO: add a similiar check here for all objs, as they can have more then 1 on a map, at the same time. Builds, steals, and hacks!
 		if ( state == ACTION_STATE_PLANTED || state == ACTION_STATE_DEFUSED ) {
-           if ( !botThreadData.botActions[ i ]->EntityIsInsideActionBBox( entNum, PLANTED_CHARGE ) ) { //mal: in case of multiple objs of the same type
-				continue;
-			}
+           if ( !botThreadData.botActions[ i ]->EntityIsInsideActionBBox( entNum, PLANTED_CHARGE, expandBox ) ) { //mal: in case of multiple objs of the same type
+			   continue;
+		   }
 		}
 
  		if ( state == ACTION_STATE_GUN_READY || state == ACTION_STATE_GUN_DESTROYED ) {
@@ -1105,7 +1122,13 @@ void sdObjectiveManagerLocal::Event_SetBotActionStateForEvent( const botActionSt
 	}
 
 	if ( foundAction == false ) {
-		gameLocal.DWarning( "Couldn't find an bot action for entity #%i and action state: %i", entNum, state );
+		if ( runSecondPass == true ) {
+			gameLocal.DWarning( "Couldn't find an bot action for entity #%i and action state: %i", entNum, state );
+		} else {
+			runSecondPass = true;
+			expandBox = true;
+			goto try_again;
+		}
 	}
 }
 
@@ -1319,6 +1342,9 @@ void sdObjectiveManagerLocal::Event_ActivateBotAction( const char *actionName ) 
 	actionNum = botThreadData.FindActionByName( actionName );
 
 	if ( actionNum != -1 ) {
+		if ( botThreadData.botActions[ actionNum ]->ActionIsActive() == false ) { //mal: some maps will activate actions multiple times.
+			botThreadData.botActions[ actionNum ]->SetActionActivateTime( gameLocal.time );
+		}
         botThreadData.botActions[ actionNum ]->SetActive( true );
 		return;
 	}
@@ -1378,7 +1404,7 @@ void sdObjectiveManagerLocal::SetCriticalClass( const playerTeamTypes_t playerTe
 		sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_SETCRITICALCLASS );
 		msg.WriteChar( playerTeam );
 		msg.WriteChar( criticalClass );
-		msg.Send();
+		msg.Send( sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -1731,6 +1757,9 @@ sdObjectiveManagerLocal::Event_SetMapHasMCPGoal
 */
 void sdObjectiveManagerLocal::Event_SetMapHasMCPGoal( bool hasMCPGoal ) {
 	botThreadData.GetGameWorldState()->botGoalInfo.mapHasMCPGoal = hasMCPGoal;
+	if ( botThreadData.GetGameWorldState()->botGoalInfo.mapHasMCPGoalTime == 0 ) {
+		botThreadData.GetGameWorldState()->botGoalInfo.mapHasMCPGoalTime = gameLocal.time;
+	}
 }
 
 /*
@@ -1745,6 +1774,15 @@ void sdObjectiveManagerLocal::Event_GetNumBotsOnTeam( const playerTeamTypes_t pl
 	}
 
 	sdProgram::ReturnFloat( ( float ) botThreadData.GetNumBotsOnTeam( playerTeam ) );
+}
+
+/*
+================
+sdObjectiveManagerLocal::Event_GameIsOnFinalObjective
+================
+*/
+void sdObjectiveManagerLocal::Event_GameIsOnFinalObjective() {
+	botThreadData.GetGameWorldState()->botGoalInfo.gameIsOnFinalObjective = true;
 }
 
 /*
@@ -2245,6 +2283,45 @@ void sdObjectiveManagerLocal::Event_SetTeamUseRearSpawnPercentage( const playerT
 
 /*
 ================
+sdObjectiveManagerLocal::GetPlayerClass
+================
+*/
+const sdDeclPlayerClass* sdObjectiveManagerLocal::GetPlayerClass( const playerTeamTypes_t playerTeam, const playerClassTypes_t neededClass ) {
+	if ( playerTeam == GDF ) {
+        if ( neededClass == MEDIC ) {
+			return gameLocal.declPlayerClassType[ "medic" ];
+		} else if ( neededClass == SOLDIER ) {
+			return gameLocal.declPlayerClassType[ "soldier" ];
+		} else if ( neededClass == ENGINEER ) {
+			return gameLocal.declPlayerClassType[ "engineer" ];
+		} else if ( neededClass == FIELDOPS ) {
+			return gameLocal.declPlayerClassType[ "fieldops" ];
+		} else if ( neededClass == COVERTOPS ) {
+			return gameLocal.declPlayerClassType[ "covertops" ];
+		} else {
+			return NULL;
+		}
+	} else if ( playerTeam == STROGG ) {
+		if ( neededClass == MEDIC ) {
+			return gameLocal.declPlayerClassType[ "technician" ];
+		} else if ( neededClass == SOLDIER ) {
+			return gameLocal.declPlayerClassType[ "aggressor" ];
+		} else if ( neededClass == ENGINEER ) {
+			return gameLocal.declPlayerClassType[ "constructor" ];
+		} else if ( neededClass == FIELDOPS ) {
+			return gameLocal.declPlayerClassType[ "oppressor" ];
+		} else if ( neededClass == COVERTOPS ) {
+			return gameLocal.declPlayerClassType[ "infiltrator" ];
+		} else {
+			return NULL;
+		}
+	} else {
+		return NULL;
+	}
+}
+
+/*
+================
 sdObjectiveManagerLocal::Event_SetTeamNeededClass
 
 Sets a bot(s) class to the needed class, if there aren't enough players of that class on the team.
@@ -2475,4 +2552,46 @@ sdObjectiveManagerLocal::Event_SetNodeTeam
 */
 void sdObjectiveManagerLocal::Event_SetNodeTeam( const char * nodeName, const playerTeamTypes_t playerTeam ) {
 	botThreadData.botVehicleNodes.SetNodeTeam( nodeName, playerTeam );
+}
+
+/*
+================
+sdObjectiveManagerLocal::Event_GetBotCriticalClass
+================
+*/
+void sdObjectiveManagerLocal::Event_GetBotCriticalClass( const playerTeamTypes_t playerTeam ) {
+	if ( playerTeam == GDF ) {
+		sdProgram::ReturnInteger( gdfCriticalClass );
+	} else if ( playerTeam == STROGG ) {
+		sdProgram::ReturnInteger( stroggCriticalClass );
+	} else {
+		sdProgram::ReturnInteger( NOCLASS );
+	}
+}
+
+/*
+================
+sdObjectiveManagerLocal::Event_GetNumClassPlayers
+================
+*/
+void sdObjectiveManagerLocal::Event_GetNumClassPlayers( const playerTeamTypes_t playerTeam, const playerClassTypes_t playerClass ) {
+	const sdDeclPlayerClass* classDecl = GetPlayerClass( playerTeam, playerClass );
+	if ( classDecl == NULL ) {
+		sdProgram::ReturnInteger( 0 );
+		return;
+	}
+
+	int count = 0;
+	for ( int i = 0; i < MAX_CLIENTS; i++ ) {
+		idPlayer* player = gameLocal.GetClient( i );
+		if ( player == NULL || player->GetGameTeam() == NULL ) {
+			continue;
+		}
+
+		if ( player->GetInventory().GetClass() == classDecl ) {
+			count++;
+		}
+	}
+
+	sdProgram::ReturnInteger( count );
 }

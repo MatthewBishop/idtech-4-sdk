@@ -571,11 +571,14 @@ idActor::UpdateScript
 =====================
 */
 void idActor::UpdateScript( void ) {
-	int	i;
+	if ( gameLocal.IsPaused() ) {
+		return;
+	}
 
 	// a series of state changes can happen in a single frame.
 	// this loop limits them in case we've entered an infinite loop.
-	for( i = 0; i < 20; i++ ) {
+	int i;
+	for ( i = 0; i < 20; i++ ) {
 		if ( idealState != state ) {
 			SetState( idealState );
 		}

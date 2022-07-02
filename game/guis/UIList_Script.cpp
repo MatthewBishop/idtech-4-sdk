@@ -401,6 +401,10 @@ void sdUIList::Script_FillFromEnumerator( sdUIFunctionStack& stack ) {
 		BeginBatch();
 		enumerator( this );
 		EndBatch();
+
+/*		if ( name.Icmp( "scoreboardList" ) != 0 ) {
+			assert( GetUI()->IsScriptStackEmpty() );
+		}*/
 	} else {
 		if( sdUserInterfaceLocal::g_debugGUIEvents.GetInteger() > 1 ) {
 			gameLocal.Warning( "Script_FillFromEnumerator: '%s' Unknown enumerator '%s'", this->name.GetValue().c_str(), name.c_str() );

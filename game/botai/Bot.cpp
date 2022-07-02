@@ -104,12 +104,9 @@ void idBot::Think() {
 //mal: pre player think AI
 	if ( IsSpectator() ) { //mal: on map change, we can get bumped to spectators - if so, set our team/class back to what it was!
 		Bot_ResetGameState();
-		return; //mal: dont think til we've actually switched teams/class!
 	}
 
 	CheckBotIngameMissionStatus();
-
-	Bot_InputToUserCmd();
 
 	idPlayer::Think();
 }
@@ -140,11 +137,10 @@ idCVar bot_noRandomJump( "bot_noRandomJump", "0", CVAR_BOOL | CVAR_GAME, "makes 
 ================
 idBotAI::Bot_InputToUserCmd
 
-A housekeeping function, called at the end of every bot think.
 Sends the bot's user cmds to the server, updates bots cmd timers, etc.
 ================
 */
-void idBot::Bot_InputToUserCmd () {
+void idBot::Bot_InputToUserCmd() {
 	
 	usercmd_t &ucmd = gameLocal.usercmds[ entityNumber ];
 	const botAIOutput_t& botOutput = botThreadData.GetGameOutputState()->botOutput[ entityNumber ];
@@ -462,6 +458,7 @@ void idBot::Bot_ClientAimAtEnemy( int clientNum ) {
 
 	trace_t	tr;
 	bool hasRocket = ( botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].weapInfo.weapon == ROCKET ) ? true : false;
+	bool hasGrenade = ( botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].weapInfo.weapon == GRENADE ) ? true : false;
 	bool hasSniperWeap = ( botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].weapInfo.weapon == SNIPERRIFLE ) ? true : false;
 	float bodyShot = 16.0f;
     idPlayer *player = gameLocal.GetClient( clientNum );
@@ -479,13 +476,21 @@ void idBot::Bot_ClientAimAtEnemy( int clientNum ) {
 
 	int aimSkill = bot_aimSkill.GetInteger();
 
+	if ( botThreadData.GetBotSkill() == BOT_SKILL_DEMO ) {
+		if ( !playerInfo.isBot ) { //mal: in training mode, have horrible aim against humans..
+			aimSkill = 0;
+		} else {
+			aimSkill = 1; //mal: nomal aim against other bots.
+		}
+	}
+
 	if ( aimSkill <= 1 && updateAimTime > gameLocal.time && !playerInfo.isBot && InBotsSights( playerInfo.origin ) ) {
 		return;
 	}
 
 	updateAimTime = ( gameLocal.time + ( aimSkill == 0 ) ? 700 : 300 );
 
-	if ( hasRocket ) {
+	if ( hasRocket || hasGrenade ) {
 		if ( aimSkill == 0 ) {
 			aim = 0.50f; 
 		} else if ( aimSkill == 1 ) {
@@ -535,28 +540,29 @@ void idBot::Bot_ClientAimAtEnemy( int clientNum ) {
 	}
 
 //mal: low skill bots have a degree of "jitter", and wont keep on target too much. We dont care about other bots for this, only humans.
-	if ( aimSkill < 1 && botThreadData.GetGameWorldState()->clientInfo[ player->entityNumber ].isBot == false && isPlayer && !hasRocket ) {
-		if ( velocity.LengthSqr() < Square( 84.0f ) && dist > Square( 500.0f ) ) { //mal: if the player is on foot, and isn't moving much, we'll add a bit of jitter so we dont kill them always.
-			vec[ 0 ] += ( float ) botThreadData.random.RandomInt( 35 );
-			vec[ 1 ] += ( float ) botThreadData.random.RandomInt( 35 );
+	if ( aimSkill < 1 && botThreadData.GetGameWorldState()->clientInfo[ player->entityNumber ].isBot == false && isPlayer && !hasRocket && !hasGrenade ) {
+		if ( velocity.LengthSqr() < Square( 84.0f ) && dist > Square( 300.0f ) ) { //mal: if the player is on foot, and isn't moving much, we'll add a bit of jitter so we dont kill them always.
+			vec.x += ( float ) botThreadData.random.RandomInt( 55 );
+			vec.y += ( float ) botThreadData.random.RandomInt( 55 );
+			vec.z -= ( float ) botThreadData.random.RandomInt( 155 );
 		}
 	}
 
-	if ( isPlayer && !hasRocket ) { ///mal: no need to scale our shots down if your in a vehicle
+	if ( isPlayer && !hasRocket && !hasGrenade ) { ///mal: no need to scale our shots down if your in a vehicle
         if ( aimSkill < 2 ) {
 			if ( aimSkill == 0 ) { //mal: NO headshots on n00bie skill
-				vec[2] -= bodyShot; //mal: scale the shot down a bit, so that its not headshots.
+				vec.z -= bodyShot; //mal: scale the shot down a bit, so that its not headshots.
 			} else if ( ( botThreadData.random.RandomInt( 100 ) < 97 || ( dist < Square( 500.0f ) && dist < Square( 1500.0f ) ) ) && !playerInfo.isLeaning && !playerInfo.usingMountedGPMG ) {
-		        vec[2] -= bodyShot; //mal: scale the shot down a bit, so that its not headshots.
+		        vec.z -= bodyShot; //mal: scale the shot down a bit, so that its not headshots.
 			}
 		} else if ( aimSkill < 3 ) {
 			if ( ( botThreadData.random.RandomInt( 100 ) < 90 || dist < Square( 500.0f ) ) && !playerInfo.isLeaning && !playerInfo.usingMountedGPMG ) { //mal: will get more headshots on experienced aim setting!
-				vec[2] -= bodyShot; //mal: scale the shot down a bit, so that its not headshots.
+				vec.z -= bodyShot; //mal: scale the shot down a bit, so that its not headshots.
 			}
 		} else {
 			if ( dist > Square( 500.0f ) ) {
 				if ( botThreadData.random.RandomInt( 100 ) < 50 && !playerInfo.isLeaning && !playerInfo.usingMountedGPMG ) { //mal: will get lots of headshots on expert aim setting!
-					vec[2] -= bodyShot; //mal: scale the shot down a bit, so that its not headshots.
+					vec.z -= bodyShot; //mal: scale the shot down a bit, so that its not headshots.
 				}
 			}
 		}
@@ -570,9 +576,13 @@ void idBot::Bot_ClientAimAtEnemy( int clientNum ) {
 		} else {
 			vec = GetPlayerViewPosition( clientNum ); //mal: aim for the head if they're far away.
 			if ( aimSkill > 0 ) {
-				Bot_GetProjectileAimPoint( false, vec, -1 );
+				Bot_GetProjectileAimPoint( PROJECTILE_ROCKET, vec, -1 );
 			}
 		}
+	}
+
+	if ( hasGrenade ) {
+		Bot_GetProjectileAimPoint( PROJECTILE_GRENADE, vec, -1 );
 	}
 
 	if ( InBotsSights( vec ) ) {
@@ -580,8 +590,8 @@ void idBot::Bot_ClientAimAtEnemy( int clientNum ) {
         vec -= firstPersonViewOrigin;
 		botViewAngles = vec.ToAngles();
 	} else {
-        vec -= GetPhysics()->GetOrigin();
-		Bot_ChangeViewAngles( vec.ToAngles(), SMOOTH_TURN );
+		vec -= firstPersonViewOrigin;
+		Bot_ChangeViewAngles( vec.ToAngles(), false );
 	}
 }
 
@@ -597,7 +607,7 @@ bool idBot::InBotsSights( const idVec3 &origin ) {
 
 	dir.NormalizeFast();
 
-	if ( dir * GetViewAxis()[0] > 0.7f ) {
+	if ( dir * GetViewAxis()[0] > 0.8f ) {
 		return true;   //mal: have someone in our "sights".
 	}
 	return false;
@@ -695,7 +705,13 @@ void idBot::AngleUcmds( usercmd_t &ucmd ) {
 		if ( botOutput.viewType == VIEW_ANGLES ) {
 			desiredAngles = botOutput.moveViewAngles; //mal: instantly turn toward our target.
 		} else if ( botOutput.viewType == VIEW_ORIGIN ) {
-			desiredAngles = ( botOutput.moveViewOrigin - firstPersonViewOrigin ).ToAngles();
+			if ( botOutput.botCmds.throwNade == false ) {
+				desiredAngles = ( botOutput.moveViewOrigin - firstPersonViewOrigin ).ToAngles();
+			} else {
+				idVec3 aimPoint = botOutput.moveViewOrigin;
+				Bot_GetProjectileAimPoint( PROJECTILE_GRENADE, aimPoint, -1 );
+				desiredAngles = ( aimPoint - firstPersonViewOrigin ).ToAngles();
+			}
 		} else if ( botOutput.viewType == VIEW_REVERSE ) {
 			desiredAngles = botOutput.moveViewAngles; //mal: look behind us when moving.
 			desiredAngles[ YAW ] -= 180.0f;
@@ -747,8 +763,6 @@ void idBot::AngleUcmds( usercmd_t &ucmd ) {
         botViewAngles[ PITCH ] = -89; //-90; // look straight up
 	} else if ( botOutput.botCmds.lookDown != false ) {
 		botViewAngles[ PITCH ] = 45; //mal: look down a bit so that we can run into our packs easier
-	} else if ( botOutput.botCmds.throwNade != false && botViewAngles[ PITCH ] < 50 ) {
-		botViewAngles[ PITCH ] += -35; //mal: look up a bit so that we don't throw grenades at our feet
 	}
 
     const idAngles &deltaViewAngles = GetDeltaViewAngles();
@@ -914,7 +928,7 @@ void idBot::MoveUcmds( usercmd_t &ucmd ) {
     switch ( moveType ) {
 
 		case RANDOM_JUMP: {
-            if ( !bot_noRandomJump.GetBool() ) {
+			if ( !bot_noRandomJump.GetBool() && botThreadData.GetBotSkill() != BOT_SKILL_DEMO ) {
                 if ( botThreadData.random.RandomInt( 100 ) > 95 ) {
                     ucmd.upmove = 127;
 				}
@@ -923,7 +937,7 @@ void idBot::MoveUcmds( usercmd_t &ucmd ) {
 		}
 
 		case QUICK_JUMP: {
-            if ( !bot_noRandomJump.GetBool() ) {
+            if ( !bot_noRandomJump.GetBool() && botThreadData.GetBotSkill() != BOT_SKILL_DEMO ) {
 				if ( xySpeed > WALKING_SPEED ) {
                     if ( botThreadData.random.RandomInt( 100 ) > 75 ) {
 						ucmd.upmove = 127;
@@ -942,10 +956,17 @@ void idBot::MoveUcmds( usercmd_t &ucmd ) {
             ucmd.rightmove = -127;
 			break;
 		}
+		
+		case BACKSTEP: {
+			ucmd.forwardmove = -127;
+			break;
+		}
 
 		case RANDOM_JUMP_RIGHT: {
-            if ( botThreadData.random.RandomInt( 100 ) > 95 ) {
-				ucmd.upmove = 127;
+			if ( !bot_noRandomJump.GetBool() && botThreadData.GetBotSkill() != BOT_SKILL_DEMO ) {
+				if ( botThreadData.random.RandomInt( 100 ) > 95 ) {
+					ucmd.upmove = 127;
+				}
 			}
 
 			ucmd.rightmove = 127;
@@ -953,8 +974,10 @@ void idBot::MoveUcmds( usercmd_t &ucmd ) {
 		}
 
 		case RANDOM_JUMP_LEFT: {
-            if ( botThreadData.random.RandomInt( 100 ) > 95 ) {
-				ucmd.upmove = 127;
+			if ( !bot_noRandomJump.GetBool() && botThreadData.GetBotSkill() != BOT_SKILL_DEMO ) {
+				if ( botThreadData.random.RandomInt( 100 ) > 95 ) {
+					ucmd.upmove = 127;
+				}
 			}
 			
 			ucmd.rightmove = -127;
@@ -974,7 +997,9 @@ void idBot::MoveUcmds( usercmd_t &ucmd ) {
 #endif
 		
 		case RANDOM_DIR_JUMP: {
-			ucmd.upmove = 127;
+			if ( !bot_noRandomJump.GetBool() && botThreadData.GetBotSkill() != BOT_SKILL_DEMO ) {
+				ucmd.upmove = 127;
+			}
 
 			if ( botThreadData.random.RandomInt( 100 ) > 50 ) {
 				ucmd.rightmove = 127;
@@ -1054,7 +1079,9 @@ void idBot::MoveUcmds( usercmd_t &ucmd ) {
 		}
 		
 		case JUMP_MOVE: {
-            ucmd.upmove = 127;
+			if ( !bot_noRandomJump.GetBool() && botThreadData.GetBotSkill() != BOT_SKILL_DEMO ) {
+				ucmd.upmove = 127;
+			}
 			break;
 		}
 			
@@ -1067,6 +1094,7 @@ void idBot::MoveUcmds( usercmd_t &ucmd ) {
 		ucmd.buttons.btn.sprint = false;
 		ucmd.buttons.btn.run = false;
 	}
+
 	if ( disableSprint ) {
 		ucmd.buttons.btn.sprint = false;
 	}
@@ -1476,7 +1504,11 @@ void idBot::VehicleUcmds( usercmd_t &ucmd ) {
 	}
 
 	if ( clientUcmd.botCmds.exitVehicle ) {
-		PerformImpulse( UCI_USE_VEHICLE );
+		idEntity* proxy = GetProxyEntity();
+
+		if ( proxy != NULL ) {
+			PerformImpulse( UCI_USE_VEHICLE );
+		}
 	}
 
 	if ( clientUcmd.botCmds.enterSiegeMode != false ) {
@@ -1489,14 +1521,14 @@ void idBot::VehicleUcmds( usercmd_t &ucmd ) {
 	}
 
 	if ( clientUcmd.botCmds.launchDecoys == true && decoyTime < gameLocal.time ) {
-		if ( botThreadData.GetBotSkill() > BOT_SKILL_EASY ) {
+		if ( botThreadData.GetBotSkill() > BOT_SKILL_EASY && botThreadData.GetBotSkill() != BOT_SKILL_DEMO ) {
 			decoyTime = gameLocal.time + 5000;
 			PerformImpulse( UCI_WEAP0 );
 		}
 	}
 
 	if ( clientUcmd.botCmds.launchDecoysNow == true && decoyTime < gameLocal.time ) { //mal: a "I need decoys now!" version of the above.
-		if ( botThreadData.GetBotSkill() > BOT_SKILL_EASY ) {
+		if ( botThreadData.GetBotSkill() > BOT_SKILL_EASY && botThreadData.GetBotSkill() != BOT_SKILL_DEMO ) {
 			decoyTime = gameLocal.time + 1000;
 			PerformImpulse( UCI_WEAP0 );
 		}
@@ -1508,13 +1540,13 @@ void idBot::VehicleUcmds( usercmd_t &ucmd ) {
 		}
 	}
 
-	if ( botThreadData.GetBotSkill() > BOT_SKILL_EASY ) { //mal: stupid bots wont worry about flares.
+	if ( botThreadData.GetBotSkill() > BOT_SKILL_EASY && botThreadData.GetBotSkill() != BOT_SKILL_DEMO ) { //mal: stupid bots wont worry about flares.
 		if ( clientInfo.enemyHasLockon || ( decoyTime != 0 && decoyTime > gameLocal.time - 5000 ) ) { //mal: if decide to fire one decoy, fire many, just to distract any more incoming missiles.
             if ( decoyTime == 0 ) {
-				decoyTime = gameLocal.time + ( ( botThreadData.GetBotSkill() == BOT_SKILL_NORMAL ) ? 900 : 600 /*350*/ ); //mal: add a bit of reaction time between when bot gets warning, to when it reacts.
+				decoyTime = gameLocal.time + ( ( botThreadData.GetBotSkill() == BOT_SKILL_NORMAL || botThreadData.GetBotSkill() == BOT_SKILL_DEMO ) ? 900 : 600 /*350*/ ); //mal: add a bit of reaction time between when bot gets warning, to when it reacts.
 			}
 			if ( decoyTime < gameLocal.time ) {
-                if ( botThreadData.GetBotSkill() == BOT_SKILL_NORMAL ) {
+                if ( botThreadData.GetBotSkill() == BOT_SKILL_NORMAL || botThreadData.GetBotSkill() == BOT_SKILL_DEMO ) {
 					if ( botThreadData.random.RandomInt( 100 ) > 97 ) { //mal: sometimes, if we're only mid skilled, we'll "forget" to fire the decoy
 						PerformImpulse( UCI_WEAP0 );
 					}
@@ -1571,7 +1603,7 @@ void idBot::GroundVehicleControls( usercmd_t &ucmd ) {
 	bool aimFast = ( botThreadData.GetGameOutputState()->botOutput[ entityNumber ].turnType == AIM_TURN ) ? true : false;
 	float lookAheadDist;
 
-	bool useBoost = true; //mal: running the vehicles with boost now...
+	bool useBoost = ( shouldMoveSlowly == false && useBrakes == false ) ? true : false; //mal: running the vehicles with boost now...
 
 	proxyInfo_t vehicleInfo;
 	const botAIOutput_t& botOutput = botThreadData.GetGameOutputState()->botOutput[ entityNumber ];
@@ -1645,9 +1677,9 @@ void idBot::GroundVehicleControls( usercmd_t &ucmd ) {
 		idVec3 aimPoint = botThreadData.GetGameOutputState()->botOutput[ entityNumber ].moveViewOrigin;
 
 		if ( botThreadData.GetGameOutputState()->botOutput[ entityNumber ].botCmds.useTankAim ) {
-			Bot_GetProjectileAimPoint( true, aimPoint, -1 );
+			Bot_GetProjectileAimPoint( PROJECTILE_TANK_ROUND, aimPoint, -1 );
 		}
-		
+
 		Bot_ChangeVehicleViewAngles( transport->GetViewForPlayer( this ).GetRequiredViewAngles( aimPoint ), aimFast );
 	} else {
         if ( botOutput.viewEntityNum > -1 && botOutput.viewEntityNum < MAX_CLIENTS ) {
@@ -1665,7 +1697,7 @@ void idBot::GroundVehicleControls( usercmd_t &ucmd ) {
 
 					if ( botThreadData.GetGameOutputState()->botOutput[ entityNumber ].botCmds.useTankAim ) {
 						aimPoint.z += ( entity->GetPhysics()->GetBounds()[ 1 ][ 2 ] - entity->GetPhysics()->GetBounds()[ 0 ][ 2 ] ) * 0.4f;
-						Bot_GetProjectileAimPoint( true, aimPoint, entity->entityNumber );
+						Bot_GetProjectileAimPoint( PROJECTILE_TANK_ROUND, aimPoint, entity->entityNumber );
 					}
 		
 					Bot_ChangeVehicleViewAngles( transport->GetViewForPlayer( this ).GetRequiredViewAngles( aimPoint ), aimFast );
@@ -1843,6 +1875,13 @@ void idBot::GroundVehicleControls( usercmd_t &ucmd ) {
 	if ( botThreadData.GetGameOutputState()->botOutput[ entityNumber ].specialMoveType == FULL_STOP ) {
 		ucmd.forwardmove = 0;
 		ucmd.rightmove = 0;
+		ucmd.buttons.btn.sprint = false;
+		ucmd.upmove = 127;
+		if ( vehicleInfo.forwardSpeed > 50.0f ) {
+			ucmd.forwardmove = -127;
+		} else if ( vehicleInfo.forwardSpeed < -50.0f ) {
+			ucmd.forwardmove = 127; //mal: do the opposite of whatever we're doing now, so we slow down faster.
+		}
 	}
 
 	if ( botThreadData.AllowDebugData() ) {
@@ -1901,7 +1940,7 @@ idBot::Bot_GetProjectileAimPoint
 Adjusts the targetOrg we're aiming at, so that we can hit our targets if its far away.
 ================
 */
-bool idBot::Bot_GetProjectileAimPoint( bool tankGun, idVec3& targetOrg, int ignoreEntNum ) {
+bool idBot::Bot_GetProjectileAimPoint( const projectileTypes_t projectileType, idVec3& targetOrg, int ignoreEntNum ) {
 	bool shotClear = true;
 	int n = 0;
 	int i;
@@ -1917,15 +1956,22 @@ bool idBot::Bot_GetProjectileAimPoint( bool tankGun, idVec3& targetOrg, int igno
 	idVec3 dir;
 
 //mal_FIXME: get the gravity/speed values from the weapon .def files!
-	if ( tankGun ) {
+	if ( projectileType == PROJECTILE_TANK_ROUND ) {
 		gunOrg = botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].proxyInfo.weaponOrigin;
-		gravity = -1500.0f;
-		speed = 10000.0f;
-	} else {
+		gravity = -800.0f;
+		speed = 8003.0f;
+//		gravity = -1500.0f;
+//		speed = 10000.0f;
+	} else if ( projectileType == PROJECTILE_ROCKET ) {
 		gunOrg = botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].viewOrigin;
 		gravity = -120.0f;
 		speed = 2001.0f;
+	} else { //mal: PROJECTILE_GRENDADE
+		gunOrg = botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].viewOrigin;
+		gravity = -550.0f;
+		speed = 950.0f;
 	}
+
 
 	x = ( targetOrg.ToVec2() - gunOrg.ToVec2() ).LengthFast();
 	y = targetOrg[2] - gunOrg[2];
@@ -1984,6 +2030,11 @@ bool idBot::Bot_GetProjectileAimPoint( bool tankGun, idVec3& targetOrg, int igno
 	pitch = DEG2RAD( angle );
     idMath::SinCos( pitch, s, k );
 	dir = targetOrg - gunOrg;
+
+	if ( dir.IsZero() ) {
+		return false;
+	}
+
 	dir.z = 0.0f;
 	dir *= k * idMath::InvSqrt( dir.LengthSqr() );
 	dir.z = s;
@@ -2076,7 +2127,7 @@ void idBot::Bot_VehicleAimAtEnemy( int clientNum ) {
 	}
 
 	if ( vehicleInfo.type == TITAN && bot_aimSkill.GetInteger() > 0 ) {
-        Bot_GetProjectileAimPoint( true, vec, -1 );
+        Bot_GetProjectileAimPoint( PROJECTILE_TANK_ROUND, vec, -1 );
 		botViewAngles = transport->GetViewForPlayer( this ).GetRequiredViewAngles( vec ); //mal: turn as fast as vehicle view allows.
 	} else {
 		botViewAngles = transport->GetViewForPlayer( this ).GetRequiredViewAngles( vec ); //mal: turn as fast as vehicle view allows.
@@ -2105,6 +2156,7 @@ void idBot::AirVehicleControls( usercmd_t &ucmd ) {
 	bool mustBrakeIfCantBoost;
 	bool alwaysBoost;
 	int dangerousDownPitch = 20;
+	int vehicleTime = botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].proxyInfo.time;
 	float moveRight;
 	float lookAheadDist;
 	float vehicleYaw;
@@ -2216,8 +2268,8 @@ void idBot::AirVehicleControls( usercmd_t &ucmd ) {
 			}
 		} 
 
-		if ( altitude.z < 60.0f ) { //mal: make sure we're at a safe altitude before we start moving...
-			if ( botThreadData.GetGameWorldState()->clientInfo[ entityNumber ].proxyInfo.time + 15000 > gameLocal.time ) {   
+		if ( altitude.z < 60.0f || vehicleTime + 5000 > gameLocal.time ) { //mal: make sure we're at a safe altitude before we start moving...
+			if ( vehicleTime + 15000 > gameLocal.time ) {   
 				return;
 			}
 		}
@@ -2559,7 +2611,6 @@ void idBot::IcarusVehicleControls( usercmd_t &ucmd ) {
 	proxyInfo_t vehicleInfo;	
 	GetVehicleInfo( GetProxyEntity()->entityNumber, vehicleInfo );
 
-	//TODO: the below wont work! need vehicle angles I think, and cant tell if on ground or not.
 	AngleUcmds( ucmd );		
 	ActionUcmds( ucmd );
 

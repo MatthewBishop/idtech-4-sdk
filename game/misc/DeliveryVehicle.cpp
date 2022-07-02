@@ -133,7 +133,7 @@ sdDeliveryVehicle::Jotun_Think
 ================
 */
 void sdDeliveryVehicle::Jotun_Think( void ) {
-	if ( deliveryMode == DMODE_NONE ) {
+	if ( deliveryMode == DMODE_NONE || gameLocal.IsPaused() ) {
 		return;
 	}
 	if ( PathGetNumPoints() < 2 ) {
@@ -452,9 +452,10 @@ void sdDeliveryVehicle::Magog_Think() {
 	if ( numPoints < 2 ) {
 		return;
 	}
-	if ( deliveryMode == DMODE_NONE ) {
+	if ( deliveryMode == DMODE_NONE || gameLocal.IsPaused() ) {
 		return;
 	}
+	assert( gameLocal.msec != 0 );
 
 	float time = MS2SEC( gameLocal.time - modeStartTime );
 	float frameTime = MS2SEC( gameLocal.msec );

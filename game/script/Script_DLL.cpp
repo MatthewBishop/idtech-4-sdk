@@ -226,9 +226,13 @@ bool sdDLLProgram::Init( void ) {
 
 	char dllPath[ MAX_OSPATH ];
 
+	if ( gameLocal.mapMetaData->GetBool( "no_compiled_script" ) ) {
+		return false;
+	}
+
 	const char* suffix = gameLocal.mapMetaData->GetString( "compiledscript_suffix" );
 
-	fileSystem->FindDLL( va( "compiledscript%s", suffix ), dllPath, true, true );
+	fileSystem->FindDLL( va( "compiledscript%s", suffix ), dllPath, false, true );
 	if ( dllPath[ 0 ] == '\0' ) {
 		gameLocal.Warning( "sdDLLProgram::Init : Couldn't find '%s' dynamic library", dllPath );
 		return false;
@@ -622,7 +626,7 @@ sdProgramThread* sdDLLProgram::CreateThread( const sdScriptHelper& h ) {
 	}
 
 	thread->call1.Init( h.GetObject(), function, buffer, this );
-	thread->Call( &thread->call1 );
+	thread->Call( &thread->call1, false );
 
 	return thread;
 }
@@ -826,6 +830,7 @@ void sdDLLThread::Clear( void ) {
 	flags.threadDying		= true;
 	flags.reset				= false;
 	flags.doneProcessing	= true;
+	flags.guiThread			= false;
 
 	threadNode.Remove();
 	GetAutoNode().Remove();
@@ -912,7 +917,9 @@ sdDLLThread::Execute
 ================
 */
 bool sdDLLThread::Execute( void ) {
-	if ( flags.manualControl && ( GetPauseEndTime() > gameLocal.time ) ) {
+	int now = GetThreadTime();
+
+	if ( flags.manualControl && ( pauseTime > now ) ) {
 		return false;
 	}
 
@@ -943,9 +950,17 @@ bool sdDLLThread::Execute( void ) {
 	} else if ( !flags.manualControl ) {
 		if ( flags.waitFrame ) {
 			flags.waitFrame = false;
-			PostEventMS( &EV_Thread_Execute, NEXT_FRAME_EVENT_TIME );
-		} else if ( pauseTime > gameLocal.time ) {
-			PostEventMS( &EV_Thread_Execute, pauseTime - gameLocal.time );
+			if ( flags.guiThread ) {
+				PostGUIEventMS( &EV_Thread_Execute, NEXT_FRAME_EVENT_TIME );
+			} else {
+				PostEventMS( &EV_Thread_Execute, NEXT_FRAME_EVENT_TIME );
+			}
+		} else if ( pauseTime > now ) {
+			if ( flags.guiThread ) {
+				PostGUIEventMS( &EV_Thread_Execute, pauseTime - now );
+			} else {
+				PostEventMS( &EV_Thread_Execute, pauseTime - now );
+			}
 		}
 	}
 	return false;
@@ -1060,10 +1075,36 @@ void sdDLLThread::DisableDebugInfo( void ) {
 
 /*
 ================
+sdDLLThread::IsWaiting
+================
+*/
+bool sdDLLThread::IsWaiting( void ) const {
+	return pauseTime > GetThreadTime();
+}
+
+/*
+================
+sdDLLThread::Wait
+================
+*/
+void sdDLLThread::Wait( float time ) {
+	if ( time <= 0.f ) {
+		WaitFrame();
+		return;
+	}
+
+	pauseTime = GetThreadTime() + SEC2MS( time );
+	Coroutine_Detach( this );
+}
+
+
+/*
+================
 sdDLLThread::Call
 ================
 */
-void sdDLLThread::Call( sdProcedureCall* call ) {
+void sdDLLThread::Call( sdProcedureCall* call, bool guiThread ) {
+	flags.guiThread = guiThread;
 	SetCall( call );
 }
 
@@ -1285,7 +1326,7 @@ sdDLLScriptInterface::AllocThread
 */
 int sdDLLScriptInterface::AllocThread( sdProcedureCall* call ) {
 	sdDLLThread* thread = reinterpret_cast< sdDLLThread* >( program->CreateThread() );
-	thread->Call( call );
+	thread->Call( call, false );
 	thread->DelayedStart( 0 );
 	return thread->GetThreadNum();
 }
@@ -1296,10 +1337,47 @@ sdDLLScriptInterface::AllocThread
 ================
 */
 int sdDLLScriptInterface::AllocThread( sdCompiledScript_ClassBase* object, const char* name, sdProcedureCall* call ) {
-	assert( object );
+	assert( object != NULL );
 
 	sdDLLThread* thread = reinterpret_cast< sdDLLThread* >( program->CreateThread() );
-	thread->Call( call );
+	thread->Call( call, false );
+	thread->DelayedStart( 0 );
+
+	idScriptObject* obj = GetScriptObject( object->__S_GetHandle() );
+	assert( obj != NULL );
+
+	thread->GetAutoNode().AddToEnd( obj->GetAutoThreads() );
+
+	idEntity* ent = obj->GetClass()->Cast< idEntity >();
+	if ( ent != NULL ) {
+		thread->SetName( va( "%s_%s", name, ent->name.c_str() ) );
+	}
+
+	return thread->GetThreadNum();
+}
+
+/*
+================
+sdDLLScriptInterface::AllocThread
+================
+*/
+int sdDLLScriptInterface::AllocGuiThread( sdProcedureCall* call ) {
+	sdDLLThread* thread = reinterpret_cast< sdDLLThread* >( program->CreateThread() );
+	thread->Call( call, true );
+	thread->DelayedStart( 0 );
+	return thread->GetThreadNum();
+}
+
+/*
+================
+sdDLLScriptInterface::AllocThread
+================
+*/
+int sdDLLScriptInterface::AllocGuiThread( sdCompiledScript_ClassBase* object, const char* name, sdProcedureCall* call ) {
+	assert( object != NULL );
+
+	sdDLLThread* thread = reinterpret_cast< sdDLLThread* >( program->CreateThread() );
+	thread->Call( call, true );
 	thread->DelayedStart( 0 );
 
 	idScriptObject* obj = GetScriptObject( object->__S_GetHandle() );

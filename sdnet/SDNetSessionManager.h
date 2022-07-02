@@ -17,8 +17,10 @@ class sdNetSessionManager {
 public:
 	enum sessionSource_e {
 		SS_LAN,
+		SS_LAN_REPEATER,
 		SS_INTERNET_ALL,
 		SS_INTERNET_RANKED,
+		SS_INTERNET_REPEATER,
 	};
 
 	virtual					~sdNetSessionManager() {}

@@ -12,7 +12,7 @@
 
 struct messageHistoryEntry_t {
 	idWStr			message;
-	int				timeStamp;
+	time_t			timeStamp;
 };
 
 class sdNetMessageHistory {

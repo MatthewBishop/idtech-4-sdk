@@ -39,7 +39,7 @@ sdGUIDInfo::sdGUIDInfo( void ) {
 sdGUIDInfo::CurrentTime
 ============
 */
-int sdGUIDInfo::CurrentTime( void ) {
+time_t sdGUIDInfo::CurrentTime( void ) {
 	sysTime_t blankTime;
 	memset( &blankTime, 0, sizeof( blankTime ) );
 
@@ -63,6 +63,31 @@ bool sdGUIDInfo::IsBanned( void ) {
 	}
 
 	return banTime > CurrentTime();
+}
+
+/*
+============
+sdGUIDInfo::GetPrintableName
+============
+*/
+const char* sdGUIDInfo::GetPrintableName( void ) const {
+	if ( userName.Length() > 0 ) {
+		return userName.c_str();
+	}
+
+	switch ( matchType ) {
+		case MT_GUID:
+			return va( "GUID: %u.%u", id.clientId.id[ 0 ], id.clientId.id[ 1 ] );
+		case MT_IP: {
+			byte* temp = ( ( byte* )&id.ip );
+			return va( "IP: %u.%u.%u.%u", temp[ 0 ], temp[ 1 ], temp[ 2 ], temp[ 3 ] );
+		}
+		case MT_PB:
+			return va( "PB GUID: %i", id.pbid );
+	}
+
+	assert( false );
+	return "UNKNOWN";
 }
 
 /*
@@ -111,7 +136,7 @@ void sdGUIDInfo::Write( idFile* file ) const {
 			file->Printf( "\t\"guid\"\t\"%u.%u\"\n", id.clientId.id[ 0 ], id.clientId.id[ 1 ] );
 			break;
 		case MT_IP: {
-			byte* temp = ( ( byte* )&id );
+			byte* temp = ( ( byte* )&id.ip );
 			file->Printf( "\t\"ip\"\t\"%u.%u.%u.%u\"\n", temp[ 0 ], temp[ 1 ], temp[ 2 ], temp[ 3 ] );
 			break;
 		}
@@ -122,6 +147,10 @@ void sdGUIDInfo::Write( idFile* file ) const {
 
 	if ( authGroup.Length() > 0 ) {
 		file->Printf( "\t\"auth_group\"\t\"%s\"\n", authGroup.c_str() );
+	}
+
+	if ( userName.Length() > 0 ) {
+		file->Printf( "\t\"user_name\"\t\"%s\"\n", userName.c_str() );
 	}
 
 	if ( banTime < 0 ) {
@@ -139,6 +168,8 @@ sdGUIDInfo::SetMatch
 ============
 */
 void sdGUIDInfo::SetMatch( const clientGUIDLookup_t& lookup ) {
+	SetUserName( lookup.name.c_str() );
+
 	if ( lookup.clientId.IsValid() ) {
 		SetGUID( lookup.clientId );
 		return;
@@ -316,6 +347,11 @@ bool sdGUIDFile::ParseEntry( idLexer& src ) {
 		}
 	}
 
+	const char* userName = data.GetString( "user_name" );
+	if ( *userName != '\0' ) {
+		newInfo.SetUserName( userName );
+	}
+
 	if ( newInfo.GetMatchType() == sdGUIDInfo::MT_INVALID ) {
 		src.Warning( "No match type specified" );
 		return true;
@@ -412,4 +448,82 @@ sdGUIDFile::banState_t sdGUIDFile::CheckForBan( const clientGUIDLookup_t& lookup
 		return BS_TEMP_BAN;
 	}
 	return BS_NOT_BANNED;
+}
+
+/*
+============
+sdGUIDFile::ListBans
+============
+*/
+void sdGUIDFile::ListBans( void ) {
+	CheckForUpdates();
+
+	for ( int i = 0; i < info.Num(); i++ ) {
+		sdGUIDInfo& gInfo = info[ i ];
+		if ( !gInfo.IsBanned() ) {
+			continue;
+		}
+
+		gameLocal.Printf( "%d: %s\n", i, gInfo.GetPrintableName() );
+	}
+}
+
+/*
+============
+sdGUIDFile::ListBans
+============
+*/
+void sdGUIDFile::ListBans( const idBitMsg& msg ) {
+	while ( msg.GetSize() != msg.GetReadCount() ) {
+		int index = msg.ReadLong();
+		char buffer[ 128 ];
+		msg.ReadString( buffer, sizeof( buffer ) );
+		gameLocal.Printf( "%d: %s\n", index, buffer );
+	}
+}
+
+/*
+============
+sdGUIDFile::WriteBans
+============
+*/
+bool sdGUIDFile::WriteBans( int& startIndex, idBitMsg& msg ) {
+	CheckForUpdates();
+
+	const int MAX_WRITE_BANS = 5;
+	int count = 0;
+	int i = startIndex + 1;
+	for ( ; i < info.Num(); i++ ) {
+		sdGUIDInfo& gInfo = info[ i ];
+		if ( !gInfo.IsBanned() ) {
+			continue;
+		}
+
+		count++;
+		msg.WriteLong( i );
+		msg.WriteString( gInfo.GetPrintableName() );
+
+		if ( count == MAX_WRITE_BANS ) {
+			startIndex = i;
+			return false;
+		}
+	}
+
+	startIndex = -1;
+	return true;
+}
+
+/*
+============
+sdGUIDFile::UnBan
+============
+*/
+void sdGUIDFile::UnBan( int index ) {
+	if ( index < 0 || index >= info.Num() ) {
+		return;
+	}
+
+	info[ index ].UnBan();
+
+	WriteGUIDFile();
 }

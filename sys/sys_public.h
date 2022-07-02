@@ -65,7 +65,7 @@ typedef enum {
 	SE_CONTROLLER_BUTTON,	// value is the button number, value2 is the controller hash << 1 OR'ed with the down flag
 	SE_CONSOLE,				// evPtr is a char*, from typing something at a non-game console
 	SE_GUI,					// an event generated specifically for guis
-	//SE_IME,					// value is the event number, 
+	SE_IME,					// value is the event number, 
 } sysEventType_t;
 
 typedef enum {
@@ -160,16 +160,16 @@ void			Sys_Sleep( int msec );
 int				Sys_Milliseconds( void );
 unsigned long	Sys_TimeBase( void );
 
-int				Sys_TimeDiff( const sysTime_t& from, const sysTime_t& to );
-void			Sys_SecondsToTime( int t, sysTime_t& out, bool localTime = false );
+time_t			Sys_TimeDiff( const sysTime_t& from, const sysTime_t& to );
+void			Sys_SecondsToTime( time_t t, sysTime_t& out, bool localTime = false );
 const char*		Sys_TimeToStr( const sysTime_t& t );
-const char*		Sys_SecondsToStr( int t, bool localTime = false );
+const char*		Sys_SecondsToStr( const time_t t, bool localTime = false );
 const char*		Sys_TimeToSystemStr( const sysTime_t& sysTime );
 const char*		Sys_TimeAndDateToSystemStr( const sysTime_t& sysTime );
 
 
 // for getting current system (real world) time
-int				Sys_RealTime( sysTime_t* sysTime );
+time_t			Sys_RealTime( sysTime_t* sysTime );
 
 // for accurate performance testing
 double			Sys_GetClockTicks( void );
@@ -219,10 +219,6 @@ int				Sys_GetDriveFreeSpace( const char *path );
 void			Sys_GetCurrentMemoryStatus( sysMemoryStats_t &stats );
 void			Sys_GetExeLaunchMemoryStatus( sysMemoryStats_t &stats );
 void			Sys_GetProcessMemoryStatus( sysProcessMemoryStats_t& stats );
-
-// lock and unlock memory
-bool			Sys_LockMemory( void *ptr, int bytes );
-bool			Sys_UnlockMemory( void *ptr, int bytes );
 
 // set amount of physical work memory
 void			Sys_SetPhysicalWorkMemory( int minBytes, int maxBytes );
@@ -366,26 +362,6 @@ private:
 ID_INLINE void idPort::SetSilent( bool silent ) { this->silent = silent; }
 ID_INLINE bool idPort::GetSilent() const { return silent; }
 
-class idTCP {
-public:
-				idTCP();
-	virtual		~idTCP();
-
-	// if host is host:port, the value of port is ignored
-	bool		Init( const char *host, short port );
-	void		Close();
-
-	// returns -1 on failure (and closes socket)
-	// those are non blocking, can be used for polling
-	// there is no buffering, you are not guaranteed to Read or Write everything in a single call
-	// (specially on win32, see recv and send documentation)
-	int			Read( void *data, int size );
-	int			Write( void *data, int size );
-
-private:
-	netadr_t	address;		// remote address
-	int			fd;				// OS specific socket
-};
 
 				// parses the port number
 				// can also do DNS resolve if you ask for it.
@@ -526,7 +502,7 @@ typedef enum {
 class idKeyboard;
 class idMouse;
 class sdControllerManager;
-//class sdIME;
+class sdIME;
 
 class idSys {
 public:
@@ -546,23 +522,20 @@ public:
 	virtual cpuid_t			GetProcessorId( void ) = 0;
 	virtual void			Sleep( int msec ) = 0;
 	virtual int				Milliseconds() = 0;
-	virtual int				RealTime( sysTime_t* sysTime ) = 0;
+	virtual time_t			RealTime( sysTime_t* sysTime ) = 0;
 	virtual const char*		TimeToSystemStr( const sysTime_t& sysTime ) = 0;
 	virtual const char*		TimeAndDateToSystemStr( const sysTime_t& sysTime ) = 0;
-	virtual int				TimeDiff( const sysTime_t& from, const sysTime_t& to ) = 0;
-	virtual void			SecondsToTime( int t, sysTime_t& out, bool localTime = false ) = 0;
+	virtual time_t			TimeDiff( const sysTime_t& from, const sysTime_t& to ) = 0;
+	virtual void			SecondsToTime( const time_t t, sysTime_t& out, bool localTime = false ) = 0;
 	virtual const char *	GetProcessorString( void ) = 0;
 	virtual const char *	TimeToStr( const sysTime_t& t ) = 0;
-	virtual const char *	SecondsToStr( int t, bool localTime = false ) = 0;
+	virtual const char *	SecondsToStr( const time_t t, bool localTime = false ) = 0;
 	virtual const char *	FPU_GetState( void ) = 0;
 	virtual bool			FPU_StackIsEmpty( void ) = 0;
 	virtual void			FPU_SetFTZ( bool enable ) = 0;
 	virtual void			FPU_SetDAZ( bool enable ) = 0;
 
 	virtual void			FPU_EnableExceptions( int exceptions ) = 0;
-
-	virtual bool			LockMemory( void *ptr, int bytes ) = 0;
-	virtual bool			UnlockMemory( void *ptr, int bytes ) = 0;
 
 	virtual void			GetCurrentMemoryStatus( sysMemoryStats_t &stats ) = 0;
 	virtual void			GetExeLaunchMemoryStatus( sysMemoryStats_t &stats ) = 0;
@@ -618,7 +591,7 @@ public:
 	virtual idKeyboard&		Keyboard() = 0;
 	virtual idMouse&		Mouse() = 0;
 
-	//virtual sdIME&			IME() = 0;
+	virtual sdIME&			IME() = 0;
 
 	// switch to the user's locale
 	virtual void			SetSystemLocale() = 0;

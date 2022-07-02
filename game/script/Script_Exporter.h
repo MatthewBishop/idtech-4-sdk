@@ -61,6 +61,7 @@ public:
 		objectDef_t*					superType;
 		int								baseOffset;
 		idList< threadDef_t* >			threadCalls;
+		idList< threadDef_t* >			guiThreadCalls;
 	};
 public:
 					sdScriptExporter( void ) { program = NULL; tabCount = 0; }
@@ -113,12 +114,12 @@ public:
 
 	objectDef_t*	FindClass( const namespaceDef_t* ns, const idTypeDef* type );
 	stackVar_t*		FindGlobal( const namespaceDef_t* ns, const idVarDef* var );
-	int				FindThreadCall( const objectDef_t& obj, const function_t* function );
+	int				FindThreadCall( const objectDef_t& obj, const function_t* function, bool guithreadcall );
 
 	void			WriteFunctionStub( idFile* file, const functionDef_t& funcDef, idTypeDef* object, int baseparm );
-	void			WriteThreadCallStub( idFile* file, const objectDef_t* obj, int index, int baseparm, bool clarify, bool includeName );
-	void			WriteThreadCallType( idFile* file, const objectDef_t* obj, int index, int baseparm, const char* name );
-	void			WriteThreadCallWrapperClass( idFile* file, const objectDef_t* obj, int index, int baseparm );
+	void			WriteThreadCallStub( idFile* file, const objectDef_t* obj, int index, int baseparm, bool clarify, bool includeName, bool gui );
+	void			WriteThreadCallType( idFile* file, const objectDef_t* obj, int index, int baseparm, const char* name, bool gui );
+	void			WriteThreadCallWrapperClass( idFile* file, const objectDef_t* obj, int index, int baseparm, bool gui );
 	void			WriteFunctionWrappers( idFile* cppFile );
 
 	void			WriteNamespaceTitle( idFile* file, const namespaceDef_t* ns );
@@ -139,7 +140,7 @@ public:
 	void			RegisterClassFunction( idTypeDef* type, const function_t* function );
 	void			RegisterClassField( idTypeDef* type, idVarDef* field );
 	void			RegisterClassFunctionVariable( idTypeDef* type, const function_t* function, const idVarDef* var );
-	void			RegisterClassThreadCall( idTypeDef* type, const function_t* function );
+	void			RegisterClassThreadCall( idTypeDef* type, const function_t* function, bool guithreadcall );
 	void			RegisterExternalClassCall( functionDef_t& funcDef );
 	void			RegisterExternalFunctionCall( functionDef_t& funcDef );
 	int				RegisterSysCall( const function_t* function );

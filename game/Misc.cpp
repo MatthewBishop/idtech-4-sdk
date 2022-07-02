@@ -193,7 +193,7 @@ idPlayerStart::InhibitSpawn
 ================
 */
 bool idPlayerStart::InhibitSpawn( const idDict& args ) {
-	return gameLocal.isClient;
+	return gameLocal.isClient && !gameLocal.serverIsRepeater;
 }
 
 /*

@@ -47,7 +47,7 @@ public:
 	virtual sdTeamInfo*		GetWinningTeam( void ) const { return winningTeam; }
 	sdTeamInfo*				GetCampaignWinner( void ) const { return campaignWinningTeam; }
 
-	virtual void			WriteInitialReliableMessages( int clientNum );
+	virtual void			WriteInitialReliableMessages( const sdReliableMessageClientInfoBase& target );
 
 	virtual void			ArgCompletion_StartGame( const idCmdArgs& args, argCompletionCallback_t callback );
 
@@ -59,7 +59,7 @@ public:
 
 	virtual bool			ParseNetworkMessage( int msgType, const idBitMsg& msg );
 
-	virtual bool			OnUserStartMap( const char* text, idStr& reason, idStr& mapName );
+	virtual userMapChangeResult_e	OnUserStartMap( const char* text, idStr& reason, idStr& mapName );
 
 	virtual int					GetNumMaps( void ) const		{ return campaignMapData.Num(); }
 	virtual const mapData_t*	GetMapData( int index ) const	{ return &campaignMapData[ index ]; }
@@ -70,7 +70,7 @@ public:
 	virtual void			InitVotes( void );
 	virtual const sdDeclLocStr*	GetTypeText( void ) const;
 
-	void					SendCampaignInfo( int clientNum );
+	void					SendCampaignInfo( const sdReliableMessageClientInfoBase& target );
 	virtual void			ReadCampaignInfo( const idBitMsg& msg );
 
 	void					SetCampaign( const sdDeclCampaign* newCampaign );
@@ -79,10 +79,12 @@ public:
 
 	void					OnMapStatsReceived( int index );
 
+	virtual int				GetServerBrowserScore( const sdNetSession& session ) const;
+
 	virtual void			UpdateClientFromServerInfo( const idDict& serverInfo, bool allowMedia );
 
 protected:
-	void					SendMapStats( int index, int clientNum = -1 );
+	void					SendMapStats( int index, const sdReliableMessageClientInfoBase& target );
 	void					ReadMapStats( const idBitMsg& msg );
 	bool					SetCampaign( const char* text, idStr& mapName );
 

@@ -6552,6 +6552,18 @@ typedef void (APIENTRYP PFNGLPROGRAMLOCALPARAMETERS4FVEXTPROC) (GLenum target, G
 #define GL_EXT_texture_compression_latc 1
 #endif
 
+#ifndef GL_NV_multisample_coverage
+#define GL_COVERAGE_SAMPLES_NV            0x80A9
+#define GL_COLOR_SAMPLES_NV               0x8E20
+#define GL_NV_multisample_coverage
+#endif
+
+#ifndef WGL_NV_multisample_coverage
+#define WGL_COVERAGE_SAMPLES_NV           0x2042
+#define WGL_COLOR_SAMPLES_NV              0x20B9
+#define WGL_NV_multisample_coverage
+#endif
+
 #ifdef __cplusplus
 }
 #endif

@@ -888,6 +888,9 @@ bool idPhysics_RigidBody::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	const float minTimeStep = MS2SEC( 1 );
 
 	if ( hasMaster ) {
+		if ( timeStepMSec <= 0 ) {
+			return true;
+		}
 		oldOrigin = current.i.position;
 		oldAxis = current.i.orientation;
 		self->GetMasterPosition( masterOrigin, masterAxis );

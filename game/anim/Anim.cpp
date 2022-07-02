@@ -1573,7 +1573,7 @@ bool idMD5Anim::WriteAnimBinary( const char *filename ) {
 
 	num = bounds.Num();
 	file->WriteInt( num );
-	for ( int i=0; i<num; i++ ) {
+	for ( int i = 0; i < num; i++ ) {
 		const short *list = bounds[i].GetBounds();
 
 		file->WriteShort( list[0] );

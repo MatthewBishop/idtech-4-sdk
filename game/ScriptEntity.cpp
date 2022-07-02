@@ -30,6 +30,7 @@ static char THIS_FILE[] = __FILE__;
 
 #include "proficiency/StatsTracker.h"
 #include "PredictionErrorDecay.h"
+#include "misc/WorldToScreen.h"
 
 
 idBlockAlloc< sdMotorSound, 64 > sdMotorSoundGroup::s_allocator;
@@ -278,7 +279,7 @@ sdScriptedCrosshairInterface::UpdateCrosshairInfo
 */
 bool sdScriptedCrosshairInterface::UpdateCrosshairInfo( idPlayer* player ) const {
 	sdScriptHelper helper;
-	helper.Push( player->GetScriptObject() );
+	helper.Push( player == NULL ? NULL : player->GetScriptObject() );
 	return owner->CallFloatNonBlockingScriptEvent( function, helper ) != 0.f;
 }
 
@@ -1389,6 +1390,18 @@ const idEventDef EV_ScriptEntity_ShowInLocalView( "showInLocalView", '\0', DOC_T
 
 const idEventDef EV_ScriptEntity_SetClipOriented( "setClipOriented", '\0', DOC_TEXT( "Sets whether the clipmodel should be oriented, or axis aligned." ), 1, "This only applies to physics of type $class:sdPhysics_SimpleRigidBody$.", "b", "state", "Whether it should be oriented or not." );
 
+const idEventDef EV_ScriptEntity_SetIconMaterial( "setIconMaterial", "s" );
+const idEventDef EV_ScriptEntity_SetIconSize( "setIconSize", "ff" );
+const idEventDef EV_ScriptEntity_SetIconColorMode( "setIconColorMode", "d" );
+const idEventDef EV_ScriptEntity_SetIconPosition( "setIconPosition", "d" );
+const idEventDef EV_ScriptEntity_SetIconEnabled( "setIconEnabled", "b" );
+const idEventDef EV_ScriptEntity_SetIconCutoff( "setIconCutoff", "f" );
+const idEventDef EV_ScriptEntity_SetIconAlphaScale( "setIconAlphaScale", "f" );
+
+const idEventDef EV_ScriptEntity_EnableCollisionPush( "enableCollisionPush" );
+const idEventDef EV_ScriptEntity_DisableCollisionPush( "disableCollisionPush" );
+
+
 CLASS_DECLARATION( idAnimatedEntity, sdScriptEntity )
 	EVENT( EV_SetState,										sdScriptEntity::Event_SetState )
 	EVENT( EV_ScriptEntity_AddHelper,						sdScriptEntity::Event_AddHelper )
@@ -1435,6 +1448,17 @@ CLASS_DECLARATION( idAnimatedEntity, sdScriptEntity )
 	EVENT( EV_ScriptEntity_ShowInLocalView,					sdScriptEntity::Event_ShowInLocalView )
 
 	EVENT( EV_ScriptEntity_SetClipOriented,					sdScriptEntity::Event_SetClipOriented )
+
+	EVENT( EV_ScriptEntity_SetIconMaterial,					sdScriptEntity::Event_SetIconMaterial )
+	EVENT( EV_ScriptEntity_SetIconSize,						sdScriptEntity::Event_SetIconSize )
+	EVENT( EV_ScriptEntity_SetIconColorMode,				sdScriptEntity::Event_SetIconColorMode )
+	EVENT( EV_ScriptEntity_SetIconPosition,					sdScriptEntity::Event_SetIconPosition )
+	EVENT( EV_ScriptEntity_SetIconEnabled,					sdScriptEntity::Event_SetIconEnabled )
+	EVENT( EV_ScriptEntity_SetIconCutoff,					sdScriptEntity::Event_SetIconCutoff )
+	EVENT( EV_ScriptEntity_SetIconAlphaScale,				sdScriptEntity::Event_SetIconAlphaScale )
+
+	EVENT( EV_ScriptEntity_EnableCollisionPush,				sdScriptEntity::Event_EnableCollisionPush )
+	EVENT( EV_ScriptEntity_DisableCollisionPush,			sdScriptEntity::Event_DisableCollisionPush )
 END_CLASS
 
 /*
@@ -1482,6 +1506,7 @@ sdScriptEntity::sdScriptEntity( void ) {
 	teamDamageDone			= 0;
 
 	postThinkEntNode.SetOwner( this );
+	iconNode.SetOwner( this );
 
 	motorSounds.Init( this );
 }
@@ -1642,6 +1667,11 @@ void sdScriptEntity::Spawn( void ) {
 		predictionErrorDecay_Angles = new sdPredictionErrorDecay_Angles();
 		predictionErrorDecay_Origin->Init( this );
 		predictionErrorDecay_Angles->Init( this );
+	}
+
+	displayIconInterface.Init( this );
+	if ( spawnArgs.GetBool( "option_icon_interface" ) ) {
+		gameLocal.RegisterIconEntity( iconNode );
 	}
 
 	scriptEntityFlags.noInhibitPhysics = spawnArgs.GetBool( "option_no_inhibit_physics" );
@@ -2032,6 +2062,10 @@ sdScriptEntity::UpdateScript
 =====================
 */
 void sdScriptEntity::UpdateScript( void ) {
+	if ( gameLocal.IsPaused() ) {
+		return;
+	}
+
 	// a series of state changes can happen in a single frame.
 	// this loop limits them in case we've entered an infinite loop.
 	for ( int i = 0; i < 20; i++ ) {
@@ -2285,7 +2319,7 @@ void sdScriptEntity::ResetPredictionErrorDecay( const idVec3* origin, const idMa
 		sdEntityBroadcastEvent msg( this, EVENT_RESETPREDICTIONDECAY );
 		msg.WriteVector( resetOrigin );
 		msg.WriteCQuat( resetAxes.ToCQuat() );
-		msg.Send( false, true );
+		msg.Send( false, sdReliableMessageClientInfoAll() );
 	}
 
 	interpolateHistory[ 0 ] = resetOrigin;
@@ -2524,7 +2558,7 @@ bool sdScriptEntity::Collide( const trace_t &collision, const idVec3 &velocity, 
 sdScriptEntity::UpdateKillStats
 ================
 */
-void sdScriptEntity::UpdateKillStats( idPlayer* player, const sdDeclDamage* damageDecl ) {
+void sdScriptEntity::UpdateKillStats( idPlayer* player, const sdDeclDamage* damageDecl, bool headshot ) {
 	if ( killStatSuffix == "" ) {
 		return;
 	}
@@ -2544,13 +2578,14 @@ void sdScriptEntity::UpdateKillStats( idPlayer* player, const sdDeclDamage* dama
 
 	teamAllegiance_t allegiance = GetEntityAllegiance( player );
 	if ( allegiance == TA_ENEMY ) {
-		entry = tracker.GetStat( tracker.AllocStat( va( "%s_kills_%s", prefix, killStatSuffix.c_str() ), "int" ) );
+		entry = tracker.GetStat( tracker.AllocStat( va( "%s_kills_%s", prefix, killStatSuffix.c_str() ), sdNetStatKeyValue::SVT_INT ) );
+		entry = tracker.GetStat( tracker.AllocStat( va( "total_kills_%s", prefix, killStatSuffix.c_str() ), sdNetStatKeyValue::SVT_INT ) );
 	} else if ( allegiance == TA_FRIEND ) {
-		entry = tracker.GetStat( tracker.AllocStat( va( "%s_teamkills_%s", prefix, killStatSuffix.c_str() ), "int" ) );
+		entry = tracker.GetStat( tracker.AllocStat( va( "%s_teamkills_%s", prefix, killStatSuffix.c_str() ), sdNetStatKeyValue::SVT_INT ) );
 	}
 
 	if ( entry ) {
-		entry->IncreaseInteger( player->entityNumber, 1 );
+		entry->IncreaseValue( player->entityNumber, 1 );
 	}
 }
 
@@ -3799,6 +3834,24 @@ bool sdScriptEntity::IsCollisionPushable( void ) {
 }
 
 /*
+================
+idEntity::Event_EnableCollisionPush
+================
+*/
+void sdScriptEntity::Event_EnableCollisionPush( void ) {
+	scriptEntityFlags.noCollisionPush = false;
+}
+
+/*
+================
+idEntity::Event_DisableCollisionPush
+================
+*/
+void sdScriptEntity::Event_DisableCollisionPush( void ) {
+	scriptEntityFlags.noCollisionPush = true;
+}
+
+/*
 =========================
 sdScriptEntity::UpdatePlayzoneInfo
 =========================
@@ -3895,7 +3948,7 @@ void sdScriptEntity::Event_SetBoxClipModel( const idVec3& mins, const idVec3& ma
 		msg.WriteVector( mins );
 		msg.WriteVector( maxs );
 		msg.WriteFloat( mass );
-		msg.Send( true, true );
+		msg.Send( true, sdReliableMessageClientInfoAll() );
 	}
 
 	scriptEntityFlags.hasNewBoxClip = true;
@@ -4058,6 +4111,179 @@ void sdScriptEntity::OnMouseMove( idPlayer* player, const idAngles& baseAngles, 
 	angleDelta.pitch = idMath::ClampFloat( -179.0f, 179.0f, angleDelta.pitch );
 }
 
+
+/*
+================
+sdScriptEntity::Event_SetIconMaterial
+================
+*/
+void sdScriptEntity::Event_SetIconMaterial( const char* materialName ) {
+	const idMaterial* material = gameLocal.declMaterialType[ spawnArgs.GetString( materialName ) ];
+	displayIconInterface.SetIconMaterial( material );
+}
+
+/*
+================
+sdScriptEntity::Event_SetIconSize
+================
+*/
+void sdScriptEntity::Event_SetIconSize( float width, float height ) {
+	displayIconInterface.SetIconSize( idVec2( width, height ) );
+}
+
+/*
+================
+sdScriptEntity::Event_SetIconColorMode
+================
+*/
+void sdScriptEntity::Event_SetIconColorMode( int mode ) {
+	displayIconInterface.SetIconColorMode( ( sdScriptEntityDisplayIconInterface::iconColorMode_t )mode );
+}
+
+/*
+================
+sdScriptEntity::Event_SetIconPosition
+================
+*/
+void sdScriptEntity::Event_SetIconPosition( int pos ) {
+	displayIconInterface.SetIconPosition( ( sdScriptEntityDisplayIconInterface::iconPosition_t )pos );
+}
+
+/*
+================
+sdScriptEntity::Event_SetIconEnabled
+================
+*/
+void sdScriptEntity::Event_SetIconEnabled( bool enabled ) {
+	displayIconInterface.SetIconEnabled( enabled );
+}
+
+/*
+================
+sdScriptEntity::Event_SetIconCutoff
+================
+*/
+void sdScriptEntity::Event_SetIconCutoff( float cutoff ) {
+	displayIconInterface.SetIconCutoff( cutoff );
+}
+
+/*
+================
+sdScriptEntity::Event_SetIconAlphaScale
+================
+*/
+void sdScriptEntity::Event_SetIconAlphaScale( float scale ) {
+	displayIconInterface.SetIconAlphaScale( scale );
+}
+
+
+/*
+===============================================================================
+
+sdScriptEntityDisplayIconInterface
+
+===============================================================================
+*/
+
+/*
+================
+sdScriptEntityDisplayIconInterface::Init
+================
+*/
+void sdScriptEntityDisplayIconInterface::Init( sdScriptEntity* _owner ) { 
+	owner = _owner; 
+	hasIconResult = false; 
+	enabled = false; 
+	cutoffDistance = -1.0f;
+	colorMode = EI_NONE;
+	position = EI_CENTER;
+	alphaScale = 1.0f;
+}
+
+/*
+================
+sdScriptEntityDisplayIconInterface::HasIcon
+================
+*/
+bool sdScriptEntityDisplayIconInterface::HasIcon( idPlayer* viewPlayer, sdWorldToScreenConverter& converter ) {
+	assert( owner != NULL );
+
+	// evaluate all the information about if the icon is visible etc
+	hasIconResult = false;
+
+	// is it enabled?
+	if ( !enabled ) {
+		return false;
+	}
+	
+	// is it visible?
+	if ( !owner->IsVisibleOcclusionTest() ) {
+		return false;
+	}
+
+	const idVec3& ownerOrigin = owner->GetLastPushedOrigin();
+	const idMat3& ownerAxis = owner->GetLastPushedAxis();
+	idBounds ownerBounds = owner->GetPhysics()->GetBounds();
+
+	// calculate the origin of the icon in world space
+	idVec3 origin = ownerOrigin + ( ownerBounds.GetCenter() * ownerAxis );
+
+	// is it in front of the player?
+	idVec3 delta = origin - viewPlayer->renderView.vieworg;
+	if ( delta * viewPlayer->renderView.viewaxis[ 0 ] <= 0.0f ) {
+		return false;
+	}
+
+	// is it too far away?
+	storedInfo.distance = delta.Length();
+	if ( cutoffDistance > 0.0f && storedInfo.distance > cutoffDistance ) {
+		return false;
+	}
+
+	// calculate the final position
+	if ( position == EI_ABOVE ) {
+		idBounds transformedBounds = ownerBounds;
+		transformedBounds.RotateSelf( ownerAxis );
+
+		float verticalOffset = transformedBounds.GetSize().z * 0.5f;
+		origin.z += verticalOffset;
+		if ( verticalOffset > 64.0f ) {
+			origin.z += 64.0f;
+		} else {
+			origin.z += verticalOffset;
+		}
+	}
+
+	converter.Transform( origin, storedInfo.origin );
+	storedInfo.origin.y += storedInfo.size.y * 0.5f;
+
+	// find the color
+	storedInfo.color.Set( 1.0f, 1.0f, 1.0f, 1.0f );
+	if ( colorMode == EI_TEAM ) {
+		teamAllegiance_t allegiance = owner->GetEntityAllegiance( viewPlayer );
+		if ( allegiance != TA_NEUTRAL ) {
+			storedInfo.color = idEntity::GetColorForAllegiance( allegiance );
+		}
+	}
+
+	storedInfo.color.w *= alphaScale;
+
+
+	hasIconResult = true;	
+	return hasIconResult;
+}
+
+/*
+================
+sdScriptEntityDisplayIconInterface::GetEntityDisplayIconInfo
+================
+*/
+bool sdScriptEntityDisplayIconInterface::GetEntityDisplayIconInfo( idPlayer* viewPlayer, sdWorldToScreenConverter& converter, sdEntityDisplayIconInfo& iconInfo ) {
+	if ( hasIconResult ) {
+		iconInfo = storedInfo;
+	}
+	return hasIconResult;
+}
 
 /*
 ===============================================================================

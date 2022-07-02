@@ -128,6 +128,7 @@ public:
 	idMat3			ToMat3( void ) const;
 	idVec3			ToVec3( void ) const;
 	idJointQuat		ToJointQuat( void ) const;
+	void			ToDualQuat( float dq[2][4] ) const;
 	const float *	ToFloatPtr( void ) const;
 	float *			ToFloatPtr( void );
 

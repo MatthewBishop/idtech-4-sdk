@@ -53,6 +53,12 @@ enum allowReply_t {
 	ALLOW_NO		// core will abort with transmitted message
 };
 
+enum userMapChangeResult_e {
+	UMCR_ERROR,			// failed to load the desired campaign/map
+	UMCR_CONTINUE,		// continue the map loading process
+	UMCR_STOP,			// do nothing (useful for pure restarts)
+};
+
 class idGame {
 public:
 	virtual						~idGame() {}
@@ -67,9 +73,6 @@ public:
 	// The game can modify the user info in the returned dictionary pointer, server will forward back.
 	virtual bool				ValidateUserInfo( int clientNum, idDict& userInfo ) = 0;
 	virtual void				UserInfoChanged( int clientNum ) = 0;
-
-	// The game gets a chance to alter userinfo before they are emitted to server.
-	virtual void				ThrottleUserInfo( void ) = 0;
 
 	// Sets the serverinfo at map loads and when it changes.
 	virtual void				SetServerInfo( const idDict &serverInfo ) = 0;
@@ -105,30 +108,51 @@ public:
 
 	// Early check to deny connect.
 	virtual allowReply_t		ServerAllowClient( int numClients, int numBots, const clientNetworkAddress_t& address, const sdNetClientId& netClientId, const char *guid, const char *password, allowFailureReason_t& reason ) = 0;
+#ifdef SD_SUPPORT_REPEATER
+	virtual allowReply_t		RepeaterAllowClient( int numViewers, int maxViewers, const clientNetworkAddress_t& address, const sdNetClientId& netClientId, const char *guid, const char *password, allowFailureReason_t& reason, bool isRepeater ) = 0;
+#endif // SD_SUPPORT_REPEATER
 
 	// Connects a client.
 	virtual void				ServerClientConnect( int clientNum ) = 0;
 
 	// Spawns the player entity to be used by the client.
 	virtual void				ServerClientBegin( int clientNum, bool isBot ) = 0;
+#ifdef SD_SUPPORT_REPEATER
+	virtual void				RepeaterClientBegin( int clientNum ) = 0;
+#endif // SD_SUPPORT_REPEATER
 
 	//
 	virtual void				SetClientNum( int clientNum, bool server ) = 0;
 
 	// Disconnects a client and removes the player entity from the game.
 	virtual void				ServerClientDisconnect( int clientNum ) = 0;
+#ifdef SD_SUPPORT_REPEATER
+	virtual void				RepeaterClientDisconnect( int clientNum ) = 0;
+#endif // SD_SUPPORT_REPEATER
 
 	// Writes initial reliable messages a client needs to receive when first joining the game.
 	virtual void				ServerWriteInitialReliableMessages( int clientNum ) = 0;
+#ifdef SD_SUPPORT_REPEATER
+	virtual void				RepeaterWriteInitialReliableMessages( int clientNum ) = 0;
+#endif // SD_SUPPORT_REPEATER
 
 	// Writes a snapshot of the server game state for the given client.
-	virtual void				ServerWriteSnapshot( int clientNum, int sequence, idBitMsg &msg, idBitMsg &ucmdmsg, float* elapsed ) = 0;
+	virtual void				ServerWriteSnapshot( int clientNum, int sequence, idBitMsg &msg, idBitMsg &ucmdmsg ) = 0;
+#ifdef SD_SUPPORT_REPEATER
+	virtual void				RepeaterWriteSnapshot( int clientNum, int sequence, idBitMsg &msg, idBitMsg &ucmdmsg, const repeaterUserOrigin_t& userOrigin, bool clientIsRepeater ) = 0;
+#endif // SD_SUPPORT_REPEATER
 
 	// Patches the network entity states at the server with a snapshot for the given client.
 	virtual bool				ServerApplySnapshot( int clientNum, int sequence ) = 0;
+#ifdef SD_SUPPORT_REPEATER
+	virtual bool				RepeaterApplySnapshot( int clientNum, int sequence ) = 0;
+#endif // SD_SUPPORT_REPEATER
 
 	// Processes a reliable message from a client.
 	virtual void				ServerProcessReliableMessage( int clientNum, const idBitMsg &msg ) = 0;
+#ifdef SD_SUPPORT_REPEATER
+	virtual void				RepeaterProcessReliableMessage( int clientNum, const idBitMsg &msg ) = 0;
+#endif // SD_SUPPORT_REPEATER
 
 	// Reads a snapshot and updates the client game state.
 	virtual bool				ClientReadSnapshot( int sequence, const int gameFrame, const int gameTime, const int numDuplicatedUsercmds, const int aheadOfServer, const idBitMsg &msg, const idBitMsg &ucmdmsg ) = 0;
@@ -137,7 +161,7 @@ public:
 	virtual bool				ClientApplySnapshot( int sequence ) = 0;
 
 	// Processes a reliable message from the server.
-	virtual void				ClientProcessReliableMessage( const idBitMsg &msg, bool local ) = 0;
+	virtual void				ClientProcessReliableMessage( const idBitMsg& msg ) = 0;
 
 	// Runs prediction on entities at the client.
 	virtual void				ClientPrediction( const usercmd_t *clientCmds, const usercmd_t* demoCmd ) = 0;
@@ -195,6 +219,7 @@ public:
 	virtual guiUpdateResponse_t		GetUpdateResponse() = 0;
 	virtual void					SetUpdateState( updateState_t state ) = 0;
 	virtual void					SetUpdateProgress( float percent ) = 0;
+	virtual void					SetUpdateFromServer( bool fromServer ) = 0;
 	virtual void					AddSystemNotification( const wchar_t* text ) = 0;
 	virtual void					SetUpdateMessage( const wchar_t* text ) = 0;
 
@@ -211,7 +236,7 @@ public:
 	virtual rvClientMoveable*	SpawnClientMoveable( const char* name, int lifetime, const idVec3& origin, const idMat3& axis, const idVec3& velocity, const idVec3& angular_velocity, int effectSet = 0 ) = 0;
 	// RAVEN END
 
-	virtual bool				OnUserStartMap( const char* text, idStr& reason, idStr& mapName ) = 0;
+	virtual userMapChangeResult_e OnUserStartMap( const char* text, idStr& reason, idStr& mapName ) = 0;
 	virtual void				ArgCompletion_StartGame( const idCmdArgs& args, argCompletionCallback_t callback ) = 0;
 
 	virtual void				RunFrame() = 0;
@@ -219,6 +244,7 @@ public:
 	virtual void				CreateStatusResponseDict( const idDict& serverInfo, idDict& statusResponseDict ) = 0;
 	virtual int					GetProbeTime() const = 0;
 	virtual byte				GetProbeState() const = 0;
+	virtual void				WriteExtendedProbeData( idBitMsg& msg ) = 0;
 
 #ifdef ID_DEBUG_MEMORY
 	virtual void				MemDump( const char* fileName ) = 0;
@@ -226,11 +252,12 @@ public:
 	virtual void				MemDumpPerClass( const char* fileName ) = 0;
 #endif
 
-	virtual void				GetClientName( int clientIndex, idStr& name ) = 0;
-
-
 	virtual void				OnInputInit( void ) = 0;
 	virtual void				OnInputShutdown( void ) = 0;
+
+	virtual void				OnLanguageInit( void ) = 0;
+	virtual void				OnLanguageShutdown( void ) = 0;
+
 	virtual sdKeyCommand*		Translate( const idKey& key ) = 0;
 	virtual usercmdbuttonType_t	SetupBinding( const char* binding, int& action ) = 0;
 	virtual void				HandleLocalImpulse( int action, bool down ) = 0;
@@ -242,6 +269,16 @@ public:
 	virtual void				DrawLCD( sdLogitechLCDSystem* lcd ) = 0;
 
 	virtual void				AddChatLine( const wchar_t* text ) = 0;
+
+	virtual bool				DownloadRequest( const char *IP, const char *guid, const char *paks, char urls[ MAX_STRING_CHARS ] ) = 0;
+
+	// return true to allow download from the built-in http server
+	virtual bool				HTTPRequest( const char *IP, const char *file, bool isGamePak ) = 0;
+
+#ifdef SD_SUPPORT_REPEATER
+	// Set the repeater state; engine will call this with true for isRepeater if this is a repeater
+	virtual void				SetRepeaterState( bool isRepeater ) = 0;
+#endif // SD_SUPPORT_REPEATER
 };
 
 extern idGame *					game;
@@ -427,11 +464,12 @@ extern idGameEdit *				gameEdit;
 ===============================================================================
 */
 
-#if defined( SD_PUBLIC_TOOLS )
-	const int GAME_API_VERSION		= 1006;
+#ifdef SD_PUBLIC_TOOLS
+	const int GAME_API_VERSION		= 1008;
 #else
-	const int GAME_API_VERSION		= 6;
+	const int GAME_API_VERSION		= 8;
 #endif
+
 
 class idNetworkSystem;
 class idRenderSystem;

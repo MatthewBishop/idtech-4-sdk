@@ -34,6 +34,8 @@ void sdSimplePhysicsNetworkData::MakeDefault( void ) {
 	orientation.y	= 0.f;
 	orientation.z	= 0.f;
 	angularVelocity = vec3_zero;
+	atRest			= -2;			// this will force an update straight away
+	locked			= false;
 }
 
 /*
@@ -46,6 +48,8 @@ void sdSimplePhysicsNetworkData::Write( idFile* file ) const {
 	file->WriteVec3( velocity );
 	file->WriteCQuat( orientation );
 	file->WriteVec3( angularVelocity );
+	file->WriteInt( atRest );
+	file->WriteBool( locked );
 }
 
 /*
@@ -58,6 +62,8 @@ void sdSimplePhysicsNetworkData::Read( idFile* file ) {
 	file->ReadVec3( velocity );
 	file->ReadCQuat( orientation );
 	file->ReadVec3( angularVelocity );
+	file->ReadInt( atRest );
+	file->ReadBool( locked );
 
 	origin.FixDenormals();
 	velocity.FixDenormals();
@@ -70,7 +76,7 @@ sdSimplePhysicsBroadcastData::MakeDefault
 */
 void sdSimplePhysicsBroadcastData::MakeDefault( void ) {
 	pushVelocity		= vec3_zero;
-	atRest				= -1;
+	atRest				= -2;			// this will force an update straight away
 	groundLevel			= 0.f;
 	locked				= false;
 }
@@ -189,7 +195,7 @@ sdPhysics_Simple::IsAtRest
 ================
 */
 bool sdPhysics_Simple::IsAtRest( void ) const {
-	return ( atRest >= 0 ) || locked;
+	return ( atRest >= 0 && gameLocal.time > atRest ) || locked;
 }
 
 /*
@@ -560,6 +566,13 @@ bool sdPhysics_Simple::CheckNetworkStateChanges( networkStateMode_t mode, const 
 		if ( !baseData.angularVelocity.Compare( current.angularVelocity, 0.01f ) ) {
 		}
 
+		if ( baseData.atRest != atRest ) {
+			return true;
+		}
+		if ( baseData.locked != locked ) {
+			return true;
+		}
+
 		return false;
 	}
 
@@ -601,11 +614,15 @@ void sdPhysics_Simple::WriteNetworkState( networkStateMode_t mode, const sdEntit
 		newData.velocity		= current.velocity;
 		newData.orientation		= current.axis.ToCQuat();
 		newData.angularVelocity	= current.angularVelocity;
+		newData.atRest			= atRest;
+		newData.locked			= locked;
 
 		msg.WriteDeltaVector( baseData.origin, newData.origin, SIMPLE_ORIGIN_EXPONENT_BITS, SIMPLE_ORIGIN_MANTISSA_BITS );
 		msg.WriteDeltaVector( baseData.velocity, newData.velocity, SIMPLE_VELOCITY_EXPONENT_BITS, SIMPLE_VELOCITY_MANTISSA_BITS );
 		msg.WriteDeltaCQuat( baseData.orientation, newData.orientation );
 		msg.WriteDeltaVector( baseData.angularVelocity, newData.angularVelocity, SIMPLE_VELOCITY_EXPONENT_BITS, SIMPLE_VELOCITY_MANTISSA_BITS );
+		msg.WriteDeltaLong( baseData.atRest, newData.atRest );
+		msg.WriteBool( newData.locked );
 
 		return;
 	}
@@ -641,6 +658,15 @@ void sdPhysics_Simple::ApplyNetworkState( networkStateMode_t mode, const sdEntit
 		current.velocity		= newData.velocity;
 		current.axis			= newData.orientation.ToMat3();
 		current.angularVelocity	= newData.angularVelocity;
+		
+		locked					= newData.locked;
+		if ( newData.atRest != atRest ) {
+			if ( newData.atRest == -1 ) {
+				Activate();
+			} else {
+				Rest( newData.atRest );
+			}
+		}
 
 		clipModel->Link( gameLocal.clip, self, 0, current.origin, current.axis );
 
@@ -679,6 +705,8 @@ void sdPhysics_Simple::ReadNetworkState( networkStateMode_t mode, const sdEntity
 		newData.velocity		= msg.ReadDeltaVector( baseData.velocity, SIMPLE_VELOCITY_EXPONENT_BITS, SIMPLE_VELOCITY_MANTISSA_BITS );
 		newData.orientation		= msg.ReadDeltaCQuat( baseData.orientation );
 		newData.angularVelocity	= msg.ReadDeltaVector( baseData.angularVelocity, SIMPLE_VELOCITY_EXPONENT_BITS, SIMPLE_VELOCITY_MANTISSA_BITS );
+		newData.atRest			= msg.ReadDeltaLong( baseData.atRest );
+		newData.locked			= msg.ReadBool();
 
 		newData.origin.FixDenormals();
 		newData.velocity.FixDenormals();

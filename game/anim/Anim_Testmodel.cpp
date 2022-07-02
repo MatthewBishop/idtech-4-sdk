@@ -885,3 +885,68 @@ void idTestModel::TestModelPrevFrame_f( const idCmdArgs &args ) {
 
 	gameLocal.testmodel->PrevFrame( args );
 }
+
+
+void idTestModel::TestModelHideSurfaceID_f( const idCmdArgs &args ) {
+	if ( !gameLocal.testmodel ) {
+		gameLocal.Printf( "No testModel active.\n" );
+		return;
+	}
+
+	gameLocal.testmodel->HideSurfaceID( args );
+}
+
+void idTestModel::TestModelShowSurfaceID_f( const idCmdArgs &args ) {
+	if ( !gameLocal.testmodel ) {
+		gameLocal.Printf( "No testModel active.\n" );
+		return;
+	}
+
+	gameLocal.testmodel->ShowSurfaceID( args );
+}
+
+void idTestModel::TestModelResetSurfaceID_f( const idCmdArgs &args ) {
+	if ( !gameLocal.testmodel ) {
+		gameLocal.Printf( "No testModel active.\n" );
+		return;
+	}
+
+	gameLocal.testmodel->ResetSurfaceID( args );
+}
+
+
+void idTestModel::HideSurfaceID( const idCmdArgs &args ) {
+	if ( args.Argc() < 2 ) {
+		return;
+	}
+
+	idStr name = args.Argv( 1 );
+	if ( renderEntity.hModel ) {
+		int idx = renderEntity.hModel->FindSurfaceId( name.c_str() );
+		if ( idx != -1 ) {
+			renderEntity.hideSurfaceMask.Set( idx );
+			UpdateVisuals();
+		}
+	}
+}
+
+void idTestModel::ShowSurfaceID( const idCmdArgs &args ) {
+	if ( args.Argc() < 2 ) {
+		return;
+	}
+	idStr name = args.Argv( 1 );
+	if ( renderEntity.hModel ) {
+		int idx = renderEntity.hModel->FindSurfaceId( name.c_str() );
+		if ( idx != -1 ) {
+			renderEntity.hideSurfaceMask.Clear( idx );
+			UpdateVisuals();
+		}
+	}
+}
+
+void idTestModel::ResetSurfaceID( const idCmdArgs &args ) {
+	if ( renderEntity.hModel ) {
+		renderEntity.hideSurfaceMask.Clear();
+		UpdateVisuals();
+	}
+}

@@ -51,6 +51,7 @@ public:
 	const idMaterial*				GetMaterial( void ) const { return _material; }
 	const idMaterial*				GetOffScreenMaterial( void ) const { return _offScreenMaterial; }
 	int								GetFlags() const { return _flags; }
+	int								GetFlashEndTime() const { return _flashEndTime; }
 
 	int								Selected() const { return _selected; }
 	void							SetSelected( int time ) { _selected = time; }
@@ -69,6 +70,7 @@ public:
 	void							SetAlwaysActive( void ) { _flags |= WF_ALWAYSACTIVE; }
 	void							SetMinRange( float value ) { _minRange = value; }
 	void							SetTeamColored( void ) { _flags |= WF_TEAMCOLOR; }
+	void							SetFlashEndTime( int time ) { _flashEndTime = time; }
 
 	idEntity*						GetOwner( void ) const { return _owner; }
 
@@ -116,6 +118,7 @@ private:
 	bool							_shouldCheckLineOfSight;
 	bool							_isVisible;
 	int								_selected;
+	int								_flashEndTime;
 };
 
 class sdWayPointManagerLocal {

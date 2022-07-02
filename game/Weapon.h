@@ -104,7 +104,6 @@ struct weaponAimValues_t {
 	float					lagscaleyaw;
 	float					lagscalepitch;
 	float					speedlr;
-	float					bobscale;
 };
 
 struct weaponFeedback_t {
@@ -350,10 +349,6 @@ private:
 	// the view weapon render entity parms
 	idVec3					viewWeaponOrigin;
 	idMat3					viewWeaponAxis;
-	
-	// the muzzle bone's position, used for launching projectiles and trailing smoke
-	idVec3					muzzleOrigin;
-	idMat3					muzzleAxis;
 
 	idVec3					viewOffset;
 

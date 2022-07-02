@@ -146,6 +146,25 @@ int sdUIWindowState::IndexForProperty( sdProperties::sdProperty* property ) {
 
 /*
 ================
+sdUIWindowState::FindPropertyNameByKey
+================
+*/
+const char* sdUIWindowState::FindPropertyNameByKey( int index, sdUserInterfaceScope*& scope ) {
+	return window->GetUI()->GetState().FindPropertyNameByKey( index, scope );
+}
+
+/*
+================
+sdUIWindowState::FindPropertyName
+================
+*/
+const char* sdUIWindowState::FindPropertyName( sdProperties::sdProperty* property, sdUserInterfaceScope*& scope ) {
+	scope = this;
+	return properties.NameForProperty( property );
+}
+
+/*
+================
 sdUIWindowState::SetPropertyExpression
 ================
 */

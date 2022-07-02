@@ -250,7 +250,8 @@ sdUIEdit::ApplyLayout
 void sdUIEdit::ApplyLayout() {
 	bool needLayout = windowState.recalculateLayout;
 	sdUIWindow::ApplyLayout();
-	if( needLayout ) {
+	helper.ApplyLayout();
+	if ( needLayout ) {
 		helper.TextChanged();
 	}
 }
@@ -272,6 +273,7 @@ sdUIEdit::OnEditTextChanged
 */
 void sdUIEdit::OnEditTextChanged( const idStr& oldValue, const idStr& newValue ) {
 	MakeLayoutDirty();
+	helper.MakeTextDirty();
 }
 
 /*

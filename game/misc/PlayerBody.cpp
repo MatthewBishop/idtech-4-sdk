@@ -240,6 +240,7 @@ void sdPlayerBody::SetupBody( void ) {
 	SetModel( model->GetName() );
 	SetSkin( sdInventory::SkinForClass( playerClass.GetClass() ) );
 	renderEntity.maxVisDist		= 5144;
+	renderEntity.flags.noShadow = !g_showPlayerShadow.GetBool();
 
 	SetCombatModel();
 }
@@ -307,7 +308,7 @@ void sdPlayerBody::Init( idPlayer* _client, const sdPlayerClassSetup* _playerCla
 		msg.WriteLong( legsAnimNum );
 		msg.WriteLong( legsAnimStartTime );
 		msg.WriteUShort( ANGLE2SHORT( viewYaw ) );
-		msg.Send( true, false );
+		msg.Send( true, sdReliableMessageClientInfoAll() );
 	}
 
 	if ( client->GetPhysics()->GetLinearVelocity().LengthSqr() < idMath::FLT_EPSILON && client->GetPhysics()->GetNumContacts() > 0 ) {
@@ -428,7 +429,7 @@ bool sdPlayerBody::UpdateCrosshairInfo( idPlayer* player, sdCrosshairInfo& info 
 	crosshairInfo = &info;
 
 	sdScriptHelper h1;
-	h1.Push( player->GetScriptObject() );
+	h1.Push( player == NULL ? NULL : player->GetScriptObject() );
 	scriptObject->CallNonBlockingScriptEvent( updateCrosshairFunc, h1 );
 
 	crosshairInfo = NULL;

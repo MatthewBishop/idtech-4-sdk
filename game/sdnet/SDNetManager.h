@@ -13,6 +13,34 @@ class sdNetUser;
 class sdNetMessage;
 class sdDeclMapInfo;
 class sdDeclStringMap;
+class sdNetManager;
+
+class sdHotServerList {
+public:
+	static const int					MAX_HOT_SERVERS		= 3;
+	static const int					BROWSER_GOOD_BONUS	= 10;
+	static const int					BROWSER_OK_BONUS	= 5;
+
+										sdHotServerList( idList< sdNetSession* >& _sessions ) : sessions( _sessions ) { Clear(); }
+
+	void								Clear( void );
+	void								Update( sdNetManager& manager );
+	void								Locate( sdNetManager& manager );
+	void								SendServerInterestMessages( void );
+
+	int									GetNumServers( void );
+	sdNetSession*						GetServer( int index );
+
+	static int							GetServerScore( const sdNetSession& session, sdNetManager& manager );
+
+private:
+	static bool							IsServerValid( const sdNetSession& session, sdNetManager& manager );
+	void								CalcServerScores( sdNetManager& manager, int* bestServers, int numBestServers );
+
+	idList< sdNetSession* >&			sessions;
+	int									hotServerIndicies[ MAX_HOT_SERVERS ];
+	int									nextInterestMessageTime;
+};
 
 class sdNetManager {
 public:
@@ -23,6 +51,10 @@ public:
 		FS_INTERNET,
 		FS_HISTORY,
 		FS_FAVORITES,
+#if !defined( SD_DEMO_BUILD ) && !defined( SD_DEMO_BUILD_CONSTRUCTION )
+		FS_LAN_REPEATER,
+		FS_INTERNET_REPEATER,
+#endif /* !SD_DEMO_BUILD */
 		FS_CURRENT,
 		FS_MAX
 	};
@@ -48,10 +80,10 @@ public:
 		SF_PURE,
 		SF_LATEJOIN,
 		SF_FAVORITE,
-#if !defined( SD_DEMO_BUILD )
+#if !defined( SD_DEMO_BUILD ) && !defined( SD_DEMO_BUILD_CONSTRUCTION )
 		SF_RANKED,
 		SF_FRIENDS,
-#endif /* !SD_DEMO_BUILD */
+#endif /* !SD_DEMO_BUILD && !SD_DEMO_BUILD_CONSTRUCTION */
 		SF_PLAYERCOUNT,
 		SF_MODS,
 		SF_MAX
@@ -106,7 +138,7 @@ public:
 		PR_BEST_BATTLESENSE,
 		PR_BEST_VEHICLE,
 		PR_ACCURACY_HIGH,
-		PR_ACCURACY_LOW,
+		PR_MOST_OBJECTIVES,
 		PR_PROFICIENCY,
 		PR_MOST_KILLS,
 		PR_MOST_DAMAGE,
@@ -159,6 +191,7 @@ public:
 	const char*						GetName() const { return "sdnet"; }
 
 	void							CreateServerList( sdUIList* list, findServerSource_e source, findServerMode_e mode, bool flagOffline );	
+	void							CreateHotServerList( sdUIList* list, findServerSource_e source );
 	void							CreateRetrievedUserNameList( sdUIList* list );
 
 	bool							Connect();
@@ -194,6 +227,8 @@ public:
 
 	bool							ShowRanked() const;
 #endif /* !SD_DEMO_BUILD */
+
+	bool							SessionIsFiltered( const sdNetSession& netSession, bool ignoreEmptyFilter = false ) const;
 
 private:
 	struct task_t {
@@ -308,6 +343,9 @@ private:
 	void							Script_FormatSessionInfo( sdUIFunctionStack& stack );
 
 	void							Script_FindServers( sdUIFunctionStack& stack );	
+	void							Script_RefreshHotServers( sdUIFunctionStack& stack );
+	void							Script_UpdateHotServers( sdUIFunctionStack& stack );
+	void							Script_GetNumInterestedInServer( sdUIFunctionStack& stack );
 	void							Script_RefreshServer( sdUIFunctionStack& stack );
 	void							Script_RefreshCurrentServers( sdUIFunctionStack& stack );
 	void							Script_StopFindingServers( sdUIFunctionStack& stack );
@@ -399,14 +437,12 @@ private:
 	void							Script_GetUserNamesForKey( sdUIFunctionStack& stack );
 #endif /* !SD_DEMO_BUILD */
 
-	void							GetSessionsForServerSource( findServerSource_e source, idList< sdNetSession* >*& netSessions, sdNetTask*& task );
+	void							GetSessionsForServerSource( findServerSource_e source, idList< sdNetSession* >*& netSessions, sdNetTask*& task, sdHotServerList*& netHotServers );
 	const idDict*					GetMapInfo( const sdNetSession& netSession );
 	void							GetGameType( const char* siRules, idWStr& type );
 
-	bool							SessionIsFiltered( const sdNetSession& netSession ) const;
-
 	void							StopFindingServers( findServerSource_e source );
-	void							UpdateSession( sdUIList& list, sdNetSession& netSession, int index );
+	void							UpdateSession( sdUIList& list, const sdNetSession& netSession, int index );
 
 	void							CancelUserTasks();
 	bool							DoFiltering( const sdNetSession& netSession ) const;
@@ -426,24 +462,37 @@ private:
 	sdNetMessage*						activeMessage;
 
 	sdNetTask*							findServersTask;
+	sdNetTask*							findRepeatersTask;
 	sdNetTask*							findLANServersTask;
+	sdNetTask*							findLANRepeatersTask;
 	sdNetTask*							findHistoryServersTask;
 	sdNetTask*							findFavoriteServersTask;
 	sdNetTask*							refreshServerTask;
 	sdNetTask*							initFriendsTask;
 	sdNetTask*							initTeamsTask;
+	sdNetTask*							refreshHotServerTask;
 
 	idList< sdNetSession* >				sessions;
 	idList< sdNetSession* >				sessionsLAN;
 	idList< sdNetSession* >				sessionsHistory;
 	idList< sdNetSession* >				sessionsFavorites;
+	idList< sdNetSession* >				sessionsRepeaters;
+	idList< sdNetSession* >				sessionsLANRepeaters;
+
+	sdHotServerList						hotServers;
+	sdHotServerList						hotServersLAN;
+	sdHotServerList						hotServersHistory;
+	sdHotServerList						hotServersFavorites;
 
 	sdNetSession*						gameSession;
 										// we make a copy of the session to refresh to avoid problems if the user causes the current session list to invalidate
 	sdNetSession*						serverRefreshSession;
+
+	idList< sdNetSession* >				hotServerRefreshSessions;
 	int									lastSessionUpdateTime;
 
 	findServerSource_e					serverRefreshSource;
+	findServerSource_e					hotServersRefreshSource;
 
 	sdNetSession::sessionId_t			sessionId;
 
@@ -461,6 +510,7 @@ private:
 	struct sessionIndices_t {
 		int sessionListIndex;
 		int uiListIndex;
+		int lastUpdateTime;
 	};
 	typedef sdHashMapGeneric< idStr, sessionIndices_t, sdHashCompareStrIcmp, sdHashGeneratorIHash > sessionHash_t;
 	sessionHash_t						hashedSessions;

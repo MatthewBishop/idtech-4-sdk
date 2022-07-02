@@ -3288,7 +3288,7 @@ bool idAnimator::GetMeshBounds( jointHandle_t jointnum, int meshHandle, int curr
 		return false;
 	}
 
-	idRenderModelMD5* model = static_cast< idRenderModelMD5* >( modelDef->ModelHandle() );
+	idRenderModel* model = modelDef->ModelHandle();
 	if ( meshHandle < 0 || meshHandle >= model->NumMeshes() ) {
 		return false;
 	}

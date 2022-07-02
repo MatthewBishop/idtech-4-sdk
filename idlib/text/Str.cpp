@@ -1259,7 +1259,7 @@ void idStr::AppendPath( const char *text ) {
 		EnsureAlloced( len + Length( text ) + 2 );
 
 		if ( pos ) {
-			if ( data[ pos-1 ] != '/' ) {
+			if ( data[ pos-1 ] != '/' && data[ pos-1 ] != '\\' ) {
 				data[ pos++ ] = '/';
 			}
 		}
@@ -1804,6 +1804,7 @@ int idStr::IcmpnPath( const char *s1, const char *s2, int n ) {
 idStr::Copynz
  
 Safe strncpy that ensures a trailing zero
+NOTE: the specs indicate strncpy pads with zeros up to destination size, which be a bit wasteful
 =============
 */
 void idStr::Copynz( char *dest, const char *src, int destsize ) {
@@ -1816,8 +1817,8 @@ void idStr::Copynz( char *dest, const char *src, int destsize ) {
 		return;
 	}
 
-	strncpy( dest, src, destsize-1 );
-    dest[destsize-1] = '\0';
+	strncpy( dest, src, destsize - 1 );
+    dest[ destsize - 1 ] = '\0';
 }
 
 /*

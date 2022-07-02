@@ -58,6 +58,7 @@ void sdWayPoint::Clear( void ) {
 	_shouldCheckLineOfSight	= true;
 	_isVisible				= true;
 	_selected				= -1;
+	_flashEndTime			= -1;
 
 	_activeNode.Remove();
 	sdWayPointManager::GetInstance().RemoveWayPoint( this );

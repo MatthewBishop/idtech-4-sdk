@@ -59,10 +59,11 @@
 // runs the absolute minimum - its used for megagen for instance
 //#define SD_SLIMLINE_ENGINE
 
-#if !defined( SD_SLIMLINE_ENGINE )
+#if !defined( SD_SLIMLINE_ENGINE ) && !defined( SD_PUBLIC_TOOLS )
 #define SD_SUPPORT_VOIP
 #endif // SD_SLIMLINE_BUILD
 
+// enable this define to make the idStr and idWStr allocators thread safe
 #ifndef ID_THREAD_SAFE_STR
 	#define ID_THREAD_SAFE_STR
 #endif
@@ -82,14 +83,6 @@
 		#define ID_ENABLE_CURL 0
 	#else
 		#define ID_ENABLE_CURL 1
-	#endif
-#endif
-
-#if !defined( SD_ENABLE_BINK )
-	#if !defined( SD_LITE_SERVER )
-		#if defined( _WIN32 ) || defined ( MACOS_X )
-			#define SD_ENABLE_BINK
-		#endif
 	#endif
 #endif
 
@@ -195,6 +188,10 @@
 	#define SD_PUBLIC_BUILD
 #endif
 
+#if !defined( SD_DEMO_BUILD ) && !defined( SD_PUBLIC_TOOLS )
+	#define SD_SUPPORT_REPEATER
+#endif
+
 // put defines in here which should only be changed for a public build
 //#define SD_PUBLIC_BUILD
 #if defined( SD_PUBLIC_BUILD )
@@ -233,6 +230,15 @@
 	#define __WITH_PB__
 #endif // EB_WITH_PB
 
+// Bink support
+#if !defined( SD_ENABLE_BINK )
+	#if !defined( SD_LITE_SERVER )
+		#if defined( _WIN32 ) || defined ( MACOS_X )
+			#define SD_ENABLE_BINK
+		#endif
+	#endif
+#endif
+
 // Massive support
 #if !defined( MASSIVE )
 	#if !defined( SD_PRIVATE_BETA_BUILD ) && !defined( SD_LITE_SERVER ) && !defined( SD_PUBLIC_TOOLS )
@@ -257,11 +263,6 @@
 // don't define ID_ALLOW_TOOLS when we don't want tool code in the executable.
 #if defined( _WIN32 ) && !defined( SD_MINIMAL_MEMORY_USAGE ) && !defined( ID_DEDICATED ) && !defined( SD_DEMO_BUILD ) && !defined( _XENON ) && !defined( MONOLITHIC )
 	#define	ID_ALLOW_TOOLS
-#endif
-
-// enable this define to make the idStr and idWStr allocators thread safe
-#if !defined( SD_PUBLIC_BUILD )	// change this to ID_ALLOW_TOOLS ?
-	//#define ID_THREAD_SAFE_STR
 #endif
 
 // if enabled, the console won't toggle upon ~, unless you start the binary with +set com_allowConsole 1

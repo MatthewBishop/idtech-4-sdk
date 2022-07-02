@@ -336,18 +336,20 @@ bool sdDeclDamage::Parse( const char *text, const int textLength ) {
 
 			stats.name				= token.c_str();
 
-			stats.shotsHit			= tracker.GetStat( tracker.AllocStat( va( "%s_shots_hit", token.c_str() ), "int" ) );
-			stats.shotsHitHead		= tracker.GetStat( tracker.AllocStat( va( "%s_shots_hit_head", token.c_str() ), "int" ) );
-			stats.shotsHitTorso		= tracker.GetStat( tracker.AllocStat( va( "%s_shots_hit_torso", token.c_str() ), "int" ) );
-			stats.teamKills			= tracker.GetStat( tracker.AllocStat( va( "%s_teamkills", token.c_str() ), "int" ) );
-			stats.kills				= tracker.GetStat( tracker.AllocStat( va( "%s_kills", token.c_str() ), "int" ) );
-			stats.deaths			= tracker.GetStat( tracker.AllocStat( va( "%s_deaths", token.c_str() ), "int" ) );
-			stats.xp				= tracker.GetStat( tracker.AllocStat( va( "%s_xp", token.c_str() ), "float" ) );
+			stats.damage			= tracker.GetStat( tracker.AllocStat( va( "%s_damage", token.c_str() ), sdNetStatKeyValue::SVT_INT ) );
+			stats.shotsHit			= tracker.GetStat( tracker.AllocStat( va( "%s_shots_hit", token.c_str() ), sdNetStatKeyValue::SVT_INT ) );
+			stats.shotsHitHead		= tracker.GetStat( tracker.AllocStat( va( "%s_shots_hit_head", token.c_str() ), sdNetStatKeyValue::SVT_INT ) );
+			stats.shotsHitTorso		= tracker.GetStat( tracker.AllocStat( va( "%s_shots_hit_torso", token.c_str() ), sdNetStatKeyValue::SVT_INT ) );
+			stats.teamKills			= tracker.GetStat( tracker.AllocStat( va( "%s_teamkills", token.c_str() ), sdNetStatKeyValue::SVT_INT ) );
+			stats.kills				= tracker.GetStat( tracker.AllocStat( va( "%s_kills", token.c_str() ), sdNetStatKeyValue::SVT_INT ) );
+			stats.deaths			= tracker.GetStat( tracker.AllocStat( va( "%s_deaths", token.c_str() ), sdNetStatKeyValue::SVT_INT ) );
+			stats.xp				= tracker.GetStat( tracker.AllocStat( va( "%s_xp", token.c_str() ), sdNetStatKeyValue::SVT_FLOAT ) );
 
-			stats.totalKills		= tracker.GetStat( tracker.AllocStat( "total_kills", "int" ) );
-			stats.totalDeaths		= tracker.GetStat( tracker.AllocStat( "total_deaths", "int" ) );
-			stats.totalTeamKills	= tracker.GetStat( tracker.AllocStat( "total_team_kills", "int" ) );
-			stats.totalDamage		= tracker.GetStat( tracker.AllocStat( "total_damage", "int" ) );
+			stats.totalKills		= tracker.GetStat( tracker.AllocStat( "total_kills", sdNetStatKeyValue::SVT_INT ) );
+			stats.totalHeadshotKills= tracker.GetStat( tracker.AllocStat( "total_headshot_kills", sdNetStatKeyValue::SVT_INT ) );
+			stats.totalDeaths		= tracker.GetStat( tracker.AllocStat( "total_deaths", sdNetStatKeyValue::SVT_INT ) );
+			stats.totalTeamKills	= tracker.GetStat( tracker.AllocStat( "total_team_kills", sdNetStatKeyValue::SVT_INT ) );
+			stats.totalDamage		= tracker.GetStat( tracker.AllocStat( "total_damage", sdNetStatKeyValue::SVT_INT ) );
 
 		} else if( !token.Icmp( "team_kill_cvar" ) ) {
 			if( !src.ExpectTokenType( TT_STRING, 0, &token ) ) {
@@ -437,6 +439,7 @@ void sdDeclDamage::FreeData( void ) {
 	flags.isTeamDamage			= false;
 	flags.noDirection			= false;
 
+	stats.damage		= NULL;
 	stats.shotsHit		= NULL;
 	stats.shotsHitTorso	= NULL;
 	stats.shotsHitHead	= NULL;
@@ -445,6 +448,7 @@ void sdDeclDamage::FreeData( void ) {
 	stats.deaths		= NULL;
 	stats.xp			= NULL;
 
+	stats.totalHeadshotKills= NULL;
 	stats.totalKills		= NULL;
 	stats.totalDeaths		= NULL;
 	stats.totalTeamKills	= NULL;

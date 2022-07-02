@@ -35,6 +35,7 @@ public:
 	virtual									~sdUILayout_Static();
 
 	virtual void							Draw();
+	virtual void							FinalDraw();
 	virtual bool							PostEvent( const sdSysEvent* event );
 	virtual bool							HandleFocus( const sdSysEvent* event );
 	virtual void							ApplyLayout();
@@ -107,6 +108,7 @@ public:
 
 	virtual void							OnCreate();	
 	virtual void							Draw();
+	virtual void							FinalDraw();
 	virtual bool							PostEvent( const sdSysEvent* event );
 	virtual bool							HandleFocus( const sdSysEvent* event );
 

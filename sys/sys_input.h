@@ -4,27 +4,6 @@
 #ifndef __SYS_INPUT__
 #define __SYS_INPUT__
 
-/*
-PATH_MAX vs MAX_PATH mess:
-
-* MAX_PATH is a Windows invention - god knows how it's actually defined, if you ever find it in MSDN give me a poke
-
-* POSIX (IEEE Std 1003.1, 2004 Edition):
-
-PATH_MAX
-Maximum number of bytes in a pathname, including the terminating
-null character. Minimum Acceptable Value: _POSIX_PATH_MAX
-[...]
-
-_POSIX_PATH_MAX
-Maximum number of bytes in a pathname. Value: 256
-*/
-
-#ifndef _WIN32
-#include <limits.h>
-#define MAX_PATH PATH_MAX
-#endif
-
 #include "../framework/KeyInput.h"
 #include "keynum.h"
 
@@ -71,6 +50,70 @@ public:
 	static void					KeyNumToString( const keyNum_t keyNum, idWStr& fixedText, idStr& locName );
 
 	static idKey&				GetStandardKey( const keyNum_t key );
+};
+
+/*
+======================================================================
+
+	IME
+
+======================================================================
+*/
+
+typedef enum imeEvent_e {
+	IMEV_COMPOSITION_START,
+	IMEV_COMPOSITION_END,
+	IMEV_COMPOSITION_UPDATE,
+	IMEV_COMPOSITION_COMMIT,
+} imeEvent_t;
+
+class sdIME {
+public:
+	static const int MAX_CANDLIST = 9;
+	static const int MAX_CANDIDATE_LENGTH = 256;
+
+	enum state_e {
+		IME_STATE_OFF,
+		IME_STATE_ON,
+		IME_STATE_ENGLISH
+	};
+
+	enum lang_e {
+		IME_LANG_NEUTRAL,
+		IME_LANG_CHINESE,
+		IME_LANG_CHINESE_SIMPLIFIED,	// sub lang
+		IME_LANG_CHINESE_TRADITIONAL,	// sub lang
+		IME_LANG_KOREAN,
+		IME_LANG_JAPANESE
+	};
+
+	virtual bool			Init() = 0;
+	virtual void			Shutdown() = 0;
+
+	virtual bool			LangSupportsIME() const = 0;
+
+	virtual void			Enable( bool enable ) = 0;
+	virtual bool			IsEnabled() const = 0;
+	virtual void			FinalizeString( bool send = false ) = 0;
+	virtual int				GetCursorChars() const = 0;
+
+	virtual bool			IsReadingWindowActive() const = 0;
+	virtual bool			IsHorizontalReading() const = 0;
+	virtual bool			VerticalCandidateLine() const = 0;
+
+	virtual state_e			GetState() const = 0;
+	virtual const wchar_t*	GetIndicator() const = 0;
+
+	virtual bool			IsCandidateListActive() const = 0;
+	virtual const wchar_t*	GetCandidate( const unsigned int index ) const = 0;
+	virtual int				GetCandidateCount() const = 0;
+	virtual int				GetCandidateSelection() const = 0;
+
+	virtual const wchar_t*	GetCompositionString() const = 0;
+	virtual const byte*		GetCompositionStringAttributes() const = 0;
+
+	virtual const lang_e	GetLanguage() const = 0;
+	virtual const lang_e	GetPrimaryLanguage() const = 0;
 };
 
 /*
@@ -255,7 +298,6 @@ public:
 	virtual void			Shutdown();
 
 	virtual const char*		GetName() const = 0;
-	virtual int				GetMaxControllers() const = 0;
 
 	controllerApiState_e	GetState() const { return state; }
 

@@ -298,7 +298,7 @@ sdVehicleWeapon::UpdateScript
 =====================
 */
 void sdVehicleWeapon::UpdateScript( void ) {
-	if ( scriptThread == NULL ) {
+	if ( scriptThread == NULL || gameLocal.IsPaused() ) {
 		return;
 	}
 

@@ -186,6 +186,12 @@ public:
 											// doesn't invalidate the layout of the parent parameter
 	static void								MakeLayoutDirty_r( sdUIObject* parent );
 
+	virtual void							OnLanguageInit() {}
+	virtual void							OnLanguageShutdown() {}
+
+	static void								OnLanguageInit_r( sdUIObject* parent );
+	static void								OnLanguageShutdown_r( sdUIObject* parent );
+
 											// this should be called by derived versions AFTER they have done any necessary work
 	virtual void							ApplyLayout();
 
@@ -341,6 +347,7 @@ public:
 	virtual					~sdUIObject_Drawable() {}
 
 	virtual void			Draw() = 0;
+	virtual void			FinalDraw() {};
 };
 
 #endif // __GAME_GUIS_USERINTERFACEOBJECT_H__

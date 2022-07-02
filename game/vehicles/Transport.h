@@ -98,6 +98,7 @@ public:
 
 	virtual int							GetDestructionEndTime( void ) const;
 	virtual bool						GetDirectionWarning( void ) const;
+	virtual int							GetRouteKickDistance( void ) const;
 
 	virtual const sdDeclGUI*			GetOverlayGUI( void ) const;
 	virtual bool						HasAbility( qhandle_t handle, const idPlayer* player ) const;
@@ -143,6 +144,7 @@ public:
 	int									lastDamageDir;
 	int									empTime;
 	int									weaponEmpTime;
+	bool								weaponDisabled;
 
 	idStaticList< sdEntityStateNetworkData*, MAX_VEHICLE_PARTS >	objectStates;
 	sdEntityStateNetworkData*			controlState;
@@ -160,6 +162,8 @@ public:
 
 	idStaticList< sdEntityStateNetworkData*, MAX_VEHICLE_PARTS >	objectStates;
 	sdEntityStateNetworkData*			controlState;
+
+	int									routeKickDistance;
 };
 
 class sdTransport : public sdScriptEntity {
@@ -213,6 +217,7 @@ public:
 
 	int									GetDestructionEndTime( void ) const { return routeMaskWarningEndTime; }
 	bool								GetDirectionWarning( void ) const { return vehicleFlags.routeWarning; }
+	int									GetRouteKickDistance( void ) const { return routeKickDistance; }
 
 	int									BitsForPartIndex( void ) const { return idMath::BitsForInteger( driveObjects.Num() + 1 ); }
 
@@ -265,6 +270,10 @@ public:
 	void								Event_IsWeaponEMPed( void );
 	void								Event_GetRemainingEMP( void );
 	void								Event_ApplyEMPDamage( float time, float weaponTime );
+
+	void								Event_IsWeaponDisabled( void );
+	void								Event_SetWeaponDisabled( bool disabled );
+	bool								IsWeaponDisabled( void ) const;
 
 	void								Event_SetLockAlarmActive( bool active );
 	void								Event_SetImmobilized( bool immobile );
@@ -375,9 +384,9 @@ public:
 	virtual sdEntityStateNetworkData*	CreateNetworkStructure( networkStateMode_t mode ) const;
 	virtual sdTransportNetworkData*		CreateTransportNetworkStructure( void ) const;
 	virtual void						ResetNetworkState( networkStateMode_t mode, const sdEntityStateNetworkData& newState );
-	virtual void						WriteInitialReliableMessages( int clientNum ) const;
+	virtual void						WriteInitialReliableMessages( const sdReliableMessageClientInfoBase& target ) const;
 
-	void								SendFullPartStates( int clientNum ) const;
+	void								SendFullPartStates( const sdReliableMessageClientInfoBase& target ) const;
 
 	virtual void						UpdateHud( idPlayer* player, guiHandle_t handle );
 
@@ -573,6 +582,7 @@ protected:
 		bool							routeWarning		: 1;
 		bool							routeWarningTimeout	: 1;
 		bool							disablePartStateUpdate : 1;
+		bool							weaponDisabled		: 1;
 
 		// these are more like type-specific data, but this is a handy location to store them
 		bool							amphibious			: 1;
@@ -629,6 +639,8 @@ protected:
 	rvClientEntityPtr< rvClientMoveable >	masterDestroyedPart;
 
 	int									damagedCriticalDriveParts;
+
+	int									routeKickDistance;
 };
 
 class sdTransport_AF : public sdTransport {

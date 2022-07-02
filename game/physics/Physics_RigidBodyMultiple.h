@@ -239,6 +239,8 @@ public:
 
 	const rbMultipleCollision_t&		GetLastCollision( void ) const { return lastCollision; }
 
+	int							GetVPushClipMask() const;
+
 private:
 	const idClipModel* 			CheckWater( void );
 
@@ -299,7 +301,8 @@ private:
 	rbMultipleCollision_t	lastCollision;
 	int						blockedTime;
 
-	sdClipModelCollection	traceCollection;
+	void					SetupVPushCollection( void );
+	sdClipModelCollection	vpushCollection;
 };
 
 #endif // __PHYSICS_RIGIDBODYMULTIPLE_H__

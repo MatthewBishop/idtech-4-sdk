@@ -17,6 +17,7 @@ public:
 	virtual sdProperties::sdProperty*		GetProperty( const char* name, sdProperties::ePropertyType type );
 	virtual sdProperties::sdPropertyHandler& GetProperties() { return properties; }
 	virtual const char*						GetName() const { return "updateProperties"; }
+	virtual const char*						FindPropertyName( sdProperties::sdProperty* property, sdUserInterfaceScope*& scope ) { scope = this; return properties.NameForProperty( property ); }
 
 	sdUIFunctionInstance*					GetFunction( const char* name );
 
@@ -26,6 +27,7 @@ public:
 	void									SetAvailability( updateAvailability_t availability ) { this->availability = availability; }
 	void									SetUpdateProgress( float progress ) { this->progress = progress; }
 	void									SetUpdateState( updateState_t state ) { this->state = state; }
+	void									SetUpdateFromServer( bool fromServer ) { this->fromServer = fromServer ? 1.f : 0.f; }
 
 	void									Script_SetResponse( sdUIFunctionStack& stack );
 
@@ -46,6 +48,7 @@ private:
 	sdFloatProperty							state;
 	sdFloatProperty							availability;
 	sdFloatProperty							progress;
+	sdFloatProperty							fromServer;
 
 	guiUpdateResponse_t						response;
 

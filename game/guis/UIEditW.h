@@ -62,6 +62,8 @@ public:
 		virtual void							InitProperties();
 		virtual const char*						GetScopeClassName() const { return "sdUIEditW"; }
 
+		virtual void							FinalDraw();
+
 		virtual bool							PostEvent( const sdSysEvent* event );
 
 		virtual sdUIFunctionInstance*			GetFunction( const char* name );
@@ -73,7 +75,11 @@ public:
 		void									Script_AnySelected( sdUIFunctionStack& stack );
 		void									Script_SelectAll( sdUIFunctionStack& stack );
 
+		virtual void							OnLanguageInit();
+		virtual void							OnLanguageShutdown();
+
 		virtual void							OnGainFocus( void );
+		virtual void							OnLoseFocus( void );
 
 		sdBounds2D								GetDrawRect() const;
 
@@ -94,13 +100,18 @@ protected:
 
 private:
 	void									ClearText();
-	static bool								CharIsPrintable( wchar_t c ) { return c > 0x20; }
+	static bool								CharIsPrintable( wchar_t c ) { return c >= 0x20; }
+	const wchar_t*							GetCursorText() const;
 
 	void									OnEditTextChanged( const idWStr& oldValue, const idWStr& newValue );
 	void									OnReadOnlyChanged( const float oldValue, const float newValue );
 	void									OnCursorNameChanged( const idStr& oldValue, const idStr& newValue );
 	void									OnOverwriteCursorNameChanged( const idStr& oldValue, const idStr& newValue );
 	void									OnFlagsChanged( const float oldValue, const float newValue );
+
+	void									DrawIndicator();
+	//void									DrawComposition();
+	void									DrawCandidateReadingWindow( bool reading );
 
 protected:
 	SD_UI_PROPERTY_TAG(
@@ -151,6 +162,50 @@ protected:
 	)
 	sdStringProperty	overwriteCursorName;
 
+	SD_UI_PROPERTY_TAG(
+	title				= "Drawing/IME Fill Color";
+	desc				= "RGBA of the IME rectangle.";
+	editor				= "edit";
+	option1				= "{editorComponents} {r,g,b,a}";
+	option2				= "{editorSeparator} {,}";
+	datatype			= "vec4";
+	aliasdatatype		= "color";
+	)
+	sdVec4Property		IMEFillColor;
+
+	SD_UI_PROPERTY_TAG(
+	title				= "Drawing/IME Border Color";
+	desc				= "RGBA of the IME rectangle border.";
+	editor				= "edit";
+	option1				= "{editorComponents} {r,g,b,a}";
+	option2				= "{editorSeparator} {,}";
+	datatype			= "vec4";
+	aliasdatatype		= "color";
+	)
+	sdVec4Property		IMEBorderColor;
+
+	SD_UI_PROPERTY_TAG(
+	title				= "Drawing/IME Selection Color";
+	desc				= "RGBA of the IME selection rectangle.";
+	editor				= "edit";
+	option1				= "{editorComponents} {r,g,b,a}";
+	option2				= "{editorSeparator} {,}";
+	datatype			= "vec4";
+	aliasdatatype		= "color";
+	)
+	sdVec4Property		IMESelectionColor;
+
+	SD_UI_PROPERTY_TAG(
+	title				= "Drawing/IME Text Color";
+	desc				= "RGBA of the IME text.";
+	editor				= "edit";
+	option1				= "{editorComponents} {r,g,b,a}";
+	option2				= "{editorSeparator} {,}";
+	datatype			= "vec4";
+	aliasdatatype		= "color";
+	)
+	sdVec4Property		IMETextColor;
+
 	sdVec2Property		scrollAmount;
 	sdFloatProperty		scrollAmountMax;
 	sdFloatProperty		lineHeight;
@@ -160,8 +215,12 @@ protected:
 	static const char* eventNames[ EE_NUM_EVENTS - WE_NUM_EVENTS ];
 
 private:
-	uiDrawPart_t cursor;
-	uiDrawPart_t overwriteCursor;
+	uiDrawPart_t	cursor;
+	uiDrawPart_t	overwriteCursor;
+
+	bool			drawIME;
+	bool			composing;
+	idWStr			compositionString;
 
 	sdUIEditHelper< sdUIEditW, idWStr, wchar_t >	helper;
 };

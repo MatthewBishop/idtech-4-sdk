@@ -31,6 +31,8 @@ public:
 	virtual const idEventDef*			FindEvent( const char* name );
 	virtual int							AllocThread( sdProcedureCall* call );
 	virtual int							AllocThread( sdCompiledScript_ClassBase* object, const char* name, sdProcedureCall* call );
+	virtual int							AllocGuiThread( sdProcedureCall* call );
+	virtual int							AllocGuiThread( sdCompiledScript_ClassBase* object, const char* name, sdProcedureCall* call );
 	virtual sdCompiledScript_ClassBase*	AllocObject( const char* name );
 	virtual void						FreeObject( sdCompiledScript_ClassBase* obj );
 	virtual sdCompiledScript_ClassBase*	GetObject( int handle );
@@ -282,22 +284,20 @@ public:
 	virtual void			EnableDebugInfo( void );
 	virtual void			DisableDebugInfo( void );
 	virtual bool			IsDying( void ) const { return Finished(); }
-	virtual bool			IsWaiting( void ) const { return GetPauseEndTime() > gameLocal.time; }
+	virtual bool			IsWaiting( void ) const;
 
 	static bool				OnError( const char* text );
 
 	bool					Finished( void ) const { return flags.threadDying; }
 
-	virtual void			Wait( float time ) {
-		if ( time <= 0.f ) {
-			WaitFrame();
-			return;
+	int						GetThreadTime( void ) const {
+		if ( !flags.guiThread ) {
+			return gameLocal.time;
 		}
-
-		pauseTime = gameLocal.time + SEC2MS( time );
-		Coroutine_Detach( this );
+		return gameLocal.ToGuiTime( gameLocal.time );
 	}
 
+	virtual void			Wait( float time );
 	virtual void			WaitFrame( void ) { flags.waitFrame = true; Coroutine_Detach( this ); }
 	virtual void			Assert( void ) { assert( false ); }
 
@@ -305,7 +305,7 @@ public:
 	static void				PruneThreads( void );
 
 	int						GetThreadNum( void ) const { return threadNum; }
-	void					Call( sdProcedureCall* call );
+	void					Call( sdProcedureCall* call, bool guiThread );
 
 	virtual const char*		CurrentFile( void ) const { return "not available"; }
 	virtual int				CurrentLine( void ) const { return -1; }
@@ -403,6 +403,7 @@ protected:
 		bool				threadDying;
 		bool				doneProcessing;
 		bool				reset;
+		bool				guiThread;
 	};
 
 	flags_t					flags;

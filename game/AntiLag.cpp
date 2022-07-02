@@ -15,9 +15,16 @@ static char THIS_FILE[] = __FILE__;
 
 idCVar g_drawAntiLag(			"g_drawAntiLag",		"0",	CVAR_BOOL | CVAR_GAME, "Visualizes the anti-lag point generation" );
 idCVar g_drawAntiLagHits(		"g_drawAntiLagHits",	"0",	CVAR_BOOL | CVAR_GAME, "Draws information when anti-lag generates a hit" );
-idCVar si_antiLag(				"si_antiLag",			"1",	CVAR_BOOL | CVAR_GAME | CVAR_SERVERINFO, "Server does antilag on players" );
-idCVar si_antiLagOnly(			"si_antiLagOnly",		"0",	CVAR_BOOL | CVAR_GAME | CVAR_SERVERINFO, "ONLY use antilag" );
-idCVar si_antiLagForgiving(		"si_antiLagForgiving",	"0",	CVAR_INTEGER | CVAR_GAME | CVAR_SERVERINFO, "How forgiving the antilag is - the higher, the more forgiving" );
+
+#if defined( SD_PUBLIC_BUILD )
+	#define ANTILAG_CVAR_FLAGS		( CVAR_GAME | CVAR_SERVERINFO | CVAR_ROM )
+#else
+	#define ANTILAG_CVAR_FLAGS		( CVAR_GAME | CVAR_SERVERINFO )
+#endif
+
+idCVar si_antiLag(				"si_antiLag",			"1",	CVAR_BOOL | ANTILAG_CVAR_FLAGS, "Server does antilag on players" );
+idCVar si_antiLagOnly(			"si_antiLagOnly",		"0",	CVAR_BOOL | ANTILAG_CVAR_FLAGS, "ONLY use antilag" );
+idCVar si_antiLagForgiving(		"si_antiLagForgiving",	"0",	CVAR_INTEGER | ANTILAG_CVAR_FLAGS, "How forgiving the antilag is - the higher, the more forgiving" );
 
 #ifdef ANTILAG_LOGGING
 idCVar si_antiLagLog(			"si_antiLagLog",		"0",	CVAR_BOOL | CVAR_GAME, "Server logs antilag debugging information" );
@@ -111,6 +118,9 @@ void sdAntiLagSet::DebugDraw() {
 	if ( !IsValid() ) {
 		return;
 	}
+	if ( gameLocal.msec == 0 ) {
+		return;
+	}
 
 	int maxIndex = ( timeUpto - branchTime ) / gameLocal.msec;
 	for ( int i = 1; i < maxIndex; i++ ) {
@@ -124,6 +134,10 @@ sdAntiLagSet::GetPointForTime
 ================
 */
 const idVec3* sdAntiLagSet::GetPointForTime( int time ) {
+	if ( gameLocal.msec == 0 ) {
+		return NULL;
+	}
+
 	int index = ( time - branchTime ) / gameLocal.msec;
 	if ( index < 0 || index >= MAX_ANTILAG_POINTS ) {
 		return NULL;
@@ -192,6 +206,9 @@ sdAntiLagSetGeneric::Update
 */
 void sdAntiLagSetGeneric::Update() {
 	if ( !IsValid() ) {
+		return;
+	}
+	if ( gameLocal.msec == 0 ) {
 		return;
 	}
 
@@ -590,6 +607,9 @@ sdAntiLagSetPlayer::Update
 */
 void sdAntiLagSetPlayer::Update() {
 	if ( !IsValid() ) {
+		return;
+	}
+	if ( gameLocal.msec == 0 ) {
 		return;
 	}
 
@@ -1002,7 +1022,18 @@ sdAntiLagPlayer::Create
 */
 void sdAntiLagPlayer::Create() {
 	for ( int i = 0; i < MAX_ANTILAG_SETS; i++ ) {
-		antiLagSets[ i ] = new sdAntiLagSetPlayer;
+		antiLagSets[ i ] = &playerSets[ i ];
+	}
+}
+
+/*
+================
+sdAntiLagPlayer::Destroy
+================
+*/
+void sdAntiLagPlayer::Destroy() {
+	for ( int i = 0; i < MAX_ANTILAG_SETS; i++ ) {
+		antiLagSets[ i ] = NULL;
 	}
 }
 
@@ -1228,6 +1259,10 @@ sdAntiLagManagerLocal::Think
 ================
 */
 void sdAntiLagManagerLocal::Think() {
+	if ( gameLocal.msec == 0 ) {
+		return;
+	}
+
 	if ( gameLocal.isClient ) {
 #ifdef ANTILAG_LOGGING
 		int numToWrite = 0;

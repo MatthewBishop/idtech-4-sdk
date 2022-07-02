@@ -135,6 +135,10 @@ void sdUIObject::EnumerateEvents( const char* name, const idList<unsigned short>
 	}
 
 	if( !idStr::Icmp( name, "onNamedEvent" ) ) {
+		if( flags.Empty() ) {
+			gameLocal.Error( "Event 'onNamedEvent' no event specified" );
+		}
+
 		int i;
 		for( i = 0; i < flags.Num(); i++ ) {
 			const idToken& name = tokenCache[ flags[ i ] ];
@@ -144,6 +148,9 @@ void sdUIObject::EnumerateEvents( const char* name, const idList<unsigned short>
 	}
 
 	if( !idStr::Icmp( name, "onCVarChanged" ) ) {
+		if( flags.Empty() ) {
+			gameLocal.Error( "Event 'onCVarChanged' no cvar specified" );
+		}
 		int i;
 		for( i = 0; i < flags.Num(); i++ ) {
 			const idToken& name = tokenCache[ flags[ i ] ];
@@ -163,6 +170,9 @@ void sdUIObject::EnumerateEvents( const char* name, const idList<unsigned short>
 	}
 
 	if( !idStr::Icmp( name, "onPropertyChanged" ) ) {
+		if( flags.Empty() ) {
+			gameLocal.Error( "Event 'onPropertyChanged' no property specified" );
+		}
 		int i;
 		for( i = 0; i < flags.Num(); i++ ) {
 			//sdProperty* prop = scriptState.GetProperty( flags[ i ] );
@@ -285,7 +295,7 @@ void sdUIObject::CreateProperties( sdUserInterfaceLocal* _ui, const sdDeclGUIWin
 
 	// default to being owned by the desktop
 	sdUIObject* desktop = ui->GetWindow( "desktop" );
-	if( desktop ) {
+	if ( desktop ) {
 		SetParent( desktop );
 	}
 }
@@ -892,6 +902,36 @@ void sdUIObject::MakeLayoutDirty_r( sdUIObject* parent ) {
 		child->MakeLayoutDirty();
 
 		MakeLayoutDirty_r( child );
+		child = child->GetNode().GetSibling();
+	}
+}
+
+/*
+============
+sdUIObject::OnLanguageInit_r
+============
+*/
+void sdUIObject::OnLanguageInit_r( sdUIObject* parent ) {
+	sdUIObject* child = parent->GetNode().GetChild();
+	while ( child != NULL ) {
+		child->OnLanguageInit();
+
+		OnLanguageInit_r( child );
+		child = child->GetNode().GetSibling();
+	}
+}
+
+/*
+============
+sdUIObject::OnLanguageShutdown_r
+============
+*/
+void sdUIObject::OnLanguageShutdown_r( sdUIObject* parent ) {
+	sdUIObject* child = parent->GetNode().GetChild();
+	while ( child != NULL ) {
+		child->OnLanguageShutdown();
+
+		OnLanguageShutdown_r( child );
 		child = child->GetNode().GetSibling();
 	}
 }

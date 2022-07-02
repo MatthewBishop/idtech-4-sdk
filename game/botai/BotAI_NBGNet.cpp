@@ -124,7 +124,7 @@ bool idBotAI::NBG_SupplyTeammate() {
 	botUcmd->actionEntityNum = nbgTarget; //mal: let the game and obstacle avoidance know we want to interact with this entity.
 	botUcmd->actionEntitySpawnID = playerInfo.spawnID;
 
-	if ( dist > Square( 175.0f ) || botInfo->onLadder ) {
+	if ( dist > Square( 175.0f ) || botInfo->onLadder || !botThreadData.Nav_IsDirectPath( AAS_PLAYER, botInfo->team, botInfo->areaNum, botInfo->origin, playerInfo.origin ) ) {
 		Bot_SetupMove( vec3_zero, nbgTarget, ACTION_NULL );
 
 		if ( MoveIsInvalid() ) {
@@ -822,10 +822,14 @@ bool idBotAI::NBG_Camp() {
 		} else { //mal: we have a flyer hive out there in the world somewhere.
 			if ( botInfo->lastAttackerTime + 1000 > botWorld->gameLocalInfo.time ) {
 				botUcmd->botCmds.attack = true;
+				nbgTimer = 0;
+				botIdealWeapSlot = GUN;
 				return true;
 			} //mal: we're under attack! Lose the hive and fight!
 
 			int enemyNum = Flyer_FindEnemy( MAX_HIVE_RANGE );
+
+			nbgTimer = 0;
 
 			if ( enemyNum != -1 ) {
 				clientInfo_t player = botWorld->clientInfo[ enemyNum ];
@@ -835,6 +839,7 @@ bool idBotAI::NBG_Camp() {
 
 				idVec3 vec = goalOrigin - botInfo->weapInfo.covertToolInfo.origin;
 				nbgTime += 100;
+				nbgTimer = 0;
 
 				if ( vec.LengthSqr() > Square( FLYER_HIVE_ATTACK_DIST ) ) {
 					Bot_SetupFlyerMove( goalOrigin, goalAreaNum );
@@ -1795,6 +1800,8 @@ bool idBotAI::Enter_NBG_HuntVictim() {
 
 	ResetRandomLook();
 
+	nbgSwitch = ( botThreadData.random.RandomInt( 100 ) > 25 ) ? true : false;
+
 	lastAINode = "Hunting Victim";
 
 	return true;	
@@ -1840,7 +1847,7 @@ bool idBotAI::NBG_HuntVictim() {
 		return false;
 	}
 
-	if ( playerInfo.friendsInArea > 0 ) { //mal: he found some backup, not safe anymore!
+	if ( playerInfo.friendsInArea > MAX_NUM_OF_FRIENDS_OF_VICTIM || playerInfo.proxyInfo.entNum != CLIENT_HAS_NO_VEHICLE ) { //mal: he found some backup or a ride, not safe anymore!
         Bot_ExitAINode();
 		fastAwareness = false;
 		return false;
@@ -1854,6 +1861,7 @@ bool idBotAI::NBG_HuntVictim() {
 	if ( nbgReached != false && dist > Square( 300.0f ) ) { //we tried to attack him, but he got away somehow - so just kill him.
 		Bot_ExitAINode();
 		botUcmd->botCmds.dropDisguise = true;
+		return false;
 	}
 
 //mal: use very similiar dists and movement as we would use if we were going to escort someone on our own team. So that you can't tell at first glance something is up...
@@ -1870,7 +1878,7 @@ bool idBotAI::NBG_HuntVictim() {
 			return false;
 		}
 		
-		Bot_MoveAlongPath( ( dist > Square( 300.0f ) ) ? SPRINT : RUN );
+		Bot_MoveAlongPath( ( dist > Square( 900.0f ) ) ? SPRINT : RUN ); //mal: dont sprint too close to target, our breathing gives us away!
 		nbgTimer = 0;
 		return true;
 	}
@@ -1879,31 +1887,48 @@ bool idBotAI::NBG_HuntVictim() {
 
 	if ( nbgReached == false ) {
 		if ( isFacingUs || playerInfo.xySpeed > 250.0f ) {
-			if ( dist < Square( 150.0f ) ) { // too close, back up some!  
-				if ( Bot_CanMove( BACK, 100.0f, true )) {
-					Bot_MoveToGoal( botCanMoveGoal, vec3_zero, RUN, NULLMOVETYPE );
-				} else if ( Bot_CanMove( RIGHT, 100.0f, true )) {
-					Bot_MoveToGoal( botCanMoveGoal, vec3_zero, RUN, NULLMOVETYPE );
-				} else if ( Bot_CanMove( LEFT, 100.0f, true )) {
-					Bot_MoveToGoal( botCanMoveGoal, vec3_zero, RUN, NULLMOVETYPE );
-				}
+			if ( nbgSwitch == false ) {
+				if ( dist < Square( 150.0f ) ) { // too close, back up some!  
+					if ( Bot_CanMove( BACK, 100.0f, true )) {
+						Bot_MoveToGoal( botCanMoveGoal, vec3_zero, RUN, NULLMOVETYPE );
+					} else if ( Bot_CanMove( RIGHT, 100.0f, true )) {
+						Bot_MoveToGoal( botCanMoveGoal, vec3_zero, RUN, NULLMOVETYPE );
+					} else if ( Bot_CanMove( LEFT, 100.0f, true )) {
+						Bot_MoveToGoal( botCanMoveGoal, vec3_zero, RUN, NULLMOVETYPE );
+					}
         
-				Bot_LookAtEntity( nbgTarget, SMOOTH_TURN );
-				nbgTimer = 0;
-				return true;
-			} else {
-		        if ( nbgTimer < 10 ) {
-					Bot_LookAtEntity( nbgTarget, SMOOTH_TURN ); //mal: look at our target for a bit when first reached.
-					nbgTimer++;
+					Bot_LookAtEntity( nbgTarget, SMOOTH_TURN );
+					nbgTimer = 0;
+					return true;
 				} else {
-					if ( botThreadData.random.RandomInt( 100 ) > 98 ) {
-						idVec3 vec;
-						if ( Bot_RandomLook( vec ) ) {
-					        Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for "enemies" and whatnot - muhahahahahaha!
+					if ( nbgTimer < 10 ) {
+						Bot_LookAtEntity( nbgTarget, SMOOTH_TURN ); //mal: look at our target for a bit when first reached.
+						nbgTimer++;
+					} else {
+						if ( botThreadData.random.RandomInt( 100 ) > 97 ) {
+							idVec3 vec;
+							if ( Bot_RandomLook( vec ) ) {
+						        Bot_LookAtLocation( vec, SMOOTH_TURN ); //randomly look around, for "enemies" and whatnot - muhahahahahaha!
+							}
 						}
 					}
+					return true;
 				}
-				return true;
+			} else { //mal: sometimes we'll always try to get behind the target, instead of pretending we're his friend.
+				if ( Bot_CanBackStabClient( nbgTarget, BACKSTAB_DIST * 1.2f ) ) {
+					Bot_SetupMove( botBackStabMoveGoal, -1, ACTION_NULL );
+
+					if ( MoveIsInvalid() ) {
+						nbgSwitch = false;
+						return true;
+					}
+
+					Bot_MoveAlongPath( RUN );
+					return true;
+				} else {
+					nbgSwitch = false;
+					return true;
+				}
 			}
 		}
 	}
@@ -2060,6 +2085,11 @@ bool idBotAI::NBG_DefuseBomb() {
 			posture = CROUCH;
 		} else {
 			posture = WALK;
+		}
+
+		if ( !Bot_CheckLocationIsVisible( bombInfo.origin, bombInfo.entNum, -1, nbgSwitch ) ) { //mal: someone may have bumped us away from our charge, so keep rechecking...
+			nbgReachedTarget = false;
+			return true;
 		}
 
         Bot_LookAtLocation( bombInfo.origin, INSTANT_TURN );
@@ -2971,6 +3001,14 @@ bool idBotAI::Enter_NBG_FixProxyEntity() {
 
 	if ( nbgChat ) {
 		Bot_AddDelayedChat( botNum, ACKNOWLEDGE_YES, 1 );
+	} else {
+		if ( vehicleInfo.driverEntNum != -1 && vehicleInfo.driverEntNum < MAX_CLIENTS ) {
+			const clientInfo_t& player = botWorld->clientInfo[ vehicleInfo.driverEntNum ];
+			
+			if ( !player.isBot ) {
+				Bot_AddDelayedChat( botNum, WILL_FIX_RIDE, 1 );
+			}
+		}
 	}
 
 	return true;	
@@ -3014,6 +3052,13 @@ bool idBotAI::NBG_FixProxyEntity() {
 	if ( vehicleInfo.type == MCP && !botWorld->botGoalInfo.mapHasMCPGoal ) {
 		Bot_ExitAINode();
 		return false;
+	}
+
+	if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO ) {
+		if ( Bot_CheckForHumanInteractingWithEntity( vehicleInfo.entNum ) == true ) {
+			Bot_ExitAINode();
+			return false;
+		}
 	}
 
 	botUcmd->actionEntityNum = vehicleInfo.entNum; //mal: let the game and obstacle avoidance know we want to interact with this entity.
@@ -3422,6 +3467,11 @@ bool idBotAI::Enter_NBG_DestroySpawnHost() {
 
 	lastAINode = "Destroying SpawnHost";
 
+	if ( nbgChat ) {
+		Bot_AddDelayedChat( botNum, ACKNOWLEDGE_YES, 1 );
+		nbgTime += 21000; //mal: give ourselves more time to complete the task since we may be further away from it if ordered to destroy it.
+	}
+
 	return true;	
 }
 
@@ -3586,6 +3636,13 @@ bool idBotAI::NBG_GrabSpawnPoint() {
 		return false;
 	}
 
+	if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO ) {
+		if ( Bot_CheckForHumanInteractingWithEntity( botThreadData.botActions[ actionNum ]->GetActionSpawnControllerEntNum() ) == true ) {
+			Bot_ExitAINode();
+			return false;
+		}
+	}
+
 	if ( !botThreadData.botActions[ actionNum ]->active ) {
         Bot_ExitAINode();
 		Bot_ClearAIStack();
@@ -3694,6 +3751,13 @@ bool idBotAI::NBG_FixDeployable() {
 	if ( deployableInfo.health <= 0 ) {
         Bot_ExitAINode();
 		return false;
+	}
+
+	if ( botWorld->gameLocalInfo.botSkill == BOT_SKILL_DEMO ) {
+		if ( Bot_CheckForHumanInteractingWithEntity( deployableInfo.entNum ) == true ) {
+			Bot_ExitAINode();
+			return false;
+		}
 	}
 
 	botUcmd->actionEntityNum = deployableInfo.entNum; //mal: let the game and obstacle avoidance know we want to interact with this entity.
@@ -4248,7 +4312,7 @@ bool idBotAI::NBG_HackDeployable() {
 		return false;
 	}
 
-	if ( deployableInfo.disabled || deployableInfo.health < ( deployableInfo.maxHealth / DEPLOYABLE_DISABLED_PERCENT ) ) {
+	if ( ( deployableInfo.disabled && deployableInfo.health == ( deployableInfo.maxHealth / 2.0f ) ) || deployableInfo.health < ( deployableInfo.maxHealth / DEPLOYABLE_DISABLED_PERCENT ) ) {
 		Bot_ExitAINode();
 		return false;
 	}

@@ -116,7 +116,7 @@ void sdGameRulesCampaign::SetCampaign( const sdDeclCampaign* newCampaign ) {
 		campaignMapData[ i ].mapInfo = NULL;
 
 		idStr mapName = campaignDecl->GetMap( i );
-		SanitizeMapName( mapName, false );
+		sdGameRules_SingleMapHelper::SanitizeMapName( mapName, false );
 		const idDict* mapMetaData = gameLocal.mapMetaDataList->FindMetaData( mapName, &gameLocal.defaultMetaData );
 		campaignMapData[ i ].metaDataName = mapName;
 		campaignMapData[ i ].mapInfo = gameLocal.declMapInfoType[ mapMetaData->GetString( "mapinfo" ) ];
@@ -133,7 +133,7 @@ void sdGameRulesCampaign::SetCampaign( const sdDeclCampaign* newCampaign ) {
 	}
 
 	if ( gameLocal.isServer ) {
-		SendCampaignInfo( -1 );
+		SendCampaignInfo( sdReliableMessageClientInfoAll() );
 	}
 }
 
@@ -142,11 +142,11 @@ void sdGameRulesCampaign::SetCampaign( const sdDeclCampaign* newCampaign ) {
 sdGameRulesCampaign::SendCampaignInfo
 ================
 */
-void sdGameRulesCampaign::SendCampaignInfo( int clientNum ) {
+void sdGameRulesCampaign::SendCampaignInfo( const sdReliableMessageClientInfoBase& target ) {
 	sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_RULES_DATA );
 	msg.WriteLong( EVENT_SETCAMPAIGN );
 	msg.WriteLong( campaignDecl->Index() );
-	msg.Send( clientNum );
+	msg.Send( target );
 }
 
 /*
@@ -301,7 +301,7 @@ void sdGameRulesCampaign::SetWinner( sdTeamInfo* team ) {
 sdGameRulesCampaign::SendMapStats
 ================
 */
-void sdGameRulesCampaign::SendMapStats( int index, int clientNum ) {
+void sdGameRulesCampaign::SendMapStats( int index, const sdReliableMessageClientInfoBase& target ) {
 	mapData_t& mapData = campaignMapData[ index ];
 
 	sdReliableServerMessage msg( GAME_RELIABLE_SMESSAGE_RULES_DATA );
@@ -319,7 +319,7 @@ void sdGameRulesCampaign::SendMapStats( int index, int clientNum ) {
 		}
 	}
 
-	msg.Send( clientNum );
+	msg.Send( target );
 }
 
 /*
@@ -421,7 +421,7 @@ void sdGameRulesCampaign::EndGame( void ) {
 				}
 			}
 
-			SendMapStats( currentMapIndex );
+			SendMapStats( currentMapIndex, sdReliableMessageClientInfoAll() );
 			if( gameLocal.DoClientSideStuff() ) {
 				OnMapStatsReceived( currentMapIndex );
 			}			
@@ -482,17 +482,17 @@ void sdGameRulesCampaign::OnGameState_NextMap( void ) {
 sdGameRulesCampaign::WriteInitialReliableMessages
 ================
 */
-void sdGameRulesCampaign::WriteInitialReliableMessages( int clientNum ) {
-	sdGameRules::WriteInitialReliableMessages( clientNum );
+void sdGameRulesCampaign::WriteInitialReliableMessages( const sdReliableMessageClientInfoBase& target ) {
+	sdGameRules::WriteInitialReliableMessages( target );
 
-	SendCampaignInfo( clientNum );
+	SendCampaignInfo( target );
 
 	for ( int i = 0; i < campaignMapData.Num(); i++ ) {
 		if ( !campaignMapData[ i ].written ) {
 			continue;
 		}
 
-		SendMapStats( i, clientNum );
+		SendMapStats( i, target );
 	}
 }
 
@@ -501,22 +501,48 @@ void sdGameRulesCampaign::WriteInitialReliableMessages( int clientNum ) {
 sdGameRulesCampaign::OnUserStartMap
 ================
 */
-bool sdGameRulesCampaign::OnUserStartMap( const char* text, idStr& reason, idStr& mapName ) {
+userMapChangeResult_e sdGameRulesCampaign::OnUserStartMap( const char* text, idStr& reason, idStr& mapName ) {
+	const metaDataContext_t* metaData = gameLocal.campaignMetaDataList->FindMetaDataContext( text );
+	if ( metaData == NULL ) {
+		reason = va( "Unknown Campaign '%s'", text );
+		return UMCR_ERROR;
+	}
+
+	if ( !gameLocal.IsMetaDataValidForPlay( *metaData, false ) ) {
+		reason = va( "Campaign '%s' not supported in this mode.", text );
+		return UMCR_ERROR;
+	}
+
 	const sdDeclCampaign* campaign = gameLocal.declCampaignType[ text ];
 	if ( campaign == NULL ) {
-		reason = va( "Unknown Campaign '%s'", text );
-		return false;
+		if( !metaData->addon ) {
+			reason = va( "Unknown Campaign '%s'", text );
+			return UMCR_ERROR;
+		}
+		
+		if( fileSystem->IsAddonPackReferenced( metaData->pak ) ) {
+			reason = va( "Unknown Campaign '%s'", text );
+			return UMCR_ERROR;
+		}
+		fileSystem->ReferenceAddonPack( metaData->pak );
+		
+		idCmdArgs args;
+		args.AppendArg( "spawnServer" );
+		args.AppendArg( text );
+		cmdSystem->SetupReloadEngine( args );
+		return UMCR_STOP;
 	}
 
 	if ( campaign->GetNumMaps() == 0 ) {
 		reason = va( "Campaign '%s' Contains No Maps", text );
-		return false;
+		return UMCR_ERROR;
 	}
 
 	SetCampaign( campaign );
 	mapName = campaign->GetMap( 0 );
-	SanitizeMapName( mapName, true );
-	return true;
+	sdGameRules_SingleMapHelper::SanitizeMapName( mapName, true );
+
+	return UMCR_CONTINUE;
 }
 
 /*
@@ -664,18 +690,27 @@ sdGameRulesCampaign::ArgCompletion_StartGame
 ================
 */
 void sdGameRulesCampaign::ArgCompletion_StartGame( const idCmdArgs& args, argCompletionCallback_t callback ) {
+	if( gameLocal.campaignMetaDataList == NULL ) {
+		return;
+	}
+
 	const char* cmd = args.Argv( 1 );
 	int len = idStr::Length( cmd );
 
-	int num = gameLocal.declCampaignType.Num();
+	int num = gameLocal.campaignMetaDataList->GetNumMetaData();
 	for ( int i = 0; i < num; i++ ) {
-		const sdDeclCampaign* campaignDecl = gameLocal.declCampaignType[ i ];
+		const metaDataContext_t& metaData = gameLocal.campaignMetaDataList->GetMetaDataContext( i );
+		if ( !gameLocal.IsMetaDataValidForPlay( metaData, false ) ) {
+			continue;
+		}
+		const idDict& meta = *metaData.meta;
 		
-		if ( idStr::Icmpn( campaignDecl->GetName(), cmd, len ) ) {
+		const char* metaName = meta.GetString( "metadata_name" );
+		if ( idStr::Icmpn( metaName, cmd, len ) ) {
 			continue;
 		}
 
-		callback( va( "%s %s", args.Argv( 0 ), campaignDecl->GetName() ) );
+		callback( va( "%s %s", args.Argv( 0 ), metaName ) );
 	}	
 }
 
@@ -805,6 +840,9 @@ void sdGameRulesCampaign::UpdateClientFromServerInfo( const idDict& serverInfo, 
 		}
 		
 		int mapIndex = 1;
+		int numRead = 1;
+
+		bool readAny = false;
 		// setup the map state (who won, current, or not played)
 		for( int i = 0; i < cachedMapMetaData.Num(); i++ ) {						
 			idStr status = "unplayed";
@@ -818,6 +856,9 @@ void sdGameRulesCampaign::UpdateClientFromServerInfo( const idDict& serverInfo, 
 				} else {
 					status = "tied";
 				}
+
+				readAny = true;
+				numRead++;
 			} else {
 				if( firstUnplayed ) {
 					status = "current";
@@ -827,6 +868,7 @@ void sdGameRulesCampaign::UpdateClientFromServerInfo( const idDict& serverInfo, 
 					status = "unplayed";
 				}
 			}
+			
 			if( showCurrentOnly && !current ) {
 				continue;
 			}
@@ -838,6 +880,15 @@ void sdGameRulesCampaign::UpdateClientFromServerInfo( const idDict& serverInfo, 
 			const idDict* metaData = gameLocal.mapMetaDataList->FindMetaData( cachedMapMetaData[ i ], &gameLocal.defaultMetaData );
 			SetupLoadScreenUI( *scope, status.c_str(), current, mapIndex, *metaData, info );
 			mapIndex++;
+		}
+
+		if( readAny ) {
+			numRead--;
+		}
+		// setup the status
+		// jrad - NB: this is only useful during endgame once the campaign's new state has been received
+		if ( sdProperty* property = scope->GetProperty( "currentMap", PT_FLOAT ) ) {
+			*property->value.floatValue = numRead;
 		}
 
 		sdHashMapGeneric< idStr, int >::Iterator iter = teamWins.Begin();
@@ -915,3 +966,24 @@ void sdGameRulesCampaign::GetBrowserStatusString( idWStr& str, const sdNetSessio
 		}
 	}
 }
+
+/*
+============
+sdGameRulesCampaign::GetServerBrowserScore
+============
+*/
+int sdGameRulesCampaign::GetServerBrowserScore( const sdNetSession& session ) const {
+	int score = 0;
+
+	const char* statusString = session.GetServerInfo().GetString( "si_campaignInfo" );
+	int numMapsPlayed = idStr::Length( statusString );
+	if ( numMapsPlayed == 0 ) {
+		score += sdHotServerList::BROWSER_GOOD_BONUS;
+	} else if ( numMapsPlayed == 1 ) {
+		score += sdHotServerList::BROWSER_OK_BONUS;
+	}
+
+	score += sdGameRules::GetServerBrowserScore( session );
+	return score;
+}
+

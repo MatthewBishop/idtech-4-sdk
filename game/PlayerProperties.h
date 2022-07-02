@@ -70,6 +70,7 @@ public:
 	virtual sdProperties::sdProperty*		GetProperty( const char* name, sdProperties::ePropertyType type );
 	virtual sdProperties::sdPropertyHandler& GetProperties()									{ return properties; }
 	virtual const char*						GetName() const										{ return "playerProperties"; }
+	virtual const char*						FindPropertyName( sdProperties::sdProperty* property, sdUserInterfaceScope*& scope ) { scope = this; return properties.NameForProperty( property ); }
 
 	void									UpdateTargetingInfo( idPlayer* player );
 	void									UpdateFireTeam( idPlayer* player );
@@ -85,6 +86,8 @@ public:
 	sdPlayerHud*							GetPlayerHud( void )								{ return playerHud.Get(); }
 	sdPostProcess*							GetPostProcess( void )								{ return postProcess.Get(); }
 	sdTakeViewNoteMenu*						GetViewNoteMenu( void )								{ return takeViewNoteMenu.Get(); }
+
+	guiHandle_t								GetScoreBoard( void )								{ return scoreBoard; }
 
 	void									SetToolTipInfo( const wchar_t* text, int index, const idMaterial* icon );
 
@@ -132,9 +135,17 @@ public:
 	void									SetActivePlayer( idPlayer* player );
 	void									SetActiveTask( sdPlayerTask* task );
 
+	idPlayer*								GetActivePlayer( void );
+
 	void									OnObituary( idPlayer* self, idPlayer* other );
 
 	void									SetHasTask( bool value ) { hasTask = value; }
+
+	void									SetShowFireTeam( bool keyDown ) { showFireTeam = static_cast< float >( keyDown ); }
+	bool									GetShowFireTeam() const { return showFireTeam != 0.0f; }
+
+	void									SetPaused( bool value ) { isPaused = value; }
+	void									SetUnpauseKeyString( const wchar_t* key ) { unpauseKeyString = key; }
 
 private:
 	static void								UpdatePlayerUpgradeIcons( sdUIIconNotification* icons );
@@ -167,6 +178,8 @@ private:
 	idLinkList< sdHudModule >				drawHudModules;
 
 	idList< sdHudModule* >					allocedHudModules;
+
+	guiHandle_t								scoreBoard;
 
 	int										clipIndex;
 	bool									commandMapExpanding;
@@ -413,6 +426,13 @@ private:
 	datatype			= "float";
 	)
 	sdFloatProperty		vehicleWrongDirection;
+
+	SD_UI_PROPERTY_TAG(
+	title				= "PlayerProperties/VehicleKickDistance";
+	desc				= "Distance before being kicked while driving the MCP.";
+	datatype			= "float";
+	)
+	sdFloatProperty		vehicleKickDistance;
 
 	SD_UI_PROPERTY_TAG(
 	title				= "PlayerProperties/VehicleEMPed";
@@ -760,6 +780,13 @@ private:
 	sdWStringProperty	toolTipText;
 
 	SD_UI_PROPERTY_TAG(
+	title				= "PlayerProperties/ToolTipIsPriority";
+	desc				= "Tooltip is an important tooltip.";
+	datatype			= "float";
+	)
+	sdFloatProperty		toolTipIsPriority;
+
+	SD_UI_PROPERTY_TAG(
 	title				= "PlayerProperties/ToolTipMaterial";
 	desc				= "Icon name appropriate for the tooltip.";
 	datatype			= "string";
@@ -979,6 +1006,57 @@ private:
 	datatype			= "float";
 	)
 	sdFloatProperty		voiceSendMode;
+
+	SD_UI_PROPERTY_TAG(
+	title				= "PlayerProperties/GameTime";
+	desc				= "Real game time elapsed, does not include any time the game was paused for.";
+	datatype			= "float";
+	)
+	sdFloatProperty		gameTime;
+
+	SD_UI_PROPERTY_TAG(
+	title				= "PlayerProperties/ShowFireTeam";
+	desc				= "Local player wants to see the fireteam list on the HUD.";
+	datatype			= "float";
+	)
+	sdFloatProperty		showFireTeam;
+
+	SD_UI_PROPERTY_TAG(
+	title				= "PlayerProperties/IsPaused";
+	desc				= "Game is paused.";
+	datatype			= "float";
+	)
+	sdFloatProperty		isPaused;
+
+	SD_UI_PROPERTY_TAG(
+	title				= "PlayerProperties/SinglePlayerGame";
+	desc				= "Is a single player game.";
+	datatype			= "float";
+	alias				= "isSinglePlayer"
+	)
+	sdFloatProperty		singlePlayerGame;
+
+	SD_UI_PROPERTY_TAG(
+	title				= "PlayerProperties/UnpauseKeyString";
+	desc				= "Optional weapon key to unpause tooltip.";
+	datatype			= "wstring";
+	)
+	sdWStringProperty	unpauseKeyString;
+
+	SD_UI_PROPERTY_TAG(
+	title				= "PlayerProperties/ServerIsRepeater";
+	desc				= "Is the server you are connected to a TV server.";
+	datatype			= "float";
+	alias				= "serverIsRepeater"
+	)
+	sdFloatProperty		serverIsRepeater;
+
+	SD_UI_PROPERTY_TAG(
+	title				= "PlayerProperties/IsServer";
+	desc				= "True if the server.";
+	datatype			= "float";
+	)
+	sdFloatProperty		isServer;
 };
 
 class sdGlobalPropertiesNameSpace : public sdUIWritablePropertyHolder {
@@ -993,6 +1071,7 @@ public:
 	virtual sdProperties::sdPropertyHandler&		GetProperties() { return properties; }
 	virtual const sdProperties::sdPropertyHandler&	GetProperties() const { return properties; }
 	virtual const char*								GetName() const { return ""; }
+	virtual const char*								FindPropertyName( sdProperties::sdProperty* property, sdUserInterfaceScope*& scope ) { scope = this; return properties.NameForProperty( property ); }
 
 	virtual sdUserInterfaceScope*					GetSubScope( const char* name );
 

@@ -13,8 +13,7 @@ sdCompiledScriptType_WString::sdCompiledScriptType_WString( void ) {
 }
 
 sdCompiledScriptType_WString::sdCompiledScriptType_WString( const wchar_t* s ) {
-	assert( ( wcslen( s ) + 1 ) < MAX_COMPILED_STRING_LENGTH );
-	wcscpy( value, s );
+	wcsncpy( value, s, MAX_COMPILED_STRING_LENGTH - 1 );
 }
 
 sdCompiledScriptType_WString::sdCompiledScriptType_WString( const sdCompiledScriptType_Float& f ) {
@@ -48,8 +47,7 @@ sdCompiledScriptType_String::sdCompiledScriptType_String( const sdCompiledScript
 }
 
 void sdCompiledScriptType_String::Set( const char* rhs ) {
-	assert( ( strlen( rhs ) + 1 ) < MAX_COMPILED_STRING_LENGTH );
-	strcpy( value, rhs );
+	strncpy( value, rhs, MAX_COMPILED_STRING_LENGTH - 1 );
 }
 
 sdCompiledScriptType_String	sdCompiledScriptType_String::operator+( const char* _value ) const {
@@ -103,11 +101,8 @@ bool sdCompiledScriptType_String::operator==( const char* _value ) const {
 
 void sdCompiledScriptType_String::Format( const char* fmt, ... ) {
 	va_list argptr;
-
 	va_start( argptr, fmt );
-
-	vsprintf( value, fmt, argptr );
-
+	vsnprintf( value, MAX_COMPILED_STRING_LENGTH, fmt, argptr );
 	va_end( argptr );
 }
 

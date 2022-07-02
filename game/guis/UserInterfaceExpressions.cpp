@@ -68,6 +68,38 @@ const char sdConstParmExpressionVec4_Identifier[]		= "sdConstParmExpressionVec4"
 ===============================================================================
 */
 
+idStaticList< sdUIExpression*, sdUIExpression::MAX_ACTIVE_ONCHANGED_HANDLERS > sdUIExpression::activeOnChangedHandlers;
+
+/*
+================
+sdUIExpression::IncActiveOnChangeHandlers
+================
+*/
+void sdUIExpression::IncActiveOnChangeHandlers( sdUIExpression* expression ) {
+	sdUIExpression** newExpressionEntry = activeOnChangedHandlers.Alloc();
+	if ( newExpressionEntry == NULL ) {
+		for ( int i = 0; i < activeOnChangedHandlers.Num(); i++ ) {
+			activeOnChangedHandlers[ i ]->OnOnChangedOverflow();
+		}
+		activeOnChangedHandlers.Clear();
+		common->FatalError( "sdUIExpression; OnChanged Handler Overflow" );
+	}
+
+	*newExpressionEntry = expression;
+}
+
+/*
+================
+sdUIExpression::DecActiveOnChangeHandlers
+================
+*/
+void sdUIExpression::DecActiveOnChangeHandlers( void ) {
+	if ( activeOnChangedHandlers.Num() == 0 ) {
+		gameLocal.Error( "sdUIExpression; OnChanged Handler Underflow" );
+	}
+	activeOnChangedHandlers.SetNum( activeOnChangedHandlers.Num() - 1 );
+}
+
 /*
 ================
 sdUIExpression::AllocTransition
@@ -2081,6 +2113,28 @@ sdPropertyExpressionSingle::~sdPropertyExpressionSingle( void ) {
 	}
 
 	inputExpression->Free();
+}
+
+/*
+================
+sdPropertyExpressionSingle::OnOnChangedOverflow
+================
+*/
+void sdPropertyExpressionSingle::OnOnChangedOverflow( void ) {
+	sdUserInterfaceScope* propertyScope;
+	const char* propertyName = scope->FindPropertyNameByKey( scopeKey, propertyScope );
+	if ( propertyName != NULL ) {
+		gameLocal.Printf( "Property: %s", propertyName );
+		if ( propertyScope != NULL ) {
+			gameLocal.Printf( " Scope: %s", propertyScope->GetName() );
+
+			sdUserInterfaceLocal* gui = propertyScope->GetUI();
+			if ( gui != NULL ) {
+				gameLocal.Printf( " GUI: %s", gui->GetDecl()->GetName() );
+			}
+		}
+		gameLocal.Printf( "\n" );
+	}
 }
 
 /*

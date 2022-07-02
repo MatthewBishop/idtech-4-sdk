@@ -229,8 +229,17 @@ bool sdVehicle_RigidBody::Collide( const trace_t &collision, const idVec3 &veloc
 
 			bool otherIgnoreDamage = otherControl != NULL && otherControl->IgnoreCollisionDamage( -normal );
 			if ( other->fl.takedamage && !otherIgnoreDamage ) {
-				idEntity* driver = positionManager.FindDriver();
-				other->Damage( this, driver ? driver : this, v, collideDamage, damage * collideDamageDealtScale, &collision );
+				idPlayer* driver = positionManager.FindDriver();
+				int oldHealth = other->GetHealth();
+				other->Damage( this, driver != NULL ? ( idEntity* )driver : this, v, collideDamage, damage * collideDamageDealtScale, &collision );
+				if ( driver != NULL ) {
+					if ( oldHealth > 0 && other->GetHealth() <= 0 ) {
+						idPlayer* otherPlayer = other->Cast< idPlayer >();
+						if ( otherPlayer != NULL && driver->GetEntityAllegiance( otherPlayer ) == TA_ENEMY ) {
+							IncRoadKillStats( driver );
+						}
+					}
+				}
 			}
 
 			bool ignoreDamage = GetVehicleControl() != NULL && GetVehicleControl()->IgnoreCollisionDamage( normal );
@@ -277,11 +286,32 @@ void sdVehicle_RigidBody::CollideFatal( idEntity* other ) {
 
 	if ( collideFatalDamage != NULL ) {
 		if ( other->fl.takedamage ) {
+			int oldHealth = other->GetHealth();
 			idVec3 dir = GetPhysics()->GetOrigin() - other->GetPhysics()->GetOrigin();
 			dir.Normalize();
 			other->Damage( this, driver ? driver : this, dir, collideFatalDamage, -1.0f, NULL, true );
+
+			if ( playerDriver != NULL ) {
+				idPlayer* otherPlayer = other->Cast< idPlayer >();
+				if ( otherPlayer != NULL && otherPlayer->GetEntityAllegiance( playerDriver ) == TA_ENEMY ) {
+					if ( oldHealth > 0 && otherPlayer->GetHealth() <= 0 ) {
+						IncRoadKillStats( playerDriver );
+					}
+				}
+			}
 		}
 	}
+}
+
+/*
+================
+sdVehicle_RigidBody::IncRoadKillStats
+================
+*/
+void sdVehicle_RigidBody::IncRoadKillStats( idPlayer* player ) {
+	sdStatsTracker& tracker = sdGlobalStatsTracker::GetInstance();
+	sdPlayerStatEntry* entry = tracker.GetStat( tracker.AllocStat( "total_roadkills", sdNetStatKeyValue::SVT_INT ) );
+	entry->IncreaseValue( player->entityNumber, 1 );
 }
 
 /*

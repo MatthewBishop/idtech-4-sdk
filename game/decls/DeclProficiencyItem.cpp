@@ -95,7 +95,7 @@ bool sdDeclProficiencyItem::Parse( const char *text, const int textLength ) {
 
 			sdStatsTracker& tracker = sdGlobalStatsTracker::GetInstance();
 
-			stat = tracker.GetStat( tracker.AllocStat( token.c_str(), "float" ) );
+			stat = tracker.GetStat( tracker.AllocStat( token.c_str(), sdNetStatKeyValue::SVT_FLOAT ) );
 
 		} else {
 

@@ -17,6 +17,7 @@ typedef enum {
 	MSG_OK,
 	MSG_OKCANCEL,
 	MSG_YESNO,
+	MSG_DOWNLOAD_YESNO,
 	MSG_NEED_PASSWORD,	
 	MSG_ABORT,
 	MSG_NEED_AUTH,
@@ -75,9 +76,6 @@ public:
 	// Tell the game to display a message box
 	virtual void	MessageBox( msgBoxType_t type, const wchar_t *message, const char *titleDef ) = 0;
 	
-	// monitor this download in a progress box to either abort or completion
-	virtual void	DownloadProgressBox( backgroundDownload_t *bgl, const char *message ) = 0;
-
 	virtual void	SetPlayingSoundWorld() = 0;
 
 	// this is used by the sound system when an OnDemand sound is loaded, so the game action

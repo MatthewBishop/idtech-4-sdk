@@ -270,6 +270,21 @@ void sdUIWindow::Draw() {
 }
 
 /*
+================
+sdUIWindow::FinalDraw
+================
+*/
+void sdUIWindow::FinalDraw() {
+	sdUIObject* child = GetNode().GetChild();
+	while ( child != NULL ) {
+		if ( sdUIObject_Drawable* window = child->Cast< sdUIObject_Drawable >() ) {
+			window->FinalDraw();
+		}
+		child = child->GetNode().GetSibling();
+	}
+}
+
+/*
 ============
 sdUIWindow::GetDrawTextFlags
 ============
@@ -626,7 +641,7 @@ sdUIWindow::OnActivate
 ================
 */
 void sdUIWindow::OnActivate( void ) {
-	if( RunEvent( sdUIEventInfo( WE_ACTIVATE, 0 ) ) ) {
+	if ( RunEvent( sdUIEventInfo( WE_ACTIVATE, 0 ) ) ) {
 		if( sdUserInterfaceLocal::g_debugGUIEvents.GetBool() ) {
 			gameLocal.Printf( "%s: OnActivate", name.GetValue().c_str() );
 		}
@@ -815,7 +830,7 @@ sdUIWindow::ActivateFont
 void sdUIWindow::ActivateFont( bool set ) {
 	LookupFont();
 
-	if( set ) {
+	if ( set ) {
 		deviceContext->SetFont( cachedFontHandle );
 	}
 }

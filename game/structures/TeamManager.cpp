@@ -467,7 +467,7 @@ const char* fireTeamNames[ sdTeamInfo::MAX_FIRETEAMS ] = {
 sdTeamInfo::sdTeamInfo
 ================
 */
-sdTeamInfo::sdTeamInfo( void ) : index( -1 ), info( NULL ), passwordCVar( NULL ) {
+sdTeamInfo::sdTeamInfo( void ) : index( -1 ), info( NULL ), passwordCVar( NULL ), lifeStatTitle( NULL ) {
 	wins = 0;
 
 	info = NULL;
@@ -699,6 +699,10 @@ void sdTeamInfo::Init( void ) {
 
 	playZoneExitToolTip = gameLocal.declToolTipType[ dict.GetString( "tt_leavingzone" ) ];
 
+	// load lifeStat titles
+	const char* lifeStatName = dict.GetString( "lifestat_title", "blank" );
+	lifeStatTitle = declHolder.declLocStrType.LocalFind( lifeStatName );
+
 	game->CacheDictionaryMedia( dict );
 }
 
@@ -770,7 +774,7 @@ sdTeamInfo::UpdateScript
 ================
 */
 void sdTeamInfo::UpdateScript( void ) {
-	if ( !scriptThread ) {
+	if ( !scriptThread || gameLocal.IsPaused() ) {
 		return;
 	}
 
@@ -1480,4 +1484,13 @@ idEntity* sdTeamInfo::GetHomeBaseSpawn( void ) {
 	}
 
 	return rearSpawnBase;
+}
+
+/*
+============
+sdTeamInfo::GetLifeStatTitle
+============
+*/
+const sdDeclLocStr* sdTeamInfo::GetLifeStatTitle( void ) const {
+	return lifeStatTitle;
 }

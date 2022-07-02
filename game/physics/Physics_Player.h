@@ -233,6 +233,10 @@ public:	// common physics interface
 	const idClipModel*		GetCrouchClipModel( void ) const { return clipModel_crouch; }
 	const idClipModel*		GetProneClipModel( void ) const { return clipModel_prone; }
 	const idClipModel*		GetProneLegsClipModel( void ) const { return proneLegsClipModel; }
+	const idClipModel*		GetHeadClipModel( void ) const { return headClipModel; }
+
+	void					EnableHeadClipModel( void );
+	void					DisableHeadClipModel( void );
 
 	// getters for antilag
 	float					GetGroundAccel( void ) const { return pm_accelerate; }
@@ -271,6 +275,7 @@ protected:
 
 	idClipModel*			proneLegsClipModel;
 	idClipModel*			shotClipModel;
+	idClipModel*			headClipModel;
 
 	void					BuildClipModel( const idBounds& bounds, bool useCylinder, idClipModel*& model );
 	idClipModel*			clipModel_normal;

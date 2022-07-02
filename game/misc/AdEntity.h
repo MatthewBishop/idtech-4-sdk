@@ -38,6 +38,8 @@ public:
 
 //	virtual void						Think( void );
 
+	void								DrawImpression( void );
+
 	void								Spawn( void );
 
 protected:

@@ -216,6 +216,7 @@ void idPhysics_Player::Accelerate( const idVec3 &wishdir, const float wishspeed,
 }
 
 const idBounds	playerProneLegsBounds( idVec3( -13.5f, -13.5f, 0 ), idVec3( 13.5f, 13.5f, 10.4f ) );
+const idBounds	playerHeadBounds( idVec3( -6.0f, -6.0f, -6.0f ), idVec3( 6.0f, 6.0f, 6.0f ) );
 const float		playerProneLegOffset = -32.f;
 
 /*
@@ -1208,6 +1209,10 @@ idPhysics_Player::CheckLean
 ===================
 */
 void idPhysics_Player::CheckLean( bool allow ) {
+	if ( gameLocal.IsPaused() ) {
+		return;
+	}
+
 	// never allow leaning if movement is inhibited
 	if ( playerSelf->InhibitMovement() ) {
 		allow = false;
@@ -2182,6 +2187,10 @@ idPhysics_Player::CheckJump
 bool idPhysics_Player::CheckJump( void ) {
 	idVec3 addVelocity;
 
+	if ( gameLocal.IsPaused() ) {
+		return false;
+	}
+
 	if ( command.upmove < 10 ) {
 		return false;
 	}
@@ -2554,6 +2563,9 @@ idPhysics_Player::~idPhysics_Player( void ) {
 	if ( proneLegsClipModel != NULL ) {
 		gameLocal.clip.DeleteClipModel( proneLegsClipModel );
 	}
+	if ( headClipModel != NULL ) {
+		gameLocal.clip.DeleteClipModel( headClipModel );
+	}
 	if ( clipModel_normal != NULL ) {
 		gameLocal.clip.DeleteClipModel( clipModel_normal );
 	}
@@ -2650,6 +2662,9 @@ idPhysics_Player::idPhysics_Player( void ) {
 
 	proneLegsClipModel	= new idClipModel( idTraceModel( playerProneLegsBounds ), false );
 	proneLegsClipModel->SetContents( CONTENTS_SLIDEMOVER );
+
+	headClipModel		= new idClipModel( idTraceModel( playerHeadBounds ), false );
+	headClipModel->SetContents( CONTENTS_RENDERMODEL );
 
 	shotClipModel		= NULL;
 
@@ -2778,11 +2793,17 @@ idPhysics_Player::GetClipModel
 ================
 */
 idClipModel* idPhysics_Player::GetClipModel( int id ) const {
-	if ( id == 1 ) {
-		return shotClipModel;
-	} else {
+	if ( id == 0 ) {
 		return clipModel;
+	} else if ( id == 1 ) {
+		return shotClipModel;
+	} else if ( id == 2 ) {
+		return proneLegsClipModel;
+	} else if ( id == 3 ) {
+		return headClipModel;
 	}
+
+	return NULL;
 }
 
 /*
@@ -2898,7 +2919,7 @@ bool idPhysics_Player::Evaluate( int timeStepMSec, int endTimeMSec ) {
 
 	clipModel->Link( gameLocal.clip, self, 0, current.origin, clipModel->GetAxis() );
 	shotClipModel->Link( gameLocal.clip, self, 1, current.origin, clipModel->GetAxis() );
-	if ( IsProne() ) {
+	if ( IsProne() && current.movementType == PM_NORMAL ) {
 		idVec3 legsOrg = GetProneLegsPos( current.origin, viewAngles );
 		proneLegsClipModel->Link( gameLocal.clip, self, 2, legsOrg, mat3_identity );
 	} else {
@@ -3428,3 +3449,32 @@ void idPhysics_Player::SetSelf( idEntity *e ) {
 
 	idPhysics_Actor::SetSelf( e );
 }
+
+/*
+================
+idPhysics_Player::EnableHeadClipModel
+================
+*/
+void idPhysics_Player::EnableHeadClipModel( void ) {
+	if ( headClipModel == NULL ) {
+		return;
+	}
+
+	// put the head model in its appropriate position
+	idVec3 headOrigin;
+	playerSelf->GetHeadModelCenter( headOrigin );
+
+	headClipModel->Link( gameLocal.clip, self, 3, headOrigin, mat3_identity );
+}
+
+/*
+================
+idPhysics_Player::DisableHeadClipModel
+================
+*/
+void idPhysics_Player::DisableHeadClipModel( void ) {
+	if ( headClipModel != NULL ) {
+		headClipModel->Unlink( gameLocal.clip );
+	}
+}
+

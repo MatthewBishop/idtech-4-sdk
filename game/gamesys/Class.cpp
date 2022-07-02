@@ -670,7 +670,7 @@ void idClass::CancelEvents( const idEventDef *ev ) {
 idClass::PostEventArgs
 ================
 */
-bool idClass::PostEventArgs( const idEventDef *ev, int time, int numargs, ... ) {
+bool idClass::PostEventArgs( const idEventDef *ev, int time, int numargs, bool guiEvent, ... ) {
 	idTypeInfo	*c;
 	idEvent		*event;
 	va_list		args;
@@ -687,13 +687,22 @@ bool idClass::PostEventArgs( const idEventDef *ev, int time, int numargs, ... ) 
 		return false;
 	}
 
-	va_start( args, numargs );
-	event = idEvent::Alloc( ev, numargs, args );
+	va_start( args, guiEvent );
+	event = idEvent::Alloc( ev, numargs, args, guiEvent );
 	va_end( args );
 
 	event->Schedule( this, c, time );
 
 	return true;
+}
+
+/*
+================
+idClass::PostGUIEventMS
+================
+*/
+bool idClass::PostGUIEventMS( const idEventDef *ev, int time ) {
+	return PostEventArgs( ev, time, 0, true );
 }
 
 /*
@@ -713,7 +722,7 @@ bool idClass::PostEventMS( const idEventDef *ev, int time ) {
 		}
 	}
 
-	return PostEventArgs( ev, time, 0 );
+	return PostEventArgs( ev, time, 0, false );
 }
 
 /*
@@ -722,7 +731,7 @@ idClass::PostEventMS
 ================
 */
 bool idClass::PostEventMS( const idEventDef *ev, int time, idEventArg arg1 ) {
-	return PostEventArgs( ev, time, 1, &arg1 );
+	return PostEventArgs( ev, time, 1, false, &arg1 );
 }
 
 /*
@@ -731,7 +740,7 @@ idClass::PostEventMS
 ================
 */
 bool idClass::PostEventMS( const idEventDef *ev, int time, idEventArg arg1, idEventArg arg2 ) {
-	return PostEventArgs( ev, time, 2, &arg1, &arg2 );
+	return PostEventArgs( ev, time, 2, false, &arg1, &arg2 );
 }
 
 /*
@@ -740,7 +749,7 @@ idClass::PostEventMS
 ================
 */
 bool idClass::PostEventMS( const idEventDef *ev, int time, idEventArg arg1, idEventArg arg2, idEventArg arg3 ) {
-	return PostEventArgs( ev, time, 3, &arg1, &arg2, &arg3 );
+	return PostEventArgs( ev, time, 3, false, &arg1, &arg2, &arg3 );
 }
 
 /*
@@ -749,7 +758,7 @@ idClass::PostEventMS
 ================
 */
 bool idClass::PostEventMS( const idEventDef *ev, int time, idEventArg arg1, idEventArg arg2, idEventArg arg3, idEventArg arg4 ) {
-	return PostEventArgs( ev, time, 4, &arg1, &arg2, &arg3, &arg4 );
+	return PostEventArgs( ev, time, 4, false, &arg1, &arg2, &arg3, &arg4 );
 }
 
 /*
@@ -758,7 +767,7 @@ idClass::PostEventMS
 ================
 */
 bool idClass::PostEventMS( const idEventDef *ev, int time, idEventArg arg1, idEventArg arg2, idEventArg arg3, idEventArg arg4, idEventArg arg5 ) {
-	return PostEventArgs( ev, time, 5, &arg1, &arg2, &arg3, &arg4, &arg5 );
+	return PostEventArgs( ev, time, 5, false, &arg1, &arg2, &arg3, &arg4, &arg5 );
 }
 
 /*
@@ -767,7 +776,7 @@ idClass::PostEventMS
 ================
 */
 bool idClass::PostEventMS( const idEventDef *ev, int time, idEventArg arg1, idEventArg arg2, idEventArg arg3, idEventArg arg4, idEventArg arg5, idEventArg arg6 ) {
-	return PostEventArgs( ev, time, 6, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6 );
+	return PostEventArgs( ev, time, 6, false, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6 );
 }
 
 /*
@@ -776,7 +785,7 @@ idClass::PostEventMS
 ================
 */
 bool idClass::PostEventMS( const idEventDef *ev, int time, idEventArg arg1, idEventArg arg2, idEventArg arg3, idEventArg arg4, idEventArg arg5, idEventArg arg6, idEventArg arg7 ) {
-	return PostEventArgs( ev, time, 7, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7 );
+	return PostEventArgs( ev, time, 7, false, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7 );
 }
 
 /*
@@ -785,7 +794,7 @@ idClass::PostEventMS
 ================
 */
 bool idClass::PostEventMS( const idEventDef *ev, int time, idEventArg arg1, idEventArg arg2, idEventArg arg3, idEventArg arg4, idEventArg arg5, idEventArg arg6, idEventArg arg7, idEventArg arg8 ) {
-	return PostEventArgs( ev, time, 8, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7, &arg8 );
+	return PostEventArgs( ev, time, 8, false, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7, &arg8 );
 }
 
 /*
@@ -794,7 +803,7 @@ idClass::PostEventSec
 ================
 */
 bool idClass::PostEventSec( const idEventDef *ev, float time ) {
-	return PostEventArgs( ev, SEC2MS( time ), 0 );
+	return PostEventArgs( ev, SEC2MS( time ), 0, false );
 }
 
 /*
@@ -803,7 +812,7 @@ idClass::PostEventSec
 ================
 */
 bool idClass::PostEventSec( const idEventDef *ev, float time, idEventArg arg1 ) {
-	return PostEventArgs( ev, SEC2MS( time ), 1, &arg1 );
+	return PostEventArgs( ev, SEC2MS( time ), 1, false, &arg1 );
 }
 
 /*
@@ -812,7 +821,7 @@ idClass::PostEventSec
 ================
 */
 bool idClass::PostEventSec( const idEventDef *ev, float time, idEventArg arg1, idEventArg arg2 ) {
-	return PostEventArgs( ev, SEC2MS( time ), 2, &arg1, &arg2 );
+	return PostEventArgs( ev, SEC2MS( time ), 2, false, &arg1, &arg2 );
 }
 
 /*
@@ -821,7 +830,7 @@ idClass::PostEventSec
 ================
 */
 bool idClass::PostEventSec( const idEventDef *ev, float time, idEventArg arg1, idEventArg arg2, idEventArg arg3 ) {
-	return PostEventArgs( ev, SEC2MS( time ), 3, &arg1, &arg2, &arg3 );
+	return PostEventArgs( ev, SEC2MS( time ), 3, false, &arg1, &arg2, &arg3 );
 }
 
 /*
@@ -830,7 +839,7 @@ idClass::PostEventSec
 ================
 */
 bool idClass::PostEventSec( const idEventDef *ev, float time, idEventArg arg1, idEventArg arg2, idEventArg arg3, idEventArg arg4 ) {
-	return PostEventArgs( ev, SEC2MS( time ), 4, &arg1, &arg2, &arg3, &arg4 );
+	return PostEventArgs( ev, SEC2MS( time ), 4, false, &arg1, &arg2, &arg3, &arg4 );
 }
 
 /*
@@ -839,7 +848,7 @@ idClass::PostEventSec
 ================
 */
 bool idClass::PostEventSec( const idEventDef *ev, float time, idEventArg arg1, idEventArg arg2, idEventArg arg3, idEventArg arg4, idEventArg arg5 ) {
-	return PostEventArgs( ev, SEC2MS( time ), 5, &arg1, &arg2, &arg3, &arg4, &arg5 );
+	return PostEventArgs( ev, SEC2MS( time ), 5, false, &arg1, &arg2, &arg3, &arg4, &arg5 );
 }
 
 /*
@@ -848,7 +857,7 @@ idClass::PostEventSec
 ================
 */
 bool idClass::PostEventSec( const idEventDef *ev, float time, idEventArg arg1, idEventArg arg2, idEventArg arg3, idEventArg arg4, idEventArg arg5, idEventArg arg6 ) {
-	return PostEventArgs( ev, SEC2MS( time ), 6, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6 );
+	return PostEventArgs( ev, SEC2MS( time ), 6, false, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6 );
 }
 
 /*
@@ -857,7 +866,7 @@ idClass::PostEventSec
 ================
 */
 bool idClass::PostEventSec( const idEventDef *ev, float time, idEventArg arg1, idEventArg arg2, idEventArg arg3, idEventArg arg4, idEventArg arg5, idEventArg arg6, idEventArg arg7 ) {
-	return PostEventArgs( ev, SEC2MS( time ), 7, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7 );
+	return PostEventArgs( ev, SEC2MS( time ), 7, false, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7 );
 }
 
 /*
@@ -866,7 +875,7 @@ idClass::PostEventSec
 ================
 */
 bool idClass::PostEventSec( const idEventDef *ev, float time, idEventArg arg1, idEventArg arg2, idEventArg arg3, idEventArg arg4, idEventArg arg5, idEventArg arg6, idEventArg arg7, idEventArg arg8 ) {
-	return PostEventArgs( ev, SEC2MS( time ), 8, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7, &arg8 );
+	return PostEventArgs( ev, SEC2MS( time ), 8, false, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7, &arg8 );
 }
 
 /*

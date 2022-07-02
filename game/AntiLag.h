@@ -127,7 +127,7 @@ public:
 	}
 
 	virtual void		Create();
-	void				Destroy();
+	virtual void		Destroy();
 
 	virtual void		Reset();
 	void				Init( const idEntity* self );
@@ -172,8 +172,12 @@ protected:
 class sdAntiLagPlayer : public sdAntiLagEntity {
 public:
 	virtual void		Create();
+	virtual void		Destroy();
 
 	void				Trace( trace_t& result, const idVec3& start, const idVec3& end, int shooterIndex );
+
+protected:
+	sdAntiLagSetPlayer	playerSets[ MAX_ANTILAG_SETS ];
 };
 
 /*

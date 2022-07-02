@@ -280,7 +280,6 @@ public:
 	void							Init( void );
 	void							Shutdown( void );
 	void							SetFixedBlocks( int numBlocks ) {}
-	void							SetLockMemory( bool lock ) {}
 	void							FreeEmptyBaseBlocks( void ) {}
 
 	type *							Alloc( const size_t num );
@@ -420,7 +419,6 @@ public:
 	void							Init( void );
 	void							Shutdown( void );
 	void							SetFixedBlocks( int numBlocks );
-	void							SetLockMemory( bool lock );
 	void							FreeEmptyBaseBlocks( void );
 
 	type *							Alloc( const size_t num );
@@ -441,7 +439,6 @@ private:
 	idDynamicBlock<type> *			lastBlock;				// last block in list in order of increasing address
 	idBTree<idDynamicBlock<type>,int,4>freeTree;			// B-Tree with free memory blocks
 	bool							allowAllocs;			// allow base block allocations
-	bool							lockMemory;				// lock memory so it cannot get swapped out
 	sdLock							lock;					// lock for thread safe memory allocation
 
 #ifdef DYNAMIC_BLOCK_ALLOC_CHECK
@@ -496,9 +493,6 @@ void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, threadSafe>::Shutdow
 	for ( block = firstBlock; block != NULL; block = firstBlock ) {
 		firstBlock = block->next;
 		assert( block->IsBaseBlock() );
-		if ( lockMemory ) {
-			idLib::sys->UnlockMemory( block, block->GetSize() + sizeof( idDynamicBlock<type> ) );
-		}
 		Mem_FreeAligned( block );
 	}
 
@@ -513,9 +507,6 @@ void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, threadSafe>::SetFixe
 
 	for ( int i = numBaseBlocks; i < numBlocks; i++ ) {
 		block = ( idDynamicBlock<type> * ) Mem_AllocAligned( baseBlockSize, ALIGN_16 );
-		if ( lockMemory ) {
-			idLib::sys->LockMemory( block, baseBlockSize );
-		}
 #ifdef DYNAMIC_BLOCK_ALLOC_CHECK
 		memcpy( block->id, blockId, sizeof( block->id ) );
 		block->allocator = (void*)this;
@@ -541,11 +532,6 @@ void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, threadSafe>::SetFixe
 }
 
 template<class type, int baseBlockSize, int minBlockSize, bool threadSafe>
-void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, threadSafe>::SetLockMemory( bool lock ) {
-	lockMemory = lock;
-}
-
-template<class type, int baseBlockSize, int minBlockSize, bool threadSafe>
 void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, threadSafe>::FreeEmptyBaseBlocks( void ) {
 	idDynamicBlock<type> *block, *next;
 
@@ -563,9 +549,6 @@ void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, threadSafe>::FreeEmp
 				block->next->prev = block->prev;
 			} else {
 				lastBlock = block->prev;
-			}
-			if ( lockMemory ) {
-				idLib::sys->UnlockMemory( block, block->GetSize() + sizeof( idDynamicBlock<type> ) );
 			}
 			numBaseBlocks--;
 			baseBlockMemory -= block->GetSize() + sizeof( idDynamicBlock<type> );
@@ -725,7 +708,6 @@ template<class type, int baseBlockSize, int minBlockSize, bool threadSafe>
 void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, threadSafe>::Clear( void ) {
 	firstBlock = lastBlock = NULL;
 	allowAllocs = true;
-	lockMemory = false;
 	numBaseBlocks = 0;
 	baseBlockMemory = 0;
 	numUsedBlocks = 0;
@@ -760,9 +742,6 @@ idDynamicBlock<type> *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, thr
 	} else if ( allowAllocs ) {
 		int allocSize = Max( baseBlockSize, alignedBytes + static_cast< int >( sizeof( idDynamicBlock<type> ) ) );
 		block = ( idDynamicBlock<type> * ) Mem_AllocAligned( allocSize, ALIGN_16 );
-		if ( lockMemory ) {
-			idLib::sys->LockMemory( block, baseBlockSize );
-		}
 #ifdef DYNAMIC_BLOCK_ALLOC_CHECK
 		memcpy( block->id, blockId, sizeof( block->id ) );
 		block->allocator = (void*)this;

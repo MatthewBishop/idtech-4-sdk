@@ -64,7 +64,7 @@ enum playerVehicleTypes_t {	//mal: keep adding more as we support them!
 #define APT								8
 #define AVT								16
 #define RADAR							32
-#define AIT					64
+#define AIT								64
 
 //mal: vehicles can have multiple flags ( ex: icarus can be a personal vehicle, as well as an air one, trojan can be a big ground, and a water ).
 #define NO_VEHICLE						-1
@@ -84,8 +84,14 @@ enum playerVehicleTypes_t {	//mal: keep adding more as we support them!
 #define BOT_SKILL_EASY		0
 #define BOT_SKILL_NORMAL	1
 #define BOT_SKILL_EXPERT	2
+#define BOT_SKILL_DEMO		3
+
 
 #define LOW_SKILL_BOT_HEALTH	60
+
+
+#define MISSION_NULL		-1
+#define MISSION_OBJ			-2
 
 enum playerTeamTypes_t {
     NOTEAM = -1,			 // spectator
@@ -234,7 +240,9 @@ enum botChatTypes_t {
 	CONTEXT_KILL_TARGET,
 	CONTEXT_REPAIR_TARGET,
 	CONTEXT_DO_OBJECTIVE,
-	TK_REVIVE_CHAT
+	TK_REVIVE_CHAT,
+	WILL_FIX_RIDE,
+	STOP_WILL_FIX_RIDE
 };
 
 #endif /* !__BOT_COMMON_H__ */

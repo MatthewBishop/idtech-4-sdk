@@ -327,7 +327,7 @@ void sdGameRulesObjective::SetWinner( sdTeamInfo* team ) {
 
 	winningTeam = team;
 	if( gameLocal.DoClientSideStuff() ) {
-		UpdateClientFromServerInfo( gameLocal.serverInfo, true );
+		UpdateClientFromServerInfo( gameLocal.serverInfo, false );
 	}
 }
 
@@ -338,7 +338,7 @@ sdGameRulesObjective::ChangeMap
 */
 bool sdGameRulesObjective::ChangeMap( const char* mapName ) {
 	idStr cleanMapName = mapName;
-	SanitizeMapName( cleanMapName, true );
+	sdGameRules_SingleMapHelper::SanitizeMapName( cleanMapName, true );
 
 	idStr sessionCommand = va( "usermap %s", cleanMapName.c_str() );
 	cmdSystem->PushFrameCommand( sessionCommand.c_str() );
@@ -349,11 +349,9 @@ bool sdGameRulesObjective::ChangeMap( const char* mapName ) {
 ================
 sdGameRulesObjective::OnUserStartMap
 ================
-*/
-bool sdGameRulesObjective::OnUserStartMap( const char* text, idStr& reason, idStr& mapName ) {
-	mapName = text;
-	SanitizeMapName( mapName, true );
-	return true;
+*/	
+userMapChangeResult_e sdGameRulesObjective::OnUserStartMap( const char* text, idStr& reason, idStr& mapName ) {
+	return sdGameRules_SingleMapHelper::OnUserStartMap( text, reason, mapName );
 }
 
 /*
@@ -393,7 +391,7 @@ sdGameRulesObjective::ArgCompletion_StartGame
 ================
 */
 void sdGameRulesObjective::ArgCompletion_StartGame( const idCmdArgs& args, argCompletionCallback_t callback ) {
-	idCmdSystem::ArgCompletion_EntitiesName( args, callback );
+	sdGameRules_SingleMapHelper::ArgCompletion_StartGame( args, callback );
 }
 
 /*
@@ -421,7 +419,8 @@ void sdGameRulesObjective::UpdateClientFromServerInfo( const idDict& serverInfo,
 			
 			// setup the backdrop
 			if ( sdProperty* property = scope->GetProperty( "backdrop", PT_STRING ) ) {
-				*property->value.stringValue = mapInfo->GetData().GetString( "mtr_backdrop", "guis/assets/black" );
+				const char* value = mapInfo->GetData().GetString( "mtr_backdrop", "guis/assets/black" );
+				*property->value.stringValue = value;
 			}
 
 			const char* status = "current";
@@ -442,6 +441,10 @@ void sdGameRulesObjective::UpdateClientFromServerInfo( const idDict& serverInfo,
 			*property->value.floatValue = 1.0f;
 		}
 
+		if ( sdProperty* property = scope->GetProperty( "currentMap", PT_FLOAT ) ) {
+			*property->value.floatValue = 1.0f;
+		}
+
 		// setup the status
 		if ( sdProperty* property = scope->GetProperty( "ruleStatus", PT_WSTRING ) ) {
 			*property->value.wstringValue = L"";
@@ -457,4 +460,19 @@ sdGameRulesObjective::Clear
 void sdGameRulesObjective::Clear( void ) {
 	sdGameRules::Clear();
 	winningTeam = NULL;
+}
+
+/*
+============
+sdGameRulesObjective::GetServerBrowserScore
+============
+*/
+int sdGameRulesObjective::GetServerBrowserScore( const sdNetSession& session ) const {
+	int score = 0;
+
+	score += sdHotServerList::BROWSER_GOOD_BONUS - 1;
+
+	score += sdGameRules::GetServerBrowserScore( session );
+
+	return score;
 }

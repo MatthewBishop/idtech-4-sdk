@@ -34,6 +34,7 @@ public:
 	virtual const idVec4 &				GetVec4Value( idVec4 &temp ) { assert( false ); return vec4_zero; }
 
 	virtual void						OnSnapshotHitch( int delta ) {}
+	virtual void						OnOnChangedOverflow( void ) = 0;
 
 	static sdUIExpression*				AllocIntExpression( sdUserInterfaceScope* scope, const char* text );
 	static sdUIExpression*				AllocFloatExpression( sdUserInterfaceScope* scope, const char* text );
@@ -42,6 +43,13 @@ public:
 	static sdUIExpression*				AllocSingleParmExpression( sdProperties::ePropertyType type, sdUserInterfaceScope* scope, const char* text );
 	static sdUIExpression*				AllocFunctionExpression( const char* functionName, sdUIFunctionInstance* function, sdUserInterfaceScope* scope, idLexer* src );
 	static sdUIExpression*				AllocTransition( sdProperties::ePropertyType type, sdUserInterfaceScope* scope, idLexer* src );
+
+	static void							IncActiveOnChangeHandlers( sdUIExpression* expression );
+	static void							DecActiveOnChangeHandlers( void );
+
+private:
+	static const int					MAX_ACTIVE_ONCHANGED_HANDLERS = 256;
+	static idStaticList< sdUIExpression*, MAX_ACTIVE_ONCHANGED_HANDLERS > activeOnChangedHandlers;
 };
 
 template< typename T, sdProperties::ePropertyType TYPE, int COUNT >
@@ -49,6 +57,8 @@ class sdUITransition : public sdUIExpression {
 public:
 										sdUITransition( sdUserInterfaceScope* scope, idStrList& list );
 	virtual								~sdUITransition( void );
+
+	virtual void						OnOnChangedOverflow( void ) { ; }
 
 	virtual void						InputChanged( void ) { assert( false ); }
 	virtual bool						UpdateValue( void );
@@ -193,6 +203,8 @@ public:
 	virtual void						Detach( void ) {}
 	virtual sdProperties::ePropertyType	GetType( void ) const { return function->GetFunctionInfo()->GetReturnType(); }
 
+	virtual void						OnOnChangedOverflow( void ) { ; }
+
 	virtual int							GetIntValue( void );
 	virtual float						GetFloatValue( void );
 	virtual const idStr	&				GetStringValue( idStr &temp );
@@ -291,6 +303,7 @@ private:
 	int								ParseExpressionPriority( idLexer *src, int priority, const char* delimiter, sdUserInterfaceScope* scope );
 	void							EvaluateRegisters( void );
 	void							Update( void );
+	virtual void					OnOnChangedOverflow( void ) { outputExpression->OnOnChangedOverflow(); }
 
 	typedef struct expressionRegister_s {
 		float						value;
@@ -428,6 +441,7 @@ public:
 
 	virtual void						InputChanged( void );
 	virtual void						Free( void ) { delete this; }
+	virtual void						OnOnChangedOverflow( void ) { outputExpression->OnOnChangedOverflow(); }
 
 	bool IsConstant( void ) const {
 		return symbols.Num() == 0;
@@ -505,10 +519,11 @@ public:																																																								\
 	virtual void						Attach( sdUIExpression* output ) { assert( !callbackHandle.IsValid() ); outputExpression = output; callbackHandle = inputProperty->value.VALUENAME->AddOnChangeHandler( sdFunctions::sdBindMem0< void, const TYPE&, const TYPE&, sdFunctions::sdEmptyType >( &sdSingleParmExpression##TYPENAME::OnChanged, this ) ); }				\
 	virtual void						Detach( void ) { if( callbackHandle.IsValid() ) { inputProperty->value.VALUENAME->RemoveOnChangeHandler( callbackHandle ); }}																		\
 	virtual sdProperties::ePropertyType GetType( void ) const { return VALUETYPE; }																													\
-	void								OnChanged( const TYPE& oldValue, const TYPE& newValue ) { assert( outputExpression ); outputExpression->InputChanged(); }									\
+	void								OnChanged( const TYPE& oldValue, const TYPE& newValue ) { IncActiveOnChangeHandlers( this ); assert( outputExpression ); outputExpression->InputChanged(); DecActiveOnChangeHandlers(); }					\
 	virtual TYPE						Get##TYPENAME##Value( void ) { assert( inputProperty->GetValueType() == VALUETYPE ); return inputProperty->value.VALUENAME->GetValue(); }					\
 	virtual void						InputChanged( void ) { assert( false ); }																													\
 	virtual void						Free( void ) { delete this; }																																\
+	virtual void						OnOnChangedOverflow( void ) { outputExpression->OnOnChangedOverflow(); }																					\
 																																																	\
 private:																																															\
 	sdProperties::sdProperty*			inputProperty;																																				\
@@ -529,10 +544,11 @@ public:																																																								\
 	virtual void						Attach( sdUIExpression* output ) { assert( !callbackHandle.IsValid() ); outputExpression = output; callbackHandle = inputProperty->value.VALUENAME->AddOnChangeHandler( sdFunctions::sdBindMem0< void, const TYPE&, const TYPE&, sdFunctions::sdEmptyType >( &sdSingleParmExpression##TYPENAME::OnChanged, this ) ); }				\
 	virtual void						Detach( void ) { if( callbackHandle.IsValid() ) { inputProperty->value.VALUENAME->RemoveOnChangeHandler( callbackHandle ); }}																		\
 	virtual sdProperties::ePropertyType GetType( void ) const { return VALUETYPE; }																													\
-	void								OnChanged( const TYPE& oldValue, const TYPE& newValue ) { assert( outputExpression ); outputExpression->InputChanged(); }									\
+	void								OnChanged( const TYPE& oldValue, const TYPE& newValue ) { IncActiveOnChangeHandlers( this ); assert( outputExpression ); outputExpression->InputChanged(); DecActiveOnChangeHandlers(); }									\
 	virtual const TYPE	&				Get##TYPENAME##Value( TYPE& temp ) { assert( inputProperty->GetValueType() == VALUETYPE ); return inputProperty->value.VALUENAME->GetValue(); }				\
 	virtual void						InputChanged( void ) { assert( false ); }																													\
 	virtual void						Free( void ) { delete this; }																																\
+	virtual void						OnOnChangedOverflow( void ) { outputExpression->OnOnChangedOverflow(); }																					\
 																																																	\
 private:																																															\
 	sdProperties::sdProperty*			inputProperty;																																				\
@@ -548,28 +564,28 @@ UI_SINGLEPARM_EXPRESSION_REF( Vec4,		idVec4, vec4Value,		sdProperties::PT_VEC4	)
 UI_SINGLEPARM_EXPRESSION_REF( String,	idStr,	stringValue,	sdProperties::PT_STRING	)
 UI_SINGLEPARM_EXPRESSION_REF( WString,	idWStr,	wstringValue,	sdProperties::PT_WSTRING)
 
-#define UI_SINGLEPARM_EXPRESSION_FIELD( TYPENAME, TYPE, VALUENAME, VALUETYPE )																																				\
-	extern const char sdSingleParmExpression##TYPENAME##_Identifier[];\
-class sdSingleParmExpressionField##TYPENAME :																																												\
-	public sdUIExpression,																																																	\
-	public sdPoolAllocator< sdSingleParmExpressionField##TYPENAME, sdSingleParmExpression##TYPENAME##_Identifier, 1024 > {																																																	\
-public:																																																																	\
-	typedef sdPoolAllocator< sdSingleParmExpressionField##TYPENAME, sdSingleParmExpression##TYPENAME##_Identifier, 1024 > allocator_t;																						\
-	SD_DISAMBIGUATE_POOL_ALLOCATOR( allocator_t )																							\
+#define UI_SINGLEPARM_EXPRESSION_FIELD( TYPENAME, TYPE, VALUENAME, VALUETYPE )																																							\
+	extern const char sdSingleParmExpression##TYPENAME##_Identifier[];																																									\
+class sdSingleParmExpressionField##TYPENAME :																																															\
+	public sdUIExpression,																																																				\
+	public sdPoolAllocator< sdSingleParmExpressionField##TYPENAME, sdSingleParmExpression##TYPENAME##_Identifier, 1024 > {																												\
+public:																																																									\
+	typedef sdPoolAllocator< sdSingleParmExpressionField##TYPENAME, sdSingleParmExpression##TYPENAME##_Identifier, 1024 > allocator_t;																									\
+	SD_DISAMBIGUATE_POOL_ALLOCATOR( allocator_t )																																														\
 										sdSingleParmExpressionField##TYPENAME( sdProperties::sdProperty* input, int index ) { assert( !callbackHandle.IsValid() ); inputIndex = index; inputProperty = input; outputExpression = NULL; }\
 	virtual								~sdSingleParmExpressionField##TYPENAME( void ) { Detach(); }																																	\
 	virtual void						Attach( sdUIExpression* output ) { assert( !callbackHandle.IsValid() ); outputExpression = output; callbackHandle = inputProperty->value.VALUENAME->AddOnChangeHandler( sdFunctions::sdBindMem0< void, const TYPE&, const TYPE&, sdFunctions::sdEmptyType >( &sdSingleParmExpressionField##TYPENAME::OnChanged, this )); }								\
-	virtual void						Detach( void ) { if( callbackHandle.IsValid() ) { inputProperty->value.VALUENAME->RemoveOnChangeHandler( callbackHandle ); }}																			\
-	virtual sdProperties::ePropertyType GetType( void ) const { return VALUETYPE; }																													\
-	void								OnChanged( const TYPE& oldValue, const TYPE& newValue ) { assert( outputExpression ); outputExpression->InputChanged(); }									\
-	virtual float						GetFloatValue( void ) { assert( inputProperty->GetValueType() == VALUETYPE ); return inputProperty->value.VALUENAME->GetValue()[ inputIndex ]; }									\
+	virtual void						Detach( void ) { if( callbackHandle.IsValid() ) { inputProperty->value.VALUENAME->RemoveOnChangeHandler( callbackHandle ); }}																	\
+	virtual sdProperties::ePropertyType GetType( void ) const { return VALUETYPE; }																																						\
+	void								OnChanged( const TYPE& oldValue, const TYPE& newValue ) { IncActiveOnChangeHandlers( this ); assert( outputExpression ); outputExpression->InputChanged(); DecActiveOnChangeHandlers(); }		\
+	virtual float						GetFloatValue( void ) { assert( inputProperty->GetValueType() == VALUETYPE ); return inputProperty->value.VALUENAME->GetValue()[ inputIndex ]; }			\
 	virtual void						InputChanged( void ) { assert( false ); }																													\
-	virtual void						Free( void ) { delete this; }																													\
-																																																									\
-private:																																																							\
-	sdProperties::sdProperty*			inputProperty;																																		\
-	int									inputIndex;																																			\
-	sdUIExpression*						outputExpression;																																	\
+	virtual void						Free( void ) { delete this; }																																\
+	virtual void						OnOnChangedOverflow( void ) { outputExpression->OnOnChangedOverflow(); }																					\
+private:																																															\
+	sdProperties::sdProperty*			inputProperty;																																				\
+	int									inputIndex;																																					\
+	sdUIExpression*						outputExpression;																																			\
 	sdProperties::CallbackHandle		callbackHandle;																																				\
 };
 
@@ -593,6 +609,8 @@ public:																															\
 		return new sdConstParmExpression##TYPENAME( inputValue );																\
 	}																															\
 																																\
+	virtual void OnOnChangedOverflow( void ) {																					\
+	}																															\
 	virtual void						Free( void ) { delete this; }															\
 																																\
 	virtual void						Attach( sdUIExpression* output ) { }													\
@@ -621,6 +639,8 @@ public:																															\
 		return new sdConstParmExpression##TYPENAME( inputValue );																\
 	}																															\
 																																\
+	virtual void OnOnChangedOverflow( void ) {																					\
+	}																															\
 	virtual void						Free( void ) { delete this; }															\
 																																\
 	virtual void						Attach( sdUIExpression* output ) { }													\
@@ -664,6 +684,8 @@ public:																															\
 		return linearList[ index ];																								\
 	}																															\
 																																\
+	virtual void OnOnChangedOverflow( void ) {																					\
+	}																															\
 	static void	DeAlloc( sdConstParmExpression##TYPENAME* value ) {																\
 		int index = linearList.FindIndex( value );																				\
 		assert( index != -1 );																									\
@@ -724,6 +746,8 @@ public:																															\
 		return linearList[ index ];																								\
 	}																															\
 																																\
+	virtual void OnOnChangedOverflow( void ) {																					\
+	}																															\
 	static void	DeAlloc( sdConstParmExpression##TYPENAME* value ) {																\
 		int index = linearList.FindIndex( value );																				\
 		assert( index != -1 );																									\
@@ -742,7 +766,7 @@ public:																															\
 	virtual void						Attach( sdUIExpression* output ) { }													\
 	virtual void						Detach( void ) { }																		\
 	virtual sdProperties::ePropertyType GetType( void ) const { return VALUETYPE; }												\
-	virtual const TYPE &				Get##TYPENAME##Value( TYPE &temp ) { return value; }										\
+	virtual const TYPE &				Get##TYPENAME##Value( TYPE &temp ) { return value; }									\
 	virtual void						InputChanged( void ) { assert( false ); }												\
 																																\
 private:																														\
@@ -790,6 +814,8 @@ public:
 	virtual void						Attach( sdUIExpression* ) { assert( false ); }
 	virtual void						Detach( void );
 	virtual void						InputChanged( void );
+
+	virtual void						OnOnChangedOverflow( void );
 
 	virtual void						Update( void );
 	virtual void						Free( void ) { delete this; }
@@ -926,6 +952,7 @@ public:																																														\
 	virtual void														InputChanged( void ) { outputExpression->InputChanged(); }															\
 	virtual void														Attach( sdUIExpression* expression ) { sdUIEvaluator::Attach( expression ); }										\
 	virtual void														Free( void ) { delete this; }																						\
+	virtual void														OnOnChangedOverflow( void ) { outputExpression->OnOnChangedOverflow(); }																					\
 protected:																																													\
 	TYPE																value;																												\
 };
@@ -943,6 +970,7 @@ public:																																														\
 	virtual void														InputChanged( void ) { outputExpression->InputChanged(); }															\
 	virtual void														Attach( sdUIExpression* expression ) { sdUIEvaluator::Attach( expression ); }										\
 	virtual void														Free( void ) { delete this; }																						\
+	virtual void														OnOnChangedOverflow( void ) { outputExpression->OnOnChangedOverflow(); }																					\
 protected:																																													\
 	TYPE																value;																												\
 };

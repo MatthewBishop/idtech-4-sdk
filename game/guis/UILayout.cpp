@@ -151,6 +151,24 @@ void sdUILayout_Static::Draw() {
 	}
 }
 
+/*
+============
+sdUILayout_Static::FinalDraw
+============
+*/
+void sdUILayout_Static::FinalDraw() {
+	if( !visible ) {
+		return;
+	}
+
+	sdUIObject* child = GetNode().GetChild();
+	while( child != NULL ) {
+		if( sdUIObject_Drawable* window = child->Cast< sdUIObject_Drawable >() ) {
+			window->FinalDraw();
+		}
+		child = child->GetNode().GetSibling();
+	}
+}
 
 /*
 ============
@@ -356,6 +374,34 @@ void sdUILayout_StaticBase::Draw() {
 
 /*
 ============
+sdUILayout_StaticBase::FinalDraw
+============
+*/
+void sdUILayout_StaticBase::FinalDraw() {
+	if( !TestFlag( VLF_DRAW_REVERSED ) ) {
+		sdUILayout_Static::FinalDraw();
+		return;
+	}
+
+	sdUIObject* prev = NULL;
+	sdUIObject* child = GetNode().GetChild();
+	while( child != NULL ) {
+		prev = child;
+		child = child->GetNode().GetSibling();
+	}
+
+	child = prev;
+
+	while( child != NULL ) {
+		if( sdUIObject_Drawable* window = child->Cast< sdUIObject_Drawable >() ) {
+			window->FinalDraw();
+		}
+		child = child->GetNode().GetPriorSibling();
+	}
+}
+
+/*
+============
 sdUILayout_StaticBase::PostEvent
 ============
 */
@@ -428,9 +474,6 @@ void sdUILayout_Static::MakeLayoutDirty() {
 	recalculateLayout = true;
 	MakeLayoutDirty_r( this );
 }
-
-
-
 
 SD_UI_IMPLEMENT_CLASS( sdUILayout_Vertical, sdUILayout_StaticBase )
 

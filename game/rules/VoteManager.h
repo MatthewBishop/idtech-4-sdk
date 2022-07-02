@@ -24,6 +24,7 @@ enum voteId_t {
 	VI_FIRETEAM_PROPOSE,
 	VI_FIRETEAM_INVITE,
 	VI_DRIVER_BACKUP,
+	VI_SWITCH_TEAM,
 };
 
 class sdCallVote {
@@ -228,9 +229,11 @@ public:
 	void										FreeVotes( void );
 	sdPlayerVote*								GetActiveVote( idPlayer* p );
 
+	void										CancelVote( sdPlayerVote* vote );
 	void										CancelVote( voteId_t id, idEntity* object );
 	void										CancelFireTeamVotesForPlayer( idPlayer *player );
 	sdPlayerVote*								FindVote( voteId_t id, idEntity* object );
+	sdPlayerVote*								FindVote( voteId_t id );
 
 	static void									CreateCallVoteList( sdUIList* list);
 	static void									CreateCallVoteOptionList( sdUIList* list );

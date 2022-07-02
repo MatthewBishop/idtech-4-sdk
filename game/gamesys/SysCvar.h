@@ -22,6 +22,7 @@ extern idCVar	si_minPlayers;
 extern idCVar	si_spectators;
 extern idCVar	si_rules;
 extern idCVar	si_noProficiency;
+extern idCVar	si_serverURL;
 
 
 extern idCVar	r_aspectRatio;
@@ -64,7 +65,6 @@ extern idCVar	g_showActiveEntities;
 extern idCVar	g_debugMask;
 extern idCVar	g_debugLocations;
 extern idCVar	g_showActiveDeployZones;
-
 
 extern idCVar	g_disableVehicleSpawns;
 
@@ -210,6 +210,7 @@ extern idCVar	pm_slidevelocity;
 extern idCVar	pm_powerslide;
 
 extern idCVar	g_showPlayerArrows;
+extern idCVar	g_showPlayerClassIcon;
 
 extern idCVar	g_showPlayerShadow;
 extern idCVar	g_showHud;
@@ -363,6 +364,9 @@ extern idCVar	bot_useAltRoutes;
 extern idCVar	bot_useRearSpawn;
 extern idCVar	bot_sleepWhenServerEmpty;
 extern idCVar	bot_allowClassChanges;
+extern idCVar	bot_pauseInVehicleTime;
+extern idCVar	bot_doObjsInTrainingMode;
+extern idCVar	bot_doObjsDelayTimeInMins;
 
 extern idCVar	g_showCrosshairInfo;
 extern idCVar	g_bannerDelay;
@@ -418,5 +422,34 @@ extern idCVar	g_useBotsInPlayerTotal;
 
 extern idCVar	g_playTooltipSound;
 extern idCVar	g_tooltipTimeScale;
+extern idCVar	g_tooltipVolumeScale;
+extern idCVar	g_allowSpecPauseFreeFly;
+extern idCVar	g_smartTeamBalance;
+extern idCVar	g_smartTeamBalanceReward;
+
+extern idCVar	g_keepFireTeamList;
+
+extern idCVar	net_serverDownload;
+extern idCVar	net_serverDlBaseURL;
+extern idCVar	net_serverDlTable;
+
+#ifdef SD_SUPPORT_REPEATER
+
+extern idCVar	ri_useViewerPass;
+extern idCVar	g_viewerPassword;
+
+extern idCVar	ri_privateViewers;
+extern idCVar	g_privateViewerPassword;
+extern idCVar	g_repeaterPassword;
+
+extern idCVar	ri_name;
+
+extern idCVar	g_noTVChat;
+
+#endif // SD_SUPPORT_REPEATER
+
+extern idCVar	g_trainingMode;
+
+extern idCVar	g_noQuickChats;
 
 #endif /* !__SYS_CVAR_H__ */

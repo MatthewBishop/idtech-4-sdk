@@ -71,7 +71,7 @@ byte *idBitMsg::GetByteSpace( int length ) {
 	WriteByteAlign();
 
 	// check for overflow
-	CheckOverflow( length );
+	CheckOverflow( length << 3 );
 
 	ptr = writeData + curSize;
 	curSize += length;
@@ -109,7 +109,7 @@ void idBitMsg::WriteBits( int value, int numBits ) {
 	// http://www.doom3world.org/phpbb2/viewtopic.php?t=17968
 
 #ifdef ID_RELEASE_TEST
-	// temp verbosy version dumping stack traces so I can track and fix the fucking thing
+	// temp verbose version dumping stack traces so I can track and fix it
 	static int last_dump = 0;
 	int now = idLib::sys->Milliseconds();
 	if ( numBits != 32 ) {

@@ -25,12 +25,12 @@ static char THIS_FILE[] = __FILE__;
 ===============================================================================
 */
 
-extern const idEventDef EV_SetEnemy;
 extern const idEventDef EV_GetEnemy;
 
 const idEventDef EV_Turret_SetDisabled( "setDisabled", '\0', DOC_TEXT( "Sets whether the turret is disabled or not." ), 1, NULL, "b", "state", "Whether the turret is disabled." );
 const idEventDef EV_Turret_IsDisabled( "isDisabled", 'b', DOC_TEXT( "Returns whether the turret is disabled." ), 0, NULL );
 const idEventDef EV_Turret_GetTargetPosition( "getTargetPosition", 'v', DOC_TEXT( "Returns the position in world space where the turret would target the specified entity." ), 1, NULL, "e", "target", "Entity to check the target position of." );
+const idEventDef EV_Turret_SetEnemy( "setTurretEnemy", '\0', DOC_TEXT( "Sets the target entity for this object." ), 2, NULL, "E", "target", "New target to set.", "f", "startTurn", "Delay before aiming at target." );
 
 CLASS_DECLARATION( sdScriptEntity, sdDefenceTurret )
 	EVENT( EV_Turret_SetDisabled,			sdDefenceTurret::Event_SetDisabled )
@@ -39,7 +39,7 @@ CLASS_DECLARATION( sdScriptEntity, sdDefenceTurret )
 	EVENT( EV_Turret_GetTargetPosition,		sdDefenceTurret::Event_GetTargetPosition )
 
 	EVENT( EV_GetEnemy,						sdDefenceTurret::Event_GetEnemy )
-	EVENT( EV_SetEnemy,						sdDefenceTurret::Event_SetEnemy )
+	EVENT( EV_Turret_SetEnemy,				sdDefenceTurret::Event_SetEnemy )
 END_CLASS
 
 /*
@@ -56,6 +56,7 @@ sdDefenceTurret::sdDefenceTurret( void ) : nextTargetAcquireTime( 0 ) {
 	deployableType			= NULL_DEPLOYABLE;
 
 	acquireWaitTime			= SEC2MS( 0.5f );
+	startTurn				= 0;
 }
 
 /*
@@ -164,7 +165,9 @@ void sdDefenceTurret::PostThink( void ) {
 
 	if ( !turretFlags.disabled ) {
 		UpdateTarget();
-		aimer.Update();
+		if ( gameLocal.time >= startTurn ) {
+			aimer.Update();
+		}
 	}
 }
 
@@ -369,7 +372,7 @@ void sdDefenceTurret::SetTargetEntity( idEntity* entity ) {
 	if ( gameLocal.isServer ) {
 		sdEntityBroadcastEvent msg( this, EVENT_SETTARGET );
 		msg.WriteLong( gameLocal.GetSpawnId( entity ) );
-		msg.Send( true, true );
+		msg.Send( true, sdReliableMessageClientInfoAll() );
 	}
 
 	target = entity;
@@ -561,11 +564,12 @@ void sdDefenceTurret::Event_GetEnemy( void ) {
 sdDefenceTurret::Event_SetEnemy
 ================
 */
-void sdDefenceTurret::Event_SetEnemy( idEntity* other ) {
+void sdDefenceTurret::Event_SetEnemy( idEntity* other, float _turnDelay ) {
 	if ( gameLocal.isClient ) {
 		return;
 	}
 
+	startTurn = gameLocal.time + SEC2MS( _turnDelay );
 	SetTargetEntity( other );
 }
 

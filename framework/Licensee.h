@@ -1,6 +1,9 @@
 // Copyright (C) 2007 Id Software, Inc.
 //
 
+#ifndef __LICENSEE_H__
+#define __LICENSEE_H__
+
 /*
 ===============================================================================
 
@@ -13,7 +16,7 @@
 #define GAME_ICON						"etqw.bmp"
 
 #define ENGINE_VERSION_MAJOR			1
-#define ENGINE_VERSION_MINOR			2
+#define ENGINE_VERSION_MINOR			4
 
 // paths
 #define	CD_BASEDIR						"etqw"
@@ -56,8 +59,17 @@
 	#define	PORT_SERVER					27733
 #endif
 
+#ifndef PORT_HTTP
+	#define	PORT_HTTP					27733
+#endif
+
+// default network repeater port
+#ifndef PORT_REPEATER
+	#define	PORT_REPEATER				27833
+#endif
+
 // broadcast scan this many ports after PORT_SERVER so a single machine can run multiple servers
-#define	NUM_SERVER_PORTS				4
+const int NUM_SERVER_PORTS				= 4;
 
 // see ASYNC_PROTOCOL_VERSION
 // use a different major for each game
@@ -75,10 +87,10 @@
 	#define ASYNC_PROTOCOL_MAJOR			13
 #elif defined( SD_PRIVATE_BETA_BUILD )
 	#define ASYNC_PROTOCOL_MAJOR			11
-#elif defined ( SD_PUBLIC_BUILD )
-	#define ASYNC_PROTOCOL_MAJOR			10
 #elif defined ( SD_DEMO_BUILD )
 	#define ASYNC_PROTOCOL_MAJOR			12
+#elif defined ( SD_PUBLIC_BUILD )
+	#define ASYNC_PROTOCOL_MAJOR			10
 #else
 	#define ASYNC_PROTOCOL_MAJOR			14
 #endif
@@ -122,3 +134,5 @@
 #endif
 
 #define CONFIG_SPEC						"etqwconfig.spec"
+
+#endif // __LICENSEE_H__
