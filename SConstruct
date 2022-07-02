@@ -347,6 +347,8 @@ BASECPPFLAGS.append( '-fmessage-length=0' )
 if ( OS == 'Linux' ):
 	# gcc 4.x option only - only export what we mean to from the game SO
 	BASECPPFLAGS.append( '-fvisibility=hidden' )
+	# get the 64 bits machine on the distcc array to produce 32 bit binaries :)
+	BASECPPFLAGS.append( '-m32' )
 
 if ( g_sdk or SDK != '0' ):
 	BASECPPFLAGS.append( '-DQ4SDK' )
