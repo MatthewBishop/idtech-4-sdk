@@ -208,7 +208,7 @@ template<class type, etype_t etype, class returnType>
 ID_INLINE void idScriptVariable<type, etype, returnType>::LinkTo( idScriptObject &obj, const char *name ) {
 	data = ( type * )obj.GetVariable( name, etype );
 	if ( !data ) {
-		gameLocal.Error( "Missing '%s' field in script object '%s'", name, obj.GetTypeName() );
+		gameError( "Missing '%s' field in script object '%s'", name, obj.GetTypeName() );
 	}
 }
 
@@ -294,6 +294,8 @@ typedef union varEval_s {
 	varEval_s				*evalPtr;
 	int						ptrOffset;
 } varEval_t;
+
+class idVarDefName;
 
 class idVarDef {
 	friend class idVarDefName;

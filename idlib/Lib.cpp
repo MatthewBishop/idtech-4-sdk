@@ -127,9 +127,9 @@ dword PackColor( const idVec4 &color ) {
 	dz = ColorFloatToByte( color.z );
 	dw = ColorFloatToByte( color.w );
 
-#if defined(_WIN32) || defined(__linux__)
+#if defined(_WIN32) || defined(__linux__) || (defined(MACOS_X) && defined(__i386__))
 	return ( dx << 0 ) | ( dy << 8 ) | ( dz << 16 ) | ( dw << 24 );
-#elif defined(MACOS_X)
+#elif (defined(MACOS_X) && defined(__ppc__))
 	return ( dx << 24 ) | ( dy << 16 ) | ( dz << 8 ) | ( dw << 0 );
 #else
 #error OS define is required!
@@ -142,12 +142,12 @@ UnpackColor
 ================
 */
 void UnpackColor( const dword color, idVec4 &unpackedColor ) {
-#if defined(_WIN32) || defined(__linux__)
+#if defined(_WIN32) || defined(__linux__) || (defined(MACOS_X) && defined(__i386__))
 	unpackedColor.Set( ( ( color >> 0 ) & 255 ) * ( 1.0f / 255.0f ),
 						( ( color >> 8 ) & 255 ) * ( 1.0f / 255.0f ), 
 						( ( color >> 16 ) & 255 ) * ( 1.0f / 255.0f ),
 						( ( color >> 24 ) & 255 ) * ( 1.0f / 255.0f ) );
-#elif defined(MACOS_X)
+#elif (defined(MACOS_X) && defined(__ppc__))
 	unpackedColor.Set( ( ( color >> 24 ) & 255 ) * ( 1.0f / 255.0f ),
 						( ( color >> 16 ) & 255 ) * ( 1.0f / 255.0f ), 
 						( ( color >> 8 ) & 255 ) * ( 1.0f / 255.0f ),
@@ -169,9 +169,9 @@ dword PackColor( const idVec3 &color ) {
 	dy = ColorFloatToByte( color.y );
 	dz = ColorFloatToByte( color.z );
 
-#if defined(_WIN32) || defined(__linux__)
+#if defined(_WIN32) || defined(__linux__) || (defined(MACOS_X) && defined(__i386__))
 	return ( dx << 0 ) | ( dy << 8 ) | ( dz << 16 );
-#elif defined(MACOS_X)
+#elif (defined(MACOS_X) && defined(__ppc__))
 	return ( dy << 16 ) | ( dz << 8 ) | ( dx << 0 );
 #else
 #error OS define is required!
@@ -184,11 +184,11 @@ UnpackColor
 ================
 */
 void UnpackColor( const dword color, idVec3 &unpackedColor ) {
-#if defined(_WIN32) || defined(__linux__)
+#if defined(_WIN32) || defined(__linux__) || (defined(MACOS_X) && defined(__i386__))
 	unpackedColor.Set( ( ( color >> 0 ) & 255 ) * ( 1.0f / 255.0f ),
 						( ( color >> 8 ) & 255 ) * ( 1.0f / 255.0f ), 
 						( ( color >> 16 ) & 255 ) * ( 1.0f / 255.0f ) );
-#elif defined(MACOS_X)
+#elif (defined(MACOS_X) && defined(__ppc__))
 	unpackedColor.Set( ( ( color >> 16 ) & 255 ) * ( 1.0f / 255.0f ),
 						( ( color >> 8 ) & 255 ) * ( 1.0f / 255.0f ),
 						( ( color >> 0 ) & 255 ) * ( 1.0f / 255.0f ) );
@@ -197,6 +197,37 @@ void UnpackColor( const dword color, idVec3 &unpackedColor ) {
 #endif
 }
 
+/*
+===============
+idLib::Error
+===============
+*/
+void idLib::Error( const char *fmt, ... ) {
+	va_list		argptr;
+	char		text[MAX_STRING_CHARS];
+
+	va_start( argptr, fmt );
+	idStr::vsnPrintf( text, sizeof( text ), fmt, argptr );
+	va_end( argptr );
+
+	common->Error( "%s", text );
+}
+
+/*
+===============
+idLib::Warning
+===============
+*/
+void idLib::Warning( const char *fmt, ... ) {
+	va_list		argptr;
+	char		text[MAX_STRING_CHARS];
+
+	va_start( argptr, fmt );
+	idStr::vsnPrintf( text, sizeof( text ), fmt, argptr );
+	va_end( argptr );
+
+	common->Warning( "%s", text );
+}
 
 /*
 ===============================================================================
@@ -375,12 +406,11 @@ void RevBitFieldSwap( void *bp, int elsize) {
 	p = (unsigned char *) bp;
 	while ( elsize-- ) {
 		v = *p;
-		t = v;
-		for (i = 7; i; i--)
-		{
-			t |= v & 1;
+		t = 0;
+		for (i = 7; i; i--) {
 			t <<= 1;
 			v >>= 1;
+			t |= v & 1;
 		}
 		*p++ = t;
 	}

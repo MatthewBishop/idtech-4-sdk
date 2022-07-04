@@ -15,7 +15,7 @@
 
 // magic flag to keep tiger gl.h from loading glext.h
 #define GL_GLEXT_LEGACY
-#include <gl.h>
+#include <OpenGL/gl.h>
 
 #elif defined( __linux__ )
 

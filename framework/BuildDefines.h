@@ -33,11 +33,6 @@
 	#define ID_NOLANADDRESS 0
 #endif
 
-#ifndef ID_VERSIONTAG
-	#define ID_VERSIONTAG ""
-	//#define ID_VERSIONTAG ".MP"
-#endif
-
 // let .dds be loaded from FS without altering pure state. only for developement.
 #ifndef ID_PURE_ALLOWDDS
 	#define ID_PURE_ALLOWDDS 0
@@ -98,7 +93,7 @@
 #endif
 
 #ifndef ID_OPENAL
-#	if defined( _WIN32 ) && !defined( ID_DEDICATED )
+#	if ( defined(_WIN32) || defined(MACOS_X) ) && !defined( ID_DEDICATED )
 #		define ID_OPENAL 1
 #	else
 #		define ID_OPENAL 0

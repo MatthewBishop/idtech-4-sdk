@@ -2251,6 +2251,11 @@ void idWeapon::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 			idealState = "Fire";
 		}
 
+        // immediately switch back to idle
+        if ( WEAPON_NETFIRING && !isFiring ) {
+            idealState = "Idle";
+        }
+
 		WEAPON_NETFIRING = isFiring;
 	}
 
