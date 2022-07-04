@@ -2553,7 +2553,7 @@ void idActor::Event_PlayAnim( int channel, const char *animname ) {
 		} else {
 			gameLocal.DPrintf( "missing '%s' animation on '%s' (%s)\n", animname, name.c_str(), GetEntityDefName() );
 		}
-		idThread::ReturnInt( false );
+		idThread::ReturnInt( 0 );
 		return;
 	}
 
@@ -2613,7 +2613,7 @@ void idActor::Event_PlayAnim( int channel, const char *animname ) {
 		gameLocal.Error( "Unknown anim group" );
 		break;
 	}
-	idThread::ReturnInt( true );
+	idThread::ReturnInt( 1 );
 }
 
 /*

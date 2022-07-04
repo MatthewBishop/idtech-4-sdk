@@ -51,7 +51,7 @@ void Cmd_EntityList_f( const idCmdArgs &args ) {
 			continue;
 		}
 
-		if ( !check->name.Filter( match ) ) {
+		if ( !check->name.Filter( match, true ) ) {
 			continue;
 		}
 

@@ -184,10 +184,14 @@ from the class list since the program is shutting down.
 */
 void idTypeInfo::Shutdown() {
 	// free up the memory used for event lookups
-	if ( eventMap && freeEventMap ) {
-		delete[] eventMap;
+	if ( eventMap ) {
+		if ( freeEventMap ) {
+			delete[] eventMap;
+		}
 		eventMap = NULL;
 	}
+	typeNum = 0;
+	lastChild = 0;
 }
 
 

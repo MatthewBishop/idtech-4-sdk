@@ -93,6 +93,8 @@ protected:
 	projectileState_t		state;
 
 private:
+	bool					netSyncPhysics;
+
 	void					AddDefaultDamageEffect( const trace_t &collision, const idVec3 &velocity );
 
 	void					Event_Explode( void );

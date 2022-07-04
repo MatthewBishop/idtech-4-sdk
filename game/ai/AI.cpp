@@ -3210,7 +3210,7 @@ bool idAI::Pain( idEntity *inflictor, idEntity *attacker, int damage, const idVe
 		}
 	}
 
-	return AI_PAIN;
+	return ( AI_PAIN != 0 );
 }
 
 
@@ -3404,6 +3404,7 @@ void idAI::PlayCinematic( void ) {
 		}
 		current_cinematic = 0;
 		ActivateTargets( gameLocal.GetLocalPlayer() );
+		fl.neverDormant = false;
 		return;
 	}
 
@@ -3455,6 +3456,8 @@ void idAI::PlayCinematic( void ) {
 		head.GetEntity()->UpdateVisuals();
 		head.GetEntity()->Present();
 	}
+
+	fl.neverDormant = true;
 }
 
 /*
@@ -4178,7 +4181,7 @@ idProjectile *idAI::LaunchProjectile( const char *jointname, idEntity *target, b
 ================
 idAI::DamageFeedback
 
-callback function for when another entity recieved damage from this entity.  damage can be adjusted and returned to the caller.
+callback function for when another entity received damage from this entity.  damage can be adjusted and returned to the caller.
 
 FIXME: This gets called when we call idPlayer::CalcDamagePoints from idAI::AttackMelee, which then checks for a saving throw,
 possibly forcing a miss.  This is harmless behavior ATM, but is not intuitive.

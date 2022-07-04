@@ -614,7 +614,7 @@ void idTestModel::KeepTestModel_f( const idCmdArgs &args ) {
 		return;
 	}
 
-	gameLocal.Printf( "modelDef %i kept\n", gameLocal.testmodel->renderEntity.hModel );
+	gameLocal.Printf( "modelDef %p kept\n", gameLocal.testmodel->renderEntity.hModel );
 
 	gameLocal.testmodel = NULL;
 }
@@ -689,7 +689,7 @@ void idTestModel::TestShaderParm_f( const idCmdArgs &args ) {
 	}
 
 	float	value;
-	if ( !stricmp( args.Argv( 2 ), "time" ) ) {
+	if ( !idStr::Icmp( args.Argv( 2 ), "time" ) ) {
 		value = gameLocal.time * -0.001;
 	} else {
 		value = atof( args.Argv( 2 ) );

@@ -63,6 +63,9 @@ public:
 
 	// called during vid_restart
 	virtual	void			FreeModelVertexCaches() = 0;
+
+	// print memory info
+	virtual	void			PrintMemInfo( MemInfo_t *mi ) = 0;
 };
 
 // this will be statically pointed at a private implementation

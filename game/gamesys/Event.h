@@ -94,6 +94,9 @@ public:
 	// save games
 	static void					Save( idSaveGame *savefile );					// archives object for save game file
 	static void					Restore( idRestoreGame *savefile );				// unarchives object from save game file
+	static void					SaveTrace( idSaveGame *savefile, const trace_t &trace );
+	static void					RestoreTrace( idRestoreGame *savefile, trace_t &trace );
+	
 };
 
 /*

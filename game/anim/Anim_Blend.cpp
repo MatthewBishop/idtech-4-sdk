@@ -2694,7 +2694,7 @@ bool idDeclModelDef::Parse( const char *text, const int textLength ) {
 			}
 
 			for( i = ANIMCHANNEL_ALL + 1; i < ANIM_NumAnimChannels; i++ ) {
-				if ( !stricmp( channelNames[ i ], token2 ) ) {
+				if ( !idStr::Icmp( channelNames[ i ], token2 ) ) {
 					break;
 				}
 			}
@@ -3038,11 +3038,20 @@ void idAnimator::Save( idSaveGame *savefile ) const {
 
 	savefile->WriteInt( jointMods.Num() );
 	for( i = 0; i < jointMods.Num(); i++ ) {
-		savefile->Write( jointMods[ i ], sizeof( *jointMods[ i ] ) );
+		savefile->WriteInt( jointMods[ i ]->jointnum );
+		savefile->WriteMat3( jointMods[ i ]->mat );
+		savefile->WriteVec3( jointMods[ i ]->pos );
+		savefile->WriteInt( (int&)jointMods[ i ]->transform_pos );
+		savefile->WriteInt( (int&)jointMods[ i ]->transform_axis );
 	}
 	
 	savefile->WriteInt( numJoints );
-	savefile->Write( joints, numJoints * sizeof( joints[0] ) );
+	for ( i = 0; i < numJoints; i++ ) {
+		float *data = joints[i].ToFloatPtr();
+		for ( j = 0; j < 12; j++ ) {
+			savefile->WriteFloat( data[j] );
+		}
+	}
 
 	savefile->WriteInt( lastTransformTime );
 	savefile->WriteBool( stoppedAnimatingUpdate );
@@ -3052,14 +3061,26 @@ void idAnimator::Save( idSaveGame *savefile ) const {
 	savefile->WriteFloat( AFPoseBlendWeight );
 
 	savefile->WriteInt( AFPoseJoints.Num() );
-	savefile->Write( AFPoseJoints.Ptr(), AFPoseJoints.MemoryUsed() );
-
+	for ( i = 0; i < AFPoseJoints.Num(); i++ ) {
+		savefile->WriteInt( AFPoseJoints[i] );
+	}
+	
 	savefile->WriteInt( AFPoseJointMods.Num() );
-	savefile->Write( AFPoseJointMods.Ptr(), AFPoseJointMods.MemoryUsed() );
-
+	for ( i = 0; i < AFPoseJointMods.Num(); i++ ) {
+		savefile->WriteInt( (int&)AFPoseJointMods[i].mod );
+		savefile->WriteMat3( AFPoseJointMods[i].axis );
+		savefile->WriteVec3( AFPoseJointMods[i].origin );
+	}
+	
 	savefile->WriteInt( AFPoseJointFrame.Num() );
-	savefile->Write( AFPoseJointFrame.Ptr(), AFPoseJointFrame.MemoryUsed() );
-
+	for ( i = 0; i < AFPoseJointFrame.Num(); i++ ) {
+		savefile->WriteFloat( AFPoseJointFrame[i].q.x );
+		savefile->WriteFloat( AFPoseJointFrame[i].q.y );
+		savefile->WriteFloat( AFPoseJointFrame[i].q.z );
+		savefile->WriteFloat( AFPoseJointFrame[i].q.w );
+		savefile->WriteVec3( AFPoseJointFrame[i].t );
+	}
+	
 	savefile->WriteBounds( AFPoseBounds );
 	savefile->WriteInt( AFPoseTime );
 
@@ -3091,13 +3112,22 @@ void idAnimator::Restore( idRestoreGame *savefile ) {
 	jointMods.SetNum( num );
 	for( i = 0; i < num; i++ ) {
 		jointMods[ i ] = new jointMod_t;
-		savefile->Read( jointMods[ i ], sizeof( *jointMods[ i ] ) );
+		savefile->ReadInt( (int&)jointMods[ i ]->jointnum );
+		savefile->ReadMat3( jointMods[ i ]->mat );
+		savefile->ReadVec3( jointMods[ i ]->pos );
+		savefile->ReadInt( (int&)jointMods[ i ]->transform_pos );
+		savefile->ReadInt( (int&)jointMods[ i ]->transform_axis );
 	}
 	
 	savefile->ReadInt( numJoints );
 	joints = (idJointMat *) Mem_Alloc16( numJoints * sizeof( joints[0] ) );
-	savefile->Read( joints, numJoints * sizeof( joints[0] ) );
-
+	for ( i = 0; i < numJoints; i++ ) {
+		float *data = joints[i].ToFloatPtr();
+		for ( j = 0; j < 12; j++ ) {
+			savefile->ReadFloat( data[j] );
+		}
+	}
+	
 	savefile->ReadInt( lastTransformTime );
 	savefile->ReadBool( stoppedAnimatingUpdate );
 	savefile->ReadBool( forceUpdate );
@@ -3108,18 +3138,30 @@ void idAnimator::Restore( idRestoreGame *savefile ) {
 	savefile->ReadInt( num );
 	AFPoseJoints.SetGranularity( 1 );
 	AFPoseJoints.SetNum( num );
-	savefile->Read( AFPoseJoints.Ptr(), AFPoseJoints.MemoryUsed() );
-
+	for ( i = 0; i < AFPoseJoints.Num(); i++ ) {
+		savefile->ReadInt( AFPoseJoints[i] );
+	}
+	
 	savefile->ReadInt( num );
 	AFPoseJointMods.SetGranularity( 1 );
 	AFPoseJointMods.SetNum( num );
-	savefile->Read( AFPoseJointMods.Ptr(), AFPoseJointMods.MemoryUsed() );
-
+	for ( i = 0; i < AFPoseJointMods.Num(); i++ ) {
+		savefile->ReadInt( (int&)AFPoseJointMods[i].mod );
+		savefile->ReadMat3( AFPoseJointMods[i].axis );
+		savefile->ReadVec3( AFPoseJointMods[i].origin );
+	}
+	
 	savefile->ReadInt( num );
 	AFPoseJointFrame.SetGranularity( 1 );
 	AFPoseJointFrame.SetNum( num );
-	savefile->Read( AFPoseJointFrame.Ptr(), AFPoseJointFrame.MemoryUsed() );
-
+	for ( i = 0; i < AFPoseJointFrame.Num(); i++ ) {
+		savefile->ReadFloat( AFPoseJointFrame[i].q.x );
+		savefile->ReadFloat( AFPoseJointFrame[i].q.y );
+		savefile->ReadFloat( AFPoseJointFrame[i].q.z );
+		savefile->ReadFloat( AFPoseJointFrame[i].q.w );
+		savefile->ReadVec3( AFPoseJointFrame[i].t );
+	}
+	
 	savefile->ReadBounds( AFPoseBounds );
 	savefile->ReadInt( AFPoseTime );
 

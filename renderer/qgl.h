@@ -11,9 +11,11 @@
 
 #include <gl/gl.h>
 
-#elif defined( __APPLE__ ) && defined( __MACH__ )
+#elif defined( MACOS_X )
 
-#include <OpenGL/gl.h>
+// magic flag to keep tiger gl.h from loading glext.h
+#define GL_GLEXT_LEGACY
+#include <gl.h>
 
 #elif defined( __linux__ )
 

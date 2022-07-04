@@ -102,6 +102,7 @@ float	BigFloat( float l );
 float	LittleFloat( float l );
 void	BigRevBytes( void *bp, int elsize, int elcount );
 void	LittleRevBytes( void *bp, int elsize, int elcount );
+void	LittleBitField( void *bp, int elsize );
 void	Swap_Init( void );
 
 bool	Swap_IsBigEndian( void );

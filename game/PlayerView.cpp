@@ -23,6 +23,7 @@ idPlayerView::idPlayerView() {
 	irGogglesMaterial = declManager->FindMaterial( "textures/decals/irblend" );
 	bloodSprayMaterial = declManager->FindMaterial( "textures/decals/bloodspray" );
 	bfgMaterial = declManager->FindMaterial( "textures/decals/bfgvision" );
+	lagoMaterial = declManager->FindMaterial( LAGO_MATERIAL, false );
 	bfgVision = false;
 	dvFinishTime = 0;
 	kickFinishTime = 0;
@@ -409,7 +410,7 @@ void idPlayerView::SingleView( idUserInterface *hud, const renderView_t *view ) 
 	}
 
 	// place the sound origin for the player
-	gameSoundWorld->PlaceListener( view->vieworg, view->viewaxis, player->entityNumber + 1, gameLocal.time );
+	gameSoundWorld->PlaceListener( view->vieworg, view->viewaxis, player->entityNumber + 1, gameLocal.time, hud ? hud->State().GetString( "location" ) : "Undefined" );
 
 	// if the objective system is up, don't do normal drawing
 	if ( player->objectiveSystemOpen ) {
@@ -653,6 +654,7 @@ void idPlayerView::InfluenceVision( idUserInterface *hud, const renderView_t *vi
 	}
 	if ( player->GetInfluenceMaterial() ) {
 		SingleView( hud, view );
+		renderSystem->CaptureRenderToImage( "_currentRender" );
 		renderSystem->SetColor4( 1.0f, 1.0f, 1.0f, pct );
 		renderSystem->DrawStretchPic( 0.0f, 0.0f, 640.0f, 480.0f, 0.0f, 0.0f, 1.0f, 1.0f, player->GetInfluenceMaterial() );
 	} else if ( player->GetInfluenceEntity() == NULL ) {
@@ -686,5 +688,10 @@ void idPlayerView::RenderPlayerView( idUserInterface *hud ) {
 		}
 		ScreenFade();
 	}
+
+	if ( net_clientLagOMeter.GetBool() && lagoMaterial && gameLocal.isClient ) {
+		renderSystem->SetColor4( 1.0f, 1.0f, 1.0f, 1.0f );
+		renderSystem->DrawStretchPic( 10.0f, 380.0f, 64.0f, 64.0f, 0.0f, 0.0f, 1.0f, 1.0f, lagoMaterial );
+	}	
 }
 

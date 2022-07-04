@@ -1442,10 +1442,10 @@ void idTraceModel::GetMassProperties( const float density, float &mass, idVec3 &
 
 	// if no volume
 	if ( integrals.T0 == 0.0f ) {
-	  mass = 1.0f;
-	  centerOfMass.Zero();
-	  inertiaTensor.Identity();
-	  return;
+		mass = 1.0f;
+		centerOfMass.Zero();
+		inertiaTensor.Identity();
+		return;
 	}
 
 	// mass of model

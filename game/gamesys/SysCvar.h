@@ -220,6 +220,11 @@ extern idCVar	si_gameType;
 extern idCVar	si_map;
 extern idCVar	si_spectators;
 
+extern idCVar	net_clientSelfSmoothing;
+extern idCVar	net_clientLagOMeter;
+
+extern const char *si_gameTypeArgs[];
+
 extern const char *ui_skinArgs[];
 
 #endif /* !__SYS_CVAR_H__ */

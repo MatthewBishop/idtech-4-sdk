@@ -83,6 +83,7 @@ private:
 	const idMaterial *	irGogglesMaterial;	// ir effect
 	const idMaterial *	bloodSprayMaterial; // blood spray
 	const idMaterial *	bfgMaterial;		// when targeted with BFG
+	const idMaterial *	lagoMaterial;		// lagometer drawing
 	float				lastDamageTime;		// accentuate the tunnel effect for a while
 
 	idVec4				fadeColor;			// fade color

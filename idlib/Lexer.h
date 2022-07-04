@@ -157,6 +157,10 @@ public:
 	void			UnreadToken( const idToken *token );
 					// read a token only if on the same line
 	int				ReadTokenOnLine( idToken *token );
+		
+					//Returns the rest of the current line
+	const char*		ReadRestOfLine(idStr& out);
+
 					// read a signed integer
 	int				ParseInt( void );
 					// read a boolean
@@ -203,9 +207,9 @@ public:
 					// returns the current line number
 	const int		GetLineNum( void );
 					// print an error message
-	void			Error( const char *str, ... );
+	void			Error( const char *str, ... ) id_attribute((format(printf,2,3)));
 					// print a warning message
-	void			Warning( const char *str, ... );
+	void			Warning( const char *str, ... ) id_attribute((format(printf,2,3)));
 					// returns true if Error() was called with LEXFL_NOFATALERRORS or LEXFL_NOERRORS set
 	bool			HadError( void ) const;
 

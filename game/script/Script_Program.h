@@ -235,7 +235,7 @@ sample the data for non-dynamic values.
 
 ***********************************************************************/
 
-typedef idScriptVariable<bool, ev_boolean, bool>			idScriptBool;
+typedef idScriptVariable<int, ev_boolean, int>				idScriptBool;
 typedef idScriptVariable<float, ev_float, float>			idScriptFloat;
 typedef idScriptVariable<float, ev_float, int>				idScriptInt;
 typedef idScriptVariable<idVec3, ev_vector, idVec3>			idScriptVector;

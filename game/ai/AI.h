@@ -18,7 +18,7 @@ const float	AI_TURN_SCALE				= 60.0f;
 const float	AI_SEEK_PREDICTION			= 0.3f;
 const float	AI_FLY_DAMPENING			= 0.15f;
 const float	AI_HEARING_RANGE			= 2048.0f;
-const int	DEFAULT_FLY_OFFSET			= 68.0f;
+const int	DEFAULT_FLY_OFFSET			= 68;
 
 #define ATTACK_IGNORE			0
 #define ATTACK_ON_DAMAGE		1
@@ -610,7 +610,7 @@ protected:
 	void					Event_TravelDistanceBetweenEntities( idEntity *source, idEntity *dest );
 	void					Event_LookAtEntity( idEntity *ent, float duration );
 	void					Event_LookAtEnemy( float duration );
-	void					Event_SetJointMod( bool allowJointMod );
+	void					Event_SetJointMod( int allowJointMod );
 	void					Event_ThrowMoveable( void );
 	void					Event_ThrowAF( void );
 	void					Event_SetAngles( idAngles const &ang );

@@ -58,7 +58,7 @@ idPlayerIcon::Draw
 */
 void idPlayerIcon::Draw( idPlayer *player, const idVec3 &origin ) {
 	idPlayer *localPlayer = gameLocal.GetLocalPlayer();
-	if ( !localPlayer ) {
+	if ( !localPlayer || !localPlayer->GetRenderView() ) {
 		FreeIcon();
 		return;
 	}

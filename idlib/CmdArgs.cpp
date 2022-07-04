@@ -4,6 +4,20 @@
 #include "../idlib/precompiled.h"
 #pragma hdrstop
 
+/*
+============
+idCmdArgs::operator=
+============
+*/
+void idCmdArgs::operator=( const idCmdArgs &args ) {
+	int i;
+
+	argc = args.argc;
+	memcpy( tokenized, args.tokenized, MAX_COMMAND_STRING );
+	for ( i = 0; i < argc; i++ ) {
+		argv[ i ] = tokenized + ( args.argv[ i ] - args.tokenized );
+	}
+}
 
 /*
 ============

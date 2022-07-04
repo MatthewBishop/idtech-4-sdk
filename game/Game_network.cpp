@@ -24,9 +24,10 @@
 
 idCVar net_clientShowSnapshot( "net_clientShowSnapshot", "0", CVAR_GAME | CVAR_INTEGER, "", 0, 3, idCmdSystem::ArgCompletion_Integer<0,3> );
 idCVar net_clientShowSnapshotRadius( "net_clientShowSnapshotRadius", "128", CVAR_GAME | CVAR_FLOAT, "" );
-idCVar net_clientSmoothing( "net_clientSmoothing", "0.8", CVAR_GAME | CVAR_FLOAT, "", 0.0f, 0.95f );
+idCVar net_clientSmoothing( "net_clientSmoothing", "0.8", CVAR_GAME | CVAR_FLOAT, "smooth other clients angles and position.", 0.0f, 0.95f );
+idCVar net_clientSelfSmoothing( "net_clientSelfSmoothing", "0.6", CVAR_GAME | CVAR_FLOAT, "smooth self position if network causes prediction error.", 0.0f, 0.95f );
 idCVar net_clientMaxPrediction( "net_clientMaxPrediction", "1000", CVAR_SYSTEM | CVAR_INTEGER | CVAR_NOCHEAT, "maximum number of milliseconds a client can predict ahead of server." );
-
+idCVar net_clientLagOMeter( "net_clientLagOMeter", "1", CVAR_GAME | CVAR_BOOL | CVAR_NOCHEAT | CVAR_ARCHIVE, "draw prediction graph" );
 
 /*
 ================
@@ -197,15 +198,15 @@ int idGameLocal::ClientRemapDecl( declType_t type, int index ) {
 
 	// make sure the index is valid
 	if ( clientDeclRemap[localClientNum][(int)type].Num() == 0 ) {
-		gameLocal.Error( "client recieved decl index before %s decl remap was initialized", declManager->GetDeclNameFromType( type ), index );
+		gameLocal.Error( "client received decl index %d before %s decl remap was initialized", index, declManager->GetDeclNameFromType( type ) );
 		return -1;
 	}
 	if ( index >= clientDeclRemap[localClientNum][(int)type].Num() ) {
-		gameLocal.Error( "client recieved unmapped %s decl index %d from server", declManager->GetDeclNameFromType( type ), index );
+		gameLocal.Error( "client received unmapped %s decl index %d from server", declManager->GetDeclNameFromType( type ), index );
 		return -1;
 	}
 	if ( clientDeclRemap[localClientNum][(int)type][index] == -1 ) {
-		gameLocal.Error( "client recieved unmapped %s decl index %d from server", declManager->GetDeclNameFromType( type ), index );
+		gameLocal.Error( "client received unmapped %s decl index %d from server", declManager->GetDeclNameFromType( type ), index );
 		return -1;
 	}
 	return clientDeclRemap[localClientNum][type][index];
@@ -262,6 +263,11 @@ idGameLocal::ServerClientConnect
 ================
 */
 void idGameLocal::ServerClientConnect( int clientNum ) {
+	// make sure no parasite entity is left
+	if ( entities[ clientNum ] ) {
+		common->DPrintf( "ServerClientConnect: remove old player entity\n" );
+		delete entities[ clientNum ];
+	}
 	userInfo[ clientNum ].Clear();
 	mpGame.ServerClientConnect( clientNum );
 	Printf( "client %d connected.\n", clientNum );
@@ -652,6 +658,7 @@ void idGameLocal::ServerWriteSnapshot( int clientNum, int sequence, idBitMsg &ms
 
 	// copy the client PVS string
 	memcpy( clientInPVS, snapshot->pvs, ( numPVSClients + 7 ) >> 3 );
+	LittleRevBytes( clientInPVS, sizeof( int ), sizeof( clientInPVS ) / sizeof ( int ) );
 }
 
 /*
@@ -883,10 +890,46 @@ void idGameLocal::ClientShowSnapshot( int clientNum ) const {
 
 /*
 ================
+idGameLocal::UpdateLagometer
+================
+*/
+void idGameLocal::UpdateLagometer( int aheadOfServer, int dupeUsercmds ) {
+		int i, j, ahead;
+		for ( i = 0; i < LAGO_HEIGHT; i++ ) {
+			memmove( (byte *)lagometer + LAGO_WIDTH * 4 * i, (byte *)lagometer + LAGO_WIDTH * 4 * i + 4, ( LAGO_WIDTH - 1 ) * 4 );
+		}
+		j = LAGO_WIDTH - 1;
+		for ( i = 0; i < LAGO_HEIGHT; i++ ) {
+			lagometer[i][j][0] = lagometer[i][j][1] = lagometer[i][j][2] = lagometer[i][j][3] = 0;
+		}
+		ahead = idMath::Rint( (float)aheadOfServer / 16.0f );
+		if ( ahead >= 0 ) {
+			for ( i = 2 * Max( 0, 5 - ahead ); i < 2 * 5; i++ ) {
+				lagometer[i][j][1] = 255;
+				lagometer[i][j][3] = 255;
+			}
+		} else {
+			for ( i = 2 * 5; i < 2 * ( 5 + Min( 10, -ahead ) ); i++ ) {
+				lagometer[i][j][0] = 255;
+				lagometer[i][j][1] = 255;
+				lagometer[i][j][3] = 255;
+			}
+		}
+		for ( i = LAGO_HEIGHT - 2 * Min( 6, dupeUsercmds ); i < LAGO_HEIGHT; i++ ) {
+			lagometer[i][j][0] = 255;
+			if ( dupeUsercmds <= 2 ) {
+				lagometer[i][j][1] = 255;
+			}
+			lagometer[i][j][3] = 255;
+		}
+}
+
+/*
+================
 idGameLocal::ClientReadSnapshot
 ================
 */
-void idGameLocal::ClientReadSnapshot( int clientNum, int sequence, const int gameFrame, const int gameTime, const idBitMsg &msg ) {
+void idGameLocal::ClientReadSnapshot( int clientNum, int sequence, const int gameFrame, const int gameTime, const int dupeUsercmds, const int aheadOfServer, const idBitMsg &msg ) {
 	int				i, typeNum, entityDefNumber, numBitsRead;
 	idTypeInfo		*typeInfo;
 	idEntity		*ent;
@@ -900,6 +943,14 @@ void idGameLocal::ClientReadSnapshot( int clientNum, int sequence, const int gam
 	int				spawnId;
 	int				numSourceAreas, sourceAreas[ idEntity::MAX_PVS_AREAS ];
 	idWeapon		*weap;
+
+	if ( net_clientLagOMeter.GetBool() && renderSystem ) {
+		UpdateLagometer( aheadOfServer, dupeUsercmds );
+		if ( !renderSystem->UploadImage( LAGO_IMAGE, (byte *)lagometer, LAGO_IMG_WIDTH, LAGO_IMG_HEIGHT ) ) {
+			common->Printf( "lagometer: UploadImage failed. turning off net_clientLagOMeter\n" );
+			net_clientLagOMeter.SetBool( false );
+		}
+	}
 
 	InitLocalClient( clientNum );
 
@@ -1023,6 +1074,10 @@ void idGameLocal::ClientReadSnapshot( int clientNum, int sequence, const int gam
 	if ( !player ) {
 		return;
 	}
+
+	// if prediction is off, enable local client smoothing
+	player->SetSelfSmooth( dupeUsercmds > 2 );
+
 	if ( player->spectating && player->spectator != clientNum && entities[ player->spectator ] ) {
 		spectated = static_cast< idPlayer * >( entities[ player->spectator ] );
 	} else {
@@ -1111,7 +1166,7 @@ void idGameLocal::ClientReadSnapshot( int clientNum, int sequence, const int gam
 		// if the entity is not the right type
 		if ( !typeInfo || ent->GetType()->typeNum != typeNum || ent->entityDefNumber != entityDefNumber ) {
 			// should never happen - it does though. with != entityDefNumber only?
-			common->DWarning( "entity is not the right type %p 0x%d 0x%x 0x%x 0x%x", typeInfo, ent->GetType()->typeNum, typeNum, ent->entityDefNumber, entityDefNumber );
+			common->DWarning( "entity '%s' is not the right type %p 0x%d 0x%x 0x%x 0x%x", ent->GetName(), typeInfo, ent->GetType()->typeNum, typeNum, ent->entityDefNumber, entityDefNumber );
 			continue;
 		}
 
@@ -1438,6 +1493,95 @@ gameReturn_t idGameLocal::ClientPrediction( int clientNum, const usercmd_t *clie
 		strncpy( ret.sessionCommand, sessionCommand, sizeof( ret.sessionCommand ) );
 	}
 	return ret;
+}
+
+/*
+===============
+idGameLocal::Tokenize
+===============
+*/
+void idGameLocal::Tokenize( idStrList &out, const char *in ) {
+	char buf[ MAX_STRING_CHARS ];
+	char *token, *next;
+	
+	idStr::Copynz( buf, in, MAX_STRING_CHARS );
+	token = buf;
+	next = strchr( token, ';' );
+	while ( token ) {
+		if ( next ) {
+			*next = '\0';
+		}
+		idStr::ToLower( token );
+		out.Append( token );
+		if ( next ) {
+			token = next + 1;
+			next = strchr( token, ';' );
+		} else {
+			token = NULL;
+		}		
+	}
+}
+
+/*
+===============
+idGameLocal::DownloadRequest
+===============
+*/
+bool idGameLocal::DownloadRequest( const char *IP, const char *guid, const char *paks, char urls[ MAX_STRING_CHARS ] ) {
+	if ( !cvarSystem->GetCVarInteger( "net_serverDownload" ) ) {
+		return false;
+	}
+	if ( cvarSystem->GetCVarInteger( "net_serverDownload" ) == 1 ) {
+		// 1: single URL redirect
+		if ( !strlen( cvarSystem->GetCVarString( "si_serverURL" ) ) ) {
+			common->Warning( "si_serverURL not set" );
+			return false;
+		}
+		idStr::snPrintf( urls, MAX_STRING_CHARS, "1;%s", cvarSystem->GetCVarString( "si_serverURL" ) );
+		return true;
+	} else {
+		// 2: table of pak URLs
+		// first token is the game pak if request, empty if not requested by the client
+		// there may be empty tokens for paks the server couldn't pinpoint - the order matters
+		idStr reply = "2;";
+		idStrList dlTable, pakList;
+		int i, j;
+
+		Tokenize( dlTable, cvarSystem->GetCVarString( "net_serverDlTable" ) );
+		Tokenize( pakList, paks );
+
+		for ( i = 0; i < pakList.Num(); i++ ) {
+			if ( i > 0 ) {
+				reply += ";";
+			}
+			if ( pakList[ i ][ 0 ] == '\0' ) {
+ 				if ( i == 0 ) {
+					// pak 0 will always miss when client doesn't ask for game bin
+					common->DPrintf( "no game pak request\n" );
+				} else {
+					common->DPrintf( "no pak %d\n", i );
+				}
+				continue;
+			}
+			for ( j = 0; j < dlTable.Num(); j++ ) {
+				if ( !fileSystem->FilenameCompare( pakList[ i ], dlTable[ j ] ) ) {
+					break;
+				}
+			}
+			if ( j == dlTable.Num() ) {
+				common->Printf( "download for %s: pak not matched: %s\n", IP, pakList[ i ].c_str() );
+			} else {
+				idStr url = cvarSystem->GetCVarString( "net_serverDlBaseURL" );
+				url.AppendPath( dlTable[ j ] );
+				reply += url;
+				common->DPrintf( "download for %s: %s\n", IP, url.c_str() );
+			}
+		}
+		
+		idStr::Copynz( urls, reply, MAX_STRING_CHARS );
+		return true;
+	}
+	return false;
 }
 
 /*

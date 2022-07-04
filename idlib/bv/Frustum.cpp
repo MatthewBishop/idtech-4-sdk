@@ -99,7 +99,7 @@ bool idFrustum::CullPoint( const idVec3 &point ) const {
 	// transform point to frustum space
 	p = ( point - origin ) * axis.Transpose();
 	// test whether or not the point is within the frustum
-	if ( p.x < dNear || p.y > dFar ) {
+	if ( p.x < dNear || p.x > dFar ) {
 		return true;
 	}
 	scale = p.x * invFar;
@@ -2019,7 +2019,8 @@ bool idFrustum::ProjectionBounds( const idBounds &bounds, idBounds &projectionBo
 	return ProjectionBounds( idBox( bounds, vec3_origin, mat3_identity ), projectionBounds );
 }
 
-#if !defined( __linux__ )
+#ifndef __linux__
+
 /*
 ============
 idFrustum::ProjectionBounds
@@ -2045,6 +2046,7 @@ bool idFrustum::ProjectionBounds( const idBox &box, idBounds &projectionBounds )
 		projectionBounds[1].x = boxMax - base;
 		projectionBounds[0].y = projectionBounds[0].z = -1.0f;
 		projectionBounds[1].y = projectionBounds[1].z = 1.0f;
+
 		return true;
 	}
 
@@ -2131,6 +2133,7 @@ bool idFrustum::ProjectionBounds( const idBox &box, idBounds &projectionBounds )
 
 	return true;
 }
+
 #endif
 
 /*
@@ -2160,8 +2163,6 @@ bool idFrustum::ProjectionBounds( const idSphere &sphere, idBounds &projectionBo
 	if ( ( d * d ) > rs * ( sFar + dUp * dUp ) ) {
 		return false;
 	}
-
-	// FIXME: implement
 
 	// bounds that cover the whole frustum
 	projectionBounds[0].x = 0.0f;

@@ -320,7 +320,7 @@ public:
 	void					RestorePersistantInfo( void );
 	void					SetLevelTrigger( const char *levelName, const char *triggerName );
 
-	bool					UserInfoChanged( void );
+	bool					UserInfoChanged( bool canModify );
 	idDict *				GetUserInfo( void );
 	bool					BalanceTDM( void );
 
@@ -484,6 +484,9 @@ public:
 	virtual	void			HidePlayerIcons( void );
 	bool					NeedsIcon( void );
 
+	bool					SelfSmooth( void );
+	void					SetSelfSmooth( bool b );
+
 private:
 	jointHandle_t			hipJoint;
 	jointHandle_t			chestJoint;
@@ -595,6 +598,8 @@ private:
 
 	idPlayerIcon			playerIcon;
 
+	bool					selfSmooth;
+
 	void					LookAtKiller( idEntity *inflictor, idEntity *attacker );
 
 	void					StopFiring( void );
@@ -676,6 +681,14 @@ ID_INLINE void idPlayer::SetLeader( bool lead ) {
 
 ID_INLINE bool idPlayer::IsLeader( void ) {
 	return leader;
+}
+
+ID_INLINE bool idPlayer::SelfSmooth( void ) {
+	return selfSmooth;
+}
+
+ID_INLINE void idPlayer::SetSelfSmooth( bool b ) {
+	selfSmooth = b;
 }
 
 #endif /* !__GAME_PLAYER_H__ */

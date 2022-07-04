@@ -56,9 +56,9 @@ ID_INLINE idTimer::idTimer( void ) {
 idTimer::idTimer
 =================
 */
-ID_INLINE idTimer::idTimer( double clockTicks ) {
+ID_INLINE idTimer::idTimer( double _clockTicks ) {
 	state = TS_STOPPED;
-	this->clockTicks = clockTicks;
+	clockTicks = _clockTicks;
 }
 
 /*

@@ -60,8 +60,7 @@ private:
 	int					teleportStage;
 
 	void				Event_TeleportPlayer( idEntity *activator );
-	void				Event_TeleportStage( idPlayer *player );
-	void				Event_ResetCamera( idPlayer *player );
+	void				Event_TeleportStage( idEntity *player );
 	void				TeleportPlayer( idPlayer *player );
 };
 

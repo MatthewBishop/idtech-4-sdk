@@ -223,8 +223,8 @@ public:
 	void						SetThreadName( const char *name );
 	const char					*GetThreadName( void );
 
-	void						Error( const char *fmt, ... ) const;
-	void						Warning( const char *fmt, ... ) const;
+	void						Error( const char *fmt, ... ) const id_attribute((format(printf,2,3)));
+	void						Warning( const char *fmt, ... ) const id_attribute((format(printf,2,3)));
 								
 	static idThread				*CurrentThread( void );
 	static int					CurrentThreadNum( void );

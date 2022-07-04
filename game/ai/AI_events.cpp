@@ -527,7 +527,7 @@ void idAI::Event_CreateMissile( const char *jointname ) {
 
 	if ( !projectileDef ) {
 		gameLocal.Warning( "%s (%s) doesn't have a projectile specified", name.c_str(), GetEntityDefName() );
-		return;
+		return idThread::ReturnEntity( NULL );
 	}
 
 	GetMuzzle( jointname, muzzle, axis );
@@ -2289,8 +2289,8 @@ void idAI::Event_LookAtEnemy( float duration ) {
 idAI::Event_SetJointMod
 ===============
 */
-void idAI::Event_SetJointMod( bool allow ) {
-	allowJointMod = allow;
+void idAI::Event_SetJointMod( int allow ) {
+	allowJointMod = ( allow != 0 );
 }
 
 /*
@@ -2662,12 +2662,12 @@ void idAI::Event_GetReachableEntityPosition( idEntity *ent ) {
 
 	if ( move.moveType != MOVETYPE_FLY ) {
 		if ( !ent->GetFloorPos( 64.0f, pos ) ) {
-			idThread::ReturnInt( false );
-			return;
+			// NOTE: not a good way to return 'false'
+			return idThread::ReturnVector( vec3_zero );
 		}
 		if ( ent->IsType( idActor::Type ) && static_cast<idActor *>( ent )->OnLadder() ) {
-			idThread::ReturnInt( false );
-			return;
+			// NOTE: not a good way to return 'false'
+			return idThread::ReturnVector( vec3_zero );
 		}
 	} else {
 		pos = ent->GetPhysics()->GetOrigin();

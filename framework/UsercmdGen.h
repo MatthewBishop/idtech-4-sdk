@@ -78,7 +78,7 @@ public:
 	int			sequence;						// just for debugging
 
 public:
-	void		ByteSwap();						// on big endien systems, byte swap the shorts and ints
+	void		ByteSwap();						// on big endian systems, byte swap the shorts and ints
 	bool		operator==( const usercmd_t &rhs ) const;
 };
 

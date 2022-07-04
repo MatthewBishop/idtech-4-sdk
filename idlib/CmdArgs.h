@@ -17,6 +17,8 @@ public:
 							idCmdArgs( void ) { argc = 0; }
 							idCmdArgs( const char *text, bool keepAsStrings ) { TokenizeString( text, keepAsStrings ); }
 
+	void					operator=( const idCmdArgs &args );
+
 							// The functions that execute commands get their parameters with these functions.
 	int						Argc( void ) const { return argc; }
 							// Argv() will return an empty string, not NULL if arg >= argc.

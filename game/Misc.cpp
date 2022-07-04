@@ -117,7 +117,13 @@ idPlayerStart::Event_TeleportStage
 FIXME: add functionality to fx system ( could be done with player scripting too )
 ================
 */
-void idPlayerStart::Event_TeleportStage( idPlayer *player ) {
+void idPlayerStart::Event_TeleportStage( idEntity *_player ) {
+	idPlayer *player;
+	if ( !_player->IsType( idPlayer::Type ) ) {
+		common->Warning( "idPlayerStart::Event_TeleportStage: entity is not an idPlayer\n" );
+		return;
+	}
+	player = static_cast<idPlayer*>(_player);
 	float teleportDelay = spawnArgs.GetFloat( "teleportDelay" );
 	switch ( teleportStage ) {
 		case 0:
@@ -1380,8 +1386,7 @@ void idStaticEntity::Spawn( void ) {
 	active = false;
 
 	idStr model = spawnArgs.GetString( "model" );
-	// FIXME: temp also catch obsolete .ips extension
-	if ( model.Find( ".ips" ) >= 0 || model.Find( ".prt" ) >= 0 ) {
+	if ( model.Find( ".prt" ) >= 0 ) {
 		// we want the parametric particles out of sync with each other
 		renderEntity.shaderParms[ SHADERPARM_TIMEOFFSET ] = gameLocal.random.RandomInt( 32767 );
 	}

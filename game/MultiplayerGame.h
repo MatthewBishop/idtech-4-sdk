@@ -92,7 +92,7 @@ public:
 	// updates frag counts and potentially ends the match in sudden death
 	void			PlayerDeath( idPlayer *dead, idPlayer *killer, bool telefrag );
 
-	void			AddChatLine( const char *fmt, ... );
+	void			AddChatLine( const char *fmt, ... ) id_attribute((format(printf,2,3)));
 
 	void			UpdateMainGui( void );
 	idUserInterface*StartMenu( void );
@@ -208,6 +208,8 @@ public:
 	void			ClientReadWarmupTime( const idBitMsg &msg );
 
 	void			ServerClientConnect( int clientNum );
+
+	void			PlayerStats( int clientNum, char *data, const int len );
 
 private:
 	static const char	*MPGuis[];

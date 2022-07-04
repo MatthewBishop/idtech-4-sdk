@@ -140,9 +140,9 @@ public:
 					// returns the current line number
 	const int		GetLineNum( void ) const;
 					// print an error message
-	void			Error( const char *str, ... ) const;
+	void			Error( const char *str, ... ) const id_attribute((format(printf,2,3)));
 					// print a warning message
-	void			Warning( const char *str, ... ) const;
+	void			Warning( const char *str, ... ) const id_attribute((format(printf,2,3)));
 
 					// add a global define that will be added to all opened sources
 	static int		AddGlobalDefine( const char *string );

@@ -31,6 +31,8 @@ idLib::Init
 */
 void idLib::Init( void ) {
 
+	assert( sizeof( bool ) == 1 );
+
 	// initialize little/big endian conversion
 	Swap_Init();
 
@@ -47,7 +49,7 @@ void idLib::Init( void ) {
 	idMath::Init();
 
 	// test idMatX
-	idMatX::Test();
+	//idMatX::Test();
 
 	// test idPolynomial
 	idPolynomial::Test();
@@ -213,6 +215,7 @@ static float	(*_BigFloat)( float l );
 static float	(*_LittleFloat)( float l );
 static void		(*_BigRevBytes)( void *bp, int elsize, int elcount );
 static void		(*_LittleRevBytes)( void *bp, int elsize, int elcount );
+static void     (*_LittleBitField)( void *bp, int elsize );
 static void		(*_SixtetsForInt)( byte *out, int src );
 static int		(*_IntForSixtets)( byte *in );
 
@@ -224,6 +227,7 @@ float	BigFloat( float l ) { return _BigFloat( l ); }
 float	LittleFloat( float l ) { return _LittleFloat( l ); }
 void	BigRevBytes( void *bp, int elsize, int elcount ) { _BigRevBytes( bp, elsize, elcount ); }
 void	LittleRevBytes( void *bp, int elsize, int elcount ){ _LittleRevBytes( bp, elsize, elcount ); }
+void	LittleBitField( void *bp, int elsize ){ _LittleBitField( bp, elsize ); }
 
 void	SixtetsForInt( byte *out, int src) { _SixtetsForInt( out, src ); }
 int		IntForSixtets( byte *in ) { return _IntForSixtets( in ); }
@@ -350,11 +354,53 @@ void RevBytesSwap( void *bp, int elsize, int elcount ) {
 }
 
 /*
+ =====================================================================
+ RevBytesSwap
+ 
+ Reverses byte order in place, then reverses bits in those bytes
+ 
+ INPUTS
+ bp       bitfield structure to reverse
+ elsize   size of the underlying data type
+ 
+ RESULTS
+ Reverses the bitfield of size elsize.
+ ===================================================================== */
+void RevBitFieldSwap( void *bp, int elsize) {
+	int i;
+	unsigned char *p, t, v;
+	
+	LittleRevBytes( bp, elsize, 1 );
+	
+	p = (unsigned char *) bp;
+	while ( elsize-- ) {
+		v = *p;
+		t = v;
+		for (i = 7; i; i--)
+		{
+			t |= v & 1;
+			t <<= 1;
+			v >>= 1;
+		}
+		*p++ = t;
+	}
+}
+
+/*
 ================
 RevBytesNoSwap
 ================
 */
 void RevBytesNoSwap( void *bp, int elsize, int elcount ) {
+	return;
+}
+
+/*
+ ================
+ RevBytesNoSwap
+ ================
+ */
+void RevBitFieldNoSwap( void *bp, int elsize ) {
 	return;
 }
 
@@ -435,6 +481,7 @@ void Swap_Init( void ) {
 		_LittleFloat = FloatNoSwap;
 		_BigRevBytes = RevBytesSwap;
 		_LittleRevBytes = RevBytesNoSwap;
+		_LittleBitField = RevBitFieldNoSwap;
 		_SixtetsForInt = SixtetsForIntLittle;
 		_IntForSixtets = IntForSixtetsLittle;
 	} else {
@@ -447,6 +494,7 @@ void Swap_Init( void ) {
 		_LittleFloat = FloatSwap;
 		_BigRevBytes = RevBytesNoSwap;
 		_LittleRevBytes = RevBytesSwap;
+		_LittleBitField = RevBitFieldSwap;
 		_SixtetsForInt = SixtetsForIntBig;
 		_IntForSixtets = IntForSixtetsBig;
 	}

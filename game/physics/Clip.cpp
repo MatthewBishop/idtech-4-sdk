@@ -137,8 +137,8 @@ void idClipModel::SaveTraceModels( idSaveGame *savefile ) {
 	savefile->WriteInt( traceModelCache.Num() );
 	for ( i = 0; i < traceModelCache.Num(); i++ ) {
 		trmCache_t *entry = traceModelCache[i];
-
-		savefile->Write( &entry->trm, sizeof( entry->trm ) );
+		
+		savefile->WriteTraceModel( entry->trm );
 		savefile->WriteFloat( entry->volume );
 		savefile->WriteVec3( entry->centerOfMass );
 		savefile->WriteMat3( entry->inertiaTensor );
@@ -157,10 +157,12 @@ void idClipModel::RestoreTraceModels( idRestoreGame *savefile ) {
 
 	savefile->ReadInt( num );
 	traceModelCache.SetNum( num );
+
 	for ( i = 0; i < num; i++ ) {
 		trmCache_t *entry = new trmCache_t;
+		
+		savefile->ReadTraceModel( entry->trm );
 
-		savefile->Read( &entry->trm, sizeof( entry->trm ) );
 		savefile->ReadFloat( entry->volume );
 		savefile->ReadVec3( entry->centerOfMass );
 		savefile->ReadMat3( entry->inertiaTensor );

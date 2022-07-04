@@ -24,7 +24,7 @@ public:
 							~idLangDict( void );
 
 	void					Clear( void );
-	bool					Load( const char *fileName );
+	bool					Load( const char *fileName, bool clear = true );
 	void					Save( const char *fileName );
 
 	const char *			AddString( const char *str );
@@ -36,6 +36,8 @@ public:
 	int						GetNumKeyVals( void ) const;
 	const idLangKeyValue *	GetKeyVal( int i ) const;
 
+	void					SetBaseID(int id) { baseID = id; };
+
 private:
 	idList<idLangKeyValue>	args;
 	idHashIndex				hash;
@@ -43,6 +45,8 @@ private:
 	bool					ExcludeString( const char *str ) const;
 	int						GetNextId( void ) const;
 	int						GetHashKey( const char *str ) const;
+
+	int						baseID;
 };
 
 #endif /* !__LANGDICT_H__ */

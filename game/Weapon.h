@@ -134,6 +134,7 @@ private:
 	idScriptBool			WEAPON_RELOAD;
 	idScriptBool			WEAPON_NETRELOAD;
 	idScriptBool			WEAPON_NETENDRELOAD;
+	idScriptBool			WEAPON_NETFIRING;
 	idScriptBool			WEAPON_RAISEWEAPON;
 	idScriptBool			WEAPON_LOWERWEAPON;
 	weaponStatus_t			status;
@@ -225,8 +226,8 @@ private:
 	int						lowAmmo;			// if ammo in clip hits this threshold, snd_
 	bool					powerAmmo;			// true if the clip reduction is a factor of the power setting when
 												// a projectile is launched
-	// mp
-	int						clipPredictTime;
+	// mp client
+	bool					isFiring;
 
 	// zoom
     int						zoomFov;			// variable zoom fov per weapon

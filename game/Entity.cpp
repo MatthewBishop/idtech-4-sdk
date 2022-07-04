@@ -198,21 +198,10 @@ void idGameEdit::ParseSpawnArgsToRenderEntity( const idDict *args, renderEntity_
 
 	modelDef = NULL;
 	if ( temp[0] != '\0' ) {
-		if ( !strstr( temp, "." ) ) {
-
-			// FIXME: temp hack to replace obsolete ips particles with prt particles
-			if ( !strstr( temp, ".ips" ) ) {
-				idStr str = temp;
-				str.Replace( ".ips", ".prt" );
-				modelDef = static_cast<const idDeclModelDef *>( declManager->FindType( DECL_MODELDEF, str, false ) );
-			} else {
-				modelDef = static_cast<const idDeclModelDef *>( declManager->FindType( DECL_MODELDEF, temp, false ) );
-			}
-			if ( modelDef ) {
-				renderEntity->hModel = modelDef->ModelHandle();
-			}
+		modelDef = static_cast<const idDeclModelDef *>( declManager->FindType( DECL_MODELDEF, temp, false ) );
+		if ( modelDef ) {
+			renderEntity->hModel = modelDef->ModelHandle();
 		}
-
 		if ( !renderEntity->hModel ) {
 			renderEntity->hModel = renderModelManager->FindModel( temp );
 		}
@@ -628,7 +617,9 @@ void idEntity::Save( idSaveGame *savefile ) const {
 		targets[ i ].Save( savefile );
 	}
 
-	savefile->Write( &fl, sizeof( fl ) );
+	entityFlags_s flags = fl;
+	LittleBitField( &flags, sizeof( flags ) );
+	savefile->Write( &flags, sizeof( flags ) );
 
 	savefile->WriteRenderEntity( renderEntity );
 	savefile->WriteInt( modelDefHandle );
@@ -703,7 +694,8 @@ void idEntity::Restore( idRestoreGame *savefile ) {
 	}
 
 	savefile->Read( &fl, sizeof( fl ) );
-
+	LittleBitField( &fl, sizeof( fl ) );
+	
 	savefile->ReadRenderEntity( renderEntity );
 	savefile->ReadInt( modelDefHandle );
 	savefile->ReadRefSound( refSound );
@@ -1066,14 +1058,7 @@ void idEntity::SetModel( const char *modelname ) {
 
 	FreeModelDef();
 
-	// FIXME: temp hack to replace obsolete ips particles with prt particles
-	if ( strstr( modelname, ".ips" ) != NULL ) {
-		idStr str = modelname;
-		str.Replace( ".ips", ".prt" );
-		renderEntity.hModel = renderModelManager->FindModel( str );
-	} else {
-		renderEntity.hModel = renderModelManager->FindModel( modelname );
-	}
+	renderEntity.hModel = renderModelManager->FindModel( modelname );
 
 	if ( renderEntity.hModel ) {
 		renderEntity.hModel->Reset();
@@ -1533,7 +1518,7 @@ bool idEntity::StartSound( const char *soundName, const s_channelType channel, i
 		return false;
 	}
 
-	if ( *sound == NULL ) {
+	if ( sound[0] == '\0' ) {
 		return false;
 	}
 
@@ -3038,7 +3023,7 @@ void idEntity::AddDamageEffect( const trace_t &collision, const idVec3 &velocity
 ============
 idEntity::Pain
 
-Called whenever an entity receives damage.  Returns whether the entity responds to the pain.
+Called whenever an entity recieves damage.  Returns whether the entity responds to the pain.
 This is a virtual function that subclasses are expected to implement.
 ============
 */
@@ -3747,7 +3732,7 @@ void idEntity::Event_GetTarget( float index ) {
 	if ( ( i < 0 ) || i >= targets.Num() ) {
 		idThread::ReturnEntity( NULL );
 	} else {
-		idThread::ReturnEntity( targets[ index ].GetEntity() );
+		idThread::ReturnEntity( targets[ i ].GetEntity() );
 	}
 }
 

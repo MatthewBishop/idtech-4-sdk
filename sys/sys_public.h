@@ -111,6 +111,11 @@
 
 #endif
 
+#ifdef __GNUC__
+#define id_attribute(x) __attribute__(x)
+#else
+#define id_attribute(x)  
+#endif
 
 typedef enum {
 	CPUID_NONE							= 0x00000,
@@ -222,10 +227,10 @@ void			Sys_SetClipboardData( const char *string );
 
 // will go to the various text consoles
 // NOT thread safe - never use in the async paths
-void			Sys_Printf( const char *msg, ... );
+void			Sys_Printf( const char *msg, ... )id_attribute((format(printf,1,2)));
 
 // guaranteed to be thread-safe
-void			Sys_DebugPrintf( const char *fmt, ... );
+void			Sys_DebugPrintf( const char *fmt, ... )id_attribute((format(printf,1,2)));
 void			Sys_DebugVPrintf( const char *fmt, va_list arg );
 
 // a decent minimum sleep time to avoid going below the process scheduler speeds
@@ -356,6 +361,8 @@ int				Sys_ListFiles( const char *directory, const char *extension, idList<class
 // know early if we are performing a fatal error shutdown so the error message doesn't get lost
 void			Sys_SetFatalError( const char *error );
 
+// display perference dialog
+void			Sys_DoPreferences( void );
 
 /*
 ==============================================================
@@ -387,7 +394,8 @@ public:
 
 	// if the InitForPort fails, the idPort.port field will remain 0
 	bool		InitForPort( int portNumber );
-	int			GetPort( void ) const { return port; }
+	int			GetPort( void ) const { return bound_to.port; }
+	netadr_t	GetAdr( void ) const { return bound_to; }
 	void		Close();
 
 	bool		GetPacket( netadr_t &from, void *data, int &size, int maxSize );
@@ -401,7 +409,7 @@ public:
 	int			bytesWritten;
 
 private:
-	int			port;			// UDP port
+	netadr_t	bound_to;		// interface and port
 	int			netSocket;		// OS specific socket
 };
 
@@ -434,9 +442,6 @@ bool			Sys_StringToNetAdr( const char *s, netadr_t *a, bool doDNSResolve );
 const char *	Sys_NetAdrToString( const netadr_t a );
 bool			Sys_IsLANAddress( const netadr_t a );
 bool			Sys_CompareNetAdrBase( const netadr_t a, const netadr_t b );
-
-int				Sys_GetLocalIPCount( void );
-const char *	Sys_GetLocalIP( int i );
 
 void			Sys_InitNetworking( void );
 void			Sys_ShutdownNetworking( void );
@@ -509,7 +514,7 @@ void				Sys_TriggerEvent( int index = TRIGGER_EVENT_ZERO );
 
 class idSys {
 public:
-	virtual void			DebugPrintf( const char *fmt, ... ) = 0;
+	virtual void			DebugPrintf( const char *fmt, ... )id_attribute((format(printf,2,3))) = 0;
 	virtual void			DebugVPrintf( const char *fmt, va_list arg ) = 0;
 
 	virtual double			GetClockTicks( void ) = 0;
@@ -521,10 +526,7 @@ public:
 	virtual void			FPU_SetFTZ( bool enable ) = 0;
 	virtual void			FPU_SetDAZ( bool enable ) = 0;
 
-	// TMP: only the Linux 1.1 build has those, the SDK game source doesn't use them
-#ifdef __linux__
 	virtual void			FPU_EnableExceptions( int exceptions ) = 0;
-#endif
 
 	virtual bool			LockMemory( void *ptr, int bytes ) = 0;
 	virtual bool			UnlockMemory( void *ptr, int bytes ) = 0;
@@ -547,5 +549,8 @@ public:
 };
 
 extern idSys *				sys;
+
+bool Sys_LoadOpenAL( void );
+void Sys_FreeOpenAL( void );
 
 #endif /* !__SYS_PUBLIC__ */

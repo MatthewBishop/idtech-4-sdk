@@ -256,6 +256,10 @@ public:
 							// if the decl wasn't explcitly defined.
 	virtual const idDecl *	FindType( declType_t type, const char *name, bool makeDefault = true ) = 0;
 
+	virtual const idDecl*	FindDeclWithoutParsing( declType_t type, const char *name, bool makeDefault = true ) = 0;
+
+	virtual void			ReloadFile( const char* filename, bool force ) = 0;
+
 							// Returns the number of decls of the given type.
 	virtual int				GetNumDecls( declType_t type ) = 0;
 
@@ -272,9 +276,12 @@ public:
 							// the given file used by editors to create a new decls.
 	virtual idDecl *		CreateNewDecl( declType_t type, const char *name, const char *fileName ) = 0;
 
+							// BSM - Added for the material editors rename capabilities
+	virtual bool			RenameDecl( declType_t type, const char* oldName, const char* newName ) = 0;
+
 							// When media files are loaded, a reference line can be printed at a
 							// proper indentation if decl_show is set
-	virtual void			MediaPrint( const char *fmt, ... ) = 0;
+	virtual void			MediaPrint( const char *fmt, ... ) id_attribute((format(printf,2,3))) = 0;
 
 	virtual void			WritePrecacheCommands( idFile *f ) = 0;
 
