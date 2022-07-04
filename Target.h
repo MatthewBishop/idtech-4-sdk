@@ -262,8 +262,6 @@ class idTarget_GiveEmail : public idTarget {
 public:
 	CLASS_PROTOTYPE( idTarget_GiveEmail );
 
-	void				Spawn();
-
 private:
 	void				Event_Activate( idEntity *activator );
 };
@@ -295,12 +293,10 @@ idTarget_SetInfluence
 ===============================================================================
 */
 
-#ifdef _D3XP
 typedef struct SavedGui_s {
 	SavedGui_s() {memset(gui, 0, sizeof(idUserInterface*)*MAX_RENDERENTITY_GUI); };
 	idUserInterface*	gui[MAX_RENDERENTITY_GUI];
 } SavedGui_t;
-#endif
 
 class idTarget_SetInfluence : public idTarget {
 public:
@@ -321,10 +317,10 @@ private:
 	void				Event_ClearFlash( float flash );
 	void				Think();
 
-	idList<int>			lightList;
-	idList<int>			guiList;
-	idList<int>			soundList;
-	idList<int>			genericList;
+	idList<int, TAG_TARGET>			lightList;
+	idList<int, TAG_TARGET>			guiList;
+	idList<int, TAG_TARGET>			soundList;
+	idList<int, TAG_TARGET>			genericList;
 	float				flashIn;
 	float				flashOut;
 	float				delay;
@@ -335,9 +331,7 @@ private:
 	bool				soundFaded;
 	bool				restoreOnTrigger;
 
-#ifdef _D3XP
-	idList<SavedGui_t>	savedGuiList;
-#endif
+	idList<SavedGui_t, TAG_TARGET>	savedGuiList;
 };
 
 
@@ -376,7 +370,7 @@ public:
 	void				Think();
 
 private:
-	idInterpolate<int>	fovSetting;
+	idInterpolate<float>	fovSetting;
 
 	void				Event_Activate( idEntity *activator );
 };
@@ -522,6 +516,20 @@ private:
 /*
 ===============================================================================
 
+idTarget_Checkpoint
+
+===============================================================================
+*/
+class idTarget_Checkpoint : public idTarget {
+public:
+	CLASS_PROTOTYPE( idTarget_Checkpoint );
+private:
+	void				Event_Activate( idEntity *activator );
+};
+
+/*
+===============================================================================
+
 idTarget_EnableStamina
 
 ===============================================================================
@@ -548,5 +556,34 @@ private:
 	void				Event_RestoreVolume();
 };
 
+/*
+===============================================================================
+
+idTarget_RumbleJoystick
+
+===============================================================================
+*/
+
+class idTarget_RumbleJoystick : public idTarget {
+public:
+	CLASS_PROTOTYPE( idTarget_RumbleJoystick );
+private:
+	void				Event_Activate( idEntity *activator );
+};
+
+/*
+===============================================================================
+
+idTarget_Achievement
+
+===============================================================================
+*/
+
+class idTarget_Achievement : public idTarget {
+public:
+	CLASS_PROTOTYPE( idTarget_Achievement );
+private:
+	void				Event_Activate( idEntity *activator );
+};
 
 #endif /* !__GAME_TARGET_H__ */

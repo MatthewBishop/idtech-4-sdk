@@ -374,50 +374,6 @@ void idCameraAnim::LoadAnim() {
 		camera[ i ].fov = parser.ParseFloat();
 	}
 	parser.ExpectTokenString( "}" );
-
-#if 0
-	if ( !gameLocal.GetLocalPlayer() ) {
-		return;
-	}
-
-	idDebugGraph gGraph;
-	idDebugGraph tGraph;
-	idDebugGraph qGraph;
-	idDebugGraph dtGraph;
-	idDebugGraph dqGraph;
-	gGraph.SetNumSamples( numFrames );
-	tGraph.SetNumSamples( numFrames );
-	qGraph.SetNumSamples( numFrames );
-	dtGraph.SetNumSamples( numFrames );
-	dqGraph.SetNumSamples( numFrames );
-
-	gameLocal.Printf( "\n\ndelta vec:\n" );
-	float diff_t, last_t, t;
-	float diff_q, last_q, q;
-	diff_t = last_t = 0.0f;
-	diff_q = last_q = 0.0f;
-	for( i = 1; i < numFrames; i++ ) {
-		t = ( camera[ i ].t - camera[ i - 1 ].t ).Length();
-		q = ( camera[ i ].q.ToQuat() - camera[ i - 1 ].q.ToQuat() ).Length();
-		diff_t = t - last_t;
-		diff_q = q - last_q;
-		gGraph.AddValue( ( i % 10 ) == 0 );
-		tGraph.AddValue( t );
-		qGraph.AddValue( q );
-		dtGraph.AddValue( diff_t );
-		dqGraph.AddValue( diff_q );
-
-		gameLocal.Printf( "%d: %.8f  :  %.8f,     %.8f  :  %.8f\n", i, t, diff_t, q, diff_q  );
-		last_t = t;
-		last_q = q;
-	}
-
-	gGraph.Draw( colorBlue, 300.0f );
-	tGraph.Draw( colorOrange, 60.0f );
-	dtGraph.Draw( colorYellow, 6000.0f );
-	qGraph.Draw( colorGreen, 60.0f );
-	dqGraph.Draw( colorCyan, 6000.0f );
-#endif
 }
 
 /*
@@ -440,7 +396,7 @@ void idCameraAnim::Start() {
 	BecomeActive( TH_THINK );
 
 	// if the player has already created the renderview for this frame, have him update it again so that the camera starts this frame
-	if ( gameLocal.GetLocalPlayer()->GetRenderView()->time == gameLocal.time ) {
+	if ( gameLocal.GetLocalPlayer()->GetRenderView()->time[TIME_GROUP2] == gameLocal.fast.time ) {
 		gameLocal.GetLocalPlayer()->CalculateRenderView();
 	}
 }
@@ -472,41 +428,6 @@ idCameraAnim::Think
 =====================
 */
 void idCameraAnim::Think() {
-	int frame;
-	int frameTime;
-
-	if ( thinkFlags & TH_THINK ) {
-		// check if we're done in the Think function when the cinematic is being skipped (idCameraAnim::GetViewParms isn't called when skipping cinematics).
-		if ( !gameLocal.skipCinematic ) {
-			return;
-		}
-
-		if ( camera.Num() < 2 ) {
-			// 1 frame anims never end
-			return;
-		}
-
-		if ( frameRate == USERCMD_HZ ) {
-			frameTime	= gameLocal.time - starttime;
-			frame		= frameTime / gameLocal.msec;
-		} else {
-			frameTime	= ( gameLocal.time - starttime ) * frameRate;
-			frame		= frameTime / 1000;
-		}
-		
-		if ( frame > camera.Num() + cameraCuts.Num() - 2 ) {
-			if ( cycle > 0 ) {
-				cycle--;
-			}
-
-			if ( cycle != 0 ) {
-				// advance start time so that we loop
-				starttime += ( ( camera.Num() - cameraCuts.Num() ) * 1000 ) / frameRate;
-			} else {
-				Stop();
-			}
-		}
-	}
 }
 
 /*
@@ -536,19 +457,11 @@ void idCameraAnim::GetViewParms( renderView_t *view ) {
 		return;
 	}
 
-#ifdef _D3XP
 	SetTimeState ts( timeGroup );
-#endif
 
-	if ( frameRate == USERCMD_HZ ) {
-		frameTime	= gameLocal.time - starttime;
-		frame		= frameTime / gameLocal.msec;
-		lerp		= 0.0f;
-	} else {
-		frameTime	= ( gameLocal.time - starttime ) * frameRate;
-		frame		= frameTime / 1000;
-		lerp		= ( frameTime % 1000 ) * 0.001f;
-	}
+	frameTime	= ( gameLocal.time - starttime ) * frameRate;
+	frame		= frameTime / 1000;
+	lerp		= ( frameTime % 1000 ) * 0.001f;
 
 	// skip any frames where camera cuts occur
 	realFrame = frame;
@@ -562,7 +475,7 @@ void idCameraAnim::GetViewParms( renderView_t *view ) {
 	}
 
 	if ( g_debugCinematic.GetBool() ) {
-		int prevFrameTime	= ( gameLocal.time - starttime - gameLocal.msec ) * frameRate;
+		int prevFrameTime	= ( gameLocal.previousTime - starttime ) * frameRate;
 		int prevFrame		= prevFrameTime / 1000;
 		int prevCut;
 
@@ -635,7 +548,7 @@ void idCameraAnim::GetViewParms( renderView_t *view ) {
 	static int lastFrame = 0;
 	static idVec3 lastFrameVec( 0.0f, 0.0f, 0.0f );
 	if ( gameLocal.time != lastFrame ) {
-		gameRenderWorld->DebugBounds( colorCyan, idBounds( view->vieworg ).Expand( 16.0f ), vec3_origin, gameLocal.msec );
+		gameRenderWorld->DebugBounds( colorCyan, idBounds( view->vieworg ).Expand( 16.0f ), vec3_origin, 1 );
 		gameRenderWorld->DebugLine( colorRed, view->vieworg, view->vieworg + idVec3( 0.0f, 0.0f, 2.0f ), 10000, false );
 		gameRenderWorld->DebugLine( colorCyan, lastFrameVec, view->vieworg, 10000, false );
 		gameRenderWorld->DebugLine( colorYellow, view->vieworg + view->viewaxis[ 0 ] * 64.0f, view->vieworg + view->viewaxis[ 0 ] * 66.0f, 10000, false );

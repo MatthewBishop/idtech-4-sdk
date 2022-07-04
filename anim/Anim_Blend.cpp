@@ -1,7 +1,8 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
+
 
 #include "../Game_local.h"
 
@@ -54,7 +55,7 @@ idAnim::idAnim( const idDeclModelDef *modelDef, const idAnim *anim ) {
 	for( i = 0; i < frameCommands.Num(); i++ ) {
 		frameCommands[ i ] = anim->frameCommands[ i ];
 		if ( anim->frameCommands[ i ].string ) {
-			frameCommands[ i ].string = new idStr( *anim->frameCommands[ i ].string );
+			frameCommands[ i ].string = new (TAG_ANIM) idStr( *anim->frameCommands[ i ].string );
 		}
 	}
 }
@@ -137,7 +138,7 @@ index 0 will never be NULL.  Any anim >= NumAnims will return NULL.
 =====================
 */
 const idMD5Anim *idAnim::MD5Anim( int num ) const {
-	if ( anims == NULL || anims[0] == NULL ) { 
+	if ( anims[0] == NULL ) { 
 		return NULL;
 	}
 	return anims[ num ];
@@ -288,7 +289,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 			return "Unexpected end of line";
 		}
 		fc.type = FC_SCRIPTFUNCTIONOBJECT;
-		fc.string = new idStr( token );
+		fc.string = new (TAG_ANIM) idStr( token );
 	} else if ( token == "event" ) {
 		if( !src.ReadTokenOnLine( &token ) ) {
 			return "Unexpected end of line";
@@ -301,14 +302,14 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 		if ( ev->GetNumArgs() != 0 ) {
 			return va( "Event '%s' has arguments", token.c_str() );
 		}
-		fc.string = new idStr( token );
+		fc.string = new (TAG_ANIM) idStr( token );
 	} else if ( token == "sound" ) {
 		if( !src.ReadTokenOnLine( &token ) ) {
 			return "Unexpected end of line";
 		}
 		fc.type = FC_SOUND;
 		if ( !token.Cmpn( "snd_", 4 ) ) {
-			fc.string = new idStr( token );
+			fc.string = new (TAG_ANIM) idStr( token );
 		} else {
 			fc.soundShader = declManager->FindSound( token );
 			if ( fc.soundShader->GetState() == DS_DEFAULTED ) {
@@ -321,7 +322,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 		}
 		fc.type = FC_SOUND_VOICE;
 		if ( !token.Cmpn( "snd_", 4 ) ) {
-			fc.string = new idStr( token );
+			fc.string = new (TAG_ANIM) idStr( token );
 		} else {
 			fc.soundShader = declManager->FindSound( token );
 			if ( fc.soundShader->GetState() == DS_DEFAULTED ) {
@@ -334,7 +335,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 		}
 		fc.type = FC_SOUND_VOICE2;
 		if ( !token.Cmpn( "snd_", 4 ) ) {
-			fc.string = new idStr( token );
+			fc.string = new (TAG_ANIM) idStr( token );
 		} else {
 			fc.soundShader = declManager->FindSound( token );
 			if ( fc.soundShader->GetState() == DS_DEFAULTED ) {
@@ -347,7 +348,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 		}
 		fc.type = FC_SOUND_BODY;
 		if ( !token.Cmpn( "snd_", 4 ) ) {
-			fc.string = new idStr( token );
+			fc.string = new (TAG_ANIM) idStr( token );
 		} else {
 			fc.soundShader = declManager->FindSound( token );
 			if ( fc.soundShader->GetState() == DS_DEFAULTED ) {
@@ -360,7 +361,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 		}
 		fc.type = FC_SOUND_BODY2;
 		if ( !token.Cmpn( "snd_", 4 ) ) {
-			fc.string = new idStr( token );
+			fc.string = new (TAG_ANIM) idStr( token );
 		} else {
 			fc.soundShader = declManager->FindSound( token );
 			if ( fc.soundShader->GetState() == DS_DEFAULTED ) {
@@ -373,7 +374,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 		}
 		fc.type = FC_SOUND_BODY3;
 		if ( !token.Cmpn( "snd_", 4 ) ) {
-			fc.string = new idStr( token );
+			fc.string = new (TAG_ANIM) idStr( token );
 		} else {
 			fc.soundShader = declManager->FindSound( token );
 			if ( fc.soundShader->GetState() == DS_DEFAULTED ) {
@@ -386,7 +387,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 		}
 		fc.type = FC_SOUND_WEAPON;
 		if ( !token.Cmpn( "snd_", 4 ) ) {
-			fc.string = new idStr( token );
+			fc.string = new (TAG_ANIM) idStr( token );
 		} else {
 			fc.soundShader = declManager->FindSound( token );
 			if ( fc.soundShader->GetState() == DS_DEFAULTED ) {
@@ -399,7 +400,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 		}
 		fc.type = FC_SOUND_GLOBAL;
 		if ( !token.Cmpn( "snd_", 4 ) ) {
-			fc.string = new idStr( token );
+			fc.string = new (TAG_ANIM) idStr( token );
 		} else {
 			fc.soundShader = declManager->FindSound( token );
 			if ( fc.soundShader->GetState() == DS_DEFAULTED ) {
@@ -412,7 +413,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 		}
 		fc.type = FC_SOUND_ITEM;
 		if ( !token.Cmpn( "snd_", 4 ) ) {
-			fc.string = new idStr( token );
+			fc.string = new (TAG_ANIM) idStr( token );
 		} else {
 			fc.soundShader = declManager->FindSound( token );
 			if ( fc.soundShader->GetState() == DS_DEFAULTED ) {
@@ -425,7 +426,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 		}
 		fc.type = FC_SOUND_CHATTER;
 		if ( !token.Cmpn( "snd_", 4 ) ) {
-			fc.string = new idStr( token );
+			fc.string = new (TAG_ANIM) idStr( token );
 		} else {
 			fc.soundShader = declManager->FindSound( token );
 			if ( fc.soundShader->GetState() == DS_DEFAULTED ) {
@@ -453,19 +454,22 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 		if ( !declManager->FindType( DECL_FX, token.c_str() ) ) {
 			return va( "fx '%s' not found", token.c_str() );
 		}
-		fc.string = new idStr( token );
+		fc.string = new (TAG_ANIM) idStr( token );
 	} else if ( token == "trigger" ) {
 		if( !src.ReadTokenOnLine( &token ) ) {
 			return "Unexpected end of line";
 		}
 		fc.type = FC_TRIGGER;
-		fc.string = new idStr( token );
+		fc.string = new (TAG_ANIM) idStr( token );
 	} else if ( token == "triggerSmokeParticle" ) {
 		if( !src.ReadTokenOnLine( &token ) ) {
 			return "Unexpected end of line";
 		}
 		fc.type = FC_TRIGGER_SMOKE_PARTICLE;
-		fc.string = new idStr( token );
+		if ( !declManager->FindType( DECL_PARTICLE, token.c_str() ) ) {
+			return va( "Particle '%s' not found", token.c_str() );
+		}
+		fc.string = new (TAG_ANIM) idStr( token );
 	} else if ( token == "melee" ) {
 		if( !src.ReadTokenOnLine( &token ) ) {
 			return "Unexpected end of line";
@@ -474,7 +478,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 		if ( !gameLocal.FindEntityDef( token.c_str(), false ) ) {
 			return va( "Unknown entityDef '%s'", token.c_str() );
 		}
-		fc.string = new idStr( token );
+		fc.string = new (TAG_ANIM) idStr( token );
 	} else if ( token == "direct_damage" ) {
 		if( !src.ReadTokenOnLine( &token ) ) {
 			return "Unexpected end of line";
@@ -483,7 +487,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 		if ( !gameLocal.FindEntityDef( token.c_str(), false ) ) {
 			return va( "Unknown entityDef '%s'", token.c_str() );
 		}
-		fc.string = new idStr( token );
+		fc.string = new (TAG_ANIM) idStr( token );
 	} else if ( token == "attack_begin" ) {
 		if( !src.ReadTokenOnLine( &token ) ) {
 			return "Unexpected end of line";
@@ -492,7 +496,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 		if ( !gameLocal.FindEntityDef( token.c_str(), false ) ) {
 			return va( "Unknown entityDef '%s'", token.c_str() );
 		}
-		fc.string = new idStr( token );
+		fc.string = new (TAG_ANIM) idStr( token );
 	} else if ( token == "attack_end" ) {
 		fc.type = FC_ENDATTACK;
 	} else if ( token == "muzzle_flash" ) {
@@ -503,10 +507,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 			return va( "Joint '%s' not found", token.c_str() );
 		}
 		fc.type = FC_MUZZLEFLASH;
-		fc.string = new idStr( token );
-	} else if ( token == "muzzle_flash" ) {
-		fc.type = FC_MUZZLEFLASH;
-		fc.string = new idStr( "" );
+		fc.string = new (TAG_ANIM) idStr( token );
 	} else if ( token == "create_missile" ) {
 		if( !src.ReadTokenOnLine( &token ) ) {
 			return "Unexpected end of line";
@@ -515,7 +516,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 			return va( "Joint '%s' not found", token.c_str() );
 		}
 		fc.type = FC_CREATEMISSILE;
-		fc.string = new idStr( token );
+		fc.string = new (TAG_ANIM) idStr( token );
 	} else if ( token == "launch_missile" ) {
 		if( !src.ReadTokenOnLine( &token ) ) {
 			return "Unexpected end of line";
@@ -524,7 +525,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 			return va( "Joint '%s' not found", token.c_str() );
 		}
 		fc.type = FC_LAUNCHMISSILE;
-		fc.string = new idStr( token );
+		fc.string = new (TAG_ANIM) idStr( token );
 	} else if ( token == "fire_missile_at_target" ) {
 		if( !src.ReadTokenOnLine( &token ) ) {
 			return "Unexpected end of line";
@@ -537,9 +538,8 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 			return "Unexpected end of line";
 		}
 		fc.type = FC_FIREMISSILEATTARGET;
-		fc.string = new idStr( token );
+		fc.string = new (TAG_ANIM) idStr( token );
 		fc.index = jointInfo->num;
-#ifdef _D3XP
 	} else if ( token == "launch_projectile" ) {
 		if( !src.ReadTokenOnLine( &token ) ) {
 			return "Unexpected end of line";
@@ -548,7 +548,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 			return "Unknown projectile def";
 		}
 		fc.type = FC_LAUNCH_PROJECTILE;
-		fc.string = new idStr( token );
+		fc.string = new (TAG_ANIM) idStr( token );
 	} else if ( token == "trigger_fx" ) {
 		
 		if( !src.ReadTokenOnLine( &token ) ) {
@@ -566,7 +566,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 		}
 
 		fc.type = FC_TRIGGER_FX;
-		fc.string = new idStr( token );
+		fc.string = new (TAG_ANIM) idStr( token );
 		fc.index = jointInfo->num;
 
 	} else if ( token == "start_emitter" ) {
@@ -587,9 +587,12 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 		if( !src.ReadTokenOnLine( &token ) ) {
 			return "Unexpected end of line";
 		}
+		if ( !declManager->FindType( DECL_PARTICLE, token.c_str() ) ) {
+			return va( "Particle '%s' not found", token.c_str() );
+		}
 		str += token;
 		fc.type = FC_START_EMITTER;
-		fc.string = new idStr( str );
+		fc.string = new (TAG_ANIM) idStr( str );
 		fc.index = jointInfo->num;
 
 	} else if ( token == "stop_emitter" ) {
@@ -598,8 +601,7 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 			return "Unexpected end of line";
 		}
 		fc.type = FC_STOP_EMITTER;
-		fc.string = new idStr( token );
-#endif
+		fc.string = new (TAG_ANIM) idStr( token );
 	} else if ( token == "footstep" ) {
 		fc.type = FC_FOOTSTEP;
 	} else if ( token == "leftfoot" ) {
@@ -639,12 +641,12 @@ const char *idAnim::AddFrameCommand( const idDeclModelDef *modelDef, int framenu
 	} else if ( token == "recordDemo" ) {
 		fc.type = FC_RECORDDEMO;
 		if( src.ReadTokenOnLine( &token ) ) {
-			fc.string = new idStr( token );
+			fc.string = new (TAG_ANIM) idStr( token );
 		}
 	} else if ( token == "aviGame" ) {
 		fc.type = FC_AVIGAME;
 		if( src.ReadTokenOnLine( &token ) ) {
-			fc.string = new idStr( token );
+			fc.string = new (TAG_ANIM) idStr( token );
 		}
 	} else {
 		return va( "Unknown command '%s'", token.c_str() );
@@ -850,9 +852,7 @@ void idAnim::CallFrameCommands( idEntity *ent, int from, int to ) const {
 
 					target = gameLocal.FindEntity( command.string->c_str() );
 					if ( target ) {
-#ifdef _D3XP
 						SetTimeState ts(target->timeGroup);
-#endif
 						target->Signal( SIG_TRIGGER );
 						target->ProcessEvent( &EV_Activate, ent );
 						target->TriggerGuis();
@@ -898,7 +898,6 @@ void idAnim::CallFrameCommands( idEntity *ent, int from, int to ) const {
 					ent->ProcessEvent( &AI_FireMissileAtTarget, modelDef->GetJointName( command.index ), command.string->c_str() );
 					break;
 				}
-#ifdef _D3XP
 				case FC_LAUNCH_PROJECTILE: {
 					ent->ProcessEvent( &AI_LaunchProjectile, command.string->c_str() );
 					break;
@@ -919,7 +918,6 @@ void idAnim::CallFrameCommands( idEntity *ent, int from, int to ) const {
 				case FC_STOP_EMITTER: {
 					ent->ProcessEvent( &AI_StopEmitter, command.string->c_str() );
 				}
-#endif
 				case FC_FOOTSTEP : {
 					ent->ProcessEvent( &EV_Footstep );
 					break;
@@ -1786,7 +1784,7 @@ bool idAnimBlend::BlendAnim( int currentTime, int channel, int numJoints, idJoin
 	float			mixWeight;
 	const idMD5Anim	*md5anim;
 	idJointQuat		*ptr;
-	frameBlend_t	frametime;
+	frameBlend_t	frametime = { 0 };
 	idJointQuat		*jointFrame;
 	idJointQuat		*mixFrame;
 	int				numAnims;
@@ -2185,7 +2183,7 @@ void idDeclModelDef::CopyDecl( const idDeclModelDef *decl ) {
 
 	anims.SetNum( decl->anims.Num() );
 	for( i = 0; i < anims.Num(); i++ ) {
-		anims[ i ] = new idAnim( this, decl->anims[ i ] );
+		anims[ i ] = new (TAG_ANIM) idAnim( this, decl->anims[ i ] );
 	}
 
 	joints.SetNum( decl->joints.Num() );
@@ -2282,7 +2280,7 @@ void idDeclModelDef::GetJointList( const char *jointnames, idList<jointHandle_t>
 	pos = jointnames;
 	while( *pos ) {
 		// skip over whitespace
-		while( ( *pos != 0 ) && isspace( *pos ) ) {
+		while( ( *pos != 0 ) && isspace( (unsigned char)*pos ) ) {
 			pos++;
 		}
 
@@ -2308,7 +2306,7 @@ void idDeclModelDef::GetJointList( const char *jointnames, idList<jointHandle_t>
 			getChildren = false;
 		}
 
-		while( ( *pos != 0 ) && !isspace( *pos ) ) {
+		while( ( *pos != 0 ) && !isspace( (unsigned char)*pos ) ) {
 			jointname += *pos;
 			pos++;
 		}
@@ -2401,7 +2399,7 @@ void idDeclModelDef::SetupJoints( int *numJoints, idJointMat **jointList, idBoun
 	}
 
 	// set up initial pose for model (with no pose, model is just a jumbled mess)
-	list = (idJointMat *) Mem_Alloc16( num * sizeof( list[0] ) );
+	list = (idJointMat *) Mem_Alloc16( SIMD_ROUND_JOINTS( num ) * sizeof( list[0] ), TAG_JOINTMAT );
 	pose = GetDefaultPose();
 
 	// convert the joint quaternions to joint matrices
@@ -2420,6 +2418,8 @@ void idDeclModelDef::SetupJoints( int *numJoints, idJointMat **jointList, idBoun
 
 	// transform the joint hierarchy
 	SIMDProcessor->TransformJoints( list, jointParents.Ptr(), 1, joints.Num() - 1 );
+
+	SIMD_INIT_LAST_JOINT( list, num );
 
 	*numJoints = num;
 	*jointList = list;
@@ -2471,14 +2471,14 @@ bool idDeclModelDef::ParseAnim( idLexer &src, int numDefaultAnims ) {
 		anim = anims[ i ];
 	} else {
 		// create the alias associated with this animation
-		anim = new idAnim();
+		anim = new (TAG_ANIM) idAnim();
 		anims.Append( anim );
 	}
 
 	// random anims end with a number.  find the numeric suffix of the animation.
 	len = alias.Length();
 	for( i = len - 1; i > 0; i-- ) {
-		if ( !isdigit( alias[ i ] ) ) {
+		if ( !isdigit( (unsigned char)alias[ i ] ) ) {
 			break;
 		}
 	}
@@ -2605,7 +2605,7 @@ bool idDeclModelDef::ParseAnim( idLexer &src, int numDefaultAnims ) {
 idDeclModelDef::Parse
 ================
 */
-bool idDeclModelDef::Parse( const char *text, const int textLength ) {
+bool idDeclModelDef::Parse( const char *text, const int textLength, bool allowBinaryVersion ) {
 	int					i;
 	int					num;
 	idStr				filename;
@@ -3022,6 +3022,7 @@ idDeclModelDef::NumJointsOnChannel
 int idDeclModelDef::NumJointsOnChannel( int channel ) const {
 	if ( ( channel < 0 ) || ( channel >= ANIM_NumAnimChannels ) ) {
 		gameLocal.Error( "idDeclModelDef::NumJointsOnChannel : channel out of range" );
+		return 0;
 	}
 	return channelJoints[ channel ].Num();
 }
@@ -3034,6 +3035,7 @@ idDeclModelDef::GetChannelJoints
 const int * idDeclModelDef::GetChannelJoints( int channel ) const {
 	if ( ( channel < 0 ) || ( channel >= ANIM_NumAnimChannels ) ) {
 		gameLocal.Error( "idDeclModelDef::GetChannelJoints : channel out of range" );
+		return NULL;
 	}
 	return channelJoints[ channel ].Ptr();
 }
@@ -3196,7 +3198,7 @@ void idAnimator::Restore( idRestoreGame *savefile ) {
 	savefile->ReadInt( num );
 	jointMods.SetNum( num );
 	for( i = 0; i < num; i++ ) {
-		jointMods[ i ] = new jointMod_t;
+		jointMods[ i ] = new (TAG_ANIM) jointMod_t;
 		savefile->ReadInt( (int&)jointMods[ i ]->jointnum );
 		savefile->ReadMat3( jointMods[ i ]->mat );
 		savefile->ReadVec3( jointMods[ i ]->pos );
@@ -3205,13 +3207,14 @@ void idAnimator::Restore( idRestoreGame *savefile ) {
 	}
 	
 	savefile->ReadInt( numJoints );
-	joints = (idJointMat *) Mem_Alloc16( numJoints * sizeof( joints[0] ) );
+	joints = (idJointMat *) Mem_Alloc16( SIMD_ROUND_JOINTS( numJoints ) * sizeof( joints[0] ), TAG_JOINTMAT );
 	for ( i = 0; i < numJoints; i++ ) {
 		float *data = joints[i].ToFloatPtr();
 		for ( j = 0; j < 12; j++ ) {
 			savefile->ReadFloat( data[j] );
 		}
 	}
+	SIMD_INIT_LAST_JOINT( joints, numJoints );
 	
 	savefile->ReadInt( lastTransformTime );
 	savefile->ReadBool( stoppedAnimatingUpdate );
@@ -3500,6 +3503,7 @@ idAnimator::CurrentAnim
 idAnimBlend *idAnimator::CurrentAnim( int channelNum ) {
 	if ( ( channelNum < 0 ) || ( channelNum >= ANIM_NumAnimChannels ) ) {
 		gameLocal.Error( "idAnimator::CurrentAnim : channel out of range" );
+		return NULL;
 	}
 
 	return &channels[ channelNum ][ 0 ];
@@ -3516,6 +3520,7 @@ void idAnimator::Clear( int channelNum, int currentTime, int cleartime ) {
 
 	if ( ( channelNum < 0 ) || ( channelNum >= ANIM_NumAnimChannels ) ) {
 		gameLocal.Error( "idAnimator::Clear : channel out of range" );
+		return;
 	}
 
 	blend = channels[ channelNum ];
@@ -3596,6 +3601,7 @@ idAnimator::SyncAnimChannels
 void idAnimator::SyncAnimChannels( int channelNum, int fromChannelNum, int currentTime, int blendTime ) {
 	if ( ( channelNum < 0 ) || ( channelNum >= ANIM_NumAnimChannels ) || ( fromChannelNum < 0 ) || ( fromChannelNum >= ANIM_NumAnimChannels ) ) {
 		gameLocal.Error( "idAnimator::SyncToChannel : channel out of range" );
+		return;
 	}
 
 	idAnimBlend &fromBlend = channels[ fromChannelNum ][ 0 ];
@@ -3642,7 +3648,7 @@ void idAnimator::SetJointPos( jointHandle_t jointnum, jointModTransform_t transf
 	}
 
 	if ( !jointMod ) {
-		jointMod = new jointMod_t;
+		jointMod = new (TAG_ANIM) jointMod_t;
 		jointMod->jointnum = jointnum;
 		jointMod->mat.Identity();
 		jointMod->transform_axis = JOINTMOD_NONE;
@@ -3682,7 +3688,7 @@ void idAnimator::SetJointAxis( jointHandle_t jointnum, jointModTransform_t trans
 	}
 
 	if ( !jointMod ) {
-		jointMod = new jointMod_t;
+		jointMod = new (TAG_ANIM) jointMod_t;
 		jointMod->jointnum = jointnum;
 		jointMod->pos.Zero();
 		jointMod->transform_pos = JOINTMOD_NONE;
@@ -3923,10 +3929,10 @@ void idAnimator::InitAFPose() {
 		return;
 	}
 
-	AFPoseJoints.SetNum( modelDef->Joints().Num(), false );
-	AFPoseJoints.SetNum( 0, false );
-	AFPoseJointMods.SetNum( modelDef->Joints().Num(), false );
-	AFPoseJointFrame.SetNum( modelDef->Joints().Num(), false );
+	AFPoseJoints.SetNum( modelDef->Joints().Num() );
+	AFPoseJoints.SetNum( 0 );
+	AFPoseJointMods.SetNum( modelDef->Joints().Num() );
+	AFPoseJointFrame.SetNum( modelDef->Joints().Num() );
 }
 
 /*
@@ -4071,7 +4077,7 @@ void idAnimator::FinishAFPose( int animNum, const idBounds &bounds, const int ti
 	}
 
 	// lock all parents of modified joints
-	AFPoseJoints.SetNum( 0, false );
+	AFPoseJoints.SetNum( 0 );
 	for ( i = 0; i < numJoints; i++ ) {
 		if ( blendJoints[i] ) {
 			AFPoseJoints.Append( i );
@@ -4119,7 +4125,7 @@ void idAnimator::ClearAFPose() {
 		ForceUpdate();
 	}
 	AFPoseBlendWeight = 1.0f;
-	AFPoseJoints.SetNum( 0, false );
+	AFPoseJoints.SetNum( 0 );
 	AFPoseBounds.Clear();
 	AFPoseTime = 0;
 }
@@ -4240,10 +4246,6 @@ bool idAnimator::CreateFrame( int currentTime, bool force ) {
 	const idJointQuat *	defaultPose;
 
 	static idCVar		r_showSkel( "r_showSkel", "0", CVAR_RENDERER | CVAR_INTEGER, "", 0, 2, idCmdSystem::ArgCompletion_Integer<0,2> );
-
-	if ( gameLocal.inCinematic && gameLocal.skipCinematic ) {
-		return false;
-	}
 
 	if ( !modelDef || !modelDef->ModelHandle() ) {
 		return false;
@@ -4570,10 +4572,12 @@ idAnimator::GetChannelForJoint
 int idAnimator::GetChannelForJoint( jointHandle_t joint ) const {
 	if ( !modelDef ) {
 		gameLocal.Error( "idAnimator::GetChannelForJoint: NULL model" );
+		return -1;
 	}
 
 	if ( ( joint < 0 ) || ( joint >= numJoints ) ) {
 		gameLocal.Error( "idAnimator::GetChannelForJoint: invalid joint num (%d)", joint );
+		return -1;
 	}
 
 	return modelDef->GetJoint( joint )->channel;
@@ -4621,8 +4625,8 @@ idAnimator::GetJoints
 =====================
 */
 void idAnimator::GetJoints( int *numJoints, idJointMat **jointsPtr ) {
-	*numJoints	= this->numJoints;
-	*jointsPtr	= this->joints;
+	*numJoints = this->numJoints;
+	*jointsPtr = this->joints;
 }
 
 /*
@@ -4742,7 +4746,7 @@ const idDeclModelDef *ANIM_GetModelDefFromEntityDef( const idDict *args ) {
 
 	idStr name = args->GetString( "model" );
 	modelDef = static_cast<const idDeclModelDef *>( declManager->FindType( DECL_MODELDEF, name, false ) );
-	if ( modelDef && modelDef->ModelHandle() ) {
+	if ( modelDef != NULL && modelDef->ModelHandle() ) {
 		return modelDef;
 	}
 
@@ -4762,15 +4766,15 @@ idRenderModel *idGameEdit::ANIM_GetModelFromEntityDef( const idDict *args ) {
 
 	idStr name = args->GetString( "model" );
 	modelDef = static_cast<const idDeclModelDef *>( declManager->FindType( DECL_MODELDEF, name, false ) );
-	if ( modelDef ) {
+	if ( modelDef != NULL ) {
 		model = modelDef->ModelHandle();
 	}
 
-	if ( !model ) {
+	if ( model == NULL ) {
 		model = renderModelManager->FindModel( name );
 	}
 
-	if ( model && model->IsDefaultModel() ) {
+	if ( model != NULL && model->IsDefaultModel() ) {
 		return NULL;
 	}
 
@@ -5069,9 +5073,11 @@ idRenderModel *idGameEdit::ANIM_CreateMeshForAnim( idRenderModel *model, const c
 	}
 
 	ent.numJoints = model->NumJoints();
-	ent.joints = ( idJointMat * )Mem_Alloc16( ent.numJoints * sizeof( *ent.joints ) );
+	ent.joints = ( idJointMat * )Mem_Alloc16( SIMD_ROUND_JOINTS( ent.numJoints ) * sizeof( *ent.joints ), TAG_JOINTMAT );
 
 	ANIM_CreateAnimFrame( model, md5anim, ent.numJoints, ent.joints, FRAME2MS( frame ), offset, remove_origin_offset );
+
+	SIMD_INIT_LAST_JOINT( ent.joints, ent.numJoints );
 
 	newmodel = model->InstantiateDynamicModel( &ent, NULL, NULL );
 

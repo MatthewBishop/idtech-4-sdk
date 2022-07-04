@@ -27,7 +27,7 @@ public:
 	void					Restore( idRestoreGame *savefile );
 
 	virtual void			Think();
-
+	virtual void			ClientThink( const int curTime, const float fraction, const bool predict );
 	virtual void			Hide();
 	virtual void			Show();
 
@@ -35,21 +35,18 @@ public:
 	void					EnableDamage( bool enable, float duration );
 	virtual bool			Collide( const trace_t &collision, const idVec3 &velocity );
 	virtual void			Killed( idEntity *inflictor, idEntity *attacker, int damage, const idVec3 &dir, int location );
-	virtual void			WriteToSnapshot( idBitMsgDelta &msg ) const;
-	virtual void			ReadFromSnapshot( const idBitMsgDelta &msg );
+	virtual void			WriteToSnapshot( idBitMsg &msg ) const;
+	virtual void			ReadFromSnapshot( const idBitMsg &msg );
 
-#ifdef _D3XP
 	void					SetAttacker( idEntity *ent );
-#endif
+	const idEntity *		GetAttacker() { return attacker; }
 
 protected:
 	idPhysics_RigidBody		physicsObj;				// physics object
 	idStr					brokenModel;			// model set when health drops down to or below zero
 	idStr					damage;					// if > 0 apply damage to hit entities
-#ifdef _D3XP
 	idStr					monsterDamage;
 	idEntity				*attacker;
-#endif
 	idStr					fxCollide;				// fx system to start when collides with something
 	int						nextCollideFxTime;		// next time it is ok to spawn collision fx
 	float					minDamageVelocity;		// minimum velocity before moveable applies damage
@@ -99,8 +96,8 @@ public:
 	void					BarrelThink();
 	virtual void			Think();
 	virtual bool			GetPhysicsToVisualTransform( idVec3 &origin, idMat3 &axis );
-	virtual void			ClientPredictionThink();
-
+	virtual void			ClientThink( const int curTime, const float fraction, const bool predict );
+	
 private:
 	float					radius;					// radius of barrel
 	int						barrelAxis;				// one of the coordinate axes the barrel cylinder is parallel to
@@ -133,20 +130,19 @@ public:
 	void					Save( idSaveGame *savefile ) const;
 	void					Restore( idRestoreGame *savefile );
 
-#ifdef _D3XP
 	bool					IsStable();
 	void					SetStability( bool stability );
 	void					StartBurning();
 	void					StopBurning();
-#endif
 
+	virtual void			ClientThink( const int curTime, const float fraction, const bool predict );
 	virtual void			Think();
 	virtual void			Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &dir, 
 								const char *damageDefName, const float damageScale, const int location );
 	virtual void			Killed( idEntity *inflictor, idEntity *attacker, int damage, const idVec3 &dir, int location );
 
-	virtual void			WriteToSnapshot( idBitMsgDelta &msg ) const;
-	virtual void			ReadFromSnapshot( const idBitMsgDelta &msg );
+	virtual void			WriteToSnapshot( idBitMsg &msg ) const;
+	virtual void			ReadFromSnapshot( const idBitMsg &msg );
 	virtual bool			ClientReceiveEvent( int event, int time, const idBitMsg &msg );
 
 	enum {
@@ -172,13 +168,12 @@ private:
 	int						particleTime;
 	int						lightTime;
 	float					time;
-#ifdef _D3XP
 	bool					isStable;
-#endif
 
 	void					AddParticles( const char *name, bool burn );
 	void					AddLight( const char *name , bool burn );
 	void					ExplodingEffects();
+	void					UpdateLight();
 
 	void					Event_Activate( idEntity *activator );
 	void					Event_Respawn();

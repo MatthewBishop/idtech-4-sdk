@@ -67,6 +67,7 @@ void idIK::Restore( idRestoreGame *savefile ) {
 		if ( animator == NULL || animator->ModelDef() == NULL ) {
 			gameLocal.Warning( "idIK::Restore: IK for entity '%s' at (%s) has no model set.",
 								self->name.c_str(), self->GetPhysics()->GetOrigin().ToString(0) );
+			return;
 		}
 		modifiedAnim = animator->GetAnim( anim );
 		if ( modifiedAnim == 0 ) {
@@ -521,7 +522,7 @@ bool idIK_Walk::Init( idEntity *self, const char *anim, const idVec3 &modelOffse
 			verts[i] = footWinding[i] * footSize;
 		}
 		trm.SetupPolygon( verts, 4 );
-		footModel = new idClipModel( trm );
+		footModel = new (TAG_PHYSICS_CLIP) idClipModel( trm );
 	}
 
 	initialized = true;
@@ -535,7 +536,7 @@ idIK_Walk::Evaluate
 ================
 */
 void idIK_Walk::Evaluate() {
-	int i, newPivotFoot;
+	int i, newPivotFoot = -1;
 	float modelHeight, jointHeight, lowestHeight, floorHeights[MAX_LEGS];
 	float shift, smallestShift, newHeight, step, newPivotYaw, height, largestAnkleHeight;
 	idVec3 modelOrigin, normal, hipDir, kneeDir, start, end, jointOrigins[MAX_LEGS];

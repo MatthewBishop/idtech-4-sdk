@@ -81,6 +81,11 @@ public:	// common physics interface
 	virtual const idBounds &	GetAbsBounds( int id = -1 ) const = 0;
 								// evaluate the physics with the given time step, returns true if the object moved
 	virtual bool				Evaluate( int timeStepMSec, int endTimeMSec ) = 0;
+								// Interpolate between the two known snapshots with the given fraction, used for MP clients.
+								// returns true if the object moved.
+	virtual bool				Interpolate( const float fraction ) = 0;
+								// resets the prev and next states to the parameters.
+	virtual void				ResetInterpolationState( const idVec3 & origin, const idMat3 & axis ) = 0;
 								// update the time without moving
 	virtual void				UpdateTime( int endTimeMSec ) = 0;
 								// get the last physics update time
@@ -139,7 +144,7 @@ public:	// common physics interface
 	virtual bool				IsGroundClipModel( int entityNum, int id ) const = 0;
 								// set the master entity for objects bound to a master
 	virtual void				SetMaster( idEntity *master, const bool orientated = true ) = 0;
-								// set pushed state
+								// set pushed state	
 	virtual void				SetPushed( int deltaTime ) = 0;
 	virtual const idVec3 &		GetPushedLinearVelocity( const int id = 0 ) const = 0;
 	virtual const idVec3 &		GetPushedAngularVelocity( const int id = 0 ) const = 0;
@@ -150,8 +155,8 @@ public:	// common physics interface
 	virtual int					GetLinearEndTime() const = 0;
 	virtual int					GetAngularEndTime() const = 0;
 								// networking
-	virtual void				WriteToSnapshot( idBitMsgDelta &msg ) const = 0;
-	virtual void				ReadFromSnapshot( const idBitMsgDelta &msg ) = 0;
+	virtual void				WriteToSnapshot( idBitMsg &msg ) const = 0;
+	virtual void				ReadFromSnapshot( const idBitMsg &msg ) = 0;
 };
 
 #endif /* !__PHYSICS_H__ */

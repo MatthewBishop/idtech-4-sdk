@@ -29,6 +29,7 @@ public:
 
 	virtual void	UpdateChangeableSpawnArgs( const idDict *source );
 	virtual void	Think();
+	virtual void	ClientThink( const int curTime, const float fraction, const bool predict );
 	virtual void	FreeLightDef();
 	virtual bool	GetPhysicsToSoundTransform( idVec3 &origin, idMat3 &axis );
 	void			Present();
@@ -36,6 +37,7 @@ public:
 	void			SaveState( idDict *args );
 	virtual void	SetColor( float red, float green, float blue );
 	virtual void	SetColor( const idVec4 &color );
+	void			SetColor( const idVec3 &color );
 	virtual void	GetColor( idVec3 &out ) const;
 	virtual void	GetColor( idVec4 &out ) const;
 	const idVec3 &	GetBaseColor() const { return baseColor; }
@@ -63,8 +65,8 @@ public:
 	};
 
 	virtual void	ClientPredictionThink();
-	virtual void	WriteToSnapshot( idBitMsgDelta &msg ) const;
-	virtual void	ReadFromSnapshot( const idBitMsgDelta &msg );
+	virtual void	WriteToSnapshot( idBitMsg &msg ) const;
+	virtual void	ReadFromSnapshot( const idBitMsg &msg );
 	virtual bool	ClientReceiveEvent( int event, int time, const idBitMsg &msg );
 
 private:
@@ -76,6 +78,11 @@ private:
 	int				levels;
 	int				currentLevel;
 	idVec3			baseColor;
+
+	// Colors used for client-side interpolation.
+	idVec3			previousBaseColor;
+	idVec3			nextBaseColor;
+
 	bool			breakOnTrigger;
 	int				count;
 	int				triggercount;

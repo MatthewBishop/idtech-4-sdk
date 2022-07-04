@@ -1,14 +1,15 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
+
 
 #include "../Game_local.h"
 
 CLASS_DECLARATION( idClass, idForce )
 END_CLASS
 
-idList<idForce*> idForce::forceList;
+idList<idForce*, TAG_IDLIB_LIST_PHYSICS> idForce::forceList;
 
 /*
 ================

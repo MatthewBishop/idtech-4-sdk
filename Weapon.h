@@ -3,6 +3,8 @@
 #ifndef __GAME_WEAPON_H__
 #define __GAME_WEAPON_H__
 
+#include "PredictedValue.h"
+
 /*
 ===============================================================================
 
@@ -11,9 +13,7 @@
 ===============================================================================
 */
 
-#ifdef _D3XP
 extern const idEventDef EV_Weapon_State;
-#endif
 
 typedef enum {
 	WP_READY,
@@ -34,7 +34,6 @@ static const int LIGHTID_VIEW_MUZZLE_FLASH = 100;
 
 class idMoveableItem;
 
-#ifdef _D3XP
 typedef struct {
 	char			name[64];
 	char			particlename[128];
@@ -54,7 +53,6 @@ typedef struct {
 	int				lightHandle;
 	renderLight_t	light;
 } WeaponLight_t;
-#endif
 
 class idWeapon : public idAnimatedEntity {
 public:
@@ -68,6 +66,7 @@ public:
 	void					SetOwner( idPlayer *owner );
 	idPlayer*				GetOwner();
 	virtual bool			ShouldConstructScriptObjectAtSpawn() const;
+	void					SetFlashlightOwner( idPlayer *owner );
 
 	static void				CacheWeapon( const char *weaponName );
 
@@ -84,6 +83,9 @@ public:
 	// GUIs
 	const char *			Icon() const;
 	void					UpdateGUI();
+	const char *			PdaIcon() const;
+	const char *			DisplayName() const;
+	const char *			Description() const;
 
 	virtual void			SetModel( const char *modelname );
 	bool					GetGlobalJointTransform( bool viewModel, const jointHandle_t jointHandle, idVec3 &offset, idMat3 &axis );
@@ -111,11 +113,10 @@ public:
 	idEntity *				DropItem( const idVec3 &velocity, int activateDelay, int removeDelay, bool died );
 	bool					CanDrop() const;
 	void					WeaponStolen();
+	void					ForceAmmoInClip();
 
-#ifdef _D3XP
 	weaponStatus_t			GetStatus() { return status; };
 
-#endif
 
 	// Script state management
 	virtual idThread *		ConstructScriptObject();
@@ -132,6 +133,9 @@ public:
 	void					GetWeaponAngleOffsets( int *average, float *scale, float *max );
 	void					GetWeaponTimeOffsets( float *time, float *scale );
 	bool					BloodSplat( float size );
+	void					SetIsPlayerFlashlight( bool bl ) { isPlayerFlashlight = bl; }
+	void					FlashlightOn();
+	void					FlashlightOff();
 
 	// Ammo
 	static ammo_t			GetAmmoNumForName( const char *ammoname );
@@ -144,13 +148,14 @@ public:
 	int						ClipSize() const;
 	int						LowAmmo() const;
 	int						AmmoRequired() const;
-#ifdef _D3XP
 	int						AmmoCount() const;
 	int						GetGrabberState() const;
-#endif
 
-	virtual void			WriteToSnapshot( idBitMsgDelta &msg ) const;
-	virtual void			ReadFromSnapshot( const idBitMsgDelta &msg );
+	// Flashlight
+	idAnimatedEntity *		GetWorldModel() { return worldModel.GetEntity(); }
+
+	virtual void			WriteToSnapshot( idBitMsg &msg ) const;
+	virtual void			ReadFromSnapshot( const idBitMsg &msg );
 
 	enum {
 		EVENT_RELOAD = idEntity::EVENT_MAXEVENTS,
@@ -161,7 +166,20 @@ public:
 	virtual bool			ClientReceiveEvent( int event, int time, const idBitMsg &msg );
 
 	virtual void			ClientPredictionThink();
+	virtual void			ClientThink( const int curTime, const float fraction, const bool predict );
+	void					MuzzleFlashLight();
+	void					RemoveMuzzleFlashlight();
 
+	// Get a global origin and axis suitable for the laser sight or bullet tracing
+	// Returns false for hands, grenades, and chainsaw.
+	// Can't be const because a frame may need to be created.
+	bool					GetMuzzlePositionWithHacks( idVec3 & origin, idMat3 & axis );
+
+	void					GetProjectileLaunchOriginAndAxis( idVec3 & origin, idMat3 & axis );
+
+	const idDeclEntityDef * GetDeclEntityDef() { return weaponDef; }
+
+	friend class idPlayer;
 private:
 	// script control
 	idScriptBool			WEAPON_ATTACK;
@@ -178,6 +196,7 @@ private:
 	int						animBlendFrames;
 	int						animDoneTime;
 	bool					isLinked;
+	bool					isPlayerFlashlight;
 
 	// precreated projectile
 	idEntity				*projectileEnt;
@@ -223,6 +242,9 @@ private:
 	idDict					brassDict;
 	int						brassDelay;
 	idStr					icon;
+	idStr					pdaIcon;
+	idStr					displayName;
+	idStr					itemDesc;
 
 	// view weapon gui light
 	renderLight_t			guiLight;
@@ -234,6 +256,9 @@ private:
 
 	renderLight_t			worldMuzzleFlash;	// positioned on world weapon bone
 	int						worldMuzzleFlashHandle;
+
+	float					fraccos;
+	float					fraccos2;
 
 	idVec3					flashColor;
 	int						muzzleFlashEnd;
@@ -256,7 +281,7 @@ private:
 	ammo_t					ammoType;
 	int						ammoRequired;		// amount of ammo to use each shot.  0 means weapon doesn't need ammo.
 	int						clipSize;			// 0 means no reload
-	int						ammoClip;
+	idPredictedValue< int >	ammoClip;
 	int						lowAmmo;			// if ammo in clip hits this threshold, snd_
 	bool					powerAmmo;			// true if the clip reduction is a factor of the power setting when
 												// a projectile is launched
@@ -277,12 +302,10 @@ private:
 	jointHandle_t			barrelJointWorld;
 	jointHandle_t			ejectJointWorld;
 
-#ifdef _D3XP
 	jointHandle_t			smokeJointView;
 
 	idHashTable<WeaponParticle_t>	weaponParticles;
 	idHashTable<WeaponLight_t>		weaponLights;
-#endif
 
 	// sound
 	const idSoundShader *	sndHum;
@@ -321,7 +344,6 @@ private:
 
 	// Visual presentation
 	void					InitWorldModel( const idDeclEntityDef *def );
-	void					MuzzleFlashLight();
 	void					MuzzleRise( idVec3 &origin, idMat3 &axis );
 	void					UpdateNozzleFx();
 	void					UpdateFlashPosition();
@@ -365,7 +387,6 @@ private:
 	void					Event_IsInvisible();
 	void					Event_NetEndReload();
 
-#ifdef _D3XP
 	idGrabber				grabber;
 	int						grabberState;
 
@@ -383,7 +404,6 @@ private:
 
 	void					Event_StartWeaponLight( const char* name);
 	void					Event_StopWeaponLight( const char* name);
-#endif
 };
 
 ID_INLINE bool idWeapon::IsLinked() {

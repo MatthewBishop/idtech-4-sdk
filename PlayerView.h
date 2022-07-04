@@ -3,6 +3,8 @@
 #ifndef __GAME_PLAYERVIEW_H__
 #define __GAME_PLAYERVIEW_H__
 
+class idMenuHandler_HUD;
+
 /*
 ===============================================================================
 
@@ -27,7 +29,6 @@ typedef struct {
 
 
 
-#ifdef _D3XP
 class WarpPolygon_t {
 public:
 	idVec4					outer1;
@@ -48,9 +49,8 @@ public:
 
 	int						durationMsec;
 
-	idList<WarpPolygon_t>	polys;
+	idList<WarpPolygon_t, TAG_IDLIB_LIST_PLAYER>	polys;
 };
-#endif
 
 
 
@@ -58,7 +58,6 @@ public:
 
 
 
-#ifdef _D3XP
 
 class idPlayerView;
 class FullscreenFXManager;
@@ -141,11 +140,9 @@ FullscreenFX_Helltime
 ==================
 */
 class FullscreenFX_Helltime : public FullscreenFX {
-	const idMaterial*		acInitMaterials[3];
-	const idMaterial*		acCaptureMaterials[3];
-	const idMaterial*		acDrawMaterials[3];
-	const idMaterial*		crCaptureMaterials[3];
-	const idMaterial*		crDrawMaterials[3];
+	const idMaterial *		initMaterial;
+	const idMaterial *		captureMaterials[3];
+	const idMaterial *		drawMaterial;
 	bool					clearAccumBuffer;
 
 	int						DetermineLevel();
@@ -166,11 +163,9 @@ FullscreenFX_Multiplayer
 ==================
 */
 class FullscreenFX_Multiplayer : public FullscreenFX {
-	const idMaterial*		acInitMaterials;
-	const idMaterial*		acCaptureMaterials;
-	const idMaterial*		acDrawMaterials;
-	const idMaterial*		crCaptureMaterials;
-	const idMaterial*		crDrawMaterials;
+	const idMaterial *		initMaterial;
+	const idMaterial *		captureMaterial;
+	const idMaterial *		drawMaterial;
 	bool					clearAccumBuffer;
 
 	int						DetermineLevel();
@@ -257,7 +252,6 @@ FullscreenFX_Bloom
 class FullscreenFX_Bloom : public FullscreenFX {
 	const idMaterial*		drawMaterial;
 	const idMaterial*		initMaterial;
-	const idMaterial*		currentMaterial;
 
 	float					currentIntensity;
 	float					targetIntensity;
@@ -279,11 +273,9 @@ FullscreenFXManager
 ==================
 */
 class FullscreenFXManager {
-	idList<FullscreenFX*>	fx;
-	bool					highQualityMode;
-	idVec2					shiftScale;
+	idList<FullscreenFX*, TAG_FX>	fx;
 
-	idPlayerView			*playerView;
+	idPlayerView *			playerView;
 	const idMaterial*		blendBackMaterial;
 
 	void					CreateFX( idStr name, idStr fxtype, int fade );
@@ -295,10 +287,8 @@ public:
 	void					Initialize( idPlayerView *pv );
 
 	void					Process( const renderView_t *view );
-	void					CaptureCurrentRender();
 	void					Blendback( float alpha );
 
-	idVec2					GetShiftScale()			{ return shiftScale; };
 	idPlayerView*			GetPlayerView()			{ return playerView; };
 	idPlayer*				GetPlayer()				{ return gameLocal.GetLocalPlayer(); };
 
@@ -310,7 +300,6 @@ public:
 	void					Restore( idRestoreGame *savefile );
 };
 
-#endif
 
 
 
@@ -323,6 +312,7 @@ public:
 class idPlayerView {
 public:
 						idPlayerView();
+						~idPlayerView();
 
 	void				Save( idSaveGame *savefile ) const;
 	void				Restore( idRestoreGame *savefile );
@@ -343,19 +333,18 @@ public:
 
 	// this may involve rendering to a texture and displaying
 	// that with a warp model or in double vision mode
-	void				RenderPlayerView( idUserInterface *hud );
+	void				RenderPlayerView( idMenuHandler_HUD * hudManager );
+	void				EmitStereoEyeView( const int eye, idMenuHandler_HUD * hudManager );
 
 	void				Fade( idVec4 color, int time );
 
 	void				Flash( idVec4 color, int time );
 
-	void				AddBloodSpray( float duration );
-
 	// temp for view testing
 	void				EnableBFGVision( bool b ) { bfgVision = b; };
 
 private:
-	void				SingleView( idUserInterface *hud, const renderView_t *view );
+	void				SingleView( const renderView_t *view, idMenuHandler_HUD * hudManager );
 	void				ScreenFade();
 
 	screenBlob_t *		GetScreenBlob();
@@ -364,7 +353,6 @@ private:
 
 public:
 	int					dvFinishTime;		// double vision will be stopped at this time
-	const idMaterial *	dvMaterial;			// material to take the double vision screen shot
 
 	int					kickFinishTime;		// view kick will be stopped at this time
 	idAngles			kickAngles;			
@@ -377,7 +365,6 @@ public:
 	const idMaterial *	irGogglesMaterial;	// ir effect
 	const idMaterial *	bloodSprayMaterial; // blood spray
 	const idMaterial *	bfgMaterial;		// when targeted with BFG
-	const idMaterial *	lagoMaterial;		// lagometer drawing
 	float				lastDamageTime;		// accentuate the tunnel effect for a while
 
 	idVec4				fadeColor;			// fade color
@@ -391,13 +378,14 @@ public:
 	idPlayer *			player;
 	renderView_t		view;
 
-#ifdef _D3XP
 	FullscreenFXManager	*fxManager;
 
 public:
 	int					AddWarp( idVec3 worldOrigin, float centerx, float centery, float initialRadius, float durationMsec );
 	void				FreeWarp( int id );
-#endif
 };
+
+// the crosshair is swapped for a laser sight in stereo rendering
+bool	IsGameStereoRendered();
 
 #endif /* !__GAME_PLAYERVIEW_H__ */

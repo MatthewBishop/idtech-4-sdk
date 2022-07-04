@@ -1,7 +1,8 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
+
 
 #include "../Game_local.h"
 
@@ -399,7 +400,7 @@ idInterpreter::Error
 Aborts the currently executing function
 ============
 */
-void idInterpreter::Error( char *fmt, ... ) const {
+void idInterpreter::Error( const char *fmt, ... ) const {
 	va_list argptr;
 	char	text[ 1024 ];
 
@@ -424,7 +425,7 @@ idInterpreter::Warning
 Prints file and line number information with warning.
 ============
 */
-void idInterpreter::Warning( char *fmt, ... ) const {
+void idInterpreter::Warning( const char *fmt, ... ) const {
 	va_list argptr;
 	char	text[ 1024 ];
 
@@ -484,6 +485,9 @@ Copys the args from the calling thread's stack
 void idInterpreter::ThreadCall( idInterpreter *source, const function_t *func, int args ) {
 	Reset();
 
+	if ( args > LOCALSTACK_SIZE ) {
+		args = LOCALSTACK_SIZE;
+	}
 	memcpy( localstack, &source->localstack[ source->localstackUsed - args ], args );
 
 	localstackUsed = args;
@@ -552,8 +556,9 @@ void idInterpreter::EnterFunction( const function_t *func, bool clearStack ) {
 		maxStackDepth = callStackDepth;
 	}
 
-	if ( !func ) {
+	if ( func == NULL ) {
 		Error( "NULL function" );
+		return;
 	}
 
 	if ( debug ) {
@@ -664,8 +669,9 @@ void idInterpreter::CallEvent( const function_t *func, int argsize ) {
 	const idEventDef	*evdef;
 	const char			*format;
 
-	if ( !func ) {
+	if ( func == NULL ) {
 		Error( "NULL function" );
+		return;
 	}
 
 	assert( func->eventdef );
@@ -675,8 +681,8 @@ void idInterpreter::CallEvent( const function_t *func, int argsize ) {
 	var.intPtr = ( int * )&localstack[ start ];
 	eventEntity = GetEntity( *var.entityNumberPtr );
 
-	if ( !eventEntity || !eventEntity->RespondsTo( *evdef ) ) {
-		if ( eventEntity && developer.GetBool() ) {
+	if ( eventEntity == NULL || !eventEntity->RespondsTo( *evdef ) ) {
+		if ( eventEntity != NULL && developer.GetBool() ) {
 			// give a warning in developer mode
 			Warning( "Function '%s' not supported on entity '%s'", evdef->GetName(), eventEntity->name.c_str() );
 		}
@@ -835,8 +841,9 @@ void idInterpreter::CallSysEvent( const function_t *func, int argsize ) {
 	const idEventDef	*evdef;
 	const char			*format;
 
-	if ( !func ) {
+	if ( func == NULL ) {
 		Error( "NULL function" );
+		return;
 	}
 
 	assert( func->eventdef );

@@ -94,13 +94,17 @@ public:	// common physics interface
 
 	void					SetMaster( idEntity *master, const bool orientated = true );
 
-	void					WriteToSnapshot( idBitMsgDelta &msg ) const;
-	void					ReadFromSnapshot( const idBitMsgDelta &msg );
+	void					WriteToSnapshot( idBitMsg &msg ) const;
+	void					ReadFromSnapshot( const idBitMsg &msg );
 
 private:
 	// monster physics state
 	monsterPState_t			current;
 	monsterPState_t			saved;
+
+	// client interpolation state
+	monsterPState_t			previous;
+	monsterPState_t			next;
 
 	// properties
 	float					maxStepHeight;		// maximum step height

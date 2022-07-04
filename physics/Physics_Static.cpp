@@ -1,7 +1,7 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
 
 #include "../Game_local.h"
 
@@ -20,6 +20,10 @@ idPhysics_Static::idPhysics_Static() {
 	current.axis.Identity();
 	current.localOrigin.Zero();
 	current.localAxis.Identity();
+
+	next = ConvertPStateToInterpolateState( current );
+	previous = next;
+
 	hasMaster = false;
 	isOrientated = false;
 }
@@ -239,6 +243,21 @@ bool idPhysics_Static::Evaluate( int timeStepMSec, int endTimeMSec ) {
 
 /*
 ================
+idPhysics_Static::Interpolate
+================
+*/
+bool idPhysics_Static::Interpolate( const float fraction ) {
+	
+	// We only interpolate if we actually get snapshots.
+	if( self->GetNumSnapshotsReceived() >= 1 ) {
+		current = InterpolateStaticPState( previous, next, fraction );
+	}
+
+	return true;
+}
+
+/*
+================
 idPhysics_Static::UpdateTime
 ================
 */
@@ -359,6 +378,9 @@ void idPhysics_Static::SetOrigin( const idVec3 &newOrigin, int id ) {
 	if ( clipModel ) {
 		clipModel->Link( gameLocal.clip, self, 0, current.origin, current.axis );
 	}
+
+	next = ConvertPStateToInterpolateState( current );
+	previous = next;
 }
 
 /*
@@ -382,7 +404,12 @@ void idPhysics_Static::SetAxis( const idMat3 &newAxis, int id ) {
 	if ( clipModel ) {
 		clipModel->Link( gameLocal.clip, self, 0, current.origin, current.axis );
 	}
+
+	next = ConvertPStateToInterpolateState( current );
+	previous = next;
 }
+
+
 
 /*
 ================
@@ -770,7 +797,7 @@ int idPhysics_Static::GetAngularEndTime() const {
 idPhysics_Static::WriteToSnapshot
 ================
 */
-void idPhysics_Static::WriteToSnapshot( idBitMsgDelta &msg ) const {
+void idPhysics_Static::WriteToSnapshot( idBitMsg &msg ) const {
 	idCQuat quat, localQuat;
 
 	quat = current.axis.ToCQuat();
@@ -795,22 +822,77 @@ void idPhysics_Static::WriteToSnapshot( idBitMsgDelta &msg ) const {
 idPhysics_Base::ReadFromSnapshot
 ================
 */
-void idPhysics_Static::ReadFromSnapshot( const idBitMsgDelta &msg ) {
+void idPhysics_Static::ReadFromSnapshot( const idBitMsg &msg ) {
 	idCQuat quat, localQuat;
 
-	current.origin[0] = msg.ReadFloat();
-	current.origin[1] = msg.ReadFloat();
-	current.origin[2] = msg.ReadFloat();
-	quat.x = msg.ReadFloat();
-	quat.y = msg.ReadFloat();
-	quat.z = msg.ReadFloat();
-	current.localOrigin[0] = msg.ReadDeltaFloat( current.origin[0] );
-	current.localOrigin[1] = msg.ReadDeltaFloat( current.origin[1] );
-	current.localOrigin[2] = msg.ReadDeltaFloat( current.origin[2] );
-	localQuat.x = msg.ReadDeltaFloat( quat.x );
-	localQuat.y = msg.ReadDeltaFloat( quat.y );
-	localQuat.z = msg.ReadDeltaFloat( quat.z );
+	previous = next;
 
-	current.axis = quat.ToMat3();
-	current.localAxis = localQuat.ToMat3();
+	next = ReadStaticInterpolatePStateFromSnapshot( msg );
+}
+
+/*
+================
+ConvertInterpolateStateToPState
+================
+*/
+staticPState_s	ConvertInterpolateStateToPState( const staticInterpolatePState_t & interpolateState  ) {
+
+	staticPState_s state;
+	state.origin = interpolateState.origin;
+	state.localOrigin = interpolateState.localOrigin;
+	state.localAxis = interpolateState.localAxis.ToMat3();
+	state.axis = interpolateState.axis.ToMat3();
+
+	return state;
+}
+
+/*
+================
+ConvertPStateToInterpolateState
+================
+*/
+staticInterpolatePState_t ConvertPStateToInterpolateState( const staticPState_t & state ) {
+
+	staticInterpolatePState_t interpolateState;
+	interpolateState.origin = state.origin;
+	interpolateState.localOrigin = state.localOrigin;
+	interpolateState.localAxis = state.localAxis.ToQuat();
+	interpolateState.axis = state.axis.ToQuat();
+
+	return interpolateState;
+}
+
+/*
+================
+ReadStaticInterpolatePStateFromSnapshot
+================
+*/
+staticInterpolatePState_t ReadStaticInterpolatePStateFromSnapshot( const idBitMsg & msg ) { 
+	staticInterpolatePState_t state;
+
+	state.origin = ReadFloatArray< idVec3 >( msg );
+	const idCQuat cAxis = ReadFloatArray< idCQuat >( msg );
+	state.localOrigin = ReadDeltaFloatArray( msg, state.origin );
+	state.localAxis = ReadDeltaFloatArray( msg, cAxis ).ToQuat();
+
+	state.axis = cAxis.ToQuat();
+
+	return state;
+}
+
+/*
+================
+InterpolateStaticPState
+================
+*/
+staticPState_t InterpolateStaticPState( const staticInterpolatePState_t & previous, const staticInterpolatePState_t & next, float fraction ) {
+	staticPState_t result;
+	
+	result.origin = Lerp( previous.origin, next.origin, fraction );
+	result.axis = idQuat().Slerp( previous.axis, next.axis, fraction ).ToMat3();
+
+	result.localOrigin = Lerp( previous.localOrigin, next.localOrigin, fraction );
+	result.localAxis = idQuat().Slerp( previous.localAxis, next.localAxis, fraction ).ToMat3();
+
+	return result;
 }

@@ -45,6 +45,8 @@ public:	// common physics interface
 	const idBounds &		GetAbsBounds( int id = -1 ) const;
 
 	bool					Evaluate( int timeStepMSec, int endTimeMSec );
+	bool					Interpolate( const float fraction );
+	void					ResetInterpolationState( const idVec3 & origin, const idMat3 & axis ) {}
 	void					UpdateTime( int endTimeMSec );
 	int						GetTime() const;
 
@@ -112,13 +114,17 @@ public:	// common physics interface
 	int						GetLinearEndTime() const;
 	int						GetAngularEndTime() const;
 
-	void					WriteToSnapshot( idBitMsgDelta &msg ) const;
-	void					ReadFromSnapshot( const idBitMsgDelta &msg );
+	void					WriteToSnapshot( idBitMsg &msg ) const;
+	void					ReadFromSnapshot( const idBitMsg &msg );
 
 protected:
 	idEntity *				self;					// entity using this physics object
-	idList<staticPState_t>	current;				// physics state
-	idList<idClipModel *>	clipModels;				// collision model
+	idList<staticPState_t, TAG_IDLIB_LIST_PHYSICS>	current;				// physics state
+	idList<idClipModel *, TAG_IDLIB_LIST_PHYSICS>	clipModels;				// collision model
+
+	// States used in client-side interpolation
+	idList<staticInterpolatePState_t, TAG_IDLIB_LIST_PHYSICS> previous;
+	idList<staticInterpolatePState_t, TAG_IDLIB_LIST_PHYSICS> next;
 
 	// master
 	bool					hasMaster;

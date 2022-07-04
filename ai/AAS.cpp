@@ -1,7 +1,8 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
+
 
 #include "AAS_local.h"
 
@@ -11,7 +12,7 @@ idAAS::Alloc
 ============
 */
 idAAS *idAAS::Alloc() {
-	return new idAASLocal;
+	return new (TAG_AAS) idAASLocal;
 }
 
 /*
@@ -228,8 +229,8 @@ void idAASLocal::GetEdgeVertexNumbers( int edgeNum, int verts[2] ) const {
 		return;
 	}
 	const int *v = file->GetEdge( abs(edgeNum) ).vertexNum;
-	verts[0] = v[INTSIGNBITSET(edgeNum)];
-	verts[1] = v[INTSIGNBITNOTSET(edgeNum)];
+	verts[0] = v[INT32_SIGNBITSET(edgeNum)];
+	verts[1] = v[INT32_SIGNBITNOTSET(edgeNum)];
 }
 
 /*
@@ -244,6 +245,6 @@ void idAASLocal::GetEdge( int edgeNum, idVec3 &start, idVec3 &end ) const {
 		return;
 	}
 	const int *v = file->GetEdge( abs(edgeNum) ).vertexNum;
-	start = file->GetVertex( v[INTSIGNBITSET(edgeNum)] );
-	end = file->GetVertex( v[INTSIGNBITNOTSET(edgeNum)] );
+	start = file->GetVertex( v[INT32_SIGNBITSET(edgeNum)] );
+	end = file->GetVertex( v[INT32_SIGNBITNOTSET(edgeNum)] );
 }

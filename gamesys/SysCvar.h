@@ -8,18 +8,14 @@ extern idCVar	developer;
 extern idCVar	g_cinematic;
 extern idCVar	g_cinematicMaxSkipTime;
 
-extern idCVar	r_aspectRatio;
-
 extern idCVar	g_monsters;
 extern idCVar	g_decals;
 extern idCVar	g_knockback;
 extern idCVar	g_skill;
 extern idCVar	g_gravity;
 extern idCVar	g_skipFX;
-extern idCVar	g_skipParticles;
 extern idCVar	g_bloodEffects;
 extern idCVar	g_projectileLights;
-extern idCVar	g_doubleVision;
 extern idCVar	g_muzzleFlash;
 
 extern idCVar	g_disasm;
@@ -66,9 +62,7 @@ extern idCVar	ai_showCombatNodes;
 extern idCVar	ai_showPaths;
 extern idCVar	ai_showObstacleAvoidance;
 extern idCVar	ai_blockedFailSafe;
-#ifdef _D3XP
 extern idCVar	ai_showHealth;
-#endif
 
 extern idCVar	g_dvTime;
 extern idCVar	g_dvAmplitude;
@@ -93,11 +87,9 @@ extern idCVar	g_vehicleSuspensionDown;
 extern idCVar	g_vehicleSuspensionKCompress;
 extern idCVar	g_vehicleSuspensionDamping;
 extern idCVar	g_vehicleTireFriction;
-#ifdef _D3XP
 extern idCVar	g_vehicleDebug;
 extern idCVar	g_debugShockwave;
 extern idCVar	g_enablePortalSky;
-#endif
 
 extern idCVar	ik_enable;
 extern idCVar	ik_debug;
@@ -177,7 +169,7 @@ extern idCVar	pm_thirdPersonClip;
 extern idCVar	pm_thirdPerson;
 extern idCVar	pm_thirdPersonDeath;
 extern idCVar	pm_modelView;
-extern idCVar	pm_airTics;
+extern idCVar	pm_airMsec;
 
 extern idCVar	g_showPlayerShadow;
 extern idCVar	g_showHud;
@@ -186,6 +178,7 @@ extern idCVar	g_showBrass;
 extern idCVar	g_gun_x;
 extern idCVar	g_gun_y;
 extern idCVar	g_gun_z;
+extern idCVar	g_gunScale;
 extern idCVar	g_viewNodalX;
 extern idCVar	g_viewNodalZ;
 extern idCVar	g_fov;
@@ -201,33 +194,24 @@ extern idCVar	g_testPostProcess;
 extern idCVar	g_testModelRotate;
 extern idCVar	g_testModelAnimate;
 extern idCVar	g_testModelBlend;
-extern idCVar	g_exportMask;
 extern idCVar	g_flushSave;
 
-#ifdef _D3XP
 extern idCVar	g_enableSlowmo;
 extern idCVar	g_slowmoStepRate;
 extern idCVar	g_testFullscreenFX;
 extern idCVar	g_testHelltimeFX;
 extern idCVar	g_testMultiplayerFX;
-extern idCVar	g_lowresFullscreenFX;
 extern idCVar	g_moveableDamageScale;
-extern idCVar	g_testBloomSpeed;
 extern idCVar	g_testBloomIntensity;
 extern idCVar	g_testBloomNumPasses;
-#endif
 
-#ifdef _D3XP
 extern idCVar	g_grabberHoldSeconds;
 extern idCVar	g_grabberEnableShake;
 extern idCVar	g_grabberRandomMotion;
 extern idCVar	g_grabberHardStop;
 extern idCVar	g_grabberDamping;
-#endif
 
-#ifdef _D3XP
 extern idCVar	g_xp_bind_run_once;
-#endif
 
 extern idCVar	aas_test;
 extern idCVar	aas_showAreas;
@@ -242,17 +226,10 @@ extern idCVar	aas_showPushIntoArea;
 
 extern idCVar	net_clientPredictGUI;
 
-extern idCVar	g_voteFlags;
-extern idCVar	g_mapCycle;
-extern idCVar	g_balanceTDM;
-
 extern idCVar	si_timeLimit;
 extern idCVar	si_fragLimit;
-extern idCVar	si_gameType;
-extern idCVar	si_map;
 extern idCVar	si_spectators;
 
-#ifdef CTF
 extern idCVar si_flagDropTimeLimit;
 extern idCVar si_midnight;
 
@@ -266,13 +243,6 @@ extern idCVar g_flagAttachAngleZ;
 
 extern idCVar g_CTFArrows;
 
-#endif
-
 extern idCVar	net_clientSelfSmoothing;
-extern idCVar	net_clientLagOMeter;
-
-extern const char *si_gameTypeArgs[];
-
-extern const char *ui_skinArgs[];
 
 #endif /* !__SYS_CVAR_H__ */

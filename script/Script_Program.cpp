@@ -1,7 +1,8 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
+
 
 #include "../Game_local.h"
 
@@ -892,7 +893,7 @@ idScriptObject::Restore
 */
 void idScriptObject::Restore( idRestoreGame *savefile ) {
 	idStr typeName;
-	size_t size;
+	int size;
 
 	savefile->ReadString( typeName );
 
@@ -905,7 +906,7 @@ void idScriptObject::Restore( idRestoreGame *savefile ) {
 		savefile->Error( "idScriptObject::Restore: failed to restore object of type '%s'.", typeName.c_str() );
 	}
 
-	savefile->ReadInt( (int &)size );
+	savefile->ReadInt( size );
 	if ( size != type->Size() ) {
 		savefile->Error( "idScriptObject::Restore: size of object '%s' doesn't match size in save game.", typeName.c_str() );
 	}
@@ -945,7 +946,7 @@ bool idScriptObject::SetType( const char *typeName ) {
 
 		// allocate the memory
 		size = type->Size();
-		data = ( byte * )Mem_Alloc( size );
+		data = ( byte * )Mem_Alloc( size, TAG_SCRIPT );
 	}
 
 	// init object memory
@@ -1046,14 +1047,13 @@ idScriptObject::GetVariable
 byte *idScriptObject::GetVariable( const char *name, etype_t etype ) const {
 	int				i;
 	int				pos;
-	const idTypeDef	*t;
+	const idTypeDef	*t = type;
 	const idTypeDef	*parm;
 
-	if ( type == &type_object ) {
+	if ( t == &type_object || t == NULL ) {
 		return NULL;
 	}
 
-	t = type;
 	do {
 		if ( t->SuperClass() != &type_object ) {
 			pos = t->SuperClass()->Size();
@@ -1076,7 +1076,7 @@ byte *idScriptObject::GetVariable( const char *name, etype_t etype ) const {
 			}
 		}
 		t = t->SuperClass();
-	} while( t && ( t != &type_object ) );
+	} while( t != NULL && ( t != &type_object ) );
 
 	return NULL;
 }
@@ -1093,11 +1093,8 @@ idProgram::AllocType
 ============
 */
 idTypeDef *idProgram::AllocType( idTypeDef &type ) {
-	idTypeDef *newtype;
-
-	newtype	= new idTypeDef( type ); 
-	types.Append( newtype );
-
+	idTypeDef * newtype	= new (TAG_SCRIPT) idTypeDef( type ); 
+	typesHash.Add( idStr::Hash( type.Name() ), types.Append( newtype ) );
 	return newtype;
 }
 
@@ -1107,11 +1104,8 @@ idProgram::AllocType
 ============
 */
 idTypeDef *idProgram::AllocType( etype_t etype, idVarDef *edef, const char *ename, int esize, idTypeDef *aux ) {
-	idTypeDef *newtype;
-
-	newtype	= new idTypeDef( etype, edef, ename, esize, aux );
-	types.Append( newtype );
-
+	idTypeDef * newtype	= new (TAG_SCRIPT) idTypeDef( etype, edef, ename, esize, aux );
+	typesHash.Add( idStr::Hash( ename ), types.Append( newtype ) );
 	return newtype;
 }
 
@@ -1124,10 +1118,8 @@ a new one and copies it out.
 ============
 */
 idTypeDef *idProgram::GetType( idTypeDef &type, bool allocate ) {
-	int i;
 
-	//FIXME: linear search == slow
-	for( i = types.Num() - 1; i >= 0; i-- ) {
+	for ( int i = typesHash.First( idStr::Hash( type.Name() ) ); i != -1; i = typesHash.Next( i ) ) {
 		if ( types[ i ]->MatchesType( type ) && !strcmp( types[ i ]->Name(), type.Name() ) ) {
 			return types[ i ];
 		}
@@ -1149,11 +1141,9 @@ Returns a preexisting complex type that matches the name, or returns NULL if not
 ============
 */
 idTypeDef *idProgram::FindType( const char *name ) {
-	idTypeDef	*check;
-	int			i;
 
-	for( i = types.Num() - 1; i >= 0; i-- ) {
-		check = types[ i ];
+	for ( int i = typesHash.First( idStr::Hash( name ) ); i != -1; i = typesHash.Next( i ) ) {
+		idTypeDef * check = types[ i ];
 		if ( !strcmp( check->Name(), name ) ) {
 			return check;
 		}
@@ -1194,7 +1184,7 @@ void idProgram::AddDefToNameList( idVarDef *def, const char *name ) {
 		}
 	}
 	if ( i == -1 ) {
-		i = varDefNames.Append( new idVarDefName( name ) );
+		i = varDefNames.Append( new (TAG_SCRIPT) idVarDefName( name ) );
 		varDefNameHash.Add( hash, i );
 	}
 	varDefNames[i]->AddDef( def );
@@ -1213,7 +1203,7 @@ idVarDef *idProgram::AllocDef( idTypeDef *type, const char *name, idVarDef *scop
 	idVarDef	*def_z;
 
 	// allocate a new def
-	def = new idVarDef( type );
+	def = new (TAG_SCRIPT) idVarDef( type );
 	def->scope		= scope;
 	def->numUsers	= 1;
 	def->num		= varDefs.Append( def );
@@ -1533,7 +1523,7 @@ void idProgram::SetEntity( const char *name, idEntity *ent ) {
 	defName += name;
 
 	def = GetDef( &type_entity, defName, &def_namespace );
-	if ( def && ( def->initialized != idVarDef::stackVariable ) ) {
+	if ( def != NULL && ( def->initialized != idVarDef::stackVariable ) ) {
 		// 0 is reserved for NULL entity
 		if ( !ent ) {
 			*def->value.entityNumberPtr = 0;
@@ -1591,7 +1581,7 @@ void idProgram::BeginCompilation() {
 	}
 
 	catch( idCompileError &err ) {
-		gameLocal.Error( "%s", err.error );
+		gameLocal.Error( "%s", err.GetError() );
 	}
 }
 
@@ -1769,10 +1759,10 @@ bool idProgram::CompileText( const char *source, const char *text, bool console 
 	
 	catch( idCompileError &err ) {
 		if ( console ) {
-			gameLocal.Printf( "%s\n", err.error );
+			gameLocal.Printf( "%s\n", err.GetError() );
 			return false;
 		} else {
-			gameLocal.Error( "%s\n", err.error );
+			gameLocal.Error( "%s\n", err.GetError() );
 		}
 	};
 
@@ -1849,6 +1839,7 @@ void idProgram::FreeData() {
 
 	// free any special types we've created
 	types.DeleteContents( true );
+	typesHash.Free();
 
 	filenum = 0;
 
@@ -1985,7 +1976,7 @@ int idProgram::CalculateChecksum() const {
 		unsigned short	file;
 	} statementBlock_t;
 
-	statementBlock_t	*statementList = new statementBlock_t[ statements.Num() ];
+	statementBlock_t	*statementList = new (TAG_SCRIPT) statementBlock_t[ statements.Num() ];
 
 	memset( statementList, 0, ( sizeof(statementBlock_t) * statements.Num() ) );
 
@@ -2040,12 +2031,17 @@ void idProgram::Restart() {
 	for( i = top_types; i < types.Num(); i++ ) {
 		delete types[ i ];
 	}
-	types.SetNum( top_types, false );
+	types.SetNum( top_types );
+
+	typesHash.Free();
+	for( i = 0; i < types.Num(); i++ ) {
+		typesHash.Add( idStr::Hash( types[i]->Name() ), i );
+	}
 
 	for( i = top_defs; i < varDefs.Num(); i++ ) {
 		delete varDefs[ i ];
 	}
-	varDefs.SetNum( top_defs, false );
+	varDefs.SetNum( top_defs );
 
 	for( i = top_functions; i < functions.Num(); i++ ) {
 		functions[ i ].Clear();
@@ -2053,7 +2049,7 @@ void idProgram::Restart() {
 	functions.SetNum( top_functions	);
 
 	statements.SetNum( top_statements );
-	fileList.SetNum( top_files, false );
+	fileList.SetNum( top_files );
 	filename.Clear();
 	
 	// reset the variables to their default values
@@ -2094,6 +2090,9 @@ idProgram::idProgram
 ================
 */
 idProgram::idProgram() {
+	varDefs.SetGranularity( 256 );
+	varDefNames.SetGranularity( 256 );
+
 	FreeData();
 }
 

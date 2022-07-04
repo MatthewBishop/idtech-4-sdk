@@ -1,7 +1,8 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
+
 
 #include "AAS_local.h"
 #include "../Game_local.h"		// for print and error
@@ -27,9 +28,9 @@ idRoutingCache::idRoutingCache( int size ) {
 	startTravelTime = 0;
 	type = 0;
 	this->size = size;
-	reachabilities = new byte[size];
+	reachabilities = new (TAG_AAS) byte[size];
 	memset( reachabilities, 0, size * sizeof( reachabilities[0] ) );
-	travelTimes = new unsigned short[size];
+	travelTimes = new (TAG_AAS) unsigned short[size];
 	memset( travelTimes, 0, size * sizeof( travelTimes[0] ) );
 }
 
@@ -72,7 +73,7 @@ unsigned short idAASLocal::AreaTravelTime( int areaNum, const idVec3 &start, con
 	if ( dist < 1.0f ) {
 		return 1;
 	}
-	return (unsigned short) idMath::FtoiFast( dist );
+	return (unsigned short) idMath::Ftoi( dist );
 }
 
 /*
@@ -80,7 +81,7 @@ unsigned short idAASLocal::AreaTravelTime( int areaNum, const idVec3 &start, con
 idAASLocal::CalculateAreaTravelTimes
 ============
 */
-void idAASLocal::CalculateAreaTravelTimes(void) {
+void idAASLocal::CalculateAreaTravelTimes() {
 	int n, i, j, numReach, numRevReach, t, maxt;
 	byte *bytePtr;
 	idReachability *reach, *rev_reach;
@@ -105,7 +106,7 @@ void idAASLocal::CalculateAreaTravelTimes(void) {
 		numAreaTravelTimes += numReach * numRevReach;
 	}
 
-	areaTravelTimes = (unsigned short *) Mem_Alloc( numAreaTravelTimes * sizeof( unsigned short ) );
+	areaTravelTimes = (unsigned short *) Mem_Alloc( numAreaTravelTimes * sizeof( unsigned short ), TAG_AAS );
 	bytePtr = (byte *) areaTravelTimes;
 
 	for ( n = 0; n < file->GetNumAreas(); n++ ) {
@@ -169,7 +170,7 @@ void idAASLocal::SetupRoutingCache() {
 		areaCacheIndexSize += file->GetCluster( i ).numReachableAreas;
 	}
 	areaCacheIndex = (idRoutingCache ***) Mem_ClearedAlloc( file->GetNumClusters() * sizeof( idRoutingCache ** ) +
-													areaCacheIndexSize * sizeof( idRoutingCache *) );
+													areaCacheIndexSize * sizeof( idRoutingCache *), TAG_AAS );
 	bytePtr = ((byte *)areaCacheIndex) + file->GetNumClusters() * sizeof( idRoutingCache ** );
 	for ( i = 0; i < file->GetNumClusters(); i++ ) {
 		areaCacheIndex[i] = ( idRoutingCache ** ) bytePtr;
@@ -177,12 +178,12 @@ void idAASLocal::SetupRoutingCache() {
 	}
 
 	portalCacheIndexSize = file->GetNumAreas();
-	portalCacheIndex = (idRoutingCache **) Mem_ClearedAlloc( portalCacheIndexSize * sizeof( idRoutingCache * ) );
+	portalCacheIndex = (idRoutingCache **) Mem_ClearedAlloc( portalCacheIndexSize * sizeof( idRoutingCache * ), TAG_AAS );
 
-	areaUpdate = (idRoutingUpdate *) Mem_ClearedAlloc( file->GetNumAreas() * sizeof( idRoutingUpdate ) );
-	portalUpdate = (idRoutingUpdate *) Mem_ClearedAlloc( (file->GetNumPortals()+1) * sizeof( idRoutingUpdate ) );
+	areaUpdate = (idRoutingUpdate *) Mem_ClearedAlloc( file->GetNumAreas() * sizeof( idRoutingUpdate ), TAG_AAS );
+	portalUpdate = (idRoutingUpdate *) Mem_ClearedAlloc( (file->GetNumPortals()+1) * sizeof( idRoutingUpdate ), TAG_AAS );
 
-	goalAreaTravelTimes = (unsigned short *) Mem_ClearedAlloc( file->GetNumAreas() * sizeof( unsigned short ) );
+	goalAreaTravelTimes = (unsigned short *) Mem_ClearedAlloc( file->GetNumAreas() * sizeof( unsigned short ), TAG_AAS );
 
 	cacheListStart = cacheListEnd = NULL;
 	totalCacheMemory = 0;
@@ -515,7 +516,7 @@ aasHandle_t idAASLocal::AddObstacle( const idBounds &bounds ) {
 		return -1;
 	}
 
-	obstacle = new idRoutingObstacle;
+	obstacle = new (TAG_AAS) idRoutingObstacle;
 	obstacle->bounds[0] = bounds[0] - file->GetSettings().boundingBoxes[0][1];
 	obstacle->bounds[1] = bounds[1] - file->GetSettings().boundingBoxes[0][0];
 	GetBoundsAreas_r( 1, obstacle->bounds, obstacle->areas );
@@ -816,7 +817,7 @@ idRoutingCache *idAASLocal::GetAreaRoutingCache( int clusterNum, int areaNum, in
 	}
 	// if no cache found
 	if ( !cache ) {
-		cache = new idRoutingCache( file->GetCluster( clusterNum ).numReachableAreas );
+		cache = new (TAG_AAS) idRoutingCache( file->GetCluster( clusterNum ).numReachableAreas );
 		cache->type = CACHETYPE_AREA;
 		cache->cluster = clusterNum;
 		cache->areaNum = areaNum;
@@ -942,7 +943,7 @@ idRoutingCache *idAASLocal::GetPortalRoutingCache( int clusterNum, int areaNum, 
 	}
 	// if no cache found
 	if ( !cache ) {
-		cache = new idRoutingCache( file->GetNumPortals() );
+		cache = new (TAG_AAS) idRoutingCache( file->GetNumPortals() );
 		cache->type = CACHETYPE_PORTAL;
 		cache->cluster = clusterNum;
 		cache->areaNum = areaNum;

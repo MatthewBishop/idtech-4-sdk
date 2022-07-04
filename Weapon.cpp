@@ -4,6 +4,7 @@
 #pragma hdrstop
 
 #include "Game_local.h"
+#include "PredictedValue_impl.h"
 
 /***********************************************************************
 
@@ -41,7 +42,6 @@ const idEventDef EV_Weapon_AutoReload( "autoReload", NULL, 'f' );
 const idEventDef EV_Weapon_NetReload( "netReload" );
 const idEventDef EV_Weapon_IsInvisible( "isInvisible", NULL, 'f' );
 const idEventDef EV_Weapon_NetEndReload( "netEndReload" );
-#ifdef _D3XP
 const idEventDef EV_Weapon_GrabberHasTarget( "grabberHasTarget", NULL, 'd' );
 const idEventDef EV_Weapon_Grabber( "grabber", "d" );
 const idEventDef EV_Weapon_Grabber_SetGrabDistance( "grabberGrabDistance", "f" );
@@ -53,7 +53,6 @@ const idEventDef EV_Weapon_StartWeaponParticle( "startWeaponParticle", "s" );
 const idEventDef EV_Weapon_StopWeaponParticle( "stopWeaponParticle", "s" );
 const idEventDef EV_Weapon_StartWeaponLight( "startWeaponLight", "s" );
 const idEventDef EV_Weapon_StopWeaponLight( "stopWeaponLight", "s" );
-#endif
 
 //
 // class def
@@ -95,7 +94,6 @@ CLASS_DECLARATION( idAnimatedEntity, idWeapon )
 	EVENT( EV_Weapon_NetReload,					idWeapon::Event_NetReload )
 	EVENT( EV_Weapon_IsInvisible,				idWeapon::Event_IsInvisible )
 	EVENT( EV_Weapon_NetEndReload,				idWeapon::Event_NetEndReload )
-#ifdef _D3XP
 	EVENT( EV_Weapon_Grabber,					idWeapon::Event_Grabber )
 	EVENT( EV_Weapon_GrabberHasTarget,			idWeapon::Event_GrabberHasTarget )
 	EVENT( EV_Weapon_Grabber_SetGrabDistance,	idWeapon::Event_GrabberSetGrabDistance )
@@ -107,8 +105,16 @@ CLASS_DECLARATION( idAnimatedEntity, idWeapon )
 	EVENT( EV_Weapon_StopWeaponParticle,		idWeapon::Event_StopWeaponParticle )
 	EVENT( EV_Weapon_StartWeaponLight,			idWeapon::Event_StartWeaponLight )
 	EVENT( EV_Weapon_StopWeaponLight,			idWeapon::Event_StopWeaponLight )
-#endif
 END_CLASS
+
+
+idCVar cg_projectile_clientAuthoritative_maxCatchup( "cg_projectile_clientAuthoritative_maxCatchup", "500", CVAR_INTEGER, "" );
+
+idCVar g_useWeaponDepthHack( "g_useWeaponDepthHack", "1", CVAR_BOOL, "Crunch z depth on weapons" );
+
+idCVar g_weaponShadows( "g_weaponShadows", "0", CVAR_BOOL | CVAR_ARCHIVE, "Cast shadows from weapons" );
+
+extern idCVar cg_predictedSpawn_debug;
 
 /***********************************************************************
 
@@ -139,14 +145,16 @@ idWeapon::idWeapon() {
 	guiLightHandle			= -1;
 	nozzleGlowHandle		= -1;
 	modelDefHandle			= -1;
-#ifdef _D3XP
 	grabberState			= -1;
-#endif
 
 	berserk					= 2;
 	brassDelay				= 0;
 
 	allowDrop				= true;
+	isPlayerFlashlight		= false;
+
+	fraccos = 0.0f;
+	fraccos2 = 0.0f;
 
 	Clear();
 
@@ -170,17 +178,15 @@ idWeapon::Spawn
 ================
 */
 void idWeapon::Spawn() {
-	if ( !gameLocal.isClient ) {
+	if ( !common->IsClient() ) {
 		// setup the world model
 		worldModel = static_cast< idAnimatedEntity * >( gameLocal.SpawnEntityType( idAnimatedEntity::Type, NULL ) );
 		worldModel.GetEntity()->fl.networkSync = true;
 	}
 
-#ifdef _D3XP
-	if ( 1 /*!gameLocal.isMultiplayer*/ ) {
+	if ( 1 /*!common->IsMultiplayer()*/ ) {
 		grabber.Initialize();
 	}
-#endif
 
 	thread = new idThread();
 	thread->ManualDelete();
@@ -201,6 +207,23 @@ void idWeapon::SetOwner( idPlayer *_owner ) {
 
 	if ( worldModel.GetEntity() ) {
 		worldModel.GetEntity()->SetName( va( "%s_weapon_worldmodel", owner->name.c_str() ) );
+	}
+}
+
+/*
+================
+idWeapon::SetFlashlightOwner
+
+Only called at player spawn time, not each weapon switch
+================
+*/
+void idWeapon::SetFlashlightOwner( idPlayer *_owner ) {
+	assert( !owner );
+	owner = _owner;
+	SetName( va( "%s_weapon_flashlight", owner->name.c_str() ) );
+
+	if ( worldModel.GetEntity() ) {
+		worldModel.GetEntity()->SetName( va( "%s_weapon_flashlight_worldmodel", owner->name.c_str() ) );
 	}
 }
 
@@ -298,6 +321,9 @@ void idWeapon::Save( idSaveGame *savefile ) const {
 	savefile->WriteString( meleeDefName );
 	savefile->WriteInt( brassDelay );
 	savefile->WriteString( icon );
+	savefile->WriteString( pdaIcon );
+	savefile->WriteString( displayName );
+	savefile->WriteString( itemDesc );
 
 	savefile->WriteInt( guiLightHandle );
 	savefile->WriteRenderLight( guiLight );
@@ -324,7 +350,7 @@ void idWeapon::Save( idSaveGame *savefile ) const {
 	savefile->WriteInt( ammoType );
 	savefile->WriteInt( ammoRequired );
 	savefile->WriteInt( clipSize );
-	savefile->WriteInt( ammoClip );
+	savefile->WriteInt( ammoClip.Get() );
 	savefile->WriteInt( lowAmmo );
 	savefile->WriteBool( powerAmmo );
 
@@ -377,7 +403,6 @@ void idWeapon::Save( idSaveGame *savefile ) const {
 	savefile->WriteBool( allowDrop );
 	savefile->WriteObject( projectileEnt );
 
-#ifdef _D3XP
 	savefile->WriteStaticObject( grabber );
 	savefile->WriteInt( grabberState );
 
@@ -406,7 +431,6 @@ void idWeapon::Save( idSaveGame *savefile ) const {
 		savefile->WriteInt( light->lightHandle );
 		savefile->WriteRenderLight( light->light );
 	}
-#endif
 
 }
 
@@ -482,30 +506,27 @@ void idWeapon::Restore( idRestoreGame *savefile ) {
 	savefile->ReadString( meleeDefName );
 	savefile->ReadInt( brassDelay );
 	savefile->ReadString( icon );
+	savefile->ReadString( pdaIcon );
+	savefile->ReadString( displayName );
+	savefile->ReadString( itemDesc );
 
 	savefile->ReadInt( guiLightHandle );
 	savefile->ReadRenderLight( guiLight );
-#ifdef _D3XP
 	if ( guiLightHandle >= 0 ) {
 		guiLightHandle = gameRenderWorld->AddLightDef( &guiLight );
 	}
-#endif
 
 	savefile->ReadInt( muzzleFlashHandle );
 	savefile->ReadRenderLight( muzzleFlash );
-#ifdef _D3XP
 	if ( muzzleFlashHandle >= 0 ) {
 		muzzleFlashHandle = gameRenderWorld->AddLightDef( &muzzleFlash );
 	}
-#endif
 
 	savefile->ReadInt( worldMuzzleFlashHandle );
 	savefile->ReadRenderLight( worldMuzzleFlash );
-#ifdef _D3XP
 	if ( worldMuzzleFlashHandle >= 0 ) {
 		worldMuzzleFlashHandle = gameRenderWorld->AddLightDef( &worldMuzzleFlash );
 	}
-#endif
 
 	savefile->ReadVec3( flashColor );
 	savefile->ReadInt( muzzleFlashEnd );
@@ -523,7 +544,11 @@ void idWeapon::Restore( idRestoreGame *savefile ) {
 	savefile->ReadInt( (int &)ammoType );
 	savefile->ReadInt( ammoRequired );
 	savefile->ReadInt( clipSize );
-	savefile->ReadInt( ammoClip );
+	
+	int savedAmmoClip = 0;
+	savefile->ReadInt( savedAmmoClip );
+	ammoClip = savedAmmoClip;
+
 	savefile->ReadInt( lowAmmo );
 	savefile->ReadBool( powerAmmo );
 
@@ -563,11 +588,9 @@ void idWeapon::Restore( idRestoreGame *savefile ) {
 
 	savefile->ReadInt( nozzleGlowHandle );
 	savefile->ReadRenderLight( nozzleGlow );
-#ifdef _D3XP
 	if ( nozzleGlowHandle >= 0 ) {
 		nozzleGlowHandle = gameRenderWorld->AddLightDef( &nozzleGlow );
 	}
-#endif
 
 	savefile->ReadVec3( nozzleGlowColor );
 	savefile->ReadMaterial( nozzleGlowShader );
@@ -582,7 +605,6 @@ void idWeapon::Restore( idRestoreGame *savefile ) {
 	savefile->ReadBool( allowDrop );
 	savefile->ReadObject( reinterpret_cast<idClass *&>( projectileEnt ) );
 
-#ifdef _D3XP
 	savefile->ReadStaticObject( grabber );
 	savefile->ReadInt( grabberState );
 
@@ -634,7 +656,6 @@ void idWeapon::Restore( idRestoreGame *savefile ) {
 		}
 		weaponLights.Set(newLight.name, newLight);
 	}
-#endif
 }
 
 /***********************************************************************
@@ -739,6 +760,9 @@ void idWeapon::Clear() {
 	nextStrikeFx = 0;
 
 	icon			= "";
+	pdaIcon			= "";
+	displayName		= "";
+	itemDesc		= "";
 
 	playerViewAxis.Identity();
 	playerViewOrigin.Zero();
@@ -764,10 +788,8 @@ void idWeapon::Clear() {
 	lightOn			= false;
 	silent_fire		= false;
 
-#ifdef _D3XP
 	grabberState	= -1;
 	grabber.Update( owner, true );
-#endif
 
 	ammoType		= 0;
 	ammoRequired	= 0;
@@ -794,15 +816,16 @@ void idWeapon::Clear() {
 	flashJointWorld		= INVALID_JOINT;
 	ejectJointWorld		= INVALID_JOINT;
 
-#ifdef _D3XP
 	smokeJointView		= INVALID_JOINT;
 
 	//Clean up the weapon particles
 	for(int i = 0; i < weaponParticles.Num(); i++) {
 		WeaponParticle_t* part = weaponParticles.GetIndex(i);
 		if(!part->smoke) {
-			//Destroy the emitters
-			part->emitter->PostEventMS(&EV_Remove, 0 );
+			if ( part->emitter != NULL ) {
+				//Destroy the emitters
+				part->emitter->PostEventMS(&EV_Remove, 0 );
+			}
 		}
 	}
 	weaponParticles.Clear();
@@ -815,7 +838,6 @@ void idWeapon::Clear() {
 		}
 	}
 	weaponLights.Clear();
-#endif
 
 	hasBloodSplat		= false;
 	nozzleFx			= false;
@@ -874,6 +896,11 @@ void idWeapon::InitWorldModel( const idDeclEntityDef *def ) {
 		ent->GetPhysics()->SetOrigin( vec3_origin );
 		ent->GetPhysics()->SetAxis( mat3_identity );
 
+		// We don't want to interpolate the world model of weapons, let them
+		// just bind normally to the player's joint and be driven by the player's
+		// animation so that the weapon and the player don't appear out of sync.
+		ent->SetUseClientInterpolation( false );
+
 		// supress model in player views, but allow it in mirrors and remote views
 		renderEntity_t *worldModelRenderEntity = ent->GetRenderEntity();
 		if ( worldModelRenderEntity ) {
@@ -922,6 +949,10 @@ void idWeapon::GetWeaponDef( const char *objectname, int ammoinclip ) {
 	lowAmmo				= weaponDef->dict.GetInt( "lowAmmo" );
 
 	icon				= weaponDef->dict.GetString( "icon" );
+	pdaIcon				= weaponDef->dict.GetString( "pdaIcon" );
+	displayName			= weaponDef->dict.GetString( "display_name" );
+	itemDesc			= weaponDef->dict.GetString( "inv_desc" );
+
 	silent_fire			= weaponDef->dict.GetBool( "silent_fire" );
 	powerAmmo			= weaponDef->dict.GetBool( "powerAmmo" );
 
@@ -984,14 +1015,12 @@ void idWeapon::GetWeaponDef( const char *objectname, int ammoinclip ) {
 	guiLightJointView = animator.GetJointHandle( "guiLight" );
 	ventLightJointView = animator.GetJointHandle( "ventLight" );
 
-#ifdef _D3XP
 	idStr smokeJoint = weaponDef->dict.GetString("smoke_joint");
 	if(smokeJoint.Length() > 0) {
 		smokeJointView = animator.GetJointHandle( smokeJoint );
 	} else {
 		smokeJointView = INVALID_JOINT;
 	}
-#endif
 
 	// get the projectile
 	projectileDict.Clear();
@@ -1100,17 +1129,15 @@ void idWeapon::GetWeaponDef( const char *objectname, int ammoinclip ) {
 	}
 
 	ammoClip = ammoinclip;
-	if ( ( ammoClip < 0 ) || ( ammoClip > clipSize ) ) {
+	if ( ( ammoClip.Get() < 0 ) || ( ammoClip.Get() > clipSize ) ) {
 		// first time using this weapon so have it fully loaded to start
 		ammoClip = clipSize;
 		ammoAvail = owner->inventory.HasAmmo( ammoType, ammoRequired );
-		if ( ammoClip > ammoAvail ) {
+		if ( ammoClip.Get() > ammoAvail ) {
 			ammoClip = ammoAvail;
 		}
-#ifdef _D3XP
 		//In D3XP we use ammo as soon as it is moved into the clip. This allows for weapons that share ammo
-		owner->inventory.UseAmmo(ammoType, ammoClip);
-#endif
+		owner->inventory.UseAmmo( ammoType, ammoClip.Get() );
 	}
 
 	renderEntity.gui[ 0 ] = NULL;
@@ -1162,7 +1189,6 @@ void idWeapon::GetWeaponDef( const char *objectname, int ammoinclip ) {
 	// make sure we have the correct skin
 	UpdateSkin();
 
-#ifdef _D3XP
 	idEntity *ent = worldModel.GetEntity();
 	DetermineTimeGroup( weaponDef->dict.GetBool( "slowmo", "0" ) );
 	if ( ent ) {
@@ -1170,7 +1196,7 @@ void idWeapon::GetWeaponDef( const char *objectname, int ammoinclip ) {
 	}
 
 	//Initialize the particles
-	if ( !gameLocal.isMultiplayer ) {
+	if ( !common->IsMultiplayer() ) {
 
 		const idKeyValue *pkv = weaponDef->dict.MatchPrefix( "weapon_particle", NULL );
 		while( pkv ) {
@@ -1204,7 +1230,9 @@ void idWeapon::GetWeaponDef( const char *objectname, int ammoinclip ) {
 				gameLocal.SpawnEntityDef(args, &ent, false);
 				newParticle.emitter = (idFuncEmitter*)ent;
 
-				newParticle.emitter->BecomeActive(TH_THINK);
+				if ( newParticle.emitter != NULL ) {
+					newParticle.emitter->BecomeActive(TH_THINK);
+				}
 			}
 
 			weaponParticles.Set(name.c_str(), newParticle);
@@ -1242,7 +1270,6 @@ void idWeapon::GetWeaponDef( const char *objectname, int ammoinclip ) {
 			lkv = weaponDef->dict.MatchPrefix( "weapon_light", lkv );
 		}
 	}
-#endif
 }
 
 /***********************************************************************
@@ -1258,6 +1285,33 @@ idWeapon::Icon
 */
 const char *idWeapon::Icon() const {
 	return icon;
+}
+
+/*
+================
+idWeapon::PdaIcon
+================
+*/
+const char *idWeapon::PdaIcon() const {
+	return pdaIcon;
+}
+
+/*
+================
+idWeapon::DisplayName
+================
+*/
+const char * idWeapon::DisplayName() const {
+	return idLocalization::GetString( displayName );
+}
+
+/*
+================
+idWeapon::Description
+================
+*/
+const char * idWeapon::Description() const {
+	return idLocalization::GetString( itemDesc );
 }
 
 /*
@@ -1279,10 +1333,10 @@ void idWeapon::UpdateGUI() {
 		return;
 	}
 
-	if ( gameLocal.localClientNum != owner->entityNumber ) {
+	if ( !owner->IsLocallyControlled() ) {
 		// if updating the hud for a followed client
-		if ( gameLocal.localClientNum >= 0 && gameLocal.entities[ gameLocal.localClientNum ] && gameLocal.entities[ gameLocal.localClientNum ]->IsType( idPlayer::Type ) ) {
-			idPlayer *p = static_cast< idPlayer * >( gameLocal.entities[ gameLocal.localClientNum ] );
+		if ( gameLocal.GetLocalClientNum() >= 0 && gameLocal.entities[ gameLocal.GetLocalClientNum() ] && gameLocal.entities[ gameLocal.GetLocalClientNum() ]->IsType( idPlayer::Type ) ) {
+			idPlayer *p = static_cast< idPlayer * >( gameLocal.entities[ gameLocal.GetLocalClientNum() ] );
 			if ( !p->spectating || p->spectator != owner->entityNumber ) {
 				return;
 			}
@@ -1299,31 +1353,21 @@ void idWeapon::UpdateGUI() {
 		renderEntity.gui[ 0 ]->SetStateString( "player_ammo", "" );
 	} else {
 		// show remaining ammo
-#ifdef _D3XP
 		renderEntity.gui[ 0 ]->SetStateString( "player_totalammo", va( "%i", ammoamount) );
-#else
-		renderEntity.gui[ 0 ]->SetStateString( "player_totalammo", va( "%i", ammoamount - inclip) );
-#endif
 		renderEntity.gui[ 0 ]->SetStateString( "player_ammo", ClipSize() ? va( "%i", inclip ) : "--" );
 		renderEntity.gui[ 0 ]->SetStateString( "player_clips", ClipSize() ? va("%i", ammoamount / ClipSize()) : "--" );
 
-#ifdef _D3XP
 		renderEntity.gui[ 0 ]->SetStateString( "player_allammo", va( "%i/%i", inclip, ammoamount ) );
-#else
-		renderEntity.gui[ 0 ]->SetStateString( "player_allammo", va( "%i/%i", inclip, ammoamount - inclip ) );
-#endif
 	}
 	renderEntity.gui[ 0 ]->SetStateBool( "player_ammo_empty", ( ammoamount == 0 ) );
 	renderEntity.gui[ 0 ]->SetStateBool( "player_clip_empty", ( inclip == 0 ) );
 	renderEntity.gui[ 0 ]->SetStateBool( "player_clip_low", ( inclip <= lowAmmo ) );
 
-#ifdef _D3XP
 	//Let the HUD know the total amount of ammo regardless of the ammo required value
 	renderEntity.gui[ 0 ]->SetStateString( "player_ammo_count", va("%i", AmmoCount()));
 
 	//Grabber Gui Info
 	renderEntity.gui[ 0 ]->SetStateString( "grabber_state", va("%i", grabberState));
-#endif
 }
 
 /***********************************************************************
@@ -1341,6 +1385,23 @@ void idWeapon::UpdateFlashPosition() {
 	// the flash has an explicit joint for locating it
 	GetGlobalJointTransform( true, flashJointView, muzzleFlash.origin, muzzleFlash.axis );
 
+	if ( isPlayerFlashlight ) {
+		static float pscale = 2.0f;
+		static float yscale = 0.25f;
+
+// 		static idVec3 baseAdjustPos = vec3_zero;	//idVec3( 0.0f, 10.0f, 0.0f );
+// 		idVec3 adjustPos = baseAdjustPos;
+//		muzzleFlash.origin += adjustPos.x * muzzleFlash.axis[1] + adjustPos.y * muzzleFlash.axis[0] + adjustPos.z * muzzleFlash.axis[2];
+ 		muzzleFlash.origin += owner->GetViewBob();
+
+//		static idAngles baseAdjustAng = ang_zero;	//idAngles( 0.0f, 10.0f, 0.0f );
+		idAngles adjustAng = /*baseAdjustAng +*/ idAngles( fraccos * yscale, 0.0f, fraccos2 * pscale );
+		idAngles bobAngles = owner->GetViewBobAngles();
+		SwapValues( bobAngles.pitch, bobAngles.roll );
+		adjustAng += bobAngles * 3.0f;
+		muzzleFlash.axis = adjustAng.ToMat3() * muzzleFlash.axis /** adjustAng.ToMat3()*/;
+	}
+
 	// if the desired point is inside or very close to a wall, back it up until it is clear
 	idVec3	start = muzzleFlash.origin - playerViewAxis[0] * 16;
 	idVec3	end = muzzleFlash.origin + playerViewAxis[0] * 8;
@@ -1348,6 +1409,8 @@ void idWeapon::UpdateFlashPosition() {
 	gameLocal.clip.TracePoint( tr, start, end, MASK_SHOT_RENDERMODEL, owner );
 	// be at least 8 units away from a solid
 	muzzleFlash.origin = tr.endpos - playerViewAxis[0] * 8;
+
+	muzzleFlash.noShadows = !g_weaponShadows.GetBool();
 
 	// put the world muzzle flash on the end of the joint, no matter what
 	GetGlobalJointTransform( false, flashJointWorld, worldMuzzleFlash.origin, worldMuzzleFlash.axis );
@@ -1412,6 +1475,58 @@ bool idWeapon::UpdateSkin() {
 	gameLocal.frameCommandThread->Execute();
 
 	return true;
+}
+
+
+/*
+================
+idWeapon::FlashlightOn
+================
+*/
+void idWeapon::FlashlightOn() {
+	const function_t *func;
+
+	if ( !isLinked ) {
+		return;
+	}
+
+	func = scriptObject.GetFunction( "TurnOn" );
+	if ( !func ) {
+		common->Warning( "Can't find function 'TurnOn' in object '%s'", scriptObject.GetTypeName() );
+		return;
+	}
+
+	// use the frameCommandThread since it's safe to use outside of framecommands
+	gameLocal.frameCommandThread->CallFunction( this, func, true );
+	gameLocal.frameCommandThread->Execute();
+
+	return;
+}
+
+
+/*
+================
+idWeapon::FlashlightOff
+================
+*/
+void idWeapon::FlashlightOff() {
+	const function_t *func;
+
+	if ( !isLinked ) {
+		return;
+	}
+
+	func = scriptObject.GetFunction( "TurnOff" );
+	if ( !func ) {
+		common->Warning( "Can't find function 'TurnOff' in object '%s'", scriptObject.GetTypeName() );
+		return;
+	}
+
+	// use the frameCommandThread since it's safe to use outside of framecommands
+	gameLocal.frameCommandThread->CallFunction( this, func, true );
+	gameLocal.frameCommandThread->Execute();
+
+	return;
 }
 
 /*
@@ -1627,12 +1742,10 @@ void idWeapon::OwnerDied() {
 		SetState( "OwnerDied", 0 );
 		thread->Execute();
 
-#ifdef _D3XP
 		// Update the grabber effects
-		if ( /*!gameLocal.isMultiplayer &&*/ grabberState != -1 ) {
+		if ( /*!common->IsMultiplayer() &&*/ grabberState != -1 ) {
 			grabber.Update( owner, hide );
 		}
-#endif
 	}
 
 	Hide();
@@ -1717,7 +1830,9 @@ idWeapon::ShowCrosshair
 ================
 */
 bool idWeapon::ShowCrosshair() const {
-	return !( state == idStr( WP_RISING ) || state == idStr( WP_LOWERING ) || state == idStr( WP_HOLSTERED ) );
+// JDC: this code would never function as written, I'm assuming they wanted the following behavior
+//	return !( state == idStr( WP_RISING ) || state == idStr( WP_LOWERING ) || state == idStr( WP_HOLSTERED ) );
+	return !( status == WP_RISING || status == WP_LOWERING || status == WP_HOLSTERED || status == WP_RELOAD );
 }
 
 /*
@@ -1742,7 +1857,7 @@ idWeapon::WeaponStolen
 ================
 */
 void idWeapon::WeaponStolen() {
-	assert( !gameLocal.isClient );
+	assert( !common->IsClient() );
 	if ( projectileEnt ) {
 		if ( isLinked ) {
 			SetState( "WeaponStolen", 0 );
@@ -1928,7 +2043,7 @@ bool idWeapon::BloodSplat( float size ) {
 
 	const idMaterial *mtr = declManager->FindMaterial( "textures/decals/duffysplatgun" );
 
-	gameRenderWorld->ProjectOverlay( modelDefHandle, localPlane, mtr );
+	gameRenderWorld->ProjectOverlay( modelDefHandle, localPlane, mtr, gameLocal.slow.time );
 
 	return true;
 }
@@ -2118,6 +2233,88 @@ void idWeapon::AlertMonsters() {
 
 /*
 ================
+idWeapon::GetMuzzlePositionWithHacks
+
+Some weapons that have a barrel joint either have it pointing in the wrong
+direction (rocket launcher), or don't animate it properly (pistol).
+
+For good 3D TV / head mounted display work, we need to display a laser sight
+in the world.
+
+Fixing the animated meshes would be ideal, but hacking it in code is
+the pragmatic move right now.
+
+Returns false for hands, grenades, and chainsaw.
+================
+*/
+bool idWeapon::GetMuzzlePositionWithHacks( idVec3 & origin, idMat3 & axis ) {
+	// I couldn't find a simple enum to identify the weapons that need
+	// workaround hacks...
+	const idStr & weaponIconName = pdaIcon;
+
+	origin = playerViewOrigin;
+	axis = playerViewAxis;
+	
+	if ( weaponIconName == "guis/assets/hud/icons/grenade_new.tga" ) {
+		return false;
+	}
+
+	if ( weaponIconName == "guis/assets/hud/icons/chainsaw_new.tga" ) {
+		return false;
+	}
+
+	if ( weaponIconName == "guis/assets/hud/icons/soul_cube.tga" ) {
+		return false;
+	}
+
+	if ( barrelJointView != INVALID_JOINT ) {
+		GetGlobalJointTransform( true, barrelJointView, origin, axis );
+	} else if ( guiLightJointView != INVALID_JOINT ) {
+		GetGlobalJointTransform( true, guiLightJointView, origin, axis );
+	} else {
+		return false;
+	}
+
+	// get better axis joints for weapons where the barrelJointView isn't
+	// animated properly
+	idVec3	discardedOrigin;
+	if ( weaponIconName == "guis/assets/hud/icons/pistol_new.tga" ) {
+		// muzzle doesn't animate during firing, Bod does
+		const jointHandle_t bodJoint = animator.GetJointHandle( "Bod" );
+		GetGlobalJointTransform( true, bodJoint, discardedOrigin, axis );
+	}
+	if ( weaponIconName == "guis/assets/hud/icons/rocketlauncher_new.tga" ) {
+		// joint doesn't point straight, so rotate it
+		std::swap( axis[0], axis[2] );
+	}
+	if ( weaponIconName == "guis/assets/hud/icons/shotgun_new.tga" ) {
+		// joint doesn't point straight, so rotate it
+		const jointHandle_t bodJoint = animator.GetJointHandle( "trigger" );
+		GetGlobalJointTransform( true, bodJoint, discardedOrigin, axis );
+		std::swap( axis[0], axis[2] );
+		axis[0] = -axis[0];
+	}
+	
+	// we probably should fix the above hacks above that are based on texture names above at some
+	// point
+	if ( weaponDef != NULL ) {
+		if ( ( idStr::Icmp( "weapon_shotgun_double", weaponDef->GetName() ) == 0 ) || ( idStr::Icmp( "weapon_shotgun_double_mp", weaponDef->GetName() ) == 0 ) ) {
+			// joint doesn't point straight, so rotate it
+			std::swap( axis[0], axis[2] );
+		} else if ( idStr::Icmp( "weapon_grabber", weaponDef->GetName() ) == 0 ) {
+			idVec3 forward = axis[0];
+			forward.Normalize();
+			const float scaleOffset = 4.0f;
+			forward *= scaleOffset;
+			origin += forward;
+		}
+	}
+	
+	return true;
+}
+
+/*
+================
 idWeapon::PresentWeapon
 ================
 */
@@ -2125,30 +2322,53 @@ void idWeapon::PresentWeapon( bool showViewModel ) {
 	playerViewOrigin = owner->firstPersonViewOrigin;
 	playerViewAxis = owner->firstPersonViewAxis;
 
-	// calculate weapon position based on player movement bobbing
-	owner->CalculateViewWeaponPos( viewWeaponOrigin, viewWeaponAxis );
+	if ( isPlayerFlashlight ) {
+		viewWeaponOrigin = playerViewOrigin;
+		viewWeaponAxis = playerViewAxis;
 
-	// hide offset is for dropping the gun when approaching a GUI or NPC
-	// This is simpler to manage than doing the weapon put-away animation
-	if ( gameLocal.time - hideStartTime < hideTime ) {		
-		float frac = ( float )( gameLocal.time - hideStartTime ) / ( float )hideTime;
-		if ( hideStart < hideEnd ) {
-			frac = 1.0f - frac;
-			frac = 1.0f - frac * frac;
-		} else {
-			frac = frac * frac;
-		}
-		hideOffset = hideStart + ( hideEnd - hideStart ) * frac;
+		fraccos = cos( ( gameLocal.framenum & 255 ) / 127.0f * idMath::PI );
+
+		static unsigned int divisor = 32;
+		unsigned int val = ( gameLocal.framenum + gameLocal.framenum / divisor ) & 255;
+		fraccos2 = cos( val / 127.0f * idMath::PI );
+
+		static idVec3 baseAdjustPos = idVec3( -8.0f, -20.0f, -10.0f );		// rt, fwd, up
+		static float pscale = 0.5f;
+		static float yscale = 0.125f;
+		idVec3 adjustPos = baseAdjustPos;// + ( idVec3( fraccos, 0.0f, fraccos2 ) * scale );
+		viewWeaponOrigin += adjustPos.x * viewWeaponAxis[1] + adjustPos.y * viewWeaponAxis[0] + adjustPos.z * viewWeaponAxis[2];
+//		viewWeaponOrigin += owner->viewBob;
+
+		static idAngles baseAdjustAng = idAngles( 88.0f, 10.0f, 0.0f );		//
+		idAngles adjustAng = baseAdjustAng + idAngles( fraccos * pscale, fraccos2 * yscale, 0.0f );
+//		adjustAng += owner->GetViewBobAngles();
+		viewWeaponAxis = adjustAng.ToMat3() * viewWeaponAxis;
 	} else {
-		hideOffset = hideEnd;
-		if ( hide && disabled ) {
-			Hide();
-		}
-	}
-	viewWeaponOrigin += hideOffset * viewWeaponAxis[ 2 ];
+		// calculate weapon position based on player movement bobbing
+		owner->CalculateViewWeaponPos( viewWeaponOrigin, viewWeaponAxis );
 
-	// kick up based on repeat firing
-	MuzzleRise( viewWeaponOrigin, viewWeaponAxis );
+		// hide offset is for dropping the gun when approaching a GUI or NPC
+		// This is simpler to manage than doing the weapon put-away animation
+		if ( gameLocal.time - hideStartTime < hideTime ) {		
+			float frac = ( float )( gameLocal.time - hideStartTime ) / ( float )hideTime;
+			if ( hideStart < hideEnd ) {
+				frac = 1.0f - frac;
+				frac = 1.0f - frac * frac;
+			} else {
+				frac = frac * frac;
+			}
+			hideOffset = hideStart + ( hideEnd - hideStart ) * frac;
+		} else {
+			hideOffset = hideEnd;
+			if ( hide && disabled ) {
+				Hide();
+			}
+		}
+		viewWeaponOrigin += hideOffset * viewWeaponAxis[ 2 ];
+
+		// kick up based on repeat firing
+		MuzzleRise( viewWeaponOrigin, viewWeaponAxis );
+	}
 
 	// set the physics position and orientation
 	GetPhysics()->SetOrigin( viewWeaponOrigin );
@@ -2167,7 +2387,7 @@ void idWeapon::PresentWeapon( bool showViewModel ) {
 	renderEntity.allowSurfaceInViewID = owner->entityNumber+1;
 
 	// crunch the depth range so it never pokes into walls this breaks the machine gun gui
-	renderEntity.weaponDepthHack = true;
+	renderEntity.weaponDepthHack = g_useWeaponDepthHack.GetBool();
 
 	// present the model
 	if ( showViewModel ) {
@@ -2179,7 +2399,7 @@ void idWeapon::PresentWeapon( bool showViewModel ) {
 	if ( worldModel.GetEntity() && worldModel.GetEntity()->GetRenderEntity() ) {
 		// deal with the third-person visible world model
 		// don't show shadows of the world model in first person
-		if ( gameLocal.isMultiplayer || g_showPlayerShadow.GetBool() || pm_thirdPerson.GetBool() ) {
+		if ( common->IsMultiplayer() || g_showPlayerShadow.GetBool() || pm_thirdPerson.GetBool() ) {
 			worldModel.GetEntity()->GetRenderEntity()->suppressShadowInViewID	= 0;
 		} else {
 			worldModel.GetEntity()->GetRenderEntity()->suppressShadowInViewID	= owner->entityNumber+1;
@@ -2195,15 +2415,10 @@ void idWeapon::PresentWeapon( bool showViewModel ) {
 	if ( showViewModel && !disabled && weaponSmoke && ( weaponSmokeStartTime != 0 ) ) {
 		// use the barrel joint if available
 
-#ifdef _D3XP
 		if(smokeJointView != INVALID_JOINT) {
 			GetGlobalJointTransform( true, smokeJointView, muzzleOrigin, muzzleAxis );
 		} else if (barrelJointView != INVALID_JOINT) {
 			GetGlobalJointTransform( true, barrelJointView, muzzleOrigin, muzzleAxis );
-#else
-		if ( barrelJointView ) {
-			GetGlobalJointTransform( true, barrelJointView, muzzleOrigin, muzzleAxis );
-#endif
 		} else {
 			// default to going straight out the view
 			muzzleOrigin = playerViewOrigin;
@@ -2222,7 +2437,6 @@ void idWeapon::PresentWeapon( bool showViewModel ) {
 		}
 	}
 
-#ifdef _D3XP
 	if ( showViewModel && !hide ) {
 
 		for( int i = 0; i < weaponParticles.Num(); i++ ) {
@@ -2242,12 +2456,14 @@ void idWeapon::PresentWeapon( bool showViewModel ) {
 						part->startTime = 0;
 					}
 				} else {
-					//Manually update the position of the emitter so it follows the weapon
-					renderEntity_t* rendEnt = part->emitter->GetRenderEntity();
-					GetGlobalJointTransform( true, part->joint, rendEnt->origin, rendEnt->axis );
+					if ( part->emitter != NULL ) {
+						//Manually update the position of the emitter so it follows the weapon
+						renderEntity_t* rendEnt = part->emitter->GetRenderEntity();
+						GetGlobalJointTransform( true, part->joint, rendEnt->origin, rendEnt->axis );
 
-					if ( part->emitter->GetModelDefHandle() != -1 ) {
-						gameRenderWorld->UpdateEntityDef( part->emitter->GetModelDefHandle(), rendEnt );
+						if ( part->emitter->GetModelDefHandle() != -1 ) {
+							gameRenderWorld->UpdateEntityDef( part->emitter->GetModelDefHandle(), rendEnt );
+						}
 					}
 				}
 			}
@@ -2272,7 +2488,6 @@ void idWeapon::PresentWeapon( bool showViewModel ) {
 	if ( grabberState != -1 ) {
 		grabberState = grabber.Update( owner, hide );
 	}
-#endif
 
 	// remove the muzzle flash light when it's done
 	if ( ( !lightOn && ( gameLocal.time >= muzzleFlashEnd ) ) || IsHidden() ) {
@@ -2293,7 +2508,7 @@ void idWeapon::PresentWeapon( bool showViewModel ) {
 		gameRenderWorld->UpdateLightDef( worldMuzzleFlashHandle, &worldMuzzleFlash );
 
 		// wake up monsters with the flashlight
-		if ( !gameLocal.isMultiplayer && lightOn && !owner->fl.notarget ) {
+		if ( !common->IsMultiplayer() && lightOn && !owner->fl.notarget ) {
 			AlertMonsters();
 		}
 	}
@@ -2314,6 +2529,32 @@ void idWeapon::PresentWeapon( bool showViewModel ) {
 	}
 
 	UpdateSound();
+
+	// constant rumble...
+	float highMagnitude = weaponDef->dict.GetFloat( "controllerConstantShakeHighMag" );
+	int highDuration = weaponDef->dict.GetInt( "controllerConstantShakeHighTime" );
+	float lowMagnitude = weaponDef->dict.GetFloat( "controllerConstantShakeLowMag" );
+	int lowDuration = weaponDef->dict.GetInt( "controllerConstantShakeLowTime" );
+
+	if( owner->IsLocallyControlled() ) {
+		owner->SetControllerShake( highMagnitude, highDuration, lowMagnitude, lowDuration );
+	}
+}
+
+/*
+================
+idWeapon::RemoveMuzzleFlashlight
+================
+*/
+void idWeapon::RemoveMuzzleFlashlight() {
+	if ( muzzleFlashHandle != -1 ) {
+		gameRenderWorld->FreeLightDef( muzzleFlashHandle );
+		muzzleFlashHandle = -1;
+	}
+	if ( worldMuzzleFlashHandle != -1 ) {
+		gameRenderWorld->FreeLightDef( worldMuzzleFlashHandle );
+		worldMuzzleFlashHandle = -1;
+	}
 }
 
 /*
@@ -2336,9 +2577,7 @@ void idWeapon::EnterCinematic() {
 		WEAPON_RAISEWEAPON	= false;
 		WEAPON_LOWERWEAPON	= false;
 
-#ifdef _D3XP
 		grabber.Update( this->GetOwner(), true );
-#endif
 	}
 
 	disabled = true;
@@ -2423,8 +2662,9 @@ ammo_t idWeapon::GetAmmoNumForName( const char *ammoname ) {
 	assert( ammoname );
 
 	ammoDict = gameLocal.FindEntityDefDict( "ammo_types", false );
-	if ( !ammoDict ) {
+	if ( ammoDict == NULL ) {
 		gameLocal.Error( "Could not find entity definition for 'ammo_types'\n" );
+		return 0;
 	}
 
 	if ( !ammoname[ 0 ] ) {
@@ -2432,33 +2672,12 @@ ammo_t idWeapon::GetAmmoNumForName( const char *ammoname ) {
 	}
 
 	if ( !ammoDict->GetInt( ammoname, "-1", num ) ) {
-#ifdef _D3XP
-		//Lets look in a game specific ammo type definition for the weapon
-		idStr gamedir;
-		int i;
-		for ( i = 0; i < 2; i++ ) {
-			if ( i == 0 ) {
-				gamedir = cvarSystem->GetCVarString( "fs_game_base" );
-			} else if ( i == 1 ) {
-				gamedir = cvarSystem->GetCVarString( "fs_game" );
-			}
-			if ( gamedir.Length() > 0 ) {
-				ammoDict = gameLocal.FindEntityDefDict( va("ammo_types_%s", gamedir.c_str()), false );
-				if ( ammoDict ) {
-					if ( ammoDict->GetInt( ammoname, "-1", num ) ) {
-						break;
-					}
-				}
-			}
-		}
-		if ( i == 2 ) {
-			gameLocal.Error( "Unknown ammo type '%s'", ammoname );
-		}
-#endif
+
 	}
 
 	if ( ( num < 0 ) || ( num >= AMMO_NUMTYPES ) ) {
-		gameLocal.Error( "Ammo type '%s' value out of range.  Maximum ammo types is %d.\n", ammoname, AMMO_NUMTYPES );
+		gameLocal.Warning( "Ammo type '%s' value out of range.  Maximum ammo types is %d.\n", ammoname, AMMO_NUMTYPES );
+		num = 0;
 	}
 
 	return ( ammo_t )num;
@@ -2477,8 +2696,9 @@ const char *idWeapon::GetAmmoNameForNum( ammo_t ammonum ) {
 	char text[ 32 ];
 
 	ammoDict = gameLocal.FindEntityDefDict( "ammo_types", false );
-	if ( !ammoDict ) {
+	if ( ammoDict == NULL ) {
 		gameLocal.Error( "Could not find entity definition for 'ammo_types'\n" );
+		return NULL;
 	}
 
 	sprintf( text, "%d", ammonum );
@@ -2490,30 +2710,6 @@ const char *idWeapon::GetAmmoNameForNum( ammo_t ammonum ) {
 			return kv->GetKey();
 		}
 	}
-
-#ifdef _D3XP
-	// Look in the game specific ammo types
-	idStr gamedir;
-	for ( i = 0; i < 2; i++ ) {
-		if ( i == 0 ) {
-			gamedir = cvarSystem->GetCVarString( "fs_game_base" );
-		} else if ( i == 1 ) {
-			gamedir = cvarSystem->GetCVarString( "fs_game" );
-		}
-		if ( gamedir.Length() > 0 ) {
-			ammoDict = gameLocal.FindEntityDefDict( va("ammo_types_%s", gamedir.c_str()), false );
-			if ( ammoDict ) {
-				num = ammoDict->GetNumKeyVals();
-				for( i = 0; i < num; i++ ) {
-					kv = ammoDict->GetKeyVal( i );
-					if ( kv->GetValue() == text ) {
-						return kv->GetKey();
-					}
-				}
-			}
-		}
-	}
-#endif
 
 	return NULL;
 }
@@ -2536,7 +2732,7 @@ const char *idWeapon::GetAmmoPickupNameForNum( ammo_t ammonum ) {
 
 	const char *name = GetAmmoNameForNum( ammonum );
 
-	if ( name && *name ) {
+	if ( name != NULL && *name != NULL ) {
 		num = ammoDict->GetNumKeyVals();
 		for( i = 0; i < num; i++ ) {
 			kv = ammoDict->GetKeyVal( i );
@@ -2558,7 +2754,11 @@ int idWeapon::AmmoAvailable() const {
 	if ( owner ) {
 		return owner->inventory.HasAmmo( ammoType, ammoRequired );
 	} else {
-		return 0;
+		if ( g_infiniteAmmo.GetBool() ) {
+			return 10;	// arbitrary number, just so whatever's calling thinks there's sufficient ammo...
+		} else {
+			return 0;
+		}
 	}
 }
 
@@ -2568,7 +2768,7 @@ idWeapon::AmmoInClip
 ================
 */
 int idWeapon::AmmoInClip() const {
-	return ammoClip;
+	return ammoClip.Get();
 }
 
 /*
@@ -2616,7 +2816,6 @@ int	idWeapon::AmmoRequired() const {
 	return ammoRequired;
 }
 
-#ifdef _D3XP
 /*
 ================
 idWeapon::GetGrabberState
@@ -2644,15 +2843,14 @@ int idWeapon::AmmoCount() const {
 		return 0;
 	}
 }
-#endif
 
 /*
 ================
 idWeapon::WriteToSnapshot
 ================
 */
-void idWeapon::WriteToSnapshot( idBitMsgDelta &msg ) const {
-	msg.WriteBits( ammoClip, ASYNC_PLAYER_INV_CLIP_BITS );
+void idWeapon::WriteToSnapshot( idBitMsg &msg ) const {
+	msg.WriteBits( ammoClip.Get(), ASYNC_PLAYER_INV_CLIP_BITS );
 	msg.WriteBits( worldModel.GetSpawnId(), 32 );
 	msg.WriteBits( lightOn, 1 );
 	msg.WriteBits( isFiring ? 1 : 0, 1 );
@@ -2663,14 +2861,20 @@ void idWeapon::WriteToSnapshot( idBitMsgDelta &msg ) const {
 idWeapon::ReadFromSnapshot
 ================
 */
-void idWeapon::ReadFromSnapshot( const idBitMsgDelta &msg ) {	
-	ammoClip = msg.ReadBits( ASYNC_PLAYER_INV_CLIP_BITS );
+void idWeapon::ReadFromSnapshot( const idBitMsg &msg ) {	
+	const int snapshotAmmoClip = msg.ReadBits( ASYNC_PLAYER_INV_CLIP_BITS );
 	worldModel.SetSpawnId( msg.ReadBits( 32 ) );
-	bool snapLight = msg.ReadBits( 1 ) != 0;
+	const bool snapshotLightOn = msg.ReadBits( 1 ) != 0;
 	isFiring = msg.ReadBits( 1 ) != 0;
 
+	// Local clients predict the ammo in the clip. Only use the ammo cpunt from the snapshot for local clients
+	// if the server has processed the same usercmd in which we predicted the ammo count.
+	if ( owner != NULL ) {
+		ammoClip.UpdateFromSnapshot( snapshotAmmoClip, owner->GetEntityNumber() );
+	}
+
 	// WEAPON_NETFIRING is only turned on for other clients we're predicting. not for local client
-	if ( owner && gameLocal.localClientNum != owner->entityNumber && WEAPON_NETFIRING.IsLinked() ) {
+	if ( owner && !owner->IsLocallyControlled() && WEAPON_NETFIRING.IsLinked() ) {
 
 		// immediately go to the firing state so we don't skip fire animations
 		if ( !WEAPON_NETFIRING && isFiring ) {
@@ -2683,10 +2887,17 @@ void idWeapon::ReadFromSnapshot( const idBitMsgDelta &msg ) {
         }
 
 		WEAPON_NETFIRING = isFiring;
+		WEAPON_ATTACK = isFiring;
 	}
 
-	if ( snapLight != lightOn ) {
-		Reload();
+	// Only update the flashlight state if it has changed, and if this isn't the local player.
+	// The local player sets their flashlight immediately for responsiveness.
+	if ( owner != NULL && !owner->IsLocallyControlled() && lightOn != snapshotLightOn ) {
+		if ( snapshotLightOn ) {
+			FlashlightOn();
+		} else {
+			FlashlightOff();
+		}
 	}
 }
 
@@ -2699,7 +2910,8 @@ bool idWeapon::ClientReceiveEvent( int event, int time, const idBitMsg &msg ) {
 
 	switch( event ) {
 		case EVENT_RELOAD: {
-			if ( gameLocal.time - time < 1000 ) {
+			// Local clients predict reloads, only process this event for remote clients.
+			if ( owner != NULL && !owner->IsLocallyControlled() && ( gameLocal.time - time < 1000 ) ) {
 				if ( WEAPON_NETRELOAD.IsLinked() ) {
 					WEAPON_NETRELOAD = true;
 					WEAPON_NETENDRELOAD = false;
@@ -2708,7 +2920,8 @@ bool idWeapon::ClientReceiveEvent( int event, int time, const idBitMsg &msg ) {
 			return true;
 		}
 		case EVENT_ENDRELOAD: {
-			if ( WEAPON_NETENDRELOAD.IsLinked() ) {
+			// Local clients predict reloads, only process this event for remote clients.
+			if ( owner != NULL && !owner->IsLocallyControlled() && WEAPON_NETENDRELOAD.IsLinked() ) {
 				WEAPON_NETENDRELOAD = true;
 			}
 			return true;
@@ -2726,7 +2939,6 @@ bool idWeapon::ClientReceiveEvent( int event, int time, const idBitMsg &msg ) {
 			return idEntity::ClientReceiveEvent( event, time, msg );
 		}
 	}
-	return false;
 }
 
 /***********************************************************************
@@ -2769,6 +2981,15 @@ void idWeapon::Event_WeaponState( const char *statename, int blendFrames ) {
 
 	idealState = statename;
 
+	// HACK, Fixes reload animation on player not playing on second reload ( on non local client players, and only with host viewing. )
+	if( common->IsMultiplayer() && strcmp( weaponDef->GetName(), "weapon_shotgun_double_mp" ) == 0 ) {
+		if( strcmp( statename, "Reload" ) != 0 ) {
+			if( status ==  WP_RELOAD ) {
+				status =  WP_READY;
+			}
+		}
+	}
+
 	if ( !idealState.Icmp( "Fire" ) ) {
 		isFiring = true;
 	} else {
@@ -2786,6 +3007,7 @@ idWeapon::Event_WeaponReady
 */
 void idWeapon::Event_WeaponReady() {
 	status = WP_READY;
+	idLib::PrintfIf( g_debugWeapon.GetBool(), "Weapon Status WP_READY \n" );
 	if ( isLinked ) {
 		WEAPON_RAISEWEAPON = false;
 	}
@@ -2802,6 +3024,7 @@ idWeapon::Event_WeaponOutOfAmmo
 */
 void idWeapon::Event_WeaponOutOfAmmo() {
 	status = WP_OUTOFAMMO;
+	idLib::PrintfIf( g_debugWeapon.GetBool(), "Weapon Status WP_OUTOFAMMO \n" );
 	if ( isLinked ) {
 		WEAPON_RAISEWEAPON = false;
 	}
@@ -2814,6 +3037,7 @@ idWeapon::Event_WeaponReloading
 */
 void idWeapon::Event_WeaponReloading() {
 	status = WP_RELOAD;
+	idLib::PrintfIf( g_debugWeapon.GetBool(), "Weapon Status WP_RELOAD \n" );
 }
 
 /*
@@ -2823,6 +3047,7 @@ idWeapon::Event_WeaponHolstered
 */
 void idWeapon::Event_WeaponHolstered() {
 	status = WP_HOLSTERED;
+	idLib::PrintfIf( g_debugWeapon.GetBool(), "Weapon Status WP_HOLSTERED \n" );
 	if ( isLinked ) {
 		WEAPON_LOWERWEAPON = false;
 	}
@@ -2835,6 +3060,7 @@ idWeapon::Event_WeaponRising
 */
 void idWeapon::Event_WeaponRising() {
 	status = WP_RISING;
+	idLib::PrintfIf( g_debugWeapon.GetBool(), "Weapon Status WP_RISING \n" );
 	if ( isLinked ) {
 		WEAPON_LOWERWEAPON = false;
 	}
@@ -2848,6 +3074,7 @@ idWeapon::Event_WeaponLowering
 */
 void idWeapon::Event_WeaponLowering() {
 	status = WP_LOWERING;
+	idLib::PrintfIf( g_debugWeapon.GetBool(), "Weapon Status WP_LOWERING \n" );
 	if ( isLinked ) {
 		WEAPON_RAISEWEAPON = false;
 	}
@@ -2860,14 +3087,14 @@ idWeapon::Event_UseAmmo
 ===============
 */
 void idWeapon::Event_UseAmmo( int amount ) {
-	if ( gameLocal.isClient ) {
+	if ( owner == NULL || ( common->IsClient() && !owner->IsLocallyControlled() ) ) {
 		return;
 	}
 
 	owner->inventory.UseAmmo( ammoType, ( powerAmmo ) ? amount : ( amount * ammoRequired ) );
 	if ( clipSize && ammoRequired ) {
 		ammoClip -= powerAmmo ? amount : ( amount * ammoRequired );
-		if ( ammoClip < 0 ) {
+		if ( ammoClip.Get() < 0 ) {
 			ammoClip = 0;
 		}
 	}
@@ -2881,34 +3108,26 @@ idWeapon::Event_AddToClip
 void idWeapon::Event_AddToClip( int amount ) {
 	int ammoAvail;
 
-	if ( gameLocal.isClient ) {
+	if ( owner == NULL || ( common->IsClient() && !owner->IsLocallyControlled() ) ) {
 		return;
 	}
 
-#ifdef _D3XP
-	int oldAmmo = ammoClip;
+	int oldAmmo = ammoClip.Get();
 	ammoAvail = owner->inventory.HasAmmo( ammoType, ammoRequired ) + AmmoInClip();
-#endif
 
 	ammoClip += amount;
-	if ( ammoClip > clipSize ) {
+	if ( ammoClip.Get() > clipSize ) {
 		ammoClip = clipSize;
 	}
 
-#ifdef _D3XP
-#else
-	ammoAvail = owner->inventory.HasAmmo( ammoType, ammoRequired );
-#endif
 
-	if ( ammoClip > ammoAvail ) {
+	if ( ammoClip.Get() > ammoAvail ) {
 		ammoClip = ammoAvail;
 	}
 
-#ifdef _D3XP
 	// for shared ammo we need to use the ammo when it is moved into the clip
-	int usedAmmo = ammoClip - oldAmmo;
+	int usedAmmo = ammoClip.Get() - oldAmmo;
 	owner->inventory.UseAmmo(ammoType, usedAmmo);
-#endif
 }
 
 /*
@@ -2927,12 +3146,8 @@ idWeapon::Event_AmmoAvailable
 ===============
 */
 void idWeapon::Event_AmmoAvailable() {
-#ifdef _D3XP
 	int ammoAvail = owner->inventory.HasAmmo( ammoType, ammoRequired );
 	ammoAvail += AmmoInClip();
-#else
-	int ammoAvail = owner->inventory.HasAmmo( ammoType, ammoRequired );
-#endif
 
 	idThread::ReturnFloat( ammoAvail );
 }
@@ -2963,11 +3178,15 @@ idWeapon::Event_AutoReload
 */
 void idWeapon::Event_AutoReload() {
 	assert( owner );
-	if ( gameLocal.isClient ) {
+	
+	if ( common->IsClient() && owner != NULL && !owner->IsLocallyControlled() ) {
 		idThread::ReturnFloat( 0.0f );
 		return;
 	}
-	idThread::ReturnFloat( gameLocal.userInfo[ owner->entityNumber ].GetBool( "ui_autoReload" ) );
+
+	idLobbyBase & lobby = session->GetActingGameStateLobbyBase();
+	lobbyUserID_t & lobbyUserID = gameLocal.lobbyUserIDs[owner->entityNumber];
+	idThread::ReturnFloat( lobby.GetLobbyUserWeaponAutoReload( lobbyUserID ) );
 }
 
 /*
@@ -2977,8 +3196,8 @@ idWeapon::Event_NetReload
 */
 void idWeapon::Event_NetReload() {
 	assert( owner );
-	if ( gameLocal.isServer ) {
-		ServerSendEvent( EVENT_RELOAD, NULL, false, -1 );
+	if ( common->IsServer() ) {
+		ServerSendEvent( EVENT_RELOAD, NULL, false );
 	}
 }
 
@@ -2989,8 +3208,8 @@ idWeapon::Event_NetEndReload
 */
 void idWeapon::Event_NetEndReload() {
 	assert( owner );
-	if ( gameLocal.isServer ) {
-		ServerSendEvent( EVENT_ENDRELOAD, NULL, false, -1 );
+	if ( common->IsServer() ) {
+		ServerSendEvent( EVENT_ENDRELOAD, NULL, false );
 	}
 }
 
@@ -3099,12 +3318,16 @@ idWeapon::Event_SetSkin
 ================
 */
 void idWeapon::Event_SetSkin( const char *skinname ) {
-	const idDeclSkin *skinDecl;
-
+	const idDeclSkin *skinDecl = NULL;
 	if ( !skinname || !skinname[ 0 ] ) {
 		skinDecl = NULL;
 	} else {
 		skinDecl = declManager->FindSkin( skinname );
+	}
+
+	// Don't update if the skin hasn't changed.
+	if ( renderEntity.customSkin == skinDecl && worldModel.GetEntity() != NULL && worldModel.GetEntity()->GetSkin() == skinDecl ) {
+		return;
 	}
 
 	renderEntity.customSkin = skinDecl;
@@ -3114,13 +3337,14 @@ void idWeapon::Event_SetSkin( const char *skinname ) {
 		worldModel.GetEntity()->SetSkin( skinDecl );
 	}
 
-	if ( gameLocal.isServer ) {
-		idBitMsg	msg;
-		byte		msgBuf[MAX_EVENT_PARAM_SIZE];
+	// Hack, don't send message if flashlight, because clients process the flashlight instantly.
+	if ( common->IsServer() && !isPlayerFlashlight ) {
+		idBitMsg			msg;
+		byte				msgBuf[MAX_EVENT_PARAM_SIZE];
 
-		msg.Init( msgBuf, sizeof( msgBuf ) );
+		msg.InitWrite( msgBuf, sizeof( msgBuf ) );
 		msg.WriteLong( ( skinDecl != NULL ) ? gameLocal.ServerRemapDecl( -1, DECL_SKIN, skinDecl->Index() ) : -1 );
-		ServerSendEvent( EVENT_CHANGESKIN, &msg, false, -1 );
+		ServerSendEvent( EVENT_CHANGESKIN, &msg, false );
 	}
 }
 
@@ -3147,6 +3371,7 @@ idWeapon::Event_GetLightParm
 void idWeapon::Event_GetLightParm( int parmnum ) {
 	if ( ( parmnum < 0 ) || ( parmnum >= MAX_ENTITY_SHADER_PARMS ) ) {
 		gameLocal.Error( "shader parm index (%d) out of range", parmnum );
+		return;
 	}
 
 	idThread::ReturnFloat( muzzleFlash.shaderParms[ parmnum ] );
@@ -3160,6 +3385,7 @@ idWeapon::Event_SetLightParm
 void idWeapon::Event_SetLightParm( int parmnum, float value ) {
 	if ( ( parmnum < 0 ) || ( parmnum >= MAX_ENTITY_SHADER_PARMS ) ) {
 		gameLocal.Error( "shader parm index (%d) out of range", parmnum );
+		return;
 	}
 
 	muzzleFlash.shaderParms[ parmnum ]		= value;
@@ -3186,7 +3412,6 @@ void idWeapon::Event_SetLightParms( float parm0, float parm1, float parm2, float
 	UpdateVisuals();
 }
 
-#ifdef _D3XP
 /*
 ================
 idWeapon::Event_Grabber
@@ -3218,7 +3443,6 @@ void idWeapon::Event_GrabberSetGrabDistance( float dist ) {
 
 	grabber.SetDragDistance( dist );
 }
-#endif
 
 /*
 ================
@@ -3226,7 +3450,7 @@ idWeapon::Event_CreateProjectile
 ================
 */
 void idWeapon::Event_CreateProjectile() {
-	if ( !gameLocal.isClient ) {
+	if ( !common->IsClient() ) {
 		projectileEnt = NULL;
 		gameLocal.SpawnEntityDef( projectileDict, &projectileEnt, false );
 		if ( projectileEnt ) {
@@ -3238,6 +3462,28 @@ void idWeapon::Event_CreateProjectile() {
 	} else {
 		idThread::ReturnEntity( NULL );
 	}
+}
+
+/*
+================
+idWeapon::GetProjectileLaunchOriginAndAxis
+================
+*/
+void idWeapon::GetProjectileLaunchOriginAndAxis( idVec3 & origin, idMat3 & axis ) {
+	assert( owner != NULL );
+	
+	// calculate the muzzle position
+	if ( barrelJointView != INVALID_JOINT && projectileDict.GetBool( "launchFromBarrel" ) ) {
+		// there is an explicit joint for the muzzle
+		// GetGlobalJointTransform( true, barrelJointView, muzzleOrigin, muzzleAxis );
+		GetMuzzlePositionWithHacks( origin, axis );
+	} else {
+		// go straight out of the view
+		origin = playerViewOrigin;
+		axis = playerViewAxis;
+	}
+
+	axis = playerViewAxis;	// Fix for plasma rifle not firing correctly on initial shot of a burst fire
 }
 
 /*
@@ -3258,6 +3504,8 @@ void idWeapon::Event_LaunchProjectiles( int num_projectiles, float spread, float
 	idVec3			muzzle_pos;
 	idBounds		ownerBounds, projBounds;
 
+	assert( owner != NULL );
+
 	if ( IsHidden() ) {
 		return;
 	}
@@ -3268,23 +3516,12 @@ void idWeapon::Event_LaunchProjectiles( int num_projectiles, float spread, float
 		return;
 	}
 
-	// avoid all ammo considerations on an MP client
-	if ( !gameLocal.isClient ) {
-
-#ifdef _D3XP
-
-		int ammoAvail = owner->inventory.HasAmmo( ammoType, ammoRequired );
-		if ( ( clipSize != 0 ) && ( ammoClip <= 0 ) ) {
+	// Predict clip ammo on locally controlled MP clients.
+	if ( common->IsServer() || owner->IsLocallyControlled() ) {
+		if ( ( clipSize != 0 ) && ( ammoClip.Get() <= 0 ) ) {
 			return;
 		}
 
-#else
-		// check if we're out of ammo or the clip is empty
-		int ammoAvail = owner->inventory.HasAmmo( ammoType, ammoRequired );
-		if ( !ammoAvail || ( ( clipSize != 0 ) && ( ammoClip <= 0 ) ) ) {
-			return;
-		}
-#endif
 		// if this is a power ammo weapon ( currently only the bfg ) then make sure 
 		// we only fire as much power as available in each clip
 		if ( powerAmmo ) {
@@ -3293,31 +3530,22 @@ void idWeapon::Event_LaunchProjectiles( int num_projectiles, float spread, float
 			// in the .def as opposed to just in the script so proper calcs
 			// can be done here. 
 			dmgPower = ( int )dmgPower + 1;
-			if ( dmgPower > ammoClip ) {
-				dmgPower = ammoClip;
+			if ( dmgPower > ammoClip.Get() ) {
+				dmgPower = ammoClip.Get();
 			}
 		}
 
-#ifdef _D3XP
 		if(clipSize == 0) {
-			//Weapons with a clip size of 0 launch strait from inventory without moving to a clip
-#endif
+			//Weapons with a clip size of 0 launch straight from inventory without moving to a clip
+
 			//In D3XP we used the ammo when the ammo was moved into the clip so we don't want to
 			//use it now.
 			owner->inventory.UseAmmo( ammoType, ( powerAmmo ) ? dmgPower : ammoRequired );
-
-#ifdef _D3XP
 		}
-#endif
 
-		if ( clipSize && ammoRequired ) {
-#ifdef _D3XP
+		if ( clipSize && ammoRequired && !g_infiniteAmmo.GetBool() ) {
 			ammoClip -= powerAmmo ? dmgPower : ammoRequired;
-#else
-			ammoClip -= powerAmmo ? dmgPower : 1;
-#endif
 		}
-
 	}
 
 	if ( !silent_fire ) {
@@ -3336,14 +3564,7 @@ void idWeapon::Event_LaunchProjectiles( int num_projectiles, float spread, float
 	}
 
 	// calculate the muzzle position
-	if ( barrelJointView != INVALID_JOINT && projectileDict.GetBool( "launchFromBarrel" ) ) {
-		// there is an explicit joint for the muzzle
-		GetGlobalJointTransform( true, barrelJointView, muzzleOrigin, muzzleAxis );
-	} else {
-		// go straight out of the view
-		muzzleOrigin = playerViewOrigin;
-		muzzleAxis = playerViewAxis;
-	}
+	GetProjectileLaunchOriginAndAxis( muzzleOrigin, muzzleAxis );
 
 	// add some to the kick time, incrementally moving repeat firing weapons back
 	if ( kick_endtime < gameLocal.realClientTime ) {
@@ -3354,26 +3575,14 @@ void idWeapon::Event_LaunchProjectiles( int num_projectiles, float spread, float
 		kick_endtime = gameLocal.realClientTime + muzzle_kick_maxtime;
 	}
 
-	if ( gameLocal.isClient ) {
+	// "Predict" damage effects on clients by just spawning a local projectile that deals no damage. Used only
+	// for sound & visual effects. Damage will be handled through reliable messages to the host.
+	const bool isHitscan = projectileDict.GetBool( "net_instanthit" );
+	const bool attackerIsLocal = owner->IsLocallyControlled();
+	const bool actuallySpawnProjectile = common->IsServer() || attackerIsLocal || isHitscan;
 
-		// predict instant hit projectiles
-		if ( projectileDict.GetBool( "net_instanthit" ) ) {
-			float spreadRad = DEG2RAD( spread );
-			muzzle_pos = muzzleOrigin + playerViewAxis[ 0 ] * 2.0f;
-			for( i = 0; i < num_projectiles; i++ ) {
-				ang = idMath::Sin( spreadRad * gameLocal.random.RandomFloat() );
-				spin = (float)DEG2RAD( 360.0f ) * gameLocal.random.RandomFloat();
-				dir = playerViewAxis[ 0 ] + playerViewAxis[ 2 ] * ( ang * idMath::Sin( spin ) ) - playerViewAxis[ 1 ] * ( ang * idMath::Cos( spin ) );
-				dir.Normalize();
-				gameLocal.clip.Translation( tr, muzzle_pos, muzzle_pos + dir * 4096.0f, NULL, mat3_identity, MASK_SHOT_RENDERMODEL, owner );
-				if ( tr.fraction < 1.0f ) {
-					idProjectile::ClientPredictionCollide( this, projectileDict, tr, vec3_origin, true );
-				}
-			}
-		}
-
-	} else {
-
+	if ( actuallySpawnProjectile ) {
+		
 		ownerBounds = owner->GetPhysics()->GetAbsBounds();
 
 		owner->AddProjectilesFired( num_projectiles );
@@ -3382,7 +3591,7 @@ void idWeapon::Event_LaunchProjectiles( int num_projectiles, float spread, float
 		for( i = 0; i < num_projectiles; i++ ) {
 			ang = idMath::Sin( spreadRad * gameLocal.random.RandomFloat() );
 			spin = (float)DEG2RAD( 360.0f ) * gameLocal.random.RandomFloat();
-			dir = playerViewAxis[ 0 ] + playerViewAxis[ 2 ] * ( ang * idMath::Sin( spin ) ) - playerViewAxis[ 1 ] * ( ang * idMath::Cos( spin ) );
+			dir = muzzleAxis[ 0 ] + muzzleAxis[ 2 ] * ( ang * idMath::Sin( spin ) ) - muzzleAxis[ 1 ] * ( ang * idMath::Cos( spin ) );
 			dir.Normalize();
 
 			if ( projectileEnt ) {
@@ -3391,17 +3600,34 @@ void idWeapon::Event_LaunchProjectiles( int num_projectiles, float spread, float
 				ent->Unbind();
 				projectileEnt = NULL;
 			} else {
+				if ( common->IsClient() ) {
+					// This is predicted on a client, don't replicate.
+					// Must be set before spawn, so that the entity can be spawned into the correct area of the entities array.
+					projectileDict.SetBool( "net_skip_replication", true );
+				} else {
+					projectileDict.SetBool( "net_skip_replication", false );
+				}
 				gameLocal.SpawnEntityDef( projectileDict, &ent, false );
 			}
 
-			if ( !ent || !ent->IsType( idProjectile::Type ) ) {
+			if ( ent == NULL || !ent->IsType( idProjectile::Type ) ) {
 				const char *projectileName = weaponDef->dict.GetString( "def_projectile" );
 				gameLocal.Error( "'%s' is not an idProjectile", projectileName );
+				return;
 			}
+
+			int predictedKey = idEntity::INVALID_PREDICTION_KEY;
 
 			if ( projectileDict.GetBool( "net_instanthit" ) ) {
 				// don't synchronize this on top of the already predicted effect
 				ent->fl.networkSync = false;
+			} else if ( owner != NULL ) {
+				// Set the prediction key only for non-instanthit projectiles. 
+				if ( common->IsClient() ) {
+					owner->IncrementFireCount();	
+				}
+				predictedKey = gameLocal.GeneratePredictionKey( this, owner, -1 );
+				ent->SetPredictedKey( predictedKey );
 			}
 
 			proj = static_cast<idProjectile *>(ent);
@@ -3411,9 +3637,9 @@ void idWeapon::Event_LaunchProjectiles( int num_projectiles, float spread, float
 
 			// make sure the projectile starts inside the bounding box of the owner
 			if ( i == 0 ) {
-				muzzle_pos = muzzleOrigin + playerViewAxis[ 0 ] * 2.0f;
-				if ( ( ownerBounds - projBounds).RayIntersection( muzzle_pos, playerViewAxis[0], distance ) ) {
-					start = muzzle_pos + distance * playerViewAxis[0];
+				muzzle_pos = muzzleOrigin + muzzleAxis[ 0 ] * 2.0f;
+				if ( ( ownerBounds - projBounds).RayIntersection( muzzle_pos, muzzleAxis[0], distance ) ) {
+					start = muzzle_pos + distance * muzzleAxis[0];
 				} else {
 					start = ownerBounds.GetCenter();
 				}
@@ -3421,14 +3647,34 @@ void idWeapon::Event_LaunchProjectiles( int num_projectiles, float spread, float
 				muzzle_pos = tr.endpos;
 			}
 
-			proj->Launch( muzzle_pos, dir, pushVelocity, fuseOffset, launchPower, dmgPower );
+			// If this is the server simulating a remote client, the client has spawned the projectile in the past.
+			// The server will catch-up the projectile so that its position will be as if the projectile had spawned
+			// when the client fired it.
+			if ( common->IsServer() && owner != NULL && !owner->IsLocallyControlled() && !projectileDict.GetBool( "net_instanthit" ) ) {
+				int serverTimeOnClient = owner->usercmd.serverGameMilliseconds;
+
+				int delta = idMath::ClampInt( 0, cg_projectile_clientAuthoritative_maxCatchup.GetInteger(), gameLocal.GetServerGameTimeMs() - serverTimeOnClient );
+
+				int startTime = gameLocal.GetServerGameTimeMs() - delta;
+
+				proj->Launch( muzzle_pos, dir, pushVelocity, fuseOffset, launchPower, dmgPower );
+
+				// predictively spawned, but no need to simulate - was needed for correct processing of client mines when spawned on the server (because we're futzing with the clip models)
+				proj->QueueToSimulate( startTime );
+
+				if ( cg_predictedSpawn_debug.GetBool() ) {
+					idLib::Printf( "Spawning throw item projectile for player %d. PredictiveKey: %d \n", owner->GetEntityNumber(), predictedKey );
+				}
+			} else {
+				// Normal launch
+				proj->Launch( muzzle_pos, dir, pushVelocity, fuseOffset, launchPower, dmgPower );
+			}
 		}
 
 		// toss the brass
-#ifdef _D3XP
-		if(brassDelay >= 0)
-#endif
-		PostEventMS( &EV_Weapon_EjectBrass, brassDelay );
+		if ( brassDelay >= 0 ) {
+			PostEventMS( &EV_Weapon_EjectBrass, brassDelay );
+		}
 	}
 
 	// add the light for the muzzleflash
@@ -3442,7 +3688,6 @@ void idWeapon::Event_LaunchProjectiles( int num_projectiles, float spread, float
 	weaponSmokeStartTime = gameLocal.realClientTime;
 }
 
-#ifdef _D3XP
 /*
 ================
 idWeapon::Event_LaunchProjectilesEllipse
@@ -3472,10 +3717,8 @@ void idWeapon::Event_LaunchProjectilesEllipse( int num_projectiles, float spread
 	}
 
 	// avoid all ammo considerations on a client
-	if ( !gameLocal.isClient ) {
-
-		int ammoAvail = owner->inventory.HasAmmo( ammoType, ammoRequired );
-		if ( ( clipSize != 0 ) && ( ammoClip <= 0 ) ) {
+	if ( !common->IsClient() ) {
+		if ( ( clipSize != 0 ) && ( ammoClip.Get() <= 0 ) ) {
 			return;
 		}
 
@@ -3524,7 +3767,7 @@ void idWeapon::Event_LaunchProjectilesEllipse( int num_projectiles, float spread
 		kick_endtime = gameLocal.time + muzzle_kick_maxtime;
 	}
 
-	if ( !gameLocal.isClient ) {
+	if ( !common->IsClient() ) {
 		ownerBounds = owner->GetPhysics()->GetAbsBounds();
 
 		owner->AddProjectilesFired( num_projectiles );
@@ -3541,9 +3784,10 @@ void idWeapon::Event_LaunchProjectilesEllipse( int num_projectiles, float spread
 			dir.Normalize();
 
 			gameLocal.SpawnEntityDef( projectileDict, &ent );
-			if ( !ent || !ent->IsType( idProjectile::Type ) ) {
+			if ( ent == NULL || !ent->IsType( idProjectile::Type ) ) {
 				const char *projectileName = weaponDef->dict.GetString( "def_projectile" );
 				gameLocal.Error( "'%s' is not an idProjectile", projectileName );
+				return;
 			}
 
 			proj = static_cast<idProjectile *>(ent);
@@ -3619,7 +3863,7 @@ void idWeapon::Event_LaunchPowerup( const char* powerup, float duration, int use
 		MuzzleFlashLight();
 	}
 
-	owner->Give(powerup, va("%f", duration));
+	owner->Give(powerup, va("%f", duration), ITEM_GIVE_FEEDBACK | ITEM_GIVE_UPDATE_STATE | ITEM_GIVE_FROM_WEAPON );
 
 
 }
@@ -3644,7 +3888,7 @@ void idWeapon::Event_StartWeaponParticle( const char* name) {
 		part->startTime = gameLocal.time;
 
 		//Toggle the emitter
-		if(!part->smoke) {
+		if( !part->smoke && part->emitter != NULL ) {
 			part->emitter->Show();
 			part->emitter->PostEventMS(&EV_Activate, 0, this);
 		}
@@ -3660,8 +3904,10 @@ void idWeapon::Event_StopWeaponParticle( const char* name) {
 
 		//Toggle the emitter
 		if(!part->smoke) {
-			part->emitter->Hide();
-			part->emitter->PostEventMS(&EV_Activate, 0, this);
+			if ( part->emitter != NULL ) {
+				part->emitter->Hide();
+				part->emitter->PostEventMS(&EV_Activate, 0, this);
+			}
 		}
 	}
 }
@@ -3687,7 +3933,6 @@ void idWeapon::Event_StopWeaponLight( const char* name) {
 		}
 	}
 }
-#endif
 /*
 =====================
 idWeapon::Event_Melee
@@ -3697,11 +3942,17 @@ void idWeapon::Event_Melee() {
 	idEntity	*ent;
 	trace_t		tr;
 
-	if ( !meleeDef ) {
-		gameLocal.Error( "No meleeDef on '%s'", weaponDef->dict.GetString( "classname" ) );
+	if ( weaponDef == NULL ) {
+		gameLocal.Error( "No weaponDef on '%s'", this->GetName() );
+		return;
 	}
 
-	if ( !gameLocal.isClient ) {
+	if ( meleeDef == NULL ) {
+		gameLocal.Error( "No meleeDef on '%s'", weaponDef->dict.GetString( "classname" ) );
+		return;
+	}
+
+	if ( !common->IsClient() ) {
 		idVec3 start = playerViewOrigin;
 		idVec3 end = start + playerViewAxis[0] * ( meleeDistance * owner->PowerUpModifier( MELEE_DISTANCE ) );
 		gameLocal.clip.TracePoint( tr, start, end, MASK_SHOT_RENDERMODEL, owner );
@@ -3713,7 +3964,7 @@ void idWeapon::Event_Melee() {
 
 		if ( g_debugWeapon.GetBool() ) {
 			gameRenderWorld->DebugLine( colorYellow, start, end, 100 );
-			if ( ent ) {
+			if ( ent != NULL ) {
 				gameRenderWorld->DebugBounds( colorRed, ent->GetPhysics()->GetBounds(), ent->GetPhysics()->GetOrigin(), 100 );
 			}
 		}
@@ -3721,7 +3972,7 @@ void idWeapon::Event_Melee() {
 		bool hit = false;
 		const char *hitSound = meleeDef->dict.GetString( "snd_miss" );
 
-		if ( ent ) {
+		if ( ent != NULL ) {
 
 			float push = meleeDef->dict.GetFloat( "push" );
 			idVec3 impulse = -push * owner->PowerUpModifier( SPEED ) * tr.c.normal;
@@ -3734,27 +3985,22 @@ void idWeapon::Event_Melee() {
 			ent->ApplyImpulse( this, tr.c.id, tr.c.point, impulse );
 
 			// weapon stealing - do this before damaging so weapons are not dropped twice
-			if ( gameLocal.isMultiplayer
-				&& weaponDef && weaponDef->dict.GetBool( "stealing" )
+			if ( common->IsMultiplayer()
+				&& weaponDef->dict.GetBool( "stealing" )
 				&& ent->IsType( idPlayer::Type )
 				&& !owner->PowerUpActive( BERSERK )
 				&& ( (gameLocal.gameType != GAME_TDM ) || gameLocal.serverInfo.GetBool( "si_teamDamage" ) || ( owner->team != static_cast< idPlayer * >( ent )->team ) )
 				) {
                 
-#ifdef CTF      /* Code is formed oddly for easy merge */
-                
-                if ( gameLocal.mpGame.IsGametypeFlagBased() )
-                { /* Do nothing ... */ }
-                else
-#endif
-				owner->StealWeapon( static_cast< idPlayer * >( ent ) );
+                if ( !gameLocal.mpGame.IsGametypeFlagBased() ) {
+					owner->StealWeapon( static_cast< idPlayer * >( ent ) );
+				}
 			}
 
 			if ( ent->fl.takedamage ) {
 				idVec3 kickDir, globalKickDir;
 				meleeDef->dict.GetVector( "kickDir", "0 0 0", kickDir );
 				globalKickDir = muzzleAxis * kickDir;
-#ifdef _D3XP
 				//Adjust the melee powerup modifier for the invulnerability boss fight
 				float mod = owner->PowerUpModifier( MELEE_DAMAGE );
 				if(!strcmp(ent->GetEntityDefName(), "monster_hunter_invul")) {
@@ -3762,9 +4008,6 @@ void idWeapon::Event_Melee() {
 					mod *= 0.25f;
 				}
 				ent->Damage( owner, owner, globalKickDir, meleeDefName, mod, tr.c.id );
-#else
-				ent->Damage( owner, owner, globalKickDir, meleeDefName, owner->PowerUpModifier( MELEE_DAMAGE ), tr.c.id );
-#endif
 				hit = true;
 			}
 
@@ -3795,7 +4038,7 @@ void idWeapon::Event_Melee() {
 						const char *decal;
 						// project decal
 						decal = weaponDef->dict.GetString( "mtr_strike" );
-						if ( decal && *decal ) {
+						if ( decal != NULL && *decal != NULL ) {
 							gameLocal.ProjectDecal( tr.c.point, -tr.c.normal, 8.0f, true, 6.0, decal );
 						}
 						nextStrikeFx = gameLocal.time + 200;
@@ -3862,7 +4105,7 @@ void idWeapon::Event_EjectBrass() {
 		return;
 	}
 
-	if ( gameLocal.isClient ) {
+	if ( common->IsClient() ) {
 		return;
 	}
 
@@ -3904,9 +4147,23 @@ void idWeapon::Event_IsInvisible() {
 
 /*
 ===============
+idWeapon::ClientThink
+===============
+*/
+void idWeapon::ClientThink( const int curTime, const float fraction, const bool predict ) {
+	UpdateAnimation();	
+}
+
+/*
+===============
 idWeapon::ClientPredictionThink
 ===============
 */
 void idWeapon::ClientPredictionThink() {
 	UpdateAnimation();	
+}
+
+
+void idWeapon::ForceAmmoInClip() {
+	ammoClip = clipSize;
 }

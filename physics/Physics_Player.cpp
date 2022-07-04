@@ -1,7 +1,7 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
 
 #include "../Game_local.h"
 
@@ -41,6 +41,8 @@ const int PMF_ALL_TIMES			= (PMF_TIME_WATERJUMP|PMF_TIME_LAND|PMF_TIME_KNOCKBACK
 
 int c_pmove = 0;
 
+extern idCVar pm_clientInterpolation_Divergence;
+
 /*
 ============
 idPhysics_Player::CmdScale
@@ -54,19 +56,15 @@ float idPhysics_Player::CmdScale( const usercmd_t &cmd ) const {
 	int		max;
 	float	total;
 	float	scale;
-	int		forwardmove;
-	int		rightmove;
-	int		upmove;
 
-	forwardmove = cmd.forwardmove;
-	rightmove = cmd.rightmove;
+	int forwardmove = cmd.forwardmove;
+	int rightmove = cmd.rightmove;
+	int upmove = 0;
 
 	// since the crouch key doubles as downward movement, ignore downward movement when we're on the ground
 	// otherwise crouch speed will be lower than specified
-	if ( walking ) {
-		upmove = 0;
-	} else {
-		upmove = cmd.upmove;
+	if ( !walking ) {
+		upmove = ( ( cmd.buttons & BUTTON_JUMP ) ? 127 : 0 ) - ( ( cmd.buttons & BUTTON_CROUCH ) ? 127 : 0 );
 	}
 
 	max = abs( forwardmove );
@@ -516,7 +514,7 @@ void idPhysics_Player::WaterMove() {
 		wishvel = gravityNormal * 60; // sink towards bottom
 	} else {
 		wishvel = scale * (viewForward * command.forwardmove + viewRight * command.rightmove);
-		wishvel -= scale * gravityNormal * command.upmove;
+		wishvel -= scale * gravityNormal * ( ( ( command.buttons & BUTTON_JUMP ) ? 127 : 0 ) - ( ( command.buttons & BUTTON_CROUCH ) ? 127 : 0 ) );
 	}
 
 	wishdir = wishvel;
@@ -561,7 +559,7 @@ void idPhysics_Player::FlyMove() {
 		wishvel = vec3_origin;
 	} else {
 		wishvel = scale * (viewForward * command.forwardmove + viewRight * command.rightmove);
-		wishvel -= scale * gravityNormal * command.upmove;
+		wishvel -= scale * gravityNormal * ( ( ( command.buttons & BUTTON_JUMP ) ? 127 : 0 ) - ( ( command.buttons & BUTTON_CROUCH ) ? 127 : 0 ) );
 	}
 
 	wishdir = wishvel;
@@ -776,7 +774,7 @@ void idPhysics_Player::NoclipMove() {
 	scale = idPhysics_Player::CmdScale( command );
 
 	wishdir = scale * (viewForward * command.forwardmove + viewRight * command.rightmove);
-	wishdir -= scale * gravityNormal * command.upmove;
+	wishdir -= scale * gravityNormal * ( ( ( command.buttons & BUTTON_JUMP ) ? 127 : 0 ) - ( ( command.buttons & BUTTON_CROUCH ) ? 127 : 0 ) );
 	wishspeed = wishdir.Normalize();
 	wishspeed *= scale;
 
@@ -861,8 +859,8 @@ void idPhysics_Player::LadderMove() {
 	}
 
 	// up down movement
-	if ( command.upmove ) {
-		wishvel += -0.5f * gravityNormal * scale * (float) command.upmove;
+	if ( command.buttons & (BUTTON_JUMP|BUTTON_CROUCH) ) {
+		wishvel += -0.5f * gravityNormal * scale * (float)( ( ( command.buttons & BUTTON_JUMP ) ? 127 : 0 ) - ( ( command.buttons & BUTTON_CROUCH ) ? 127 : 0 ) );
 	}
 
 	// do strafe friction
@@ -1053,7 +1051,7 @@ void idPhysics_Player::CheckDuck() {
 		maxZ = pm_deadheight.GetFloat();
 	} else {
 		// stand up when up against a ladder
-		if ( command.upmove < 0 && !ladder ) {
+		if ( ( command.buttons & BUTTON_CROUCH ) && !ladder ) {
 			// duck
 			current.movementFlags |= PMF_DUCKED;
 		} else {
@@ -1155,7 +1153,7 @@ idPhysics_Player::CheckJump
 bool idPhysics_Player::CheckJump() {
 	idVec3 addVelocity;
 
-	if ( command.upmove < 10 ) {
+	if ( ( command.buttons & BUTTON_JUMP ) == 0 ) {
 		// not holding jump
 		return false;
 	}
@@ -1311,7 +1309,7 @@ void idPhysics_Player::MovePlayer( int msec ) {
 	current.movementFlags &= ~(PMF_JUMPED|PMF_STEPPED_UP|PMF_STEPPED_DOWN);
 	current.stepUp = 0.0f;
 
-	if ( command.upmove < 10 ) {
+	if ( ( command.buttons & BUTTON_JUMP ) == 0 ) {
 		// not holding jump
 		current.movementFlags &= ~PMF_JUMP_HELD;
 	}
@@ -1325,8 +1323,7 @@ void idPhysics_Player::MovePlayer( int msec ) {
 	current.velocity -= current.pushVelocity;
 
 	// view vectors
-	viewAngles.ToVectors( &viewForward, NULL, NULL );
-	viewForward *= clipModelAxis;
+	viewForward = commandForward * clipModelAxis;
 	viewRight = gravityNormal.Cross( viewForward );
 	viewRight.Normalize();
 
@@ -1348,7 +1345,7 @@ void idPhysics_Player::MovePlayer( int msec ) {
 	if ( current.movementType == PM_DEAD ) {
 		command.forwardmove = 0;
 		command.rightmove = 0;
-		command.upmove = 0;
+		command.buttons &= ~(BUTTON_JUMP|BUTTON_CROUCH);
 	}
 
 	// set watertype and waterlevel
@@ -1480,7 +1477,7 @@ idPhysics_Player::idPhysics_Player() {
 	maxStepHeight = 0;
 	maxJumpHeight = 0;
 	memset( &command, 0, sizeof( command ) );
-	viewAngles.Zero();
+	commandForward = idVec3( 1, 0, 0 );
 	framemsec = 0;
 	frametime = 0;
 	playerSpeed = 0;
@@ -1545,7 +1542,7 @@ void idPhysics_Player::Save( idSaveGame *savefile ) const {
 	savefile->WriteInt( debugLevel );
 
 	savefile->WriteUsercmd( command );
-	savefile->WriteAngles( viewAngles );
+	savefile->WriteVec3( commandForward );
 
 	savefile->WriteInt( framemsec );
 	savefile->WriteFloat( frametime );
@@ -1582,7 +1579,7 @@ void idPhysics_Player::Restore( idRestoreGame *savefile ) {
 	savefile->ReadInt( debugLevel );
 
 	savefile->ReadUsercmd( command );
-	savefile->ReadAngles( viewAngles );
+	savefile->ReadVec3( commandForward );
 
 	savefile->ReadInt( framemsec );
 	savefile->ReadFloat( frametime );
@@ -1607,9 +1604,9 @@ void idPhysics_Player::Restore( idRestoreGame *savefile ) {
 idPhysics_Player::SetPlayerInput
 ================
 */
-void idPhysics_Player::SetPlayerInput( const usercmd_t &cmd, const idAngles &newViewAngles ) {
+void idPhysics_Player::SetPlayerInput( const usercmd_t &cmd, const idVec3 &forwardVector ) {
 	command = cmd;
-	viewAngles = newViewAngles;		// can't use cmd.angles cause of the delta_angles
+	commandForward = forwardVector;		// can't use cmd.angles cause of the delta_angles
 }
 
 /*
@@ -1722,6 +1719,58 @@ bool idPhysics_Player::Evaluate( int timeStepMSec, int endTimeMSec ) {
 
 /*
 ================
+idPhysics_Player::Interpolate
+================
+*/
+bool idPhysics_Player::Interpolate( const float fraction ) {
+
+	/*
+	// Client is on a pusher... ignore him so he doesn't lag behind
+	bool becameUnlocked = false;
+	if ( ClientPusherLocked( becameUnlocked ) ) {
+		return true;
+	}
+	*/
+
+	// Test to see how far we are interolating to, if it's a large jump
+	// in positions, then dont interpolate just do a straight set.
+
+	idVec3 deltaVec = previous.origin - next.origin;
+	float deltaLengthSq = idMath::Fabs( deltaVec.LengthSqr() );
+
+	if( deltaLengthSq > pm_clientInterpolation_Divergence.GetFloat() ) {
+		idLib::Printf( "Client Interpolation Divergence exceeded, snapping client to next position\n" );
+		current.origin = next.origin; 
+		previous.origin = next.origin;
+	} else {
+		current.origin = Lerp( previous.origin, next.origin, fraction );
+	}
+	
+	//current.localOrigin = Lerp( previous.localOrigin, next.localOrigin, fraction );
+	if ( self != NULL && ( self->entityNumber != gameLocal.GetLocalClientNum() ) ) {
+		current.velocity = Lerp( previous.velocity, next.velocity, fraction );
+	}
+	//current.pushVelocity = Lerp( previous.pushVelocity, next.pushVelocity, fraction );
+
+	//current.movementTime = Lerp( previous.movementTime, next.movementTime, fraction );
+	//current.stepUp = Lerp( previous.stepUp, next.stepUp, fraction );
+
+	// Since we can't lerp between flag-type variables, use the previous flags if
+	// fraction is < 0.5 and the next flags if fraction is > 0.5.
+	//const playerPState_t & flagStateToUse = ( fraction < 0.5f ) ? previous : next;
+
+	//current.movementFlags = flagStateToUse.movementFlags;
+	//current.movementType = flagStateToUse.movementType;	
+
+	if ( clipModel ) {
+		clipModel->Link( gameLocal.clip, self, 0, next.origin, clipModel->GetAxis() );
+	}
+	
+	return true;
+}
+
+/*
+================
 idPhysics_Player::UpdateTime
 ================
 */
@@ -1819,6 +1868,8 @@ void idPhysics_Player::SetOrigin( const idVec3 &newOrigin, int id ) {
 	}
 
 	clipModel->Link( gameLocal.clip, self, 0, newOrigin, clipModel->GetAxis() );
+
+	previous = next = current;
 }
 
 /*
@@ -1837,6 +1888,8 @@ idPhysics_Player::SetAxis
 */
 void idPhysics_Player::SetAxis( const idMat3 &newAxis, int id ) {
 	clipModel->Link( gameLocal.clip, self, 0, clipModel->GetOrigin(), newAxis );
+
+	previous = next = current;
 }
 
 /*
@@ -1850,6 +1903,8 @@ void idPhysics_Player::Translate( const idVec3 &translation, int id ) {
 	current.origin += translation;
 
 	clipModel->Link( gameLocal.clip, self, 0, current.origin, clipModel->GetAxis() );
+
+	previous = next = current;
 }
 
 /*
@@ -1900,8 +1955,53 @@ void idPhysics_Player::SetPushed( int deltaTime ) {
 	idVec3 velocity;
 	float d;
 
+	// Dont push non Local clients on clients.
+	if( self->entityNumber != gameLocal.GetLocalClientNum() && common->IsClient() ) { return; }
+
 	// velocity with which the player is pushed
 	velocity = ( current.origin - saved.origin ) / ( deltaTime * idMath::M_MS2SEC );
+
+	// remove any downward push velocity
+	d = velocity * gravityNormal;
+	if ( d > 0.0f ) {
+		velocity -= d * gravityNormal;
+	}
+
+	current.pushVelocity += velocity;
+}
+
+/*
+================
+idPhysics_Player::SetPushedWithAbnormalVelocityHack
+
+NOTE: Aside from the velocity hack, this MUST be identical to idPhysics_Player::SetPushed
+================
+*/
+void idPhysics_Player::SetPushedWithAbnormalVelocityHack( int deltaTime ) {
+	idVec3 velocity;
+	float d;
+
+	// Dont push non Local clients on clients.
+	if( self->entityNumber != gameLocal.GetLocalClientNum() && common->IsClient() ) { return; }
+
+	// velocity with which the player is pushed
+	velocity = ( current.origin - saved.origin ) / ( deltaTime * idMath::M_MS2SEC );
+
+	// START ABNORMAL VELOCITY HACK
+	// There is a bug where on the first 1 to 2 frames after a load, the player on the boat
+	// in le_hell_post will be pushed an abnormal amount by the boat mover, causing them to
+	// be thrown off of the boat.
+	//
+	// We're resolving this by just watching for the abnormal velocities and ignoring the push
+	// in those cases.  Since it is literally only 1 or 2 frames, the remaining updates should
+	// continue to push the player by sane values.
+	//
+	const float ABNORMAL_VELOCITY = 600.0f;		// anything with a magnitude of this or higher will be ignored
+	const float len = velocity.LengthSqr();
+	if ( len >= Square( ABNORMAL_VELOCITY ) ) {
+		velocity.Zero();	// just ignore the large velocity change completely
+	}
+	// END ABNORMAL VELOCITY HACK
 
 	// remove any downward push velocity
 	d = velocity * gravityNormal;
@@ -1928,6 +2028,51 @@ idPhysics_Player::ClearPushedVelocity
 */
 void idPhysics_Player::ClearPushedVelocity() {
 	current.pushVelocity.Zero();
+}
+
+
+/*
+========================
+idPhysics_Player::ClientPusherLocked
+========================
+*/
+bool idPhysics_Player::ClientPusherLocked( bool & justBecameUnlocked ) {
+
+	bool hasPhysicsContact = false;
+	bool hasGroundContact = false;
+	for ( int i = 0; i < contacts.Num(); i++ ) {
+
+		idEntity * ent = gameLocal.entities[ contacts[i].entityNum ];
+		if( ent ) {
+			idPhysics * p = ent->GetPhysics();
+			if ( p != NULL ) {
+				// Testing IsAtRest seems cleaner but there are edge cases of clients jumping right before a mover starts to move
+				if ( p->IsType( idPhysics_Static::Type ) == false && p->IsType( idPhysics_StaticMulti::Type ) == false ) {
+					hasPhysicsContact = true;
+
+					clientPusherLocked = true; // locked until you have a ground contact that isn't a non static phys obj
+
+					// HACK - Tomiko Reactor rotating disks screw up if server locks the pushed clients, but elevators need clients to be locked ( otherwise clients will clip through elevators )
+					if( strcmp( ent->GetName(), "cylinder_disk1" ) == 0 || strcmp( ent->GetName(), "cylinder_disk2" ) == 0 || strcmp( ent->GetName(), "cylinder_disk3" ) == 0 ) {
+						clientPusherLocked = false;
+					}
+				}
+			}
+			if ( contacts[i].normal * -gravityNormal > 0.0f ) {
+				hasGroundContact = true;
+			}
+		}
+	}
+
+	justBecameUnlocked = false;
+	if ( hasGroundContact && !hasPhysicsContact ) {
+		if ( clientPusherLocked ) {
+			justBecameUnlocked = true;
+		}
+		clientPusherLocked = false;
+	}
+
+	return clientPusherLocked;
 }
 
 /*
@@ -1970,23 +2115,17 @@ const int	PLAYER_MOVEMENT_FLAGS_BITS		= 8;
 idPhysics_Player::WriteToSnapshot
 ================
 */
-void idPhysics_Player::WriteToSnapshot( idBitMsgDelta &msg ) const {
+void idPhysics_Player::WriteToSnapshot( idBitMsg &msg ) const {
 	msg.WriteFloat( current.origin[0] );
 	msg.WriteFloat( current.origin[1] );
 	msg.WriteFloat( current.origin[2] );
 	msg.WriteFloat( current.velocity[0], PLAYER_VELOCITY_EXPONENT_BITS, PLAYER_VELOCITY_MANTISSA_BITS );
 	msg.WriteFloat( current.velocity[1], PLAYER_VELOCITY_EXPONENT_BITS, PLAYER_VELOCITY_MANTISSA_BITS );
 	msg.WriteFloat( current.velocity[2], PLAYER_VELOCITY_EXPONENT_BITS, PLAYER_VELOCITY_MANTISSA_BITS );
+	//idLib::Printf("Writing Velocity: x %2f, y %2f, z %2f \n", current.velocity[0], current.velocity[1], current.velocity[2] );
 	msg.WriteDeltaFloat( current.origin[0], current.localOrigin[0] );
 	msg.WriteDeltaFloat( current.origin[1], current.localOrigin[1] );
 	msg.WriteDeltaFloat( current.origin[2], current.localOrigin[2] );
-	msg.WriteDeltaFloat( 0.0f, current.pushVelocity[0], PLAYER_VELOCITY_EXPONENT_BITS, PLAYER_VELOCITY_MANTISSA_BITS );
-	msg.WriteDeltaFloat( 0.0f, current.pushVelocity[1], PLAYER_VELOCITY_EXPONENT_BITS, PLAYER_VELOCITY_MANTISSA_BITS );
-	msg.WriteDeltaFloat( 0.0f, current.pushVelocity[2], PLAYER_VELOCITY_EXPONENT_BITS, PLAYER_VELOCITY_MANTISSA_BITS );
-	msg.WriteDeltaFloat( 0.0f, current.stepUp );
-	msg.WriteBits( current.movementType, PLAYER_MOVEMENT_TYPE_BITS );
-	msg.WriteBits( current.movementFlags, PLAYER_MOVEMENT_FLAGS_BITS );
-	msg.WriteDeltaLong( 0, current.movementTime );
 }
 
 /*
@@ -1994,26 +2133,20 @@ void idPhysics_Player::WriteToSnapshot( idBitMsgDelta &msg ) const {
 idPhysics_Player::ReadFromSnapshot
 ================
 */
-void idPhysics_Player::ReadFromSnapshot( const idBitMsgDelta &msg ) {
-	current.origin[0] = msg.ReadFloat();
-	current.origin[1] = msg.ReadFloat();
-	current.origin[2] = msg.ReadFloat();
-	current.velocity[0] = msg.ReadFloat( PLAYER_VELOCITY_EXPONENT_BITS, PLAYER_VELOCITY_MANTISSA_BITS );
-	current.velocity[1] = msg.ReadFloat( PLAYER_VELOCITY_EXPONENT_BITS, PLAYER_VELOCITY_MANTISSA_BITS );
-	current.velocity[2] = msg.ReadFloat( PLAYER_VELOCITY_EXPONENT_BITS, PLAYER_VELOCITY_MANTISSA_BITS );
-	current.localOrigin[0] = msg.ReadDeltaFloat( current.origin[0] );
-	current.localOrigin[1] = msg.ReadDeltaFloat( current.origin[1] );
-	current.localOrigin[2] = msg.ReadDeltaFloat( current.origin[2] );
-	current.pushVelocity[0] = msg.ReadDeltaFloat( 0.0f, PLAYER_VELOCITY_EXPONENT_BITS, PLAYER_VELOCITY_MANTISSA_BITS );
-	current.pushVelocity[1] = msg.ReadDeltaFloat( 0.0f, PLAYER_VELOCITY_EXPONENT_BITS, PLAYER_VELOCITY_MANTISSA_BITS );
-	current.pushVelocity[2] = msg.ReadDeltaFloat( 0.0f, PLAYER_VELOCITY_EXPONENT_BITS, PLAYER_VELOCITY_MANTISSA_BITS );
-	current.stepUp = msg.ReadDeltaFloat( 0.0f );
-	current.movementType = msg.ReadBits( PLAYER_MOVEMENT_TYPE_BITS );
-	current.movementFlags = msg.ReadBits( PLAYER_MOVEMENT_FLAGS_BITS );
-	current.movementTime = msg.ReadDeltaLong( 0 );
+void idPhysics_Player::ReadFromSnapshot( const idBitMsg &msg ) {
+
+	previous = next;
+
+	next.origin = ReadFloatArray< idVec3 >( msg );
+	next.velocity[0] = msg.ReadFloat( PLAYER_VELOCITY_EXPONENT_BITS, PLAYER_VELOCITY_MANTISSA_BITS );
+	next.velocity[1] = msg.ReadFloat( PLAYER_VELOCITY_EXPONENT_BITS, PLAYER_VELOCITY_MANTISSA_BITS );
+	next.velocity[2] = msg.ReadFloat( PLAYER_VELOCITY_EXPONENT_BITS, PLAYER_VELOCITY_MANTISSA_BITS );
+	//idLib::Printf("Reading Velocity: x %2f, y %2f, z %2f \n", next.velocity[0], next.velocity[1], next.velocity[2] );
+	next.localOrigin = ReadDeltaFloatArray( msg, next.origin );
 
 	if ( clipModel ) {
-		clipModel->Link( gameLocal.clip, self, 0, current.origin, clipModel->GetAxis() );
+		clipModel->Link( gameLocal.clip, self, 0, next.origin, clipModel->GetAxis() );
 	}
+
 }
 

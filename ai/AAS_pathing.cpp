@@ -1,7 +1,8 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
+
 
 #include "AAS_local.h"
 
@@ -37,7 +38,7 @@ bool idAASLocal::EdgeSplitPoint( idVec3 &split, int edgeNum, const idPlane &plan
 	d2 = v2 * plane.Normal() - plane.Dist();
 
 	//if ( (d1 < CM_CLIP_EPSILON && d2 < CM_CLIP_EPSILON) || (d1 > -CM_CLIP_EPSILON && d2 > -CM_CLIP_EPSILON) ) {
-	if ( FLOATSIGNBITSET( d1 ) == FLOATSIGNBITSET( d2 ) ) {
+	if ( IEEE_FLT_SIGNBITSET( d1 ) == IEEE_FLT_SIGNBITSET( d2 ) ) {
 		return false;
 	}
 	split = v1 + (d1 / (d1 - d2)) * (v2 - v1);
@@ -254,7 +255,7 @@ idAASLocal::WalkPathToGoal
 */
 bool idAASLocal::WalkPathToGoal( aasPath_t &path, int areaNum, const idVec3 &origin, int goalAreaNum, const idVec3 &goalOrigin, int travelFlags ) const {
 	int i, travelTime, curAreaNum, lastAreas[4], lastAreaIndex, endAreaNum;
-	idReachability *reach;
+	idReachability * reach = NULL;
 	idVec3 endPos;
 
 	path.type = PATHTYPE_WALK;
@@ -339,7 +340,7 @@ bool idAASLocal::WalkPathToGoal( aasPath_t &path, int areaNum, const idVec3 &ori
 		}
 	}
 
-	if ( !reach ) {
+	if ( reach == NULL ) {
 		return false;
 	}
 
@@ -430,7 +431,7 @@ idAASLocal::FlyPathToGoal
 */
 bool idAASLocal::FlyPathToGoal( aasPath_t &path, int areaNum, const idVec3 &origin, int goalAreaNum, const idVec3 &goalOrigin, int travelFlags ) const {
 	int i, travelTime, curAreaNum, lastAreas[4], lastAreaIndex, endAreaNum;
-	idReachability *reach;
+	idReachability *reach = NULL;
 	idVec3 endPos;
 
 	path.type = PATHTYPE_WALK;
@@ -510,7 +511,7 @@ bool idAASLocal::FlyPathToGoal( aasPath_t &path, int areaNum, const idVec3 &orig
 		}
 	}
 
-	if ( !reach ) {
+	if ( reach == NULL ) {
 		return false;
 	}
 

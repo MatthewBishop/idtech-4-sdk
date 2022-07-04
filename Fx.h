@@ -47,8 +47,9 @@ public:
 	const char *			Joint();
 	const bool				Done();
 
-	virtual void			WriteToSnapshot( idBitMsgDelta &msg ) const;
-	virtual void			ReadFromSnapshot( const idBitMsgDelta &msg );
+	virtual void			WriteToSnapshot( idBitMsg &msg ) const;
+	virtual void			ReadFromSnapshot( const idBitMsg &msg );
+	virtual void			ClientThink( const int curTime, const float fraction, const bool predict );
 	virtual void			ClientPredictionThink();
 
 	static idEntityFx *		StartFx( const char *fx, const idVec3 *useOrigin, const idMat3 *useAxis, idEntity *ent, bool bind );
@@ -64,7 +65,7 @@ protected:
 	int						started;
 	int						nextTriggerTime;
 	const idDeclFX *		fxEffect;				// GetFX() should be called before using fxEffect as a pointer
-	idList<idFXLocalAction>	actions;
+	idList<idFXLocalAction, TAG_FX>	actions;
 	idStr					systemName;
 };
 

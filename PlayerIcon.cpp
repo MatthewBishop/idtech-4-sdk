@@ -9,10 +9,8 @@
 static const char * iconKeys[ ICON_NONE ] = {
 	"mtr_icon_lag",
 	"mtr_icon_chat"
-#ifdef CTF
 	,"mtr_icon_redteam",
 	"mtr_icon_blueteam"
-#endif
 };
 
 /*
@@ -73,11 +71,6 @@ void idPlayerIcon::Draw( idPlayer *player, const idVec3 &origin ) {
 		if ( !CreateIcon( player, ICON_LAG, origin, axis ) ) {
 			UpdateIcon( player, origin, axis );
 		}
-	} else if ( player->isChatting && !player->spectating ) {
-		if ( !CreateIcon( player, ICON_CHAT, origin, axis ) ) {
-			UpdateIcon( player, origin, axis );
-		}
-#ifdef CTF
 	} else if ( g_CTFArrows.GetBool() && gameLocal.mpGame.IsGametypeFlagBased() && gameLocal.GetLocalPlayer() && player->team == gameLocal.GetLocalPlayer()->team && !player->IsHidden() && !player->AI_DEAD ) {
 		int icon = ICON_TEAM_RED + player->team;
 
@@ -87,7 +80,6 @@ void idPlayerIcon::Draw( idPlayer *player, const idVec3 &origin ) {
 		if ( !CreateIcon( player, ( playerIconType_t )icon, origin, axis ) ) {
 			UpdateIcon( player, origin, axis );
 		}
-#endif
 	} else {
 		FreeIcon();
 	}
@@ -112,7 +104,7 @@ idPlayerIcon::CreateIcon
 ===============
 */
 bool idPlayerIcon::CreateIcon( idPlayer *player, playerIconType_t type, const idVec3 &origin, const idMat3 &axis ) {
-	assert( type != ICON_NONE );
+	assert( type < ICON_NONE );
 	const char *mtr = player->spawnArgs.GetString( iconKeys[ type ], "_default" );
 	return CreateIcon( player, type, mtr, origin, axis );
 }

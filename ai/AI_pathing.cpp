@@ -1,7 +1,8 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
+
 
 #include "../Game_local.h"
 
@@ -77,11 +78,11 @@ bool LineIntersectsPath( const idVec2 &start, const idVec2 &end, const pathNode_
 	d0 = plane1.x * node->pos.x + plane1.y * node->pos.y + plane1.z;
 	while( node->parent ) {
 		d1 = plane1.x * node->parent->pos.x + plane1.y * node->parent->pos.y + plane1.z;
-		if ( FLOATSIGNBITSET( d0 ) ^ FLOATSIGNBITSET( d1 ) ) {
+		if ( IEEE_FLT_SIGNBITSET( d0 ) ^ IEEE_FLT_SIGNBITSET( d1 ) ) {
 			plane2 = idWinding2D::Plane2DFromPoints( node->pos, node->parent->pos );
 			d2 = plane2.x * start.x + plane2.y * start.y + plane2.z;
 			d3 = plane2.x * end.x + plane2.y * end.y + plane2.z;
-			if ( FLOATSIGNBITSET( d2 ) ^ FLOATSIGNBITSET( d3 ) ) {
+			if ( IEEE_FLT_SIGNBITSET( d2 ) ^ IEEE_FLT_SIGNBITSET( d3 ) ) {
 				return true;
 			}
 		}
@@ -179,6 +180,7 @@ void GetPointOutsideObstacles( const obstacle_t *obstacles, const int numObstacl
 	queue[0] = bestObstacle;
 
 	memset( obstacleVisited, 0, numObstacles * sizeof( obstacleVisited[0] ) );
+	assert( bestObstacle < numObstacles );
 	obstacleVisited[bestObstacle] = true;
 
 	bestd = idMath::INFINITY;
@@ -197,6 +199,7 @@ void GetPointOutsideObstacles( const obstacle_t *obstacles, const int numObstacl
 				continue;
 			}
 
+			assert( queueEnd < numObstacles );
 			queue[queueEnd++] = j;
 			obstacleVisited[j] = true;
 
@@ -250,8 +253,8 @@ bool GetFirstBlockingObstacle( const obstacle_t *obstacles, int numObstacles, in
 	// get bounds for the current movement delta
 	bounds[0] = startPos - idVec2( CM_BOX_EPSILON, CM_BOX_EPSILON );
 	bounds[1] = startPos + idVec2( CM_BOX_EPSILON, CM_BOX_EPSILON );
-	bounds[FLOATSIGNBITNOTSET(delta.x)].x += delta.x;
-	bounds[FLOATSIGNBITNOTSET(delta.y)].y += delta.y;
+	bounds[IEEE_FLT_SIGNBITNOTSET(delta.x)].x += delta.x;
+	bounds[IEEE_FLT_SIGNBITNOTSET(delta.y)].y += delta.y;
 
 	// test for obstacles blocking the path
 	blockingScale = idMath::INFINITY;
@@ -578,7 +581,7 @@ pathNode_t *BuildPathTree( const obstacle_t *obstacles, int numObstacles, const 
 	root->numNodes = 0;
 	pathNodeQueue.Add( root );
 
-	for ( node = pathNodeQueue.Get(); node && pathNodeAllocator.GetAllocCount() < MAX_PATH_NODES; node = pathNodeQueue.Get() ) {
+	for ( node = pathNodeQueue.Get(); node != NULL && pathNodeAllocator.GetAllocCount() < MAX_PATH_NODES; node = pathNodeQueue.Get() ) {
 
 		treeQueue.Add( node );
 
@@ -745,8 +748,8 @@ int OptimizePath( const pathNode_t *root, const pathNode_t *leafNode, const obst
 			// get bounds for the current movement delta
 			bounds[0] = curPos - idVec2( CM_BOX_EPSILON, CM_BOX_EPSILON );
 			bounds[1] = curPos + idVec2( CM_BOX_EPSILON, CM_BOX_EPSILON );
-			bounds[FLOATSIGNBITNOTSET(curDelta.x)].x += curDelta.x;
-			bounds[FLOATSIGNBITNOTSET(curDelta.y)].y += curDelta.y;
+			bounds[IEEE_FLT_SIGNBITNOTSET(curDelta.x)].x += curDelta.x;
+			bounds[IEEE_FLT_SIGNBITNOTSET(curDelta.y)].y += curDelta.y;
 
 			// test if the shortcut intersects with any obstacles
 			for ( i = 0; i < numObstacles; i++ ) {
@@ -868,21 +871,27 @@ bool FindOptimalPath( const pathNode_t *root, const obstacle_t *obstacles, int n
 		}
 	}
 
-	if ( !pathToGoalExists ) {
-		seekPos.ToVec2() = root->children[0]->pos;
-	} else if ( !optimizedPathCalculated ) {
-		OptimizePath( root, bestNode, obstacles, numObstacles, optimizedPath );
-		seekPos.ToVec2() = optimizedPath[1];
-	}
+	if ( root != NULL ) {
+		if ( !pathToGoalExists ) {
+			if ( root->children[0] != NULL ) {
+				seekPos.ToVec2() = root->children[0]->pos;
+			} else {
+				seekPos.ToVec2() = root->pos;
+			}
+		} else if ( !optimizedPathCalculated ) {
+			OptimizePath( root, bestNode, obstacles, numObstacles, optimizedPath );
+			seekPos.ToVec2() = optimizedPath[1];
+		}
 
-	if ( ai_showObstacleAvoidance.GetBool() ) {
-		idVec3 start, end;
-		start.z = end.z = height + 4.0f;
-		numPathPoints = OptimizePath( root, bestNode, obstacles, numObstacles, optimizedPath );
-		for ( i = 0; i < numPathPoints-1; i++ ) {
-			start.ToVec2() = optimizedPath[i];
-			end.ToVec2() = optimizedPath[i+1];
-			gameRenderWorld->DebugArrow( colorCyan, start, end, 1 );
+		if ( ai_showObstacleAvoidance.GetBool() ) {
+			idVec3 start, end;
+			start.z = end.z = height + 4.0f;
+			numPathPoints = OptimizePath( root, bestNode, obstacles, numObstacles, optimizedPath );
+			for ( i = 0; i < numPathPoints-1; i++ ) {
+				start.ToVec2() = optimizedPath[i];
+				end.ToVec2() = optimizedPath[i+1];
+				gameRenderWorld->DebugArrow( colorCyan, start, end, 1 );
+			}
 		}
 	}
 
@@ -1260,12 +1269,8 @@ Ballistics
   also get the time it takes for the projectile to arrive at the target
 =====================
 */
-typedef struct ballistics_s {
-	float				angle;		// angle in degrees in the range [-180, 180]
-	float				time;		// time it takes before the projectile arrives
-} ballistics_t;
 
-static int Ballistics( const idVec3 &start, const idVec3 &end, float speed, float gravity, ballistics_t bal[2] ) {
+int Ballistics( const idVec3 &start, const idVec3 &end, float speed, float gravity, ballistics_t bal[2] ) {
 	int n, i;
 	float x, y, a, b, c, d, sqrtd, inva, p[2];
 
@@ -1299,6 +1304,8 @@ static int Ballistics( const idVec3 &start, const idVec3 &end, float speed, floa
 	return n;
 }
 
+#if 0 
+// not used
 /*
 =====================
 HeightForTrajectory
@@ -1315,6 +1322,7 @@ static float HeightForTrajectory( const idVec3 &start, float zVel, float gravity
 	
 	return maxHeight;
 }
+#endif
 
 /*
 =====================
@@ -1419,7 +1427,9 @@ bool idAI::PredictTrajectory( const idVec3 &firePos, const idVec3 &target, float
 	idVec3 velocity;
 	idVec3 lastPos, pos;
 
-	assert( targetEntity );
+	if ( targetEntity == NULL ) {
+		return false;
+	}
 
 	// check if the projectile starts inside the target
 	if ( targetEntity->GetPhysics()->GetAbsBounds().IntersectsBounds( clip->GetBounds().Translate( firePos ) ) ) {

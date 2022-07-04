@@ -2,7 +2,6 @@
 #include "../idlib/precompiled.h"
 #pragma hdrstop
 
-#ifdef _D3XP
 
 #include "Game_local.h"
 #include "Misc.h"
@@ -37,7 +36,7 @@ idGrabber::idGrabber() {
 	owner = NULL;
 	beam = NULL;
 	beamTarget = NULL;
-	oldUcmdFlags = 0;
+	oldImpulseSequence = 0;
 	shakeForceFlip = false;
 	holdingAF = false;
 	endTime = 0;
@@ -144,7 +143,7 @@ idGrabber::Initialize
 ==============
 */
 void idGrabber::Initialize() {
-	if ( !gameLocal.isMultiplayer ) {
+	if ( !common->IsMultiplayer() ) {
 		idDict args;
 
 		if ( !beamTarget ) {
@@ -198,7 +197,7 @@ void idGrabber::StartDrag( idEntity *grabEnt, int id ) {
 	dragFailTime = gameLocal.slow.time;
 	startDragTime = gameLocal.slow.time;
 
-	oldUcmdFlags = thePlayer->usercmd.flags;
+	oldImpulseSequence = thePlayer->usercmd.impulseSequence;
 
 	// set grabbed state for networking
 	grabEnt->SetGrabbedState( true );
@@ -354,6 +353,11 @@ void idGrabber::StopDrag( bool dropOnly ) {
 				ent->GetPhysics()->SetContents( savedContents );
 				ent->GetPhysics()->SetClipMask( savedClipmask );
 
+				idProjectile *projectile = static_cast< idProjectile* >( ent );
+				if ( projectile != NULL ) {
+					projectile->SetLaunchedFromGrabber( true );
+				}
+
 			} else if ( ent->IsType( idMoveable::Type ) ) {
 				// Turn on damage for this object
 				idMoveable *obj = static_cast<idMoveable*>(ent);
@@ -418,11 +422,11 @@ int idGrabber::Update( idPlayer *player, bool hide ) {
 				abort = true;
 			}
 		}
-		if ( !abort && dragEnt.GetEntity()->IsHidden() ) {
+		if ( !abort && dragEnt.GetEntity() && dragEnt.GetEntity()->IsHidden() ) {
 			abort = true;
 		}
 		// Not in multiplayer :: Pressing "reload" lets you carefully drop an item
-		if ( !gameLocal.isMultiplayer && !abort && (( player->usercmd.flags & UCF_IMPULSE_SEQUENCE ) != ( oldUcmdFlags & UCF_IMPULSE_SEQUENCE )) && (player->usercmd.impulse == IMPULSE_13) ) {
+		if ( !common->IsMultiplayer() && !abort && ( player->usercmd.impulseSequence != oldImpulseSequence ) && (player->usercmd.impulse == IMPULSE_13) ) {
 			abort = true;
 		}
         
@@ -448,7 +452,7 @@ int idGrabber::Update( idPlayer *player, bool hide ) {
 			newEnt = gameLocal.entities[ trace.c.entityNum ];
 
 			// if entity is already being grabbed then bypass
-			if ( gameLocal.isMultiplayer && newEnt->IsGrabbed() ) {
+			if ( common->IsMultiplayer() && newEnt && newEnt->IsGrabbed() ) {
 				return 0;
 			}
 
@@ -456,7 +460,8 @@ int idGrabber::Update( idPlayer *player, bool hide ) {
 			if ( newEnt && ( newEnt->IsType( idMoveable::Type ) ||
 					newEnt->IsType( idMoveableItem::Type ) ||
 					newEnt->IsType( idProjectile::Type ) ||
-					newEnt->IsType( idAFEntity_Gibbable::Type ) ) &&
+					newEnt->IsType( idAFEntity_Gibbable::Type )
+					) &&
 					newEnt->noGrab == false &&
 					newEnt->GetPhysics()->GetBounds().GetRadius() < MAX_PICKUP_SIZE &&
 					newEnt->GetPhysics()->GetLinearVelocity().LengthSqr() < MAX_PICKUP_VELOCITY ) {
@@ -490,7 +495,7 @@ int idGrabber::Update( idPlayer *player, bool hide ) {
 	// check backwards server time in multiplayer
 	bool allow = true;
 
-	if ( gameLocal.isMultiplayer ) {
+	if ( common->IsMultiplayer() ) {
 
 		// if we've marched backwards
 		if ( gameLocal.slow.time < startDragTime ) {
@@ -535,7 +540,7 @@ int idGrabber::Update( idPlayer *player, bool hide ) {
 		}
 
 		// Shake the object at the end of the hold
-		if ( g_grabberEnableShake.GetBool() && !gameLocal.isMultiplayer ) {
+		if ( g_grabberEnableShake.GetBool() && !common->IsMultiplayer() ) {
 			ApplyShake();
 		}
 
@@ -706,4 +711,3 @@ bool idGrabber::grabbableAI( const char *aiName ) {
 	return false;
 }
 
-#endif

@@ -74,23 +74,82 @@ struct signal_t {
 
 class signalList_t {
 public:
-	idList<signal_t> signal[ NUM_SIGNALS ];
+	idList<signal_t, TAG_ENTITY> signal[ NUM_SIGNALS ];
 };
+
+
+/*
+================================================
+idNetEvent
+
+Utility for detecting a bool state change:
+-server calls ::Set
+-client ::Get will return true (once only)
+
+Useful because:
+-Hides client from having to manually declare "last" state and manually checking against it
+-using int counter prevents problems w/ dropped snapshots 
+
+(ie if we just serialized a bool to true for a single ss, if that ss is dropped,skipped,whatever
+the client would never handle it. By incrementing a wrapped counter, we are guaranteed to detect
+the state change no matter what happens at the net layer).
+================================================
+*/
+template < int max >
+struct idNetEvent {
+	idNetEvent() : count(0), lastCount(0) { }
+	void	Set() { count = ( ( count + 1 ) % max ); }
+	bool	Get() {
+		if ( count != lastCount ) {
+			lastCount = count;
+			return true;
+		}
+		return false;
+	}
+	void	Serialize( idSerializer &ser ) {
+		if ( count >= max ) { 
+			idLib::Warning("idNetEvent. count %d > max %d", count, max );
+		}
+		ser.SerializeUMax( count, max );
+	}
+
+public:
+	static const int	Maximum = max;
+	int		count;
+	int		lastCount;
+};
+
+typedef idNetEvent< 7 > netBoolEvent_t;
+
+inline void	WriteToBitMsg( const netBoolEvent_t & netEvent, idBitMsg & msg ) {
+	msg.WriteBits( netEvent.count, idMath::BitsForInteger( netBoolEvent_t::Maximum ) );
+	
+	assert( netEvent.count <= netBoolEvent_t::Maximum );
+}
+
+inline void	ReadFromBitMsg( netBoolEvent_t & netEvent, const idBitMsg & msg ) {
+	netEvent.count = msg.ReadBits( idMath::BitsForInteger( netBoolEvent_t::Maximum ) );
+
+	assert( netEvent.count <= netBoolEvent_t::Maximum );
+}
 
 
 class idEntity : public idClass {
 public:
 	static const int		MAX_PVS_AREAS = 4;
+	static const uint32		INVALID_PREDICTION_KEY = 0xFFFFFFFF;
 
 	int						entityNumber;			// index into the entity list
 	int						entityDefNumber;		// index into the entity def list
 
 	idLinkList<idEntity>	spawnNode;				// for being linked into spawnedEntities list
 	idLinkList<idEntity>	activeNode;				// for being linked into activeEntities list
+	idLinkList<idEntity>	aimAssistNode;			// linked into gameLocal.aimAssistEntities
 
 	idLinkList<idEntity>	snapshotNode;			// for being linked into snapshotEntities list
-	int						snapshotSequence;		// last snapshot this entity was in
+	int						snapshotChanged;		// used to detect snapshot state changes
 	int						snapshotBits;			// number of bits this entity occupied in the last snapshot
+	bool					snapshotStale;			// Set to true if this entity is considered stale in the snapshot
 
 	idStr					name;					// name of entity
 	idDict					spawnArgs;				// key/value pairs used to spawn and initialize entity
@@ -103,7 +162,7 @@ public:
 	renderView_t *			renderView;				// for camera views from this entity
 	idEntity *				cameraTarget;			// any remoteRenderMap shaders will use this
 
-	idList< idEntityPtr<idEntity> >	targets;		// when this entity is activated these entities entity are activated
+	idList< idEntityPtr<idEntity>, TAG_ENTITY >	targets;		// when this entity is activated these entities entity are activated
 
 	int						health;					// FIXME: do all objects really need health?
 
@@ -121,9 +180,9 @@ public:
 		bool				hasAwakened			:1;	// before a monster has been awakened the first time, use full PVS for dormant instead of area-connected
 		bool				networkSync			:1; // if true the entity is synchronized over the network
 		bool				grabbed				:1;	// if true object is currently being grabbed
+		bool				skipReplication		:1; // don't replicate this entity over the network.
 	} fl;
 
-#ifdef _D3XP
 	int						timeGroup;
 
 	bool					noGrab;
@@ -136,7 +195,6 @@ public:
 
 	void					SetGrabbedState( bool grabbed );
 	bool					IsGrabbed();
-#endif
 
 public:
 	ABSTRACT_PROTOTYPE( idEntity );
@@ -153,6 +211,7 @@ public:
 	void					SetName( const char *name );
 	const char *			GetName() const;
 	virtual void			UpdateChangeableSpawnArgs( const idDict *source );
+	int						GetEntityNumber() const { return entityNumber; }
 
 							// clients generate views based on all the player specific options,
 							// cameras have custom code, and everything else just uses the axis orientation
@@ -167,6 +226,7 @@ public:
 	void					BecomeActive( int flags );
 	void					BecomeInactive( int flags );
 	void					UpdatePVSAreas( const idVec3 &pos );
+	void					BecomeReplicated();
 
 	// visuals
 	virtual void			Present();
@@ -247,6 +307,10 @@ public:
 	void					RestorePhysics( idPhysics *phys );
 							// run the physics for this entity
 	bool					RunPhysics();
+							// Interpolates the physics, used on MP clients.
+	void					InterpolatePhysics( const float fraction );
+							// InterpolatePhysics actually calls evaluate, this version doesn't.
+	void					InterpolatePhysicsOnly( const float fraction, bool updateTeam = false );
 							// set the origin of the physics object (relative to bindMaster if not NULL)
 	void					SetOrigin( const idVec3 &org );
 							// set the axis of the physics object (relative to bindMaster if not NULL)
@@ -325,27 +389,60 @@ public:
 		EVENT_MAXEVENTS
 	};
 
+	// Called on clients in an MP game, does the actual interpolation for the entity.
+	// This function will eventually replace ClientPredictionThink completely.
+	virtual void			ClientThink( const int curTime, const float fraction, const bool predict );
+
 	virtual void			ClientPredictionThink();
-	virtual void			WriteToSnapshot( idBitMsgDelta &msg ) const;
-	virtual void			ReadFromSnapshot( const idBitMsgDelta &msg );
+	virtual void			WriteToSnapshot( idBitMsg &msg ) const;
+	void					ReadFromSnapshot_Ex( const idBitMsg &msg );
+	virtual void			ReadFromSnapshot( const idBitMsg &msg );
 	virtual bool			ServerReceiveEvent( int event, int time, const idBitMsg &msg );
 	virtual bool			ClientReceiveEvent( int event, int time, const idBitMsg &msg );
 
-	void					WriteBindToSnapshot( idBitMsgDelta &msg ) const;
-	void					ReadBindFromSnapshot( const idBitMsgDelta &msg );
-	void					WriteColorToSnapshot( idBitMsgDelta &msg ) const;
-	void					ReadColorFromSnapshot( const idBitMsgDelta &msg );
-	void					WriteGUIToSnapshot( idBitMsgDelta &msg ) const;
-	void					ReadGUIFromSnapshot( const idBitMsgDelta &msg );
+	void					WriteBindToSnapshot( idBitMsg &msg ) const;
+	void					ReadBindFromSnapshot( const idBitMsg &msg );
+	void					WriteColorToSnapshot( idBitMsg &msg ) const;
+	void					ReadColorFromSnapshot( const idBitMsg &msg );
+	void					WriteGUIToSnapshot( idBitMsg &msg ) const;
+	void					ReadGUIFromSnapshot( const idBitMsg &msg );
 
-	void					ServerSendEvent( int eventId, const idBitMsg *msg, bool saveEvent, int excludeClient ) const;
+	void					ServerSendEvent( int eventId, const idBitMsg *msg, bool saveEvent, lobbyUserID_t excluding = lobbyUserID_t() ) const;
 	void					ClientSendEvent( int eventId, const idBitMsg *msg ) const;
+
+	void					SetUseClientInterpolation( bool use ) { useClientInterpolation = use; }
+
+	void					SetSkipReplication( const bool skip ) { fl.skipReplication = skip; }
+	bool					GetSkipReplication() const { return fl.skipReplication; }
+	bool					IsReplicated() const { return  GetEntityNumber() < ENTITYNUM_FIRST_NON_REPLICATED; }
+
+	void					CreateDeltasFromOldOriginAndAxis( const idVec3 & oldOrigin, const idMat3 & oldAxis );
+	void					DecayOriginAndAxisDelta();
+	uint32					GetPredictedKey() { return predictionKey; }
+	void					SetPredictedKey( uint32 key_ ) { predictionKey = key_; }
+
+	void					FlagNewSnapshot();
+
+	idEntity*				GetTeamChain() { return teamChain; }
+
+	// It is only safe to interpolate if this entity has received two snapshots.
+	enum interpolationBehavior_t {
+		USE_NO_INTERPOLATION,
+		USE_LATEST_SNAP_ONLY,
+		USE_INTERPOLATION
+	};
+
+	interpolationBehavior_t GetInterpolationBehavior() const { return interpolationBehavior; }
+	unsigned int			GetNumSnapshotsReceived() const { return snapshotsReceived; }
 
 protected:
 	renderEntity_t			renderEntity;						// used to present a model to the renderer
 	int						modelDefHandle;						// handle to static renderer model
 	refSound_t				refSound;							// used to present sound to the audio engine
 
+	idVec3					GetOriginDelta() const { return originDelta; }
+	idMat3					GetAxisDelta() const { return axisDelta; }
+	
 private:
 	idPhysics_Static		defaultPhysicsObj;					// default physics object
 	idPhysics *				physics;							// physics used for this entity
@@ -354,13 +451,23 @@ private:
 	int						bindBody;							// body bound to if unequal -1
 	idEntity *				teamMaster;							// master of the physics team
 	idEntity *				teamChain;							// next entity in physics team
-
+	bool					useClientInterpolation;				// disables interpolation for some objects (handy for weapon world models)
 	int						numPVSAreas;						// number of renderer areas the entity covers
 	int						PVSAreas[MAX_PVS_AREAS];			// numbers of the renderer areas the entity covers
 
 	signalList_t *			signals;
 
 	int						mpGUIState;							// local cache to avoid systematic SetStateInt
+
+	uint32					predictionKey;						// Unique key used to sync predicted ents (projectiles) in MP.
+
+	// Delta values that are set when the server or client disagree on where the render model should be. If this happens,
+	// they resolve it through DecayOriginAndAxisDelta()
+	idVec3					originDelta;
+	idMat3					axisDelta;
+
+	interpolationBehavior_t	interpolationBehavior;	
+	unsigned int			snapshotsReceived;
 
 private:
 	void					FixupLocalizedStrings();
@@ -372,6 +479,8 @@ private:
 	void					InitDefaultPhysics( const idVec3 &origin, const idMat3 &axis );
 							// update visual position from the physics
 	void					UpdateFromPhysics( bool moveBack );
+							// get physics timestep
+	virtual int				GetPhysicsTimeStep() const;
 
 	// entity binding
 	bool					InitBind( idEntity *master );		// initialize an entity binding
@@ -445,13 +554,11 @@ private:
 	void					Event_HasFunction( const char *name );
 	void					Event_CallFunction( const char *name );
 	void					Event_SetNeverDormant( int enable );
-#ifdef _D3XP
 	void					Event_SetGui( int guiNum, const char *guiName);
 	void					Event_PrecacheGui( const char *guiName );
 	void					Event_GetGuiParm(int guiNum, const char *key);
 	void					Event_GetGuiParmFloat(int guiNum, const char *key);
 	void					Event_GuiNamedEvent(int guiNum, const char *event);
-#endif
 };
 
 /*
@@ -482,6 +589,7 @@ public:
 	void					Restore( idRestoreGame *savefile );
 
 	virtual void			ClientPredictionThink();
+	virtual void			ClientThink( const int curTime, const float fraction, const bool predict );
 	virtual void			Think();
 
 	void					UpdateAnimation();
@@ -519,7 +627,6 @@ private:
 };
 
 
-#ifdef _D3XP
 class SetTimeState {
 	bool					activated;
 	bool					previousFast;
@@ -545,47 +652,34 @@ ID_INLINE SetTimeState::SetTimeState( int timeGroup ) {
 ID_INLINE void SetTimeState::PushState( int timeGroup ) {
 
 	// Don't mess with time in Multiplayer
-	if ( !gameLocal.isMultiplayer ) {
+	if ( !common->IsMultiplayer() ) {
 
 		activated = true;
 
 		// determine previous fast setting
 		if ( gameLocal.time == gameLocal.slow.time ) {
 			previousFast = false;
-		}
-		else {
+		} else {
 			previousFast = true;
 		}
 
 		// determine new fast setting
 		if ( timeGroup ) {
 			fast = true;
-		}
-		else {
+		} else {
 			fast = false;
 		}
 
 		// set correct time
-		if ( fast ) {
-			gameLocal.fast.Get( gameLocal.time, gameLocal.previousTime, gameLocal.msec, gameLocal.framenum, gameLocal.realClientTime );
-		}
-		else {
-			gameLocal.slow.Get( gameLocal.time, gameLocal.previousTime, gameLocal.msec, gameLocal.framenum, gameLocal.realClientTime );
-		}
+		gameLocal.SelectTimeGroup( timeGroup );
 	}
 }
 
 ID_INLINE SetTimeState::~SetTimeState() {
-	if ( activated && !gameLocal.isMultiplayer ) {
+	if ( activated && !common->IsMultiplayer() ) {
 		// set previous correct time
-		if ( previousFast ) {
-			gameLocal.fast.Get( gameLocal.time, gameLocal.previousTime, gameLocal.msec, gameLocal.framenum, gameLocal.realClientTime );
-		}
-		else {
-			gameLocal.slow.Get( gameLocal.time, gameLocal.previousTime, gameLocal.msec, gameLocal.framenum, gameLocal.realClientTime );
-		}
+		gameLocal.SelectTimeGroup( previousFast );
 	}
 }
-#endif
 
 #endif /* !__GAME_ENTITY_H__ */

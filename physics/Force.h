@@ -34,7 +34,7 @@ public: // common force interface
 
 private:
 
-	static idList<idForce*> forceList;
+	static idList<idForce*, TAG_IDLIB_LIST_PHYSICS> forceList;
 };
 
 #endif /* !__FORCE_H__ */

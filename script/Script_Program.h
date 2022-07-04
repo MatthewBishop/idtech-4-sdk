@@ -13,24 +13,12 @@ class idSaveGame;
 class idRestoreGame;
 
 #define MAX_STRING_LEN		128
-#ifdef _D3XP
 #define MAX_GLOBALS			296608			// in bytes
-#else
-#define MAX_GLOBALS			196608			// in bytes
-#endif
 #define MAX_STRINGS			1024
 
-#ifdef _D3XP
 #define MAX_FUNCS			3584
-#else
-#define MAX_FUNCS			3072
-#endif
 
-#ifdef _D3XP
 #define MAX_STATEMENTS		131072			// statement_t - 18 bytes last I checked
-#else
-#define MAX_STATEMENTS		81920			// statement_t - 18 bytes last I checked
-#endif
 
 typedef enum {
 	ev_error = -1, ev_void, ev_scriptevent, ev_namespace, ev_string, ev_float, ev_vector, ev_entity, ev_field, ev_function, ev_virtualfunction, ev_pointer, ev_object, ev_jumpoffset, ev_argsize, ev_boolean
@@ -56,7 +44,7 @@ public:
 	int 				parmTotal;
 	int 				locals; 			// total ints of parms + locals
 	int					filenum; 			// source file defined in
-	idList<int>			parmSize;
+	idList<int, TAG_SCRIPT>			parmSize;
 };
 
 typedef union eval_s {
@@ -84,9 +72,9 @@ private:
 
 	// function types are more complex
 	idTypeDef					*auxType;					// return type
-	idList<idTypeDef *>			parmTypes;
+	idList<idTypeDef *, TAG_SCRIPT>			parmTypes;
 	idStrList					parmNames;
-	idList<const function_t *>	functions;
+	idList<const function_t *, TAG_SCRIPT>	functions;
 
 public:
 	idVarDef					*def;						// a def that points to this type
@@ -430,10 +418,11 @@ private:
 	idStaticList<byte,MAX_GLOBALS>				variableDefaults;
 	idStaticList<function_t,MAX_FUNCS>			functions;
 	idStaticList<statement_t,MAX_STATEMENTS>	statements;
-	idList<idTypeDef *>							types;
-	idList<idVarDefName *>						varDefNames;
+	idList<idTypeDef *, TAG_SCRIPT>				types;
+	idHashIndex									typesHash;
+	idList<idVarDefName *, TAG_SCRIPT>			varDefNames;
 	idHashIndex									varDefNameHash;
-	idList<idVarDef *>							varDefs;
+	idList<idVarDef *, TAG_SCRIPT>				varDefs;
 
 	idVarDef									*sysDef;
 

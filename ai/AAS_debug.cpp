@@ -1,7 +1,7 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
 
 #include "AAS_local.h"
 #include "../Game_local.h"		// for cvars and debug drawing
@@ -47,7 +47,7 @@ void idAASLocal::DrawReachability( const idReachability *reach ) const {
 
 	switch( reach->travelType ) {
 		case TFL_WALK: {
-			const idReachability_Walk *walk = static_cast<const idReachability_Walk *>(reach);
+			//const idReachability_Walk *walk = static_cast<const idReachability_Walk *>(reach);
 			break;
 		}
 		default: {

@@ -163,7 +163,9 @@ void idLight::UpdateChangeableSpawnArgs( const idDict *source ) {
 idLight::idLight
 ================
 */
-idLight::idLight() {
+idLight::idLight():
+	previousBaseColor( vec3_zero ) ,
+	nextBaseColor( vec3_zero ) {
 	memset( &renderLight, 0, sizeof( renderLight ) );
 	localLightOrigin	= vec3_zero;
 	localLightAxis		= mat3_identity;
@@ -293,6 +295,8 @@ void idLight::Spawn() {
 
 	// set the base color from the shader parms
 	baseColor.Set( renderLight.shaderParms[ SHADERPARM_RED ], renderLight.shaderParms[ SHADERPARM_GREEN ], renderLight.shaderParms[ SHADERPARM_BLUE ] );
+	previousBaseColor.Set(  renderLight.shaderParms[ SHADERPARM_RED ], renderLight.shaderParms[ SHADERPARM_GREEN ], renderLight.shaderParms[ SHADERPARM_BLUE ] );
+	nextBaseColor.Set(  renderLight.shaderParms[ SHADERPARM_RED ], renderLight.shaderParms[ SHADERPARM_GREEN ], renderLight.shaderParms[ SHADERPARM_BLUE ] );
 
 	// set the number of light levels
 	spawnArgs.GetInt( "levels", "1", levels );
@@ -330,12 +334,10 @@ void idLight::Spawn() {
 		Off();
 	}
 
-#ifdef CTF
     // Midnight CTF
     if ( gameLocal.mpGame.IsGametypeFlagBased() && gameLocal.serverInfo.GetBool("si_midnight") && !spawnArgs.GetBool("midnight_override") ) {
         Off();
     }
-#endif
     
 	health = spawnArgs.GetInt( "health", "0" );
 	spawnArgs.GetString( "broken", "", brokenModel );
@@ -466,6 +468,16 @@ void idLight::SetColor( const idVec4 &color ) {
 
 /*
 ================
+idLight::SetColor
+================
+*/
+void idLight::SetColor( const idVec3 &color ) {
+	baseColor = color;
+	SetLightLevel();
+}
+
+/*
+================
 idLight::SetShader
 ================
 */
@@ -483,6 +495,7 @@ idLight::SetLightParm
 void idLight::SetLightParm( int parmnum, float value ) {
 	if ( ( parmnum < 0 ) || ( parmnum >= MAX_ENTITY_SHADER_PARMS ) ) {
 		gameLocal.Error( "shader parm index (%d) out of range", parmnum );
+		return;
 	}
 
 	renderLight.shaderParms[ parmnum ] = value;
@@ -622,7 +635,7 @@ void idLight::BecomeBroken( idEntity *activator ) {
 		SetModel( brokenModel );
 
 		if ( !spawnArgs.GetBool( "nonsolid" ) ) {
-			GetPhysics()->SetClipModel( new idClipModel( brokenModel.c_str() ), 1.0f );
+			GetPhysics()->SetClipModel( new (TAG_PHYSICS_CLIP_ENTITY) idClipModel( brokenModel.c_str() ), 1.0f );
 			GetPhysics()->SetContents( CONTENTS_SOLID );
 		}
 	} else if ( spawnArgs.GetBool( "hideModelOnBreak" ) ) {
@@ -630,9 +643,9 @@ void idLight::BecomeBroken( idEntity *activator ) {
 		GetPhysics()->SetContents( 0 );
 	}
 
-	if ( gameLocal.isServer ) {
+	if ( common->IsServer() ) {
 
-		ServerSendEvent( EVENT_BECOMEBROKEN, NULL, true, -1 );
+		ServerSendEvent( EVENT_BECOMEBROKEN, NULL, true );
 
 		if ( spawnArgs.GetString( "def_damage", "", &damageDefName ) ) {
 			idVec3 origin = renderEntity.origin + renderEntity.bounds.GetCenter() * renderEntity.axis;
@@ -653,7 +666,7 @@ void idLight::BecomeBroken( idEntity *activator ) {
 
 	// if the light has a sound, either start the alternate (broken) sound, or stop the sound
 	const char *parm = spawnArgs.GetString( "snd_broken" );
-	if ( refSound.shader || ( parm && *parm ) ) {
+	if ( refSound.shader || ( parm != NULL && *parm != NULL ) ) {
 		StopSound( SND_CHANNEL_ANY, false );
 		const idSoundShader *alternate = refSound.shader ? refSound.shader->GetAltSound() : declManager->FindSound( parm );
 		if ( alternate ) {
@@ -663,7 +676,7 @@ void idLight::BecomeBroken( idEntity *activator ) {
 	}
 
 	parm = spawnArgs.GetString( "mtr_broken" );
-	if ( parm && *parm ) {
+	if ( parm != NULL && *parm != NULL ) {
 		SetShader( parm );
 	}
 
@@ -763,6 +776,24 @@ void idLight::Think() {
 
 /*
 ================
+idLight::ClientThink
+================
+*/
+void idLight::ClientThink( const int curTime, const float fraction, const bool predict ) {
+	
+	InterpolatePhysics( fraction );
+	
+	if( baseColor != nextBaseColor ) {
+		baseColor = Lerp( previousBaseColor, nextBaseColor, fraction );
+		SetColor( baseColor );
+		BecomeActive( TH_UPDATEVISUALS );
+	}
+
+	Present();
+}
+
+/*
+================
 idLight::GetPhysicsToSoundTransform
 ================
 */
@@ -806,11 +837,6 @@ idLight::ShowEditingDialog
 ===============
 */
 void idLight::ShowEditingDialog() {
-	if ( g_editEntityMode.GetInteger() == 1 ) {
-		common->InitTool( EDITOR_LIGHT, &spawnArgs );
-	} else {
-		common->InitTool( EDITOR_SOUND, &spawnArgs );
-	}
 }
 
 /*
@@ -830,6 +856,7 @@ idLight::Event_GetLightParm
 void idLight::Event_GetLightParm( int parmnum ) {
 	if ( ( parmnum < 0 ) || ( parmnum >= MAX_ENTITY_SHADER_PARMS ) ) {
 		gameLocal.Error( "shader parm index (%d) out of range", parmnum );
+		return;
 	}
 
 	idThread::ReturnFloat( renderLight.shaderParms[ parmnum ] );
@@ -962,7 +989,7 @@ void idLight::Event_SetSoundHandles() {
 
 	for ( i = 0; i < targets.Num(); i++ ) {
 		targetEnt = targets[ i ].GetEntity();
-		if ( targetEnt && targetEnt->IsType( idLight::Type ) ) {
+		if ( targetEnt != NULL && targetEnt->IsType( idLight::Type ) ) {
 			idLight	*light = static_cast<idLight*>(targetEnt);
 			light->lightParent = this;
 
@@ -1010,7 +1037,7 @@ void idLight::ClientPredictionThink() {
 idLight::WriteToSnapshot
 ================
 */
-void idLight::WriteToSnapshot( idBitMsgDelta &msg ) const {
+void idLight::WriteToSnapshot( idBitMsg &msg ) const {
 
 	GetPhysics()->WriteToSnapshot( msg );
 	WriteBindToSnapshot( msg );
@@ -1049,10 +1076,12 @@ void idLight::WriteToSnapshot( idBitMsgDelta &msg ) const {
 idLight::ReadFromSnapshot
 ================
 */
-void idLight::ReadFromSnapshot( const idBitMsgDelta &msg ) {
+void idLight::ReadFromSnapshot( const idBitMsg &msg ) {
 	idVec4	shaderColor;
 	int		oldCurrentLevel = currentLevel;
 	idVec3	oldBaseColor = baseColor;
+
+	previousBaseColor = nextBaseColor;
 
 	GetPhysics()->ReadFromSnapshot( msg );
 	ReadBindFromSnapshot( msg );
@@ -1068,7 +1097,9 @@ void idLight::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 			Off();
 		}
 	}
-	UnpackColor( msg.ReadLong(), baseColor );
+
+	UnpackColor( msg.ReadLong(), nextBaseColor );
+
 	// lightParentEntityNum = msg.ReadBits( GENTITYNUM_BITS );	
 
 /*	// only helps prediction
@@ -1097,7 +1128,7 @@ void idLight::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 	ReadColorFromSnapshot( msg );
 
 	if ( msg.HasChanged() ) {
-		if ( ( currentLevel != oldCurrentLevel ) || ( baseColor != oldBaseColor ) ) {
+		if ( ( currentLevel != oldCurrentLevel ) || ( previousBaseColor != nextBaseColor ) ) {
 			SetLightLevel();
 		} else {
 			PresentLightDefChange();
@@ -1122,5 +1153,4 @@ bool idLight::ClientReceiveEvent( int event, int time, const idBitMsg &msg ) {
 			return idEntity::ClientReceiveEvent( event, time, msg );
 		}
 	}
-	return false;
 }

@@ -32,8 +32,8 @@ protected:
 	void					SetModelForId( int id, const idStr &modelName );
 
 private:
-	idList<idRenderModel *>	modelHandles;
-	idList<int>				modelDefHandles;
+	idList<idRenderModel *, TAG_AF>	modelHandles;
+	idList<int, TAG_AF>				modelDefHandles;
 };
 
 
@@ -130,6 +130,7 @@ public:
 	void					Restore( idRestoreGame *savefile );
 
 	virtual void			Think();
+	virtual void			AddDamageEffect( const trace_t &collision, const idVec3 &velocity, const char *damageDefName );
 	virtual void			GetImpactInfo( idEntity *ent, int id, const idVec3 &point, impactInfo_t *info );
 	virtual void			ApplyImpulse( idEntity *ent, int id, const idVec3 &point, const idVec3 &impulse );
 	virtual void			AddForce( idEntity *ent, int id, const idVec3 &point, const idVec3 &force );
@@ -196,24 +197,18 @@ public:
 	void					Restore( idRestoreGame *savefile );
 	virtual void			Present();
 	virtual	void			Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &dir, const char *damageDefName, const float damageScale, const int location );
-#ifdef _D3XP
 	void					SetThrown( bool isThrown );
 	virtual bool			Collide( const trace_t &collision, const idVec3 &velocity );
-#endif
 	virtual void			SpawnGibs( const idVec3 &dir, const char *damageDefName );
 
-#ifdef _D3XP
 	bool					IsGibbed() { return gibbed; };
-#endif
 
 protected:
 	idRenderModel *			skeletonModel;
 	int						skeletonModelDefHandle;
 	bool					gibbed;
 
-#ifdef _D3XP
 	bool					wasThrown;
-#endif
 
 	virtual void			Gib( const idVec3 &dir, const char *damageDefName );
 	void					InitSkeletonModel();
@@ -285,11 +280,7 @@ public:
 protected:
 	virtual void			Gib( const idVec3 &dir, const char *damageDefName );
 
-#ifndef _D3XP
-private:
-#else
 public:
-#endif
 	idEntityPtr<idAFAttachment>	head;
 
 	void					Event_Gib( const char *damageDefName );
@@ -395,11 +386,9 @@ public:
 	void					Spawn();
 	virtual void			Think();
 
-#ifdef _D3XP
 	float					force;
 	float					velocity;
 	float					steerAngle;
-#endif
 
 private:
 	idAFBody *				wheels[6];
@@ -408,7 +397,6 @@ private:
 	float					wheelAngles[6];
 };
 
-#ifdef _D3XP
 /*
 ===============================================================================
 
@@ -438,7 +426,6 @@ private:
 	void		Event_SetSteeringSpeed( float _steeringSpeed );
 	void		Event_SetWayPoint( idEntity *_waypoint );
 };
-#endif
 
 /*
 ===============================================================================
@@ -498,7 +485,6 @@ private:
 	void					Event_StopFingers();
 };
 
-#ifdef _D3XP
 
 /** 
 * idHarvestable contains all of the code required to turn an entity into a harvestable
@@ -581,6 +567,5 @@ protected:
 	void					Event_SpawnHarvestEntity();
 
 };
-#endif
 
 #endif /* !__GAME_AFENTITY_H__ */

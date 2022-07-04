@@ -1,7 +1,8 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
+
 
 #include "../Game_local.h"
 
@@ -9,7 +10,7 @@ CLASS_DECLARATION( idPhysics, idPhysics_StaticMulti )
 END_CLASS
 
 staticPState_t defaultState;
-
+staticInterpolatePState_t defaultInterpolateState;
 
 /*
 ================
@@ -26,8 +27,17 @@ idPhysics_StaticMulti::idPhysics_StaticMulti() {
 	defaultState.localOrigin.Zero();
 	defaultState.localAxis.Identity();
 
+	defaultInterpolateState.origin.Zero();
+	defaultInterpolateState.axis = defaultState.axis.ToQuat();
+	defaultInterpolateState.localAxis = defaultInterpolateState.axis;
+	defaultInterpolateState.localOrigin.Zero();
+
 	current.SetNum( 1 );
 	current[0] = defaultState;
+	previous.SetNum( 1 );
+	previous[0] = defaultInterpolateState;
+	next.SetNum( 1 );
+	next[0] = defaultInterpolateState;
 	clipModels.SetNum( 1 );
 	clipModels[0] = NULL;
 }
@@ -151,6 +161,7 @@ void idPhysics_StaticMulti::SetClipModel( idClipModel *model, float density, int
 	clipModels[id] = model;
 	if ( clipModels[id] ) {
 		clipModels[id]->Link( gameLocal.clip, self, id, current[id].origin, current[id].axis );
+
 	}
 
 	for ( i = clipModels.Num() - 1; i >= 1; i-- ) {
@@ -158,8 +169,16 @@ void idPhysics_StaticMulti::SetClipModel( idClipModel *model, float density, int
 			break;
 		}
 	}
-	current.SetNum( i+1, false );
-	clipModels.SetNum( i+1, false );
+	current.SetNum( i+1 );
+	clipModels.SetNum( i+1 );
+
+	// Assure that on first setup, our next/previous is the same as current. 
+	previous.SetNum( current.Num() );
+	next.SetNum( previous.Num() );
+	for( int curIdx = 0; curIdx < current.Num(); curIdx++ ) {
+		previous[curIdx] = ConvertPStateToInterpolateState( current[curIdx] );
+		previous[curIdx] = next[curIdx];
+	}
 }
 
 /*
@@ -347,6 +366,30 @@ bool idPhysics_StaticMulti::Evaluate( int timeStepMSec, int endTimeMSec ) {
 		return true;
 	}
 	return false;
+}
+
+/*
+================
+idPhysics_StaticMulti::Interpolate
+================
+*/
+bool idPhysics_StaticMulti::Interpolate( const float fraction ) {
+	// If the sizes don't match, just use the latest version.
+	// TODO: This might cause visual snapping, is there a better solution?
+	if ( current.Num() != previous.Num() ||
+		 current.Num() != next.Num() ) {
+		current.SetNum( next.Num() );
+		for ( int i = 0; i < next.Num(); ++i ) {
+			current[i] = InterpolateStaticPState( next[i], next[i], 1.0f );
+		}
+		return true;
+	}
+
+	for ( int i = 0; i < current.Num(); ++i ) {
+		current[i] = InterpolateStaticPState( previous[i], next[i], fraction );
+	}
+
+	return true;
 }
 
 /*
@@ -966,7 +1009,7 @@ int idPhysics_StaticMulti::GetAngularEndTime() const {
 idPhysics_StaticMulti::WriteToSnapshot
 ================
 */
-void idPhysics_StaticMulti::WriteToSnapshot( idBitMsgDelta &msg ) const {
+void idPhysics_StaticMulti::WriteToSnapshot( idBitMsg &msg ) const {
 	int i;
 	idCQuat quat, localQuat;
 
@@ -996,28 +1039,18 @@ void idPhysics_StaticMulti::WriteToSnapshot( idBitMsgDelta &msg ) const {
 idPhysics_StaticMulti::ReadFromSnapshot
 ================
 */
-void idPhysics_StaticMulti::ReadFromSnapshot( const idBitMsgDelta &msg ) {
+void idPhysics_StaticMulti::ReadFromSnapshot( const idBitMsg &msg ) {
 	int i, num;
 	idCQuat quat, localQuat;
 
 	num = msg.ReadByte();
 	assert( num == current.Num() );
 
-	for ( i = 0; i < current.Num(); i++ ) {
-		current[i].origin[0] = msg.ReadFloat();
-		current[i].origin[1] = msg.ReadFloat();
-		current[i].origin[2] = msg.ReadFloat();
-		quat.x = msg.ReadFloat();
-		quat.y = msg.ReadFloat();
-		quat.z = msg.ReadFloat();
-		current[i].localOrigin[0] = msg.ReadDeltaFloat( current[i].origin[0] );
-		current[i].localOrigin[1] = msg.ReadDeltaFloat( current[i].origin[1] );
-		current[i].localOrigin[2] = msg.ReadDeltaFloat( current[i].origin[2] );
-		localQuat.x = msg.ReadDeltaFloat( quat.x );
-		localQuat.y = msg.ReadDeltaFloat( quat.y );
-		localQuat.z = msg.ReadDeltaFloat( quat.z );
+	previous = next;
 
-		current[i].axis = quat.ToMat3();
-		current[i].localAxis = localQuat.ToMat3();
+	next.SetNum( num );
+
+	for ( i = 0; i < current.Num(); i++ ) {
+		next[i] = ReadStaticInterpolatePStateFromSnapshot( msg );
 	}
 }

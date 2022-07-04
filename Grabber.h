@@ -1,5 +1,4 @@
 
-#ifdef _D3XP
 
 /*
 ===============================================================================
@@ -34,7 +33,7 @@ private:
 	int						id;					// id of body being dragged
 	idVec3					localPlayerPoint;	// dragged point in player space
 	idEntityPtr<idPlayer>	owner;
-	int						oldUcmdFlags;
+	int						oldImpulseSequence;
 	bool					holdingAF;
 	bool					shakeForceFlip;
 	int						endTime;
@@ -57,4 +56,3 @@ private:
 	void					ApplyShake();
 };
 
-#endif

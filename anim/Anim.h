@@ -71,12 +71,19 @@ typedef struct {
 	jointModTransform_t		transform_axis;
 } jointMod_t;
 
-#define	ANIM_TX				BIT( 0 )
-#define	ANIM_TY				BIT( 1 )
-#define	ANIM_TZ				BIT( 2 )
-#define	ANIM_QX				BIT( 3 )
-#define	ANIM_QY				BIT( 4 )
-#define	ANIM_QZ				BIT( 5 )
+#define	ANIM_BIT_TX			0
+#define	ANIM_BIT_TY			1
+#define	ANIM_BIT_TZ			2
+#define	ANIM_BIT_QX			3
+#define	ANIM_BIT_QY			4
+#define	ANIM_BIT_QZ			5
+
+#define	ANIM_TX				BIT( ANIM_BIT_TX )
+#define	ANIM_TY				BIT( ANIM_BIT_TY )
+#define	ANIM_TZ				BIT( ANIM_BIT_TZ )
+#define	ANIM_QX				BIT( ANIM_BIT_QX )
+#define	ANIM_QY				BIT( ANIM_BIT_QY )
+#define	ANIM_QZ				BIT( ANIM_BIT_QZ )
 
 typedef enum {
 	FC_SCRIPTFUNCTION,
@@ -120,12 +127,10 @@ typedef enum {
 	FC_DISABLE_LEG_IK,
 	FC_RECORDDEMO,
 	FC_AVIGAME
-#ifdef _D3XP
 	, FC_LAUNCH_PROJECTILE, 
 	FC_TRIGGER_FX,
 	FC_START_EMITTER,
 	FC_STOP_EMITTER,
-#endif
 } frameCommandType_t;
 
 typedef struct {
@@ -152,43 +157,6 @@ typedef struct {
 	bool					anim_turn					: 1;
 } animFlags_t;
 
-
-/*
-==============================================================================================
-
-	idModelExport
-
-==============================================================================================
-*/
-
-class idModelExport {
-private:
-	void					Reset();
-	bool					ParseOptions( idLexer &lex );
-	int						ParseExportSection( idParser &parser );
-
-	static bool				CheckMayaInstall();
-	static void				LoadMayaDll();
-
-	bool					ConvertMayaToMD5();
-	static bool				initialized;
-
-public:
-	idStr					commandLine;
-	idStr					src;
-	idStr					dest;
-	bool					force;
-
-							idModelExport();
-
-	static void				Shutdown();
-
-	int						ExportDefFile( const char *filename );
-	bool					ExportModel( const char *model );
-	bool					ExportAnim( const char *anim );
-	int						ExportModels( const char *pathname, const char *extension );
-};
-
 /*
 ==============================================================================================
 
@@ -204,10 +172,10 @@ private:
 	int						animLength;
 	int						numJoints;
 	int						numAnimatedComponents;
-	idList<idBounds>		bounds;
-	idList<jointAnimInfo_t>	jointInfo;
-	idList<idJointQuat>		baseFrame;
-	idList<float>			componentFrames;
+	idList<idBounds, TAG_MD5_ANIM>		bounds;
+	idList<jointAnimInfo_t, TAG_MD5_ANIM>	jointInfo;
+	idList<idJointQuat, TAG_MD5_ANIM>		baseFrame;
+	idList<float, TAG_MD5_ANIM>			componentFrames;
 	idStr					name;
 	idVec3					totaldelta;
 	mutable int				ref_count;
@@ -221,6 +189,8 @@ public:
 	size_t					Allocated() const;
 	size_t					Size() const { return sizeof( *this ) + Allocated(); };
 	bool					LoadAnim( const char *filename );
+	bool					LoadBinary( idFile * file, ID_TIME_T sourceTimeStamp );
+	void					WriteBinary( idFile * file, ID_TIME_T sourceTimeStamp );
 
 	void					IncreaseRefs() const;
 	void					DecreaseRefs() const;
@@ -258,8 +228,8 @@ private:
 	int							numAnims;
 	idStr						name;
 	idStr						realname;
-	idList<frameLookup_t>		frameLookup;
-	idList<frameCommand_t>		frameCommands;
+	idList<frameLookup_t, TAG_ANIM>		frameLookup;
+	idList<frameCommand_t, TAG_ANIM>		frameCommands;
 	animFlags_t					flags;
 
 public:
@@ -304,7 +274,7 @@ public:
 
 	virtual size_t				Size() const;
 	virtual const char *		DefaultDefinition() const;
-	virtual bool				Parse( const char *text, const int textLength );
+	virtual bool				Parse( const char *text, const int textLength, bool allowBinaryVersion );
 	virtual void				FreeData();
 
 	void						Touch() const;
@@ -339,11 +309,11 @@ private:
 
 private:
 	idVec3						offset;
-	idList<jointInfo_t>			joints;
-	idList<int>					jointParents;
-	idList<int>					channelJoints[ ANIM_NumAnimChannels ];
+	idList<jointInfo_t, TAG_ANIM>			joints;
+	idList<int, TAG_ANIM>					jointParents;
+	idList<int, TAG_ANIM>					channelJoints[ ANIM_NumAnimChannels ];
 	idRenderModel *				modelHandle;
-	idList<idAnim *>			anims;
+	idList<idAnim *, TAG_ANIM>			anims;
 	const idDeclSkin *			skin;
 };
 
@@ -548,7 +518,7 @@ private:
 	idEntity *					entity;
 
 	idAnimBlend					channels[ ANIM_NumAnimChannels ][ ANIM_MaxAnimsPerChannel ];
-	idList<jointMod_t *>		jointMods;
+	idList<jointMod_t *, TAG_ANIM>		jointMods;
 	int							numJoints;
 	idJointMat *				joints;
 
@@ -560,9 +530,9 @@ private:
 	idBounds					frameBounds;
 
 	float						AFPoseBlendWeight;
-	idList<int>					AFPoseJoints;
-	idList<idAFPoseJointMod>	AFPoseJointMods;
-	idList<idJointQuat>			AFPoseJointFrame;
+	idList<int, TAG_ANIM>					AFPoseJoints;
+	idList<idAFPoseJointMod, TAG_ANIM>	AFPoseJointMods;
+	idList<idJointQuat, TAG_ANIM>			AFPoseJointFrame;
 	idBounds					AFPoseBounds;
 	int							AFPoseTime;
 };
@@ -584,6 +554,7 @@ public:
 
 	void						Shutdown();
 	idMD5Anim *					GetAnim( const char *name );
+	void						Preload( const idPreloadManifest &manifest );
 	void						ReloadAnims();
 	void						ListAnims() const;
 	int							JointIndex( const char *name );

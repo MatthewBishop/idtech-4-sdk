@@ -125,7 +125,7 @@ void idEntityFx::Setup( const char *fx ) {
 	}
 
 	// early during MP Spawn() with no information. wait till we ReadFromSnapshot for more
-	if ( gameLocal.isClient && ( !fx || fx[0] == '\0' ) ) {
+	if ( common->IsClient() && ( !fx || fx[0] == '\0' ) ) {
 		return;
 	}
 
@@ -444,14 +444,14 @@ void idEntityFx::Run( int time ) {
 					for ( j = 0; j < gameLocal.numClients; j++ ) {
 						idPlayer *player = gameLocal.GetClientByNum( j );
 						if ( player && ( player->GetPhysics()->GetOrigin() - GetPhysics()->GetOrigin() ).LengthSqr() < Square( fxaction.shakeDistance ) ) {
-							if ( !gameLocal.isMultiplayer || !fxaction.shakeIgnoreMaster || GetBindMaster() != player ) {
+							if ( !common->IsMultiplayer() || !fxaction.shakeIgnoreMaster || GetBindMaster() != player ) {
 								player->playerView.DamageImpulse( fxaction.offset, &args );
 							}
 						}
 					}
 					if ( fxaction.shakeImpulse != 0.0f && fxaction.shakeDistance != 0.0f ) {
 						idEntity *ignore_ent = NULL;
-						if ( gameLocal.isMultiplayer ) {
+						if ( common->IsMultiplayer() ) {
 							ignore_ent = this;
 							if ( fxaction.shakeIgnoreMaster ) {
 								ignore_ent = GetBindMaster();
@@ -485,15 +485,13 @@ void idEntityFx::Run( int time ) {
 				} else if ( fxaction.trackOrigin ) {
 					useAction->renderEntity.origin = GetPhysics()->GetOrigin() + fxaction.offset;
 					useAction->renderEntity.axis = fxaction.explicitAxis ? fxaction.axis : GetPhysics()->GetAxis();
-#ifdef _D3XP
 					gameRenderWorld->UpdateEntityDef( useAction->modelDefHandle, &useAction->renderEntity );
-#endif
 				}
 				ApplyFade( fxaction, *useAction, time, actualStart );
 				break;
 			}
 			case FX_LAUNCH: {
-				if ( gameLocal.isClient ) {
+				if ( common->IsClient() ) {
 					// client never spawns entities outside of ClientReadSnapshot
 					useAction->launched = true;
 					break;
@@ -516,9 +514,8 @@ void idEntityFx::Run( int time ) {
 				}
 				break;
 			}
-#ifdef _D3XP
 			case FX_SHOCKWAVE: {
-				if ( gameLocal.isClient ) {
+				if ( common->IsClient() ) {
 					useAction->shakeStarted = true;
 					break;
 				}
@@ -542,7 +539,6 @@ void idEntityFx::Run( int time ) {
 				}
 				break;
 			}
-#endif
 		}
 	}
 }
@@ -720,7 +716,7 @@ idEntityFx *idEntityFx::StartFx( const char *fx, const idVec3 *useOrigin, const 
 idEntityFx::WriteToSnapshot
 =================
 */
-void idEntityFx::WriteToSnapshot( idBitMsgDelta &msg ) const {
+void idEntityFx::WriteToSnapshot( idBitMsg &msg ) const {
 	GetPhysics()->WriteToSnapshot( msg );
 	WriteBindToSnapshot( msg );
 	msg.WriteLong( ( fxEffect != NULL ) ? gameLocal.ServerRemapDecl( -1, DECL_FX, fxEffect->Index() ) : -1 );
@@ -732,7 +728,7 @@ void idEntityFx::WriteToSnapshot( idBitMsgDelta &msg ) const {
 idEntityFx::ReadFromSnapshot
 =================
 */
-void idEntityFx::ReadFromSnapshot( const idBitMsgDelta &msg ) {
+void idEntityFx::ReadFromSnapshot( const idBitMsg &msg ) {
 	int fx_index, start_time, max_lapse;
 
 	GetPhysics()->ReadFromSnapshot( msg );
@@ -755,6 +751,21 @@ void idEntityFx::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 		Setup( fx->GetName() );
 		Start( start_time );
 	}
+}
+
+/*
+=================
+idEntityFx::ClientThink
+=================
+*/
+void idEntityFx::ClientThink( const int curTime, const float fraction, const bool predict ) {
+
+	if ( gameLocal.isNewFrame ) { 
+		Run( gameLocal.serverTime ); 
+	}
+
+	InterpolatePhysics( fraction );
+	Present();
 }
 
 /*

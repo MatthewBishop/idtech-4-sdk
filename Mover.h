@@ -28,9 +28,9 @@ public:
 	void					Restore( idRestoreGame *savefile );
 
 	virtual void			Killed( idEntity *inflictor, idEntity *attacker, int damage, const idVec3 &dir, int location );
-
-	virtual void			WriteToSnapshot( idBitMsgDelta &msg ) const;
-	virtual void			ReadFromSnapshot( const idBitMsgDelta &msg );
+	virtual void			ClientThink( const int curTime, const float fraction, const bool predict );
+	virtual void			WriteToSnapshot( idBitMsg &msg ) const;
+	virtual void			ReadFromSnapshot( const idBitMsg &msg );
 
 	virtual void			Hide();
 	virtual void			Show();
@@ -126,7 +126,7 @@ private:
 
 	qhandle_t				areaPortal;		// 0 = no portal
 
-	idList< idEntityPtr<idEntity> >	guiTargets;
+	idList< idEntityPtr<idEntity>, TAG_MOVER >	guiTargets;
 
 	void					VectorForDir( float dir, idVec3 &vec );
 	idCurve_Spline<idVec3> *GetSpline( idEntity *splineEntity ) const;
@@ -215,7 +215,7 @@ private:
 	} elevatorState_t;
 
 	elevatorState_t			state;
-	idList<floorInfo_s>		floorInfo;
+	idList<floorInfo_s, TAG_MOVER>		floorInfo;
 	int						currentFloor;
 	int						pendingFloor;
 	int						lastFloor;
@@ -236,9 +236,7 @@ private:
 	void					Event_Activate( idEntity *activator );
 	void					Event_PostFloorArrival();
 
-#ifdef _D3XP
 	void					Event_SetGuiStates();
-#endif
 
 };
 
@@ -288,8 +286,8 @@ public:
 	bool					IsBlocked();
 	idEntity *				GetActivator() const;
 
-	virtual void			WriteToSnapshot( idBitMsgDelta &msg ) const;
-	virtual void			ReadFromSnapshot( const idBitMsgDelta &msg );
+	virtual void			WriteToSnapshot( idBitMsg &msg ) const;
+	virtual void			ReadFromSnapshot( const idBitMsg &msg );
 
 	void					SetPortalState( bool open );
 
@@ -319,10 +317,8 @@ protected:
 	idPhysics_Parametric	physicsObj;
 	qhandle_t				areaPortal;			// 0 = no portal
 	bool					blocked;
-#ifdef _D3XP
 	bool					playerOnly;
-#endif
-	idList< idEntityPtr<idEntity> >	guiTargets;
+	idList< idEntityPtr<idEntity>, TAG_MOVER >	guiTargets;
 
 	void					MatchActivateTeam( moverState_t newstate, int time );
 	void					JoinActivateTeam( idMover_Binary *master );
@@ -360,6 +356,7 @@ public:
 	void					Save( idSaveGame *savefile ) const;
 	void					Restore( idRestoreGame *savefile );
 
+	virtual void			ClientThink( const int curTime, const float fraction, const bool predict );
 	virtual void			Think();
 	virtual void			PreBind();
 	virtual void			PostBind();
@@ -368,9 +365,7 @@ public:
 
 	bool					IsOpen();
 	bool					IsNoTouch();
-#ifdef _D3XP
 	bool					AllowPlayerOnly( idEntity *ent );
-#endif
 	int						IsLocked();
 	void					Lock( int f );
 	void					Use( idEntity *other, idEntity *activator );
@@ -421,7 +416,7 @@ private:
 class idPlat : public idMover_Binary {
 public:
 	CLASS_PROTOTYPE( idPlat );
-
+	
 							idPlat();
 							~idPlat();
 
@@ -429,7 +424,8 @@ public:
 
 	void					Save( idSaveGame *savefile ) const;
 	void					Restore( idRestoreGame *savefile );
-
+	void					RunPhysics_NoBlocking();
+	virtual void			ClientThink( const int curTime, const float fraction, const bool predict );
 	virtual void			Think();
 	virtual void			PreBind();
 	virtual void			PostBind();
@@ -469,8 +465,8 @@ public:
 
 	virtual void			Think();
 
-	virtual void			WriteToSnapshot( idBitMsgDelta &msg ) const;
-	virtual void			ReadFromSnapshot( const idBitMsgDelta &msg );
+	virtual void			WriteToSnapshot( idBitMsg &msg ) const;
+	virtual void			ReadFromSnapshot( const idBitMsg &msg );
 
 protected:
 	idPhysics_Parametric	physicsObj;

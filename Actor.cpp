@@ -334,14 +334,12 @@ const idEventDef AI_SetNextState( "setNextState", "s" );
 const idEventDef AI_SetState( "setState", "s" );
 const idEventDef AI_GetState( "getState", NULL, 's' );
 const idEventDef AI_GetHead( "getHead", NULL, 'e' );
-#ifdef _D3XP
 const idEventDef EV_SetDamageGroupScale( "setDamageGroupScale", "sf" );
 const idEventDef EV_SetDamageGroupScaleAll( "setDamageGroupScaleAll", "f" );
 const idEventDef EV_GetDamageGroupScale( "getDamageGroupScale", "s", 'f' );
 const idEventDef EV_SetDamageCap( "setDamageCap", "f" );
 const idEventDef EV_SetWaitState( "setWaitState" , "s" );
 const idEventDef EV_GetWaitState( "getWaitState", NULL, 's' );
-#endif
 
 CLASS_DECLARATION( idAFEntity_Gibbable, idActor )
 	EVENT( AI_EnableEyeFocus,			idActor::Event_EnableEyeFocus )
@@ -385,14 +383,12 @@ CLASS_DECLARATION( idAFEntity_Gibbable, idActor )
 	EVENT( AI_SetState,					idActor::Event_SetState )
 	EVENT( AI_GetState,					idActor::Event_GetState )
 	EVENT( AI_GetHead,					idActor::Event_GetHead )
-#ifdef _D3XP
 	EVENT( EV_SetDamageGroupScale,		idActor::Event_SetDamageGroupScale )
 	EVENT( EV_SetDamageGroupScaleAll,	idActor::Event_SetDamageGroupScaleAll )
 	EVENT( EV_GetDamageGroupScale,		idActor::Event_GetDamageGroupScale )
 	EVENT( EV_SetDamageCap,				idActor::Event_SetDamageCap )
 	EVENT( EV_SetWaitState,				idActor::Event_SetWaitState )
 	EVENT( EV_GetWaitState,				idActor::Event_GetWaitState )
-#endif
 END_CLASS
 
 /*
@@ -438,15 +434,17 @@ idActor::idActor() {
 	blink_max			= 0;
 
 	finalBoss			= false;
+	damageNotByFists	= false;		// for killed by fists achievement
 
 	attachments.SetGranularity( 1 );
 
 	enemyNode.SetOwner( this );
 	enemyList.SetOwner( this );
 
-#ifdef _D3XP
+	aimAssistNode.SetOwner( this );
+	aimAssistNode.AddToEnd( gameLocal.aimAssistEntities );
+
 	damageCap = -1;
-#endif
 }
 
 /*
@@ -478,6 +476,8 @@ idActor::~idActor() {
 			ent->PostEventMS( &EV_Remove, 0 );
 		}
 	}
+
+	aimAssistNode.Remove();
 
 	ShutdownThreads();
 }
@@ -653,7 +653,7 @@ void idActor::SetupHead() {
 	int					i;
 	const idKeyValue	*sndKV;
 
-	if ( gameLocal.isClient ) {
+	if ( common->IsClient() ) {
 		return;
 	}
 
@@ -682,10 +682,8 @@ void idActor::SetupHead() {
 			sndKV = spawnArgs.MatchPrefix( "snd_", sndKV );
 		}
 
-#ifdef _D3XP
 		// copy slowmo param to the head
 		args.SetBool( "slowmo", spawnArgs.GetBool("slowmo", "1") );
-#endif
 
 
 		headEnt = static_cast<idAFAttachment *>( gameLocal.SpawnEntityType( idAFAttachment::Type, &args ) );
@@ -693,13 +691,11 @@ void idActor::SetupHead() {
 		headEnt->SetBody( this, headModel, damageJoint );
 		head = headEnt;
 
-#ifdef _D3XP
 		idStr xSkin;
 		if ( spawnArgs.GetString( "skin_head_xray", "", xSkin ) ) {
 			headEnt->xraySkin = declManager->FindSkin( xSkin.c_str() );
 			headEnt->UpdateModel();
 		}
-#endif
 
 		idVec3		origin;
 		idMat3		axis;
@@ -872,9 +868,7 @@ void idActor::Save( idSaveGame *savefile ) const {
 		savefile->WriteString( "" );
 	}
 
-#ifdef _D3XP
 	savefile->WriteInt(damageCap);
-#endif
 
 }
 
@@ -985,9 +979,7 @@ void idActor::Restore( idRestoreGame *savefile ) {
 		idealState = GetScriptFunction( statename );
 	}
 
-#ifdef _D3XP
 	savefile->ReadInt(damageCap);
-#endif
 }
 
 /*
@@ -1034,11 +1026,9 @@ void idActor::Show() {
 		if ( ent->GetBindMaster() == this ) {
 			ent->Show();
 			if ( ent->IsType( idLight::Type ) ) {
-#ifdef _D3XP
 				if(!spawnArgs.GetBool("lights_off", "0")) {
 					static_cast<idLight *>( ent )->On();
 				}
-#endif
 				
 
 			}
@@ -1316,8 +1306,9 @@ idActor::SetState
 =====================
 */
 void idActor::SetState( const function_t *newState ) {
-	if ( !newState ) {
+	if ( newState == NULL ) {
 		gameLocal.Error( "idActor::SetState: Null state" );
+		return;
 	}
 
 	if ( ai_debugScript.GetInteger() == entityNumber ) {
@@ -1560,7 +1551,7 @@ void idActor::SetCombatModel() {
 			combatModel->Unlink();
 			combatModel->LoadModel( modelDefHandle );
 		} else {
-			combatModel = new idClipModel( modelDefHandle );
+			combatModel = new (TAG_PHYSICS_CLIP_ENTITY) idClipModel( modelDefHandle );
 		}
 
 		headEnt = head.GetEntity();
@@ -1718,7 +1709,7 @@ void idActor::RemoveAttachments() {
 	// remove any attached entities
 	for( i = 0; i < attachments.Num(); i++ ) {
 		ent = attachments[ i ].ent.GetEntity();
-		if ( ent && ent->spawnArgs.GetBool( "remove" ) ) {
+		if ( ent != NULL && ent->spawnArgs.GetBool( "remove" ) ) {
 			ent->PostEventMS( &EV_Remove, 0 );
 		}
 	}
@@ -2140,7 +2131,7 @@ idActor::Gib
 */
 void idActor::Gib( const idVec3 &dir, const char *damageDefName ) {
 	// no gibbing in multiplayer - by self damage or by moving objects
-	if ( gameLocal.isMultiplayer ) {
+	if ( common->IsMultiplayer() ) {
 		return;
 	}
 	// only gib once
@@ -2174,9 +2165,10 @@ Bleeding wounds and surface overlays are applied in the collision code that
 calls Damage()
 ============
 */
+idCVar actor_noDamage(		"actor_noDamage",			"0",		CVAR_BOOL, "actors don't take damage -- for testing" );
 void idActor::Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &dir, 
 					  const char *damageDefName, const float damageScale, const int location ) {
-	if ( !fl.takedamage ) {
+	if ( !fl.takedamage || actor_noDamage.GetBool() ) {
 		return;
 	}
 
@@ -2187,11 +2179,19 @@ void idActor::Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &dir
 		attacker = gameLocal.world;
 	}
 
-#ifdef _D3XP
+	if ( finalBoss && idStr::FindText( GetEntityDefName(), "monster_boss_cyberdemon" ) == 0 && !inflictor->IsType( idSoulCubeMissile::Type ) ) {
+		return;
+	}
+
+	// for killed by fists achievement
+	if ( attacker->IsType( idPlayer::Type ) && idStr::Cmp( "damage_fists", damageDefName ) ) {
+		damageNotByFists = true;
+	}
+	
 	SetTimeState ts( timeGroup );
 
 	// Helltime boss is immune to all projectiles except the helltime killer
-	if ( finalBoss && idStr::Icmp(inflictor->GetEntityDefName(), "projectile_helltime_killer") ) {
+	if ( finalBoss && idStr::Icmp( GetEntityDefName(), "monster_hunter_helltime" ) == 0 &&  idStr::Icmp(inflictor->GetEntityDefName(), "projectile_helltime_killer") ) {
 		return;
 	}
 
@@ -2200,36 +2200,112 @@ void idActor::Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &dir
 		(!idStr::Icmp( damageDefName, "damage_maledict_asteroid" ) || !idStr::Icmp( damageDefName, "damage_maledict_asteroid_splash" ) ) ) {
 		return;
 	}
-#else
-	if ( finalBoss && !inflictor->IsType( idSoulCubeMissile::Type ) ) {
-		return;
-	}
-#endif
 
 	const idDict *damageDef = gameLocal.FindEntityDefDict( damageDefName );
-	if ( !damageDef ) {
+	if ( damageDef == NULL ) {
 		gameLocal.Error( "Unknown damageDef '%s'", damageDefName );
+		return;
 	}
 
 	int	damage = damageDef->GetInt( "damage" ) * damageScale;
 	damage = GetDamageForLocation( damage, location );
 
 	// inform the attacker that they hit someone
-	attacker->DamageFeedback( this, inflictor, damage );
+	if ( attacker ) {
+		attacker->DamageFeedback( this, inflictor, damage );
+	}
 	if ( damage > 0 ) {
+		int oldHealth = health;
 		health -= damage;
 
-#ifdef _D3XP
 		//Check the health against any damage cap that is currently set
 		if(damageCap >= 0 && health < damageCap) {
 			health = damageCap;
 		}
-#endif
 
 		if ( health <= 0 ) {
 			if ( health < -999 ) {
 				health = -999;
 			}
+
+			if ( oldHealth > 0 ) {
+				idPlayer *player = NULL;
+				if ( ( attacker && attacker->IsType( idPlayer::Type ) ) ) {
+					player = static_cast< idPlayer* >( attacker );
+				}
+
+				if ( player != NULL ) {
+					if ( !damageNotByFists && player->GetExpansionType() == GAME_BASE ) {
+						player->GetAchievementManager().EventCompletesAchievement( ACHIEVEMENT_KILL_20_ENEMY_FISTS_HANDS );
+					}
+					if ( player->PowerUpActive( HELLTIME ) ) {
+						player->GetAchievementManager().IncrementHellTimeKills();
+					}
+					if ( player->PowerUpActive( BERSERK ) && player->GetExpansionType() == GAME_D3XP && !damageNotByFists ) {
+						player->GetAchievementManager().EventCompletesAchievement( ACHIEVEMENT_ARTIFACT_WITH_BERSERK_PUNCH_20 );
+					}
+					if ( player->GetCurrentWeaponSlot() == player->weapon_chainsaw ) {
+						player->GetAchievementManager().EventCompletesAchievement( ACHIEVEMENT_KILL_20_ENEMY_WITH_CHAINSAW );
+					}
+					if ( ( !name.Find( "monster_boss_vagary") || !name.Find( "vagaryaftercin") ) && player->GetExpansionType() == GAME_BASE ) {
+						player->GetAchievementManager().EventCompletesAchievement( ACHIEVEMENT_DEFEAT_VAGARY_BOSS );
+					}
+					if ( !name.Find( "monster_boss_sabaoth") ) {
+						player->GetAchievementManager().EventCompletesAchievement( ACHIEVEMENT_DEFEAT_SABAOTH_BOSS );
+					}
+					if ( !name.Find( "monster_boss_cyberdemon") ) {
+						player->GetAchievementManager().EventCompletesAchievement( ACHIEVEMENT_DEFEAT_CYBERDEMON_BOSS );
+					}
+					if ( name.Icmp( "hunter_berzerk") == 0 ) {
+						player->GetAchievementManager().EventCompletesAchievement( ACHIEVEMENT_DEFEAT_BERSERK_HUNTER );
+					}
+					if ( !name.Find( "monster_hunter_helltime") ) {
+						player->GetAchievementManager().EventCompletesAchievement( ACHIEVEMENT_DEFEAT_HELLTIME_HUNTER );
+					}
+					if ( name.Icmp( "hunter") == 0 ) {
+						player->GetAchievementManager().EventCompletesAchievement( ACHIEVEMENT_DEFEAT_INVULNERABILITY_HUNTER );
+					}
+					if ( inflictor && inflictor->IsType( idSoulCubeMissile::Type ) ) {
+						player->GetAchievementManager().EventCompletesAchievement( ACHIEVEMENT_USE_SOUL_CUBE_TO_DEFEAT_20_ENEMY );
+					}
+					if ( inflictor && inflictor->IsType( idMoveable::Type ) ) {
+						idMoveable * moveable = static_cast< idMoveable * >( inflictor );
+						// if a moveable is doing damage
+						// AND it has an attacker (set when the grabber picks up a moveable )
+						// AND the moveable's attacker is the attacker here (the player)
+						// then the player has killed an enemy with a launched moveable from the Grabber
+						if ( moveable != NULL && moveable->GetAttacker() != NULL && moveable->GetAttacker()->IsType( idPlayer::Type ) && moveable->GetAttacker() == attacker && player->GetExpansionType() == GAME_D3XP && team != player->team ) {
+							player->GetAchievementManager().EventCompletesAchievement( ACHIEVEMENT_GRABBER_KILL_20_ENEMY );
+						}
+					}
+
+					idProjectile *projectile = NULL;
+					if ( inflictor != NULL && inflictor->IsType( idProjectile::Type ) ) {
+						projectile = static_cast< idProjectile* >( inflictor );
+						if ( projectile != NULL ) {
+							if ( projectile->GetLaunchedFromGrabber() && player->GetExpansionType() == GAME_D3XP && team != player->team ) {
+								player->GetAchievementManager().EventCompletesAchievement( ACHIEVEMENT_GRABBER_KILL_20_ENEMY );
+							}
+							if ( renderEntity.hModel && idStr::Icmp( renderEntity.hModel->Name(), "models/md5/monsters/imp/imp.md5mesh" ) == 0 ) {
+								if ( idStr::FindText( inflictor->GetName(), "shotgun" ) > -1 ) {
+									idStr impName;
+									int	  lastKilledImpTime = player->GetAchievementManager().GetLastImpKilledTime();
+									if ( ( gameLocal.GetTime() - lastKilledImpTime ) <= 100 && ( impName.Icmp( name ) != 0 ) ) {
+										player->GetAchievementManager().EventCompletesAchievement( ACHIEVEMENT_KILL_TWO_IMPS_ONE_SHOTGUN );
+									} else {
+										player->GetAchievementManager().SetLastImpKilledTime( gameLocal.GetTime() );
+									}
+								}
+							}
+						}
+					}
+
+					if ( player->health == 1 && player->team != this->team ) {	// make sure it doesn't unlock if you kill a friendly dude when you have 1 heath....
+						player->GetAchievementManager().EventCompletesAchievement( ACHIEVEMENT_KILL_MONSTER_WITH_1_HEALTH_LEFT );
+					}
+				}
+			}
+
 			Killed( inflictor, attacker, damage, dir, location );
 			if ( ( health < -20 ) && spawnArgs.GetBool( "gib" ) && damageDef->GetBool( "gib" ) ) {
 				Gib( dir, damageDefName );
@@ -2453,10 +2529,10 @@ void idActor::PlayFootStepSound() {
 	if ( material != NULL ) {
 		sound = spawnArgs.GetString( va( "snd_footstep_%s", gameLocal.sufaceTypeNames[ material->GetSurfaceType() ] ) );
 	}
-	if ( *sound == '\0' ) {
+	if ( sound != NULL && *sound == '\0' ) {
 		sound = spawnArgs.GetString( "snd_footstep" );
 	}
-	if ( *sound != '\0' ) {
+	if ( sound != NULL && *sound != '\0' ) {
 		StartSoundShader( declManager->FindSound( sound ), SND_CHANNEL_BODY, 0, false, NULL );
 	}
 }
@@ -3317,7 +3393,6 @@ void idActor::Event_GetHead() {
 	idThread::ReturnEntity( head.GetEntity() );
 }
 
-#ifdef _D3XP
 /*
 ================
 idActor::Event_SetDamageGroupScale
@@ -3371,4 +3446,3 @@ void idActor::Event_GetWaitState() {
 		idThread::ReturnString("");
 	}
 }
-#endif

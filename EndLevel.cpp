@@ -24,7 +24,7 @@ END_CLASS
 idTarget_EndLevel::Spawn
 ================
 */
-void idTarget_EndLevel::Spawn() {
+void idTarget_EndLevel::Spawn( void ) {
 	idStr		guiName;
 
 	gui = NULL;

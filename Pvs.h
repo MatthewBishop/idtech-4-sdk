@@ -25,7 +25,7 @@ typedef struct pvsCurrent_s {
 	byte *				pvs;		// current pvs bit string
 } pvsCurrent_t;
 
-#define MAX_CURRENT_PVS		8		// must be a power of 2
+#define MAX_CURRENT_PVS		64		// must be a power of 2
 
 typedef enum {
 	PVS_NORMAL				= 0,	// PVS through portals taking portal states into account
@@ -62,14 +62,7 @@ public:
 						// visualize the PVS the handle points to
 	void				DrawCurrentPVS( const pvsHandle_t handle, const idVec3 &source ) const;
 
-#if ASYNC_WRITE_PVS
-	void				WritePVS( const pvsHandle_t handle, idBitMsg &msg );
-	void				ReadPVS( const pvsHandle_t handle, const idBitMsg &msg );
-#endif
-
-#ifdef _D3XP
 	bool				CheckAreasForPortalSky( const pvsHandle_t handle, const idVec3 &origin );
-#endif
 
 private:
 	int					numAreas;

@@ -1,7 +1,8 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
+
 
 #include "../Game_local.h"
 
@@ -15,7 +16,6 @@ idForce_Drag::idForce_Drag
 */
 idForce_Drag::idForce_Drag() {
 	damping			= 0.5f;
-	dragPosition	= vec3_zero;
 	physics			= NULL;
 	id				= 0;
 	p				= vec3_zero;
@@ -111,9 +111,9 @@ void idForce_Drag::Evaluate( int time ) {
 	l2 = dir2.Normalize();
 
 	rotation.Set( centerOfMass, dir2.Cross( dir1 ), RAD2DEG( idMath::ACos( dir1 * dir2 ) ) );
-	physics->SetAngularVelocity( rotation.ToAngularVelocity() / MS2SEC( USERCMD_MSEC ), id );
+	physics->SetAngularVelocity( rotation.ToAngularVelocity() / MS2SEC( gameLocal.time - gameLocal.previousTime ), id );
 
-	velocity = physics->GetLinearVelocity( id ) * damping + dir1 * ( ( l1 - l2 ) * ( 1.0f - damping ) / MS2SEC( USERCMD_MSEC ) );
+	velocity = physics->GetLinearVelocity( id ) * damping + dir1 * ( ( l1 - l2 ) * ( 1.0f - damping ) / MS2SEC( gameLocal.time - gameLocal.previousTime ) );
 	physics->SetLinearVelocity( velocity, id );
 }
 

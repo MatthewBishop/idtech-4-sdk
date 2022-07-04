@@ -433,7 +433,7 @@ void idAF::AddBody( idAFBody *body, const idJointMat *joints, const char *jointN
 	axis = joints[ handle ].ToMat3();
 
 	index = jointMods.Num();
-	jointMods.SetNum( index + 1, false );
+	jointMods.SetNum( index + 1 );
 	jointMods[index].bodyId = physicsObj.GetBodyId( body );
 	jointMods[index].jointHandle = handle;
 	jointMods[index].jointMod = mod;
@@ -469,7 +469,7 @@ bool idAF::LoadBody( const idDeclAF_Body *fb, const idJointMat *joints ) {
 	idMat3 axis, inertiaTensor;
 	idVec3 centerOfMass, origin;
 	idBounds bounds;
-	idList<jointHandle_t> jointList;
+	idList<jointHandle_t, TAG_AF> jointList;
 
 	origin = fb->origin.ToVec3();
 	axis = fb->angles.ToMat3();
@@ -523,7 +523,7 @@ bool idAF::LoadBody( const idDeclAF_Body *fb, const idJointMat *joints ) {
 	if ( body ) {
 		clip = body->GetClipModel();
 		if ( !clip->IsEqual( trm ) ) {
-			clip = new idClipModel( trm );
+			clip = new (TAG_PHYSICS_CLIP_AF) idClipModel( trm );
 			clip->SetContents( fb->contents );
 			clip->Link( gameLocal.clip, self, 0, origin, axis );
 			body->SetClipModel( clip );
@@ -535,10 +535,10 @@ bool idAF::LoadBody( const idDeclAF_Body *fb, const idJointMat *joints ) {
 		id = physicsObj.GetBodyId( body );
 	}
 	else {
-		clip = new idClipModel( trm );
+		clip = new (TAG_PHYSICS_CLIP_AF) idClipModel( trm );
 		clip->SetContents( fb->contents );
 		clip->Link( gameLocal.clip, self, 0, origin, axis );
-		body = new idAFBody( fb->name, clip, fb->density );
+		body = new (TAG_PHYSICS_AF) idAFBody( fb->name, clip, fb->density );
 		if ( fb->inertiaScale != mat3_identity ) {
 			body->SetDensity( fb->density, fb->inertiaScale );
 		}
@@ -609,7 +609,7 @@ bool idAF::LoadConstraint( const idDeclAF_Constraint *fc ) {
 				c->SetBody2( body2 );
 			}
 			else {
-				c = new idAFConstraint_Fixed( fc->name, body1, body2 );
+				c = new (TAG_PHYSICS_AF) idAFConstraint_Fixed( fc->name, body1, body2 );
 				physicsObj.AddConstraint( c );
 			}
 			break;
@@ -622,7 +622,7 @@ bool idAF::LoadConstraint( const idDeclAF_Constraint *fc ) {
 				c->SetBody2( body2 );
 			}
 			else {
-				c = new idAFConstraint_BallAndSocketJoint( fc->name, body1, body2 );
+				c = new (TAG_PHYSICS_AF) idAFConstraint_BallAndSocketJoint( fc->name, body1, body2 );
 				physicsObj.AddConstraint( c );
 			}
 			c->SetAnchor( fc->anchor.ToVec3() );
@@ -654,7 +654,7 @@ bool idAF::LoadConstraint( const idDeclAF_Constraint *fc ) {
 				c->SetBody2( body2 );
 			}
 			else {
-				c = new idAFConstraint_UniversalJoint( fc->name, body1, body2 );
+				c = new (TAG_PHYSICS_AF) idAFConstraint_UniversalJoint( fc->name, body1, body2 );
 				physicsObj.AddConstraint( c );
 			}
 			c->SetAnchor( fc->anchor.ToVec3() );
@@ -687,7 +687,7 @@ bool idAF::LoadConstraint( const idDeclAF_Constraint *fc ) {
 				c->SetBody2( body2 );
 			}
 			else {
-				c = new idAFConstraint_Hinge( fc->name, body1, body2 );
+				c = new (TAG_PHYSICS_AF) idAFConstraint_Hinge( fc->name, body1, body2 );
 				physicsObj.AddConstraint( c );
 			}
 			c->SetAnchor( fc->anchor.ToVec3() );
@@ -717,7 +717,7 @@ bool idAF::LoadConstraint( const idDeclAF_Constraint *fc ) {
 				c->SetBody2( body2 );
 			}
 			else {
-				c = new idAFConstraint_Slider( fc->name, body1, body2 );
+				c = new (TAG_PHYSICS_AF) idAFConstraint_Slider( fc->name, body1, body2 );
 				physicsObj.AddConstraint( c );
 			}
 			c->SetAxis( fc->axis.ToVec3() );
@@ -731,7 +731,7 @@ bool idAF::LoadConstraint( const idDeclAF_Constraint *fc ) {
 				c->SetBody2( body2 );
 			}
 			else {
-				c = new idAFConstraint_Spring( fc->name, body1, body2 );
+				c = new (TAG_PHYSICS_AF) idAFConstraint_Spring( fc->name, body1, body2 );
 				physicsObj.AddConstraint( c );
 			}
 			c->SetAnchor( fc->anchor.ToVec3(), fc->anchor2.ToVec3() );
@@ -839,7 +839,7 @@ bool idAF::Load( idEntity *ent, const char *fileName ) {
 	physicsObj.SetSelfCollision( file->selfCollision );
 
 	// clear the list with transforms from joints to bodies
-	jointMods.SetNum( 0, false );
+	jointMods.SetNum( 0 );
 
 	// clear the joint to body conversion list
 	jointBody.AssureSize( animator->NumJoints() );
@@ -865,8 +865,9 @@ bool idAF::Load( idEntity *ent, const char *fileName ) {
 	for ( i = 0; i < physicsObj.GetNumConstraints(); i++ ) {
 		idAFConstraint *constraint = physicsObj.GetConstraint( i );
 		for ( j = 0; j < file->constraints.Num(); j++ ) {
+			// idADConstraint enum is a superset of declADConstraint, so the cast is valid
 			if ( file->constraints[j]->name.Icmp( constraint->GetName() ) == 0 &&
-					file->constraints[j]->type == constraint->GetType() ) {
+					(constraintType_t)(file->constraints[j]->type) == constraint->GetType() ) {
 				break;
 			}
 		}
@@ -1171,13 +1172,13 @@ void idAF::AddBindConstraints() {
 		if ( type.Icmp( "fixed" ) == 0 ) {
 			idAFConstraint_Fixed *c;
 
-			c = new idAFConstraint_Fixed( name, body, NULL );
+			c = new (TAG_PHYSICS_AF) idAFConstraint_Fixed( name, body, NULL );
 			physicsObj.AddConstraint( c );
 		}
 		else if ( type.Icmp( "ballAndSocket" ) == 0 ) {
 			idAFConstraint_BallAndSocketJoint *c;
 
-			c = new idAFConstraint_BallAndSocketJoint( name, body, NULL );
+			c = new (TAG_PHYSICS_AF) idAFConstraint_BallAndSocketJoint( name, body, NULL );
 			physicsObj.AddConstraint( c );
 			lexer.ReadToken( &jointName );
 
@@ -1192,7 +1193,7 @@ void idAF::AddBindConstraints() {
 		else if ( type.Icmp( "universal" ) == 0 ) {
 			idAFConstraint_UniversalJoint *c;
 
-			c = new idAFConstraint_UniversalJoint( name, body, NULL );
+			c = new (TAG_PHYSICS_AF) idAFConstraint_UniversalJoint( name, body, NULL );
 			physicsObj.AddConstraint( c );
 			lexer.ReadToken( &jointName );
 

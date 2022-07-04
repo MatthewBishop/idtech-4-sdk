@@ -24,6 +24,13 @@ const int	DEFAULT_FLY_OFFSET			= 68;
 #define ATTACK_ON_ACTIVATE		2
 #define ATTACK_ON_SIGHT			4
 
+typedef struct ballistics_s {
+	float				angle;		// angle in degrees in the range [-180, 180]
+	float				time;		// time it takes before the projectile arrives
+} ballistics_t;
+
+extern int Ballistics( const idVec3 &start, const idVec3 &end, float speed, float gravity, ballistics_t bal[2] );
+
 // defined in script/ai_base.script.  please keep them up to date.
 typedef enum {
 	MOVETYPE_DEAD,
@@ -118,12 +125,10 @@ extern const idEventDef AI_MuzzleFlash;
 extern const idEventDef AI_CreateMissile;
 extern const idEventDef AI_AttackMissile;
 extern const idEventDef AI_FireMissileAtTarget;
-#ifdef _D3XP
 extern const idEventDef AI_LaunchProjectile;
 extern const idEventDef AI_TriggerFX;
 extern const idEventDef AI_StartEmitter;
 extern const idEventDef AI_StopEmitter;
-#endif
 extern const idEventDef AI_AttackMelee;
 extern const idEventDef AI_DirectDamage;
 extern const idEventDef AI_JumpFrame;
@@ -147,13 +152,11 @@ typedef struct particleEmitter_s {
 	jointHandle_t		joint;
 } particleEmitter_t;
 
-#ifdef _D3XP
 typedef struct funcEmitter_s {
 	char				name[64];
 	idFuncEmitter*		particle;
 	jointHandle_t		joint;
 } funcEmitter_t;
-#endif
 
 class idMoveState {
 public:
@@ -258,9 +261,7 @@ public:
 							// Finds the best collision free trajectory for a clip model.
 	static bool				PredictTrajectory( const idVec3 &firePos, const idVec3 &target, float projectileSpeed, const idVec3 &projGravity, const idClipModel *clip, int clipmask, float max_height, const idEntity *ignore, const idEntity *targetEntity, int drawtime, idVec3 &aimDir );
 
-#ifdef _D3XP
 	virtual void			Gib( const idVec3 &dir, const char *damageDefName );
-#endif
 
 protected:
 	// navigation
@@ -314,7 +315,7 @@ protected:
 	int						lastAttackTime;
 	float					melee_range;
 	float					projectile_height_to_distance_ratio;	// calculates the maximum height a projectile can be thrown
-	idList<idVec3>			missileLaunchOffset;
+	idList<idVec3, TAG_AI>			missileLaunchOffset;
 
 	const idDict *			projectileDef;
 	mutable idClipModel		*projectileClipModel;
@@ -324,6 +325,7 @@ protected:
 	idVec3					projectileGravity;
 	idEntityPtr<idProjectile> projectile;
 	idStr					attack;
+	idVec3					homingMissileGoal;
 
 	// chatter/talking
 	const idSoundShader		*chat_snd;
@@ -348,8 +350,8 @@ protected:
 	idAngles				destLookAng;
 	idAngles				lookMin;
 	idAngles				lookMax;
-	idList<jointHandle_t>	lookJoints;
-	idList<idAngles>		lookJointAngles;
+	idList<jointHandle_t, TAG_AI>	lookJoints;
+	idList<idAngles, TAG_AI>		lookJointAngles;
 	float					eyeVerticalOffset;
 	float					eyeHorizontalOffset;
 	float					eyeFocusRate;
@@ -357,12 +359,9 @@ protected:
 	int						focusAlignTime;
 
 	// special fx
-	float					shrivel_rate;
-	int						shrivel_start;
-	
 	bool					restartParticles;			// should smoke emissions restart
 	bool					useBoneAxis;				// use the bone vs the model axis
-	idList<particleEmitter_t> particles;				// particle data
+	idList<particleEmitter_t, TAG_AI> particles;				// particle data
 
 	renderLight_t			worldMuzzleFlash;			// positioned on world weapon bone
 	int						worldMuzzleFlashHandle;
@@ -384,13 +383,11 @@ protected:
 	idVec3					lastReachableEnemyPos;
 	bool					wakeOnFlashlight;
 
-#ifdef _D3XP
 	bool					spawnClearMoveables;
 
 	idHashTable<funcEmitter_t> funcEmitters;
 
 	idEntityPtr<idHarvestable>	harvestEnt;
-#endif
 
 	// script variables
 	idScriptBool			AI_TALK;
@@ -421,7 +418,9 @@ protected:
 	virtual	void			DormantEnd();		// called when entity wakes from being dormant
 	void					Think();
 	void					Activate( idEntity *activator );
+public:
 	int						ReactionTo( const idEntity *ent );
+protected:
 	bool					CheckForEnemy();
 	void					EnemyDead();
 	virtual bool			CanPlayChatterSounds() const;
@@ -522,12 +521,10 @@ protected:
 	void					UpdateParticles();
 	void					TriggerParticles( const char *jointName );
 
-#ifdef _D3XP
 	void					TriggerFX( const char* joint, const char* fx );
 	idEntity*				StartEmitter( const char* name, const char* joint, const char* particle );
 	idEntity*				GetEmitter( const char* name );
 	void					StopEmitter( const char* name );
-#endif
 
 	// AI script state management
 	void					LinkScriptVariables();
@@ -550,9 +547,9 @@ protected:
 	void					Event_AttackMissile( const char *jointname );
 	void					Event_FireMissileAtTarget( const char *jointname, const char *targetname );
 	void					Event_LaunchMissile( const idVec3 &muzzle, const idAngles &ang );
-#ifdef _D3XP
+	void					Event_LaunchHomingMissile();
+	void					Event_SetHomingMissileGoal();
 	void					Event_LaunchProjectile( const char *entityDefName );
-#endif
 	void					Event_AttackMelee( const char *meleeDefName );
 	void					Event_DirectDamage( idEntity *damageTarget, const char *damageDefName );
 	void					Event_RadiusDamageFromJoint( const char *jointname, const char *damageDefName );
@@ -614,7 +611,6 @@ protected:
 	void					Event_TestMoveToPosition( const idVec3 &position );
 	void					Event_TestMeleeAttack();
 	void					Event_TestAnimAttack( const char *animname );
-	void					Event_Shrivel( float shirvel_time );
 	void					Event_Burn();
 	void					Event_PreBurn();
 	void					Event_ClearBurn();
@@ -650,6 +646,7 @@ protected:
 	void					Event_ThrowAF();
 	void					Event_SetAngles( idAngles const &ang );
 	void					Event_GetAngles();
+	void					Event_GetTrajectoryToPlayer();
 	void					Event_RealKill();
 	void					Event_Kill();
 	void					Event_WakeOnFlashlight( int enable );
@@ -667,7 +664,6 @@ protected:
 	void 					Event_CanReachEntity( idEntity *ent );
 	void					Event_CanReachEnemy();
 	void					Event_GetReachableEntityPosition( idEntity *ent );
-#ifdef _D3XP
 	void					Event_MoveToPositionDirect( const idVec3 &pos );
 	void					Event_AvoidObstacles( int ignore);
 	void					Event_TriggerFX( const char* joint, const char* fx );
@@ -675,7 +671,6 @@ protected:
 	void					Event_StartEmitter( const char* name, const char* joint, const char* particle );
 	void					Event_GetEmitter( const char* name );
 	void					Event_StopEmitter( const char* name );
-#endif
 };
 
 class idCombatNode : public idEntity {

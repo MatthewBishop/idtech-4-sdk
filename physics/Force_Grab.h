@@ -3,7 +3,6 @@
 #ifndef __FORCE_GRAB_H__
 #define __FORCE_GRAB_H__
 
-#ifdef _D3XP
 
 /*
 ===============================================================================
@@ -51,5 +50,4 @@ private:
 	int					id;				// clip model id of physics object
 };
 
-#endif /* _D3XP */
 #endif /* !__FORCE_GRAB_H__ */

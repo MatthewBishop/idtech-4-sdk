@@ -22,8 +22,9 @@ move around it to view it from different angles.
 =============================================================================
 */
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
+
 
 #include "../Game_local.h"
 
@@ -339,7 +340,7 @@ void idTestModel::Think() {
 		physicsObj.SetAngularExtrapolation( extrapolation_t(EXTRAPOLATION_LINEAR|EXTRAPOLATION_NOSTOP), gameLocal.time, 0, ang, idAngles( 0, g_testModelRotate.GetFloat() * 360.0f / 60.0f, 0 ), ang_zero );
 
 		idClipModel *clip = physicsObj.GetClipModel();
-		if ( clip && animator.ModelDef() ) {
+		if ( clip != NULL && animator.ModelDef() ) {
 			idVec3 neworigin;
 			idMat3 axis;
 			jointHandle_t joint;
@@ -418,7 +419,6 @@ void idTestModel::PrevAnim( const idCmdArgs &args ) {
 		return;
 	}
 
-	headAnim = 0;
 	anim--;
 	if ( anim < 0 ) {
 		anim = animator.NumAnims() - 1;
@@ -510,23 +510,7 @@ void idTestModel::TestAnim( const idCmdArgs &args ) {
 	newanim = NULL;
 
 	name = args.Argv( 1 );
-#if 0
-	if ( strstr( name, ".ma" ) || strstr( name, ".mb" ) ) {
-		const idMD5Anim	*md5anims[ ANIM_MaxSyncedAnims ];
-		idModelExport exporter;
-		exporter.ExportAnim( name );
-		name.SetFileExtension( MD5_ANIM_EXT );
-		md5anims[ 0 ] = animationLib.GetAnim( name );
-		if ( md5anims[ 0 ] ) {
-			customAnim.SetAnim( animator.ModelDef(), name, name, 1, md5anims );
-			newanim = &customAnim;
-		}
-	} else {
-		animNum = animator.GetAnim( name );
-	}
-#else
 	animNum = animator.GetAnim( name );
-#endif
 
 	if ( !animNum ) {
 		gameLocal.Printf( "Animation '%s' not found.\n", name.c_str() );
@@ -741,16 +725,6 @@ void idTestModel::TestModel_f( const idCmdArgs &args ) {
 			if ( name[ 0 ] != '_' ) {
 				name.DefaultFileExtension( ".ase" );
 			} 
-			
-#ifndef _D3XP
-			// Maya ascii format is supported natively now
-			if ( strstr( name, ".ma" ) || strstr( name, ".mb" ) ) {
-				idModelExport exporter;
-				exporter.ExportModel( name );
-				name.SetFileExtension( MD5_MESH_EXT );
-			}
-#endif
-
 			if ( !renderModelManager->CheckModel( name ) ) {
 				gameLocal.Printf( "Can't register model\n" );
 				return;

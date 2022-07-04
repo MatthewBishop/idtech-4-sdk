@@ -45,6 +45,8 @@ public:	// common physics interface
 	const idBounds &		GetAbsBounds( int id = -1 ) const;
 
 	bool					Evaluate( int timeStepMSec, int endTimeMSec );
+	bool					Interpolate( const float fraction );
+	void					ResetInterpolationState( const idVec3 & origin, const idMat3 & axis );
 	void					UpdateTime( int endTimeMSec );
 	int						GetTime() const;
 
@@ -112,16 +114,16 @@ public:	// common physics interface
 	int						GetLinearEndTime() const;
 	int						GetAngularEndTime() const;
 
-	void					WriteToSnapshot( idBitMsgDelta &msg ) const;
-	void					ReadFromSnapshot( const idBitMsgDelta &msg );
+	void					WriteToSnapshot( idBitMsg &msg ) const;
+	void					ReadFromSnapshot( const idBitMsg &msg );
 
 protected:
 	idEntity *				self;					// entity using this physics object
 	int						clipMask;				// contents the physics object collides with
 	idVec3					gravityVector;			// direction and magnitude of gravity
 	idVec3					gravityNormal;			// normalized direction of gravity
-	idList<contactInfo_t>	contacts;				// contacts with other physics objects
-	idList<contactEntity_t>	contactEntities;		// entities touching this physics object
+	idList<contactInfo_t, TAG_IDLIB_LIST_PHYSICS>	contacts;				// contacts with other physics objects
+	idList<contactEntity_t, TAG_IDLIB_LIST_PHYSICS>	contactEntities;		// entities touching this physics object
 
 protected:
 							// add ground contacts for the clip model
@@ -135,5 +137,42 @@ protected:
 							// draw linear and angular velocity
 	void					DrawVelocity( int id, float linearScale, float angularScale ) const;
 };
+
+/*
+===============================================================================
+Physics interpolation state
+===============================================================================
+*/
+struct physicsInterpolationState_t {
+	physicsInterpolationState_t():
+		origin( 0.0f, 0.0f, 0.0f ),
+		axis( 0.0f, 0.0f, 0.0f, 1.0f ) {
+	}
+
+	idVec3			origin;
+	idQuat			axis;
+};
+
+/*
+================
+Sets the origin and axis members of stateToUpdate based on previous, next, and the fraction.
+Return true if the origin or axis changed, false if they haven't.
+================
+*/
+template< class _stateType_ >
+bool InterpolatePhysicsState( _stateType_ & stateToUpdate,
+							  const physicsInterpolationState_t & previous,
+							  const physicsInterpolationState_t & next,
+							  const float fraction ) {
+	const idVec3 oldOrigin = stateToUpdate.origin;
+	const idMat3 oldAxis = stateToUpdate.axis;
+
+	stateToUpdate.origin = Lerp( previous.origin, next.origin, fraction );
+
+	const idQuat currentQuat = Slerp( previous.axis, next.axis, fraction );
+	stateToUpdate.axis = currentQuat.ToMat3();
+
+	return ( stateToUpdate.origin != oldOrigin || stateToUpdate.axis != oldAxis );
+}
 
 #endif /* !__PHYSICS_BASE_H__ */

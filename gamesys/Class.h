@@ -85,7 +85,7 @@ incorrect.  Use this on concrete classes only.
 	idTypeInfo nameofclass::Type( #nameofclass, #nameofsuperclass,									\
 		( idEventFunc<idClass> * )nameofclass::eventCallbacks,	nameofclass::CreateInstance, ( void ( idClass::* )() )&nameofclass::Spawn,	\
 		( void ( idClass::* )( idSaveGame * ) const )&nameofclass::Save, ( void ( idClass::* )( idRestoreGame * ) )&nameofclass::Restore );	\
-	idClass *nameofclass::CreateInstance() {													\
+	idClass *nameofclass::CreateInstance() {														\
 		try {																						\
 			nameofclass *ptr = new nameofclass;														\
 			ptr->FindUninitializedMemory();															\
@@ -95,7 +95,7 @@ incorrect.  Use this on concrete classes only.
 			return NULL;																			\
 		}																							\
 	}																								\
-	idTypeInfo *nameofclass::GetType() const {												\
+	idTypeInfo *nameofclass::GetType() const {														\
 		return &( nameofclass::Type );																\
 	}																								\
 idEventFunc<nameofclass> nameofclass::eventCallbacks[] = {
@@ -149,16 +149,8 @@ class idClass {
 public:
 	ABSTRACT_PROTOTYPE( idClass );
 
-#ifdef ID_REDIRECT_NEWDELETE
-#undef new
-#endif
 	void *						operator new( size_t );
-	void *						operator new( size_t s, int, int, char *, int );
 	void						operator delete( void * );
-	void						operator delete( void *, int, int, char *, int );
-#ifdef ID_REDIRECT_NEWDELETE
-#define new ID_DEBUG_NEW
-#endif
 
 	virtual						~idClass();
 
@@ -229,8 +221,8 @@ private:
 	void						Event_SafeRemove();
 
 	static bool					initialized;
-	static idList<idTypeInfo *>	types;
-	static idList<idTypeInfo *>	typenums;
+	static idList<idTypeInfo *, TAG_IDCLASS>	types;
+	static idList<idTypeInfo *, TAG_IDCLASS>	typenums;
 	static int					typeNumBits;
 	static int					memused;
 	static int					numobjects;

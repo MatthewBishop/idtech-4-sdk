@@ -9,16 +9,17 @@ Save game related helper classes.
 
 */
 
-const int INITIAL_RELEASE_BUILD_NUMBER = 1262;
-
 class idSaveGame {
 public:
-							idSaveGame( idFile *savefile );
+							idSaveGame( idFile *savefile, idFile *stringFile, int inVersion );
 							~idSaveGame();
 
 	void					Close();
 
+	void					WriteDecls();
+	
 	void					AddObject( const idClass *obj );
+	void					Resize( const int count ) { objects.Resize( count ); }
 	void					WriteObjectList();
 
 	void					Write( const void *buffer, int len );
@@ -62,24 +63,43 @@ public:
 
 	void					WriteBuildNumber( const int value );
 
+	int						GetBuildNumber() const { return version; }
+
+	int						GetCurrentSaveSize() const { return file->Length(); }
+
 private:
 	idFile *				file;
+	idFile *				stringFile;
+	idCompressor *			compressor;
 
 	idList<const idClass *>	objects;
+	int						version;
 
 	void					CallSave_r( const idTypeInfo *cls, const idClass *obj );
+
+	struct stringTableIndex_s {
+		idStr		string;
+		int			offset;
+	};
+
+	idHashIndex						stringHash;
+	idList< stringTableIndex_s >	stringTable;
+	int								curStringTableOffset;
+
 };
 
 class idRestoreGame {
 public:
-							idRestoreGame( idFile *savefile );
+							idRestoreGame( idFile * savefile, idFile * stringTableFile, int saveVersion );
 							~idRestoreGame();
+
+	void					ReadDecls();
 
 	void					CreateObjects();
 	void					RestoreObjects();
 	void					DeleteObjects();
 
-	void					Error( const char *fmt, ... ) id_attribute((format(printf,2,3)));
+	void					Error( VERIFY_FORMAT_STRING const char *fmt, ... );
 
 	void					Read( void *buffer, int len );
 	void					ReadInt( int &value );
@@ -120,17 +140,15 @@ public:
 	void					ReadClipModel( idClipModel *&clipModel );
 	void					ReadSoundCommands();
 
-	void					ReadBuildNumber();
-
 	//						Used to retrieve the saved game buildNumber from within class Restore methods
-	int						GetBuildNumber();
+	int						GetBuildNumber() const { return version; }
 
 private:
-	int						buildNumber;
-
-	idFile *				file;
-
-	idList<idClass *>		objects;
+	idFile *		file;
+	idFile *		stringFile;
+	idList<idClass *, TAG_SAVEGAMES>		objects;
+	int						version;
+	int						stringTableOffset;
 
 	void					CallRestore_r( const idTypeInfo *cls, idClass *obj );
 };

@@ -1,7 +1,7 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
 
 #include "../Game_local.h"
 
@@ -81,6 +81,7 @@ monsterMoveResult_t idPhysics_Monster::SlideMove( idVec3 &start, idVec3 &velocit
 		}
 
 		if ( tr.c.entityNum != ENTITYNUM_NONE ) {
+			assert( tr.c.entityNum < MAX_GENTITIES );
 			blockingEntity = gameLocal.entities[ tr.c.entityNum ];
 		} 
 		
@@ -740,7 +741,7 @@ const int	MONSTER_VELOCITY_MANTISSA_BITS	= MONSTER_VELOCITY_TOTAL_BITS - 1 - MON
 idPhysics_Monster::WriteToSnapshot
 ================
 */
-void idPhysics_Monster::WriteToSnapshot( idBitMsgDelta &msg ) const {
+void idPhysics_Monster::WriteToSnapshot( idBitMsg &msg ) const {
 	msg.WriteFloat( current.origin[0] );
 	msg.WriteFloat( current.origin[1] );
 	msg.WriteFloat( current.origin[2] );
@@ -762,7 +763,7 @@ void idPhysics_Monster::WriteToSnapshot( idBitMsgDelta &msg ) const {
 idPhysics_Monster::ReadFromSnapshot
 ================
 */
-void idPhysics_Monster::ReadFromSnapshot( const idBitMsgDelta &msg ) {
+void idPhysics_Monster::ReadFromSnapshot( const idBitMsg &msg ) {
 	current.origin[0] = msg.ReadFloat();
 	current.origin[1] = msg.ReadFloat();
 	current.origin[2] = msg.ReadFloat();

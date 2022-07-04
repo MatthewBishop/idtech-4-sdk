@@ -135,10 +135,8 @@ public:
 	void				Spawn();
 	void				Killed( idEntity *inflictor, idEntity *attacker, int damage, const idVec3 &dir, int location );
 
-#ifdef _D3XP
 	virtual void		Hide();
 	virtual void		Show();
-#endif
 
 private:
 	int					count;
@@ -216,7 +214,7 @@ public:
 	void				Spawn();
 
 	virtual void		Think();
-
+	virtual void		ClientThink( const int curTime, const float fraction, const bool predict ) ;
 private:
 	idForce_Field		forceField;
 
@@ -259,6 +257,7 @@ private:
 	jointHandle_t			soundJoint;
 	idEntityPtr<idEntity>	activator;
 	bool					activated;
+	int						achievement;
 
 	void					PlayNextAnim();
 
@@ -269,10 +268,8 @@ private:
 	void					Event_Footstep();
 	void					Event_LaunchMissiles( const char *projectilename, const char *sound, const char *launchjoint, const char *targetjoint, int numshots, int framedelay );
 	void					Event_LaunchMissilesUpdate( int launchjoint, int targetjoint, int numshots, int framedelay );
-#ifdef _D3XP
 	void					Event_SetAnimation( const char *animName );
 	void					Event_GetAnimationLength();
-#endif
 };
 
 
@@ -300,8 +297,8 @@ public:
 	void				Fade( const idVec4 &to, float fadeTime );
 	virtual void		Think();
 
-	virtual void		WriteToSnapshot( idBitMsgDelta &msg ) const;
-	virtual void		ReadFromSnapshot( const idBitMsgDelta &msg );
+	virtual void		WriteToSnapshot( idBitMsg &msg ) const;
+	virtual void		ReadFromSnapshot( const idBitMsg &msg );
 
 private:
 	void				Event_Activate( idEntity *activator );
@@ -336,11 +333,47 @@ public:
 	void				Spawn();
 	void				Event_Activate( idEntity *activator );
 
-	virtual void		WriteToSnapshot( idBitMsgDelta &msg ) const;
-	virtual void		ReadFromSnapshot( const idBitMsgDelta &msg );
+	virtual void		WriteToSnapshot( idBitMsg &msg ) const;
+	virtual void		ReadFromSnapshot( const idBitMsg &msg );
 
 private:
 	bool				hidden;
+
+};
+
+
+/*
+===============================================================================
+
+idFuncShootProjectile
+
+===============================================================================
+*/
+
+class idFuncShootProjectile : public idStaticEntity {
+public:
+	CLASS_PROTOTYPE( idFuncShootProjectile );
+
+	idFuncShootProjectile();
+
+	void						Save( idSaveGame *savefile ) const;
+	void						Restore( idRestoreGame *savefile );
+
+	void						Spawn();
+	void						Event_Activate( idEntity *activator );
+
+	virtual void				Think();
+
+	virtual void				WriteToSnapshot( idBitMsg &msg ) const;
+	virtual void				ReadFromSnapshot( const idBitMsg &msg );
+
+private:
+	int							mRespawnDelay;
+	int							mRespawnTime;
+	float						mShootSpeed;
+	idVec3						mShootDir;
+	idStr						mEntityDefName;
+	idEntityPtr< idEntity >		mLastProjectile;
 
 };
 
@@ -502,8 +535,8 @@ public:
 
 	virtual void		Show();
 
-	virtual void		WriteToSnapshot( idBitMsgDelta &msg ) const;
-	virtual void		ReadFromSnapshot( const idBitMsgDelta &msg );
+	virtual void		WriteToSnapshot( idBitMsg &msg ) const;
+	virtual void		ReadFromSnapshot( const idBitMsg &msg );
 
 private:
 	void				Event_MatchTarget();
@@ -745,7 +778,6 @@ private:
 	idList<idVec3>		lastTargetPos;
 };
 
-#ifdef _D3XP
 /*
 ===============================================================================
 
@@ -866,6 +898,5 @@ public:
 	void				Event_Activate( idEntity *activator );
 };
 
-#endif /* _D3XP */
 
 #endif /* !__GAME_MISC_H__ */

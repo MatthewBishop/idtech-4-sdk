@@ -32,9 +32,7 @@ typedef struct singleSmoke_s {
 	idRandom					random;
 	idVec3						origin;
 	idMat3						axis;
-#ifdef _D3XP
 	int							timeGroup;
-#endif
 } singleSmoke_t;
 
 typedef struct {
@@ -67,7 +65,7 @@ private:
 	static const int			MAX_SMOKE_PARTICLES = 10000;
 	singleSmoke_t				smokes[MAX_SMOKE_PARTICLES];
 
-	idList<activeSmokeStage_t>	activeStages;
+	idList<activeSmokeStage_t, TAG_PARTICLE>	activeStages;
 	singleSmoke_t *				freeSmokes;
 	int							numActiveSmokes;
 	int							currentParticleTime;	// don't need to recalculate if == view time

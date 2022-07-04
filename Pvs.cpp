@@ -103,12 +103,12 @@ void idPVS::CreatePVSData() {
 		return;
 	}
 
-	pvsPortals = new pvsPortal_t[numPortals];
-	pvsAreas = new pvsArea_t[numAreas];
+	pvsPortals = new (TAG_PVS) pvsPortal_t[numPortals];
+	pvsAreas = new (TAG_PVS) pvsArea_t[numAreas];
 	memset( pvsAreas, 0, numAreas * sizeof( *pvsAreas ) );
 
 	cp = 0;
-	portalPtrs = new pvsPortal_t*[numPortals];
+	portalPtrs = new (TAG_PVS) pvsPortal_t*[numPortals];
 
 	for ( i = 0; i < numAreas; i++ ) {
 
@@ -127,9 +127,9 @@ void idPVS::CreatePVSData() {
 			p->w = portal.w->Copy();
 			p->areaNum = portal.areas[1];	// area[1] is always the area the portal leads to
 
-			p->vis = new byte[portalVisBytes];
+			p->vis = new (TAG_PVS) byte[portalVisBytes];
 			memset( p->vis, 0, portalVisBytes );
-			p->mightSee = new byte[portalVisBytes];
+			p->mightSee = new (TAG_PVS) byte[portalVisBytes];
 			memset( p->mightSee, 0, portalVisBytes );
 			p->w->GetBounds( p->bounds );
 			p->w->GetPlane( p->plane );
@@ -557,7 +557,7 @@ void idPVS::CreatePassages() const {
 		source = &pvsPortals[i];
 		area = &pvsAreas[source->areaNum];
 
-		source->passages = new pvsPassage_t[area->numPortals];
+		source->passages = new (TAG_PVS) pvsPassage_t[area->numPortals];
 
 		for ( j = 0; j < area->numPortals; j++ ) {
 			target = area->portals[j];
@@ -573,7 +573,7 @@ void idPVS::CreatePassages() const {
 				continue;
 			}
 
-			passage->canSee = new byte[portalVisBytes];
+			passage->canSee = new (TAG_PVS) byte[portalVisBytes];
 			passageMemory += portalVisBytes;
 
 			// boundary plane normals point inwards
@@ -777,13 +777,13 @@ void idPVS::Init() {
 		return;
 	}
 
-	connectedAreas = new bool[numAreas];
-	areaQueue = new int[numAreas];
+	connectedAreas = new (TAG_PVS) bool[numAreas];
+	areaQueue = new (TAG_PVS) int[numAreas];
 
 	areaVisBytes = ( ((numAreas+31)&~31) >> 3);
 	areaVisLongs = areaVisBytes/sizeof(long);
 
-	areaPVS = new byte[numAreas * areaVisBytes];
+	areaPVS = new (TAG_PVS) byte[numAreas * areaVisBytes];
 	memset( areaPVS, 0xFF, numAreas * areaVisBytes );
 
 	numPortals = GetPortalCount();
@@ -794,7 +794,7 @@ void idPVS::Init() {
 	for ( int i = 0; i < MAX_CURRENT_PVS; i++ ) {
 		currentPVS[i].handle.i = -1;
 		currentPVS[i].handle.h = 0;
-		currentPVS[i].pvs = new byte[areaVisBytes];
+		currentPVS[i].pvs = new (TAG_PVS) byte[areaVisBytes];
 		memset( currentPVS[i].pvs, 0, areaVisBytes );
 	}
 
@@ -845,11 +845,9 @@ void idPVS::Shutdown() {
 		delete areaPVS;
 		areaPVS = NULL;
 	}
-	if ( currentPVS ) {
-		for ( int i = 0; i < MAX_CURRENT_PVS; i++ ) {
-			delete currentPVS[i].pvs;
-			currentPVS[i].pvs = NULL;
-		}
+	for ( int i = 0; i < MAX_CURRENT_PVS; i++ ) {
+		delete currentPVS[i].pvs;
+		currentPVS[i].pvs = NULL;
 	}
 }
 
@@ -1049,11 +1047,12 @@ idPVS::MergeCurrentPVS
 pvsHandle_t idPVS::MergeCurrentPVS( pvsHandle_t pvs1, pvsHandle_t pvs2 ) const {
 	int i;
 	long *pvs1Ptr, *pvs2Ptr, *ptr;
-	pvsHandle_t handle;
+	pvsHandle_t handle = { 0 };
 
 	if ( pvs1.i < 0 || pvs1.i >= MAX_CURRENT_PVS || pvs1.h != currentPVS[pvs1.i].handle.h ||
 		pvs2.i < 0 || pvs2.i >= MAX_CURRENT_PVS || pvs2.h != currentPVS[pvs2.i].handle.h ) {
 		gameLocal.Error( "idPVS::MergeCurrentPVS: invalid handle" );
+		return handle;
 	}
 
 	handle = AllocCurrentPVS( pvs1.h ^ pvs2.h );
@@ -1101,6 +1100,7 @@ idPVS::FreeCurrentPVS
 void idPVS::FreeCurrentPVS( pvsHandle_t handle ) const {
 	if ( handle.i < 0 || handle.i >= MAX_CURRENT_PVS || handle.h != currentPVS[handle.i].handle.h ) {
 		gameLocal.Error( "idPVS::FreeCurrentPVS: invalid handle" );
+		return;
 	}
 	currentPVS[handle.i].handle.i = -1;
 }
@@ -1115,7 +1115,8 @@ bool idPVS::InCurrentPVS( const pvsHandle_t handle, const idVec3 &target ) const
 
 	if ( handle.i < 0 || handle.i >= MAX_CURRENT_PVS ||
 		handle.h != currentPVS[handle.i].handle.h ) {
-		gameLocal.Error( "idPVS::InCurrentPVS: invalid handle" );
+		gameLocal.Warning( "idPVS::InCurrentPVS: invalid handle" );
+		return false;
 	}
 
 	targetArea = gameRenderWorld->PointInArea( target );
@@ -1137,7 +1138,8 @@ bool idPVS::InCurrentPVS( const pvsHandle_t handle, const idBounds &target ) con
 
 	if ( handle.i < 0 || handle.i >= MAX_CURRENT_PVS ||
 		handle.h != currentPVS[handle.i].handle.h ) {
-		gameLocal.Error( "idPVS::InCurrentPVS: invalid handle" );
+		gameLocal.Warning( "idPVS::InCurrentPVS: invalid handle" );
+		return false;
 	}
 
 	numTargetAreas = gameRenderWorld->BoundsInAreas( target, targetAreas, MAX_BOUNDS_AREAS );
@@ -1159,7 +1161,8 @@ bool idPVS::InCurrentPVS( const pvsHandle_t handle, const int targetArea ) const
 
 	if ( handle.i < 0 || handle.i >= MAX_CURRENT_PVS ||
 		handle.h != currentPVS[handle.i].handle.h ) {
-		gameLocal.Error( "idPVS::InCurrentPVS: invalid handle" );
+		gameLocal.Warning( "idPVS::InCurrentPVS: invalid handle" );
+		return false;
 	}
 
 	if ( targetArea < 0 || targetArea >= numAreas ) {
@@ -1179,7 +1182,8 @@ bool idPVS::InCurrentPVS( const pvsHandle_t handle, const int *targetAreas, int 
 
 	if ( handle.i < 0 || handle.i >= MAX_CURRENT_PVS ||
 		handle.h != currentPVS[handle.i].handle.h ) {
-		gameLocal.Error( "idPVS::InCurrentPVS: invalid handle" );
+		gameLocal.Warning( "idPVS::InCurrentPVS: invalid handle" );
+		return false;
 	}
 
 	for ( i = 0; i < numTargetAreas; i++ ) {
@@ -1319,6 +1323,7 @@ void idPVS::DrawCurrentPVS( const pvsHandle_t handle, const idVec3 &source ) con
 	if ( handle.i < 0 || handle.i >= MAX_CURRENT_PVS ||
 		handle.h != currentPVS[handle.i].handle.h ) {
 		gameLocal.Error( "idPVS::DrawCurrentPVS: invalid handle" );
+		return;
 	}
 
 	sourceArea = gameRenderWorld->PointInArea( source );
@@ -1357,45 +1362,6 @@ void idPVS::DrawCurrentPVS( const pvsHandle_t handle, const idVec3 &source ) con
 	}
 }
 
-#if ASYNC_WRITE_PVS
-
-/*
-===================
-idPVS::WritePVS
-===================
-*/
-void idPVS::WritePVS( const pvsHandle_t handle, idBitMsg &msg ) {
-	msg.WriteData( currentPVS[ handle.i ].pvs, areaVisBytes );
-}
-
-/*
-===================
-idPVS::ReadPVS
-===================
-*/
-void idPVS::ReadPVS( const pvsHandle_t handle, const idBitMsg &msg ) {
-	byte	l_pvs[ 256 ];
-	int		i;
-
-	assert( areaVisBytes <= 256 );
-	msg.ReadData( l_pvs, areaVisBytes );
-	if ( memcmp( l_pvs, currentPVS[ handle.i ].pvs, areaVisBytes ) ) {
-		common->Printf( "PVS not matching ( %d areaVisBytes ) - server then client:\n", areaVisBytes );
-		for ( i = 0; i < areaVisBytes; i++ ) {
-			common->Printf( "%x ", l_pvs[ i ] );
-		}
-		common->Printf( "\n" );
-		for ( i = 0; i < areaVisBytes; i++ ) {
-			common->Printf( "%x ", currentPVS[ handle.i ].pvs[ i ] );
-		}
-		common->Printf( "\n" );
-	}
-}
-
-#endif
-
-
-#ifdef _D3XP
 /*
 ================
 idPVS::CheckAreasForPortalSky
@@ -1427,4 +1393,3 @@ bool idPVS::CheckAreasForPortalSky( const pvsHandle_t handle, const idVec3 &orig
 
 	return false;
 }
-#endif

@@ -684,10 +684,10 @@ private:
 							// properties
 	idStr					name;						// name of body
 	idAFBody *				parent;						// parent of this body
-	idList<idAFBody *>		children;					// children of this body
+	idList<idAFBody *, TAG_IDLIB_LIST_PHYSICS>		children;					// children of this body
 	idClipModel *			clipModel;					// model used for collision detection
 	idAFConstraint *		primaryConstraint;			// primary constraint (this->constraint->body1 = this)
-	idList<idAFConstraint *>constraints;				// all constraints attached to this body
+	idList<idAFConstraint *, TAG_IDLIB_LIST_PHYSICS>constraints;				// all constraints attached to this body
 	idAFTree *				tree;						// tree structure this body is part of
 	float					linearFriction;				// translational friction
 	float					angularFriction;			// rotational friction
@@ -759,7 +759,7 @@ public:
 	void					DebugDraw( const idVec4 &color ) const;
 
 private:
-	idList<idAFBody *>		sortedBodies;
+	idList<idAFBody *, TAG_IDLIB_LIST_PHYSICS>		sortedBodies;
 };
 
 
@@ -926,20 +926,20 @@ public:	// common physics interface
 
 	void					SetMaster( idEntity *master, const bool orientated = true );
 
-	void					WriteToSnapshot( idBitMsgDelta &msg ) const;
-	void					ReadFromSnapshot( const idBitMsgDelta &msg );
+	void					WriteToSnapshot( idBitMsg &msg ) const;
+	void					ReadFromSnapshot( const idBitMsg &msg );
 
 private:
 							// articulated figure
-	idList<idAFTree *>		trees;							// tree structures
-	idList<idAFBody *>		bodies;							// all bodies
-	idList<idAFConstraint *>constraints;					// all frame independent constraints
-	idList<idAFConstraint *>primaryConstraints;				// list with primary constraints
-	idList<idAFConstraint *>auxiliaryConstraints;			// list with auxiliary constraints
-	idList<idAFConstraint *>frameConstraints;				// constraints that only live one frame
-	idList<idAFConstraint_Contact *>contactConstraints;		// contact constraints
-	idList<int>				contactBodies;					// body id for each contact
-	idList<AFCollision_t>	collisions;						// collisions
+	idList<idAFTree *, TAG_IDLIB_LIST_PHYSICS>		trees;							// tree structures
+	idList<idAFBody *, TAG_IDLIB_LIST_PHYSICS>		bodies;							// all bodies
+	idList<idAFConstraint *, TAG_IDLIB_LIST_PHYSICS>constraints;					// all frame independent constraints
+	idList<idAFConstraint *, TAG_IDLIB_LIST_PHYSICS>primaryConstraints;				// list with primary constraints
+	idList<idAFConstraint *, TAG_IDLIB_LIST_PHYSICS>auxiliaryConstraints;			// list with auxiliary constraints
+	idList<idAFConstraint *, TAG_IDLIB_LIST_PHYSICS>frameConstraints;				// constraints that only live one frame
+	idList<idAFConstraint_Contact *, TAG_IDLIB_LIST_PHYSICS>contactConstraints;		// contact constraints
+	idList<int, TAG_IDLIB_LIST_PHYSICS>				contactBodies;					// body id for each contact
+	idList<AFCollision_t, TAG_IDLIB_LIST_PHYSICS>	collisions;						// collisions
 	bool					changedAF;						// true when the articulated figure just changed
 
 							// properties

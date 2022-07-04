@@ -53,7 +53,7 @@ class idRoutingObstacle {
 
 private:
 	idBounds					bounds;					// obstacle bounds
-	idList<int>					areas;					// areas the bounds are in
+	idList<int, TAG_AAS>					areas;					// areas the bounds are in
 };
 
 
@@ -110,7 +110,7 @@ private:	// routing data
 	mutable idRoutingCache *	cacheListStart;			// start of list with cache sorted from oldest to newest
 	mutable idRoutingCache *	cacheListEnd;			// end of list with cache sorted from oldest to newest
 	mutable int					totalCacheMemory;		// total cache memory used
-	idList<idRoutingObstacle *>	obstacleList;			// list with obstacles
+	idList<idRoutingObstacle *, TAG_AAS>	obstacleList;			// list with obstacles
 
 private:	// routing
 	bool						SetupRouting();

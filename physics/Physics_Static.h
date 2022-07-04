@@ -11,12 +11,33 @@
 ===============================================================================
 */
 
+class idBitMsg;
+
 typedef struct staticPState_s {
 	idVec3					origin;
 	idMat3					axis;
 	idVec3					localOrigin;
 	idMat3					localAxis;
 } staticPState_t;
+
+// Storing the state used for interpolation with quaternions
+// means I don't have to do a bunch of conversions between
+// idMat3s and idQuats every frame.
+struct staticInterpolatePState_t {
+	idVec3					origin;
+	idQuat					axis;
+	idVec3					localOrigin;
+	idQuat					localAxis;
+};
+
+/*
+================
+ReadStaticInterpolatePStateFromSnapshot
+================
+*/
+staticInterpolatePState_t ReadStaticInterpolatePStateFromSnapshot( const idBitMsg & msg );
+staticPState_s	ConvertInterpolateStateToPState( const staticInterpolatePState_t & interpolateState  );
+staticInterpolatePState_t ConvertPStateToInterpolateState( const staticPState_t & state );
 
 class idPhysics_Static : public idPhysics {
 
@@ -49,6 +70,8 @@ public:	// common physics interface
 	const idBounds &		GetAbsBounds( int id = -1 ) const;
 
 	bool					Evaluate( int timeStepMSec, int endTimeMSec );
+	bool					Interpolate( const float fraction );
+	void					ResetInterpolationState( const idVec3 & origin, const idMat3 & axis ) {}
 	void					UpdateTime( int endTimeMSec );
 	int						GetTime() const;
 
@@ -116,17 +139,25 @@ public:	// common physics interface
 	int						GetLinearEndTime() const;
 	int						GetAngularEndTime() const;
 
-	void					WriteToSnapshot( idBitMsgDelta &msg ) const;
-	void					ReadFromSnapshot( const idBitMsgDelta &msg );
+	void					WriteToSnapshot( idBitMsg &msg ) const;
+	void					ReadFromSnapshot( const idBitMsg &msg );
 
 protected:
 	idEntity *				self;					// entity using this physics object
 	staticPState_t			current;				// physics state
 	idClipModel *			clipModel;				// collision model
+	
+	// Used for client-side interpolation
+	staticInterpolatePState_t	previous;
+	staticInterpolatePState_t	next;
 
 	// master
 	bool					hasMaster;
 	bool					isOrientated;
 };
+
+staticPState_t InterpolateStaticPState( const staticInterpolatePState_t & previous,
+										const staticInterpolatePState_t & next,
+										float fraction );
 
 #endif /* !__PHYSICS_STATIC_H__ */

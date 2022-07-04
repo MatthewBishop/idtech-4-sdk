@@ -1,7 +1,7 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
 
 #include "../Game_local.h"
 
@@ -54,7 +54,7 @@ idPhysics_RigidBody::Integrate
   Calculate next state from the current state using an integrator.
 ================
 */
-void idPhysics_RigidBody::Integrate( float deltaTime, rigidBodyPState_t &next ) {
+void idPhysics_RigidBody::Integrate( float deltaTime, rigidBodyPState_t &next_ ) {
 	idVec3 position;
 
 	position = current.i.position;
@@ -62,19 +62,19 @@ void idPhysics_RigidBody::Integrate( float deltaTime, rigidBodyPState_t &next ) 
 
 	current.i.orientation.TransposeSelf();
 
-	integrator->Evaluate( (float *) &current.i, (float *) &next.i, 0, deltaTime );
-	next.i.orientation.OrthoNormalizeSelf();
+	integrator->Evaluate( (float *) &current.i, (float *) &next_.i, 0, deltaTime );
+	next_.i.orientation.OrthoNormalizeSelf();
 
 	// apply gravity
-	next.i.linearMomentum += deltaTime * gravityVector * mass;
+	next_.i.linearMomentum += deltaTime * gravityVector * mass;
 
 	current.i.orientation.TransposeSelf();
-	next.i.orientation.TransposeSelf();
+	next_.i.orientation.TransposeSelf();
 
 	current.i.position = position;
-	next.i.position -= centerOfMass * next.i.orientation;
+	next_.i.position -= centerOfMass * next_.i.orientation;
 
-	next.atRest = current.atRest;
+	next_.atRest = current.atRest;
 }
 
 /*
@@ -143,7 +143,7 @@ idPhysics_RigidBody::CheckForCollisions
   If there is a collision the next state is set to the state at the moment of impact.
 ================
 */
-bool idPhysics_RigidBody::CheckForCollisions( const float deltaTime, rigidBodyPState_t &next, trace_t &collision ) {
+bool idPhysics_RigidBody::CheckForCollisions( const float deltaTime, rigidBodyPState_t &next_, trace_t &collision ) {
 //#define TEST_COLLISION_DETECTION
 	idMat3 axis;
 	idRotation rotation;
@@ -156,22 +156,22 @@ bool idPhysics_RigidBody::CheckForCollisions( const float deltaTime, rigidBodyPS
 	}
 #endif
 
-	TransposeMultiply( current.i.orientation, next.i.orientation, axis );
+	TransposeMultiply( current.i.orientation, next_.i.orientation, axis );
 	rotation = axis.ToRotation();
 	rotation.SetOrigin( current.i.position );
 
 	// if there was a collision
-	if ( gameLocal.clip.Motion( collision, current.i.position, next.i.position, rotation, clipModel, current.i.orientation, clipMask, self ) ) {
+	if ( gameLocal.clip.Motion( collision, current.i.position, next_.i.position, rotation, clipModel, current.i.orientation, clipMask, self ) ) {
 		// set the next state to the state at the moment of impact
-		next.i.position = collision.endpos;
-		next.i.orientation = collision.endAxis;
-		next.i.linearMomentum = current.i.linearMomentum;
-		next.i.angularMomentum = current.i.angularMomentum;
+		next_.i.position = collision.endpos;
+		next_.i.orientation = collision.endAxis;
+		next_.i.linearMomentum = current.i.linearMomentum;
+		next_.i.angularMomentum = current.i.angularMomentum;
 		collided = true;
 	}
 
 #ifdef TEST_COLLISION_DETECTION
-	if ( gameLocal.clip.Contents( next.i.position, clipModel, next.i.orientation, clipMask, self ) ) {
+	if ( gameLocal.clip.Contents( next.i.position, clipModel, next_.i.orientation, clipMask, self ) ) {
 		if ( !startsolid ) {
 			int bah = 1;
 		}
@@ -414,10 +414,8 @@ idPhysics_RigidBody::idPhysics_RigidBody() {
 	SetFriction( 0.6f, 0.6f, 0.0f );
 	clipModel = NULL;
 
-	memset( &current, 0, sizeof( current ) );
-
 	current.atRest = -1;
-	current.lastTimeStep = USERCMD_MSEC;
+	current.lastTimeStep = 0.0f;
 
 	current.i.position.Zero();
 	current.i.orientation.Identity();
@@ -434,7 +432,7 @@ idPhysics_RigidBody::idPhysics_RigidBody() {
 	inverseInertiaTensor.Identity();
 
 	// use the least expensive euler integrator
-	integrator = new idODE_Euler( sizeof(rigidBodyIState_t) / sizeof(float), RigidBodyDerivatives, this );
+	integrator = new (TAG_PHYSICS) idODE_Euler( sizeof(rigidBodyIState_t) / sizeof(float), RigidBodyDerivatives, this );
 
 	dropToFloor = false;
 	noImpact = false;
@@ -589,7 +587,7 @@ void idPhysics_RigidBody::SetClipModel( idClipModel *model, const float density,
 	clipModel->GetMassProperties( density, mass, centerOfMass, inertiaTensor );
 
 	// check whether or not the clip model has valid mass properties
-	if ( mass <= 0.0f || FLOAT_IS_NAN( mass ) ) {
+	if ( mass <= 0.0f || IEEE_FLT_IS_NAN( mass ) ) {
 		gameLocal.Warning( "idPhysics_RigidBody::SetClipModel: invalid mass for entity '%s' type '%s'",
 							self->name.c_str(), self->GetType()->classname );
 		mass = 1.0f;
@@ -804,7 +802,7 @@ idPhysics_RigidBody::Evaluate
 ================
 */
 bool idPhysics_RigidBody::Evaluate( int timeStepMSec, int endTimeMSec ) {
-	rigidBodyPState_t next;
+	rigidBodyPState_t next_step;
 	idAngles angles;
 	trace_t collision;
 	idVec3 impulse;
@@ -861,24 +859,24 @@ bool idPhysics_RigidBody::Evaluate( int timeStepMSec, int endTimeMSec ) {
 
 	clipModel->Unlink();
 
-	next = current;
+	next_step = current;
 
 	// calculate next position and orientation
-	Integrate( timeStep, next );
+	Integrate( timeStep, next_step );
 
 #ifdef RB_TIMINGS
 	timer_collision.Start();
 #endif
 
 	// check for collisions from the current to the next state
-	collided = CheckForCollisions( timeStep, next, collision );
+	collided = CheckForCollisions( timeStep, next_step, collision );
 
 #ifdef RB_TIMINGS
 	timer_collision.Stop();
 #endif
 
 	// set the new state
-	current = next;
+	current = next_step;
 
 	if ( collided ) {
 		// apply collision impulse
@@ -969,6 +967,42 @@ bool idPhysics_RigidBody::Evaluate( int timeStepMSec, int endTimeMSec ) {
 #endif
 
 	return true;
+}
+
+/*
+================
+idPhysics_RigidBody::Interpolate
+
+  Simply interpolate between snapshots of the state of the rigid body
+  for MP clients.
+================
+*/
+bool idPhysics_RigidBody::Interpolate( const float fraction ) {
+	if ( !self ) {
+		return false;
+	}
+	
+	if ( self->GetInterpolationBehavior() == idEntity::USE_LATEST_SNAP_ONLY ) {
+		current = next;
+		return true;
+	} else if ( self->GetInterpolationBehavior() == idEntity::USE_INTERPOLATION ) {
+		current.i.position = Lerp( previous.i.position, next.i.position, fraction );
+		current.i.orientation = idQuat().Slerp( previous.i.orientation.ToQuat(), next.i.orientation.ToQuat(), fraction ).ToMat3();
+		current.i.linearMomentum = Lerp( previous.i.linearMomentum, next.i.linearMomentum, fraction );
+		return true;
+	}
+
+	return false;
+}
+
+/*
+================
+idPhysics_RigidBody::ResetInterpolationState
+================
+*/
+void idPhysics_RigidBody::ResetInterpolationState( const idVec3 & origin, const idMat3 & axis ) {
+	previous = current;
+	next = current;
 }
 
 /*
@@ -1331,7 +1365,7 @@ bool idPhysics_RigidBody::EvaluateContacts() {
 
 	ClearContacts();
 
-	contacts.SetNum( 10, false );
+	contacts.SetNum( 10 );
 
 	dir.SubVec3(0) = current.i.linearMomentum + current.lastTimeStep * gravityVector * mass;
 	dir.SubVec3(1) = current.i.angularMomentum;
@@ -1339,7 +1373,7 @@ bool idPhysics_RigidBody::EvaluateContacts() {
 	dir.SubVec3(1).Normalize();
 	num = gameLocal.clip.Contacts( &contacts[0], 10, clipModel->GetOrigin(),
 					dir, CONTACT_EPSILON, clipModel, clipModel->GetAxis(), clipMask, self );
-	contacts.SetNum( num, false );
+	contacts.SetNum( num );
 
 	AddContactEntitiesForContacts();
 
@@ -1430,13 +1464,11 @@ const int	RB_FORCE_MANTISSA_BITS		= RB_FORCE_TOTAL_BITS - 1 - RB_FORCE_EXPONENT_
 idPhysics_RigidBody::WriteToSnapshot
 ================
 */
-void idPhysics_RigidBody::WriteToSnapshot( idBitMsgDelta &msg ) const {
+void idPhysics_RigidBody::WriteToSnapshot( idBitMsg &msg ) const {
 	idCQuat quat, localQuat;
 
 	quat = current.i.orientation.ToCQuat();
-	localQuat = current.localAxis.ToCQuat();
 
-	msg.WriteLong( current.atRest );
 	msg.WriteFloat( current.i.position[0] );
 	msg.WriteFloat( current.i.position[1] );
 	msg.WriteFloat( current.i.position[2] );
@@ -1446,24 +1478,6 @@ void idPhysics_RigidBody::WriteToSnapshot( idBitMsgDelta &msg ) const {
 	msg.WriteFloat( current.i.linearMomentum[0], RB_MOMENTUM_EXPONENT_BITS, RB_MOMENTUM_MANTISSA_BITS );
 	msg.WriteFloat( current.i.linearMomentum[1], RB_MOMENTUM_EXPONENT_BITS, RB_MOMENTUM_MANTISSA_BITS );
 	msg.WriteFloat( current.i.linearMomentum[2], RB_MOMENTUM_EXPONENT_BITS, RB_MOMENTUM_MANTISSA_BITS );
-	msg.WriteFloat( current.i.angularMomentum[0], RB_MOMENTUM_EXPONENT_BITS, RB_MOMENTUM_MANTISSA_BITS );
-	msg.WriteFloat( current.i.angularMomentum[1], RB_MOMENTUM_EXPONENT_BITS, RB_MOMENTUM_MANTISSA_BITS );
-	msg.WriteFloat( current.i.angularMomentum[2], RB_MOMENTUM_EXPONENT_BITS, RB_MOMENTUM_MANTISSA_BITS );
-	msg.WriteDeltaFloat( current.i.position[0], current.localOrigin[0] );
-	msg.WriteDeltaFloat( current.i.position[1], current.localOrigin[1] );
-	msg.WriteDeltaFloat( current.i.position[2], current.localOrigin[2] );
-	msg.WriteDeltaFloat( quat.x, localQuat.x );
-	msg.WriteDeltaFloat( quat.y, localQuat.y );
-	msg.WriteDeltaFloat( quat.z, localQuat.z );
-	msg.WriteDeltaFloat( 0.0f, current.pushVelocity[0], RB_VELOCITY_EXPONENT_BITS, RB_VELOCITY_MANTISSA_BITS );
-	msg.WriteDeltaFloat( 0.0f, current.pushVelocity[1], RB_VELOCITY_EXPONENT_BITS, RB_VELOCITY_MANTISSA_BITS );
-	msg.WriteDeltaFloat( 0.0f, current.pushVelocity[2], RB_VELOCITY_EXPONENT_BITS, RB_VELOCITY_MANTISSA_BITS );
-	msg.WriteDeltaFloat( 0.0f, current.externalForce[0], RB_FORCE_EXPONENT_BITS, RB_FORCE_MANTISSA_BITS );
-	msg.WriteDeltaFloat( 0.0f, current.externalForce[1], RB_FORCE_EXPONENT_BITS, RB_FORCE_MANTISSA_BITS );
-	msg.WriteDeltaFloat( 0.0f, current.externalForce[2], RB_FORCE_EXPONENT_BITS, RB_FORCE_MANTISSA_BITS );
-	msg.WriteDeltaFloat( 0.0f, current.externalTorque[0], RB_FORCE_EXPONENT_BITS, RB_FORCE_MANTISSA_BITS );
-	msg.WriteDeltaFloat( 0.0f, current.externalTorque[1], RB_FORCE_EXPONENT_BITS, RB_FORCE_MANTISSA_BITS );
-	msg.WriteDeltaFloat( 0.0f, current.externalTorque[2], RB_FORCE_EXPONENT_BITS, RB_FORCE_MANTISSA_BITS );
 }
 
 /*
@@ -1471,42 +1485,29 @@ void idPhysics_RigidBody::WriteToSnapshot( idBitMsgDelta &msg ) const {
 idPhysics_RigidBody::ReadFromSnapshot
 ================
 */
-void idPhysics_RigidBody::ReadFromSnapshot( const idBitMsgDelta &msg ) {
+void idPhysics_RigidBody::ReadFromSnapshot( const idBitMsg &msg ) {
 	idCQuat quat, localQuat;
+	
+	previous = next;
 
-	current.atRest = msg.ReadLong();
-	current.i.position[0] = msg.ReadFloat();
-	current.i.position[1] = msg.ReadFloat();
-	current.i.position[2] = msg.ReadFloat();
+	next.i.position[0] = msg.ReadFloat();
+	next.i.position[1] = msg.ReadFloat();
+	next.i.position[2] = msg.ReadFloat();
 	quat.x = msg.ReadFloat();
 	quat.y = msg.ReadFloat();
 	quat.z = msg.ReadFloat();
-	current.i.linearMomentum[0] = msg.ReadFloat( RB_MOMENTUM_EXPONENT_BITS, RB_MOMENTUM_MANTISSA_BITS );
-	current.i.linearMomentum[1] = msg.ReadFloat( RB_MOMENTUM_EXPONENT_BITS, RB_MOMENTUM_MANTISSA_BITS );
-	current.i.linearMomentum[2] = msg.ReadFloat( RB_MOMENTUM_EXPONENT_BITS, RB_MOMENTUM_MANTISSA_BITS );
-	current.i.angularMomentum[0] = msg.ReadFloat( RB_MOMENTUM_EXPONENT_BITS, RB_MOMENTUM_MANTISSA_BITS );
-	current.i.angularMomentum[1] = msg.ReadFloat( RB_MOMENTUM_EXPONENT_BITS, RB_MOMENTUM_MANTISSA_BITS );
-	current.i.angularMomentum[2] = msg.ReadFloat( RB_MOMENTUM_EXPONENT_BITS, RB_MOMENTUM_MANTISSA_BITS );
-	current.localOrigin[0] = msg.ReadDeltaFloat( current.i.position[0] );
-	current.localOrigin[1] = msg.ReadDeltaFloat( current.i.position[1] );
-	current.localOrigin[2] = msg.ReadDeltaFloat( current.i.position[2] );
-	localQuat.x = msg.ReadDeltaFloat( quat.x );
-	localQuat.y = msg.ReadDeltaFloat( quat.y );
-	localQuat.z = msg.ReadDeltaFloat( quat.z );
-	current.pushVelocity[0] = msg.ReadDeltaFloat( 0.0f, RB_VELOCITY_EXPONENT_BITS, RB_VELOCITY_MANTISSA_BITS );
-	current.pushVelocity[1] = msg.ReadDeltaFloat( 0.0f, RB_VELOCITY_EXPONENT_BITS, RB_VELOCITY_MANTISSA_BITS );
-	current.pushVelocity[2] = msg.ReadDeltaFloat( 0.0f, RB_VELOCITY_EXPONENT_BITS, RB_VELOCITY_MANTISSA_BITS );
-	current.externalForce[0] = msg.ReadDeltaFloat( 0.0f, RB_FORCE_EXPONENT_BITS, RB_FORCE_MANTISSA_BITS );
-	current.externalForce[1] = msg.ReadDeltaFloat( 0.0f, RB_FORCE_EXPONENT_BITS, RB_FORCE_MANTISSA_BITS );
-	current.externalForce[2] = msg.ReadDeltaFloat( 0.0f, RB_FORCE_EXPONENT_BITS, RB_FORCE_MANTISSA_BITS );
-	current.externalTorque[0] = msg.ReadDeltaFloat( 0.0f, RB_FORCE_EXPONENT_BITS, RB_FORCE_MANTISSA_BITS );
-	current.externalTorque[1] = msg.ReadDeltaFloat( 0.0f, RB_FORCE_EXPONENT_BITS, RB_FORCE_MANTISSA_BITS );
-	current.externalTorque[2] = msg.ReadDeltaFloat( 0.0f, RB_FORCE_EXPONENT_BITS, RB_FORCE_MANTISSA_BITS );
+	next.i.linearMomentum[0] = msg.ReadFloat( RB_MOMENTUM_EXPONENT_BITS, RB_MOMENTUM_MANTISSA_BITS );
+	next.i.linearMomentum[1] = msg.ReadFloat( RB_MOMENTUM_EXPONENT_BITS, RB_MOMENTUM_MANTISSA_BITS );
+	next.i.linearMomentum[2] = msg.ReadFloat( RB_MOMENTUM_EXPONENT_BITS, RB_MOMENTUM_MANTISSA_BITS );
 
-	current.i.orientation = quat.ToMat3();
-	current.localAxis = localQuat.ToMat3();
+	next.i.orientation = quat.ToMat3();
+
+	// Make sure to initially set them up. Dont try to interpolate yet.
+	if( self->GetNumSnapshotsReceived() <= 1 ) {
+		current = next;
+	}
 
 	if ( clipModel ) {
-		clipModel->Link( gameLocal.clip, self, clipModel->GetId(), current.i.position, current.i.orientation );
+		clipModel->Link( gameLocal.clip, self, clipModel->GetId(), next.i.position, next.i.orientation );
 	}
 }

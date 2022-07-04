@@ -7,8 +7,9 @@ Vagary specific AI code
 
 ***********************************************************************/
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
+
 
 #include "../Game_local.h"
 
@@ -46,6 +47,7 @@ void idAI_Vagary::Event_ChooseObjectToThrow( const idVec3 &mins, const idVec3 &m
 
 	if ( !enemyEnt ) {
 		idThread::ReturnEntity( NULL );
+		return;
 	}
 
 	idVec3 enemyEyePos = lastVisibleEnemyPos + lastVisibleEnemyEyeOffset;

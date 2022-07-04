@@ -44,9 +44,7 @@ idBrittleFracture::idBrittleFracture() {
 
 	fl.networkSync = true;
 
-#ifdef _D3XP
 	isXraySurface = false;
-#endif
 }
 
 /*
@@ -65,6 +63,9 @@ idBrittleFracture::~idBrittleFracture() {
 	// make sure the render entity is freed before the model is freed
 	FreeModelDef();
 	renderModelManager->FreeModel( renderEntity.hModel );
+
+	// Free our events list memory
+	storedEvents.Clear();
 }
 
 /*
@@ -73,7 +74,6 @@ idBrittleFracture::Save
 ================
 */
 void idBrittleFracture::Save( idSaveGame *savefile ) const {
-	int i, j;
 
 	savefile->WriteInt( health );
 	entityFlags_s flags = fl;
@@ -102,38 +102,16 @@ void idBrittleFracture::Save( idSaveGame *savefile ) const {
 	savefile->WriteInt( lastRenderEntityUpdate );
 	savefile->WriteBool( changed );
 
-	savefile->WriteStaticObject( physicsObj );
+	savefile->WriteModel( defaultRenderModel );
 
-	savefile->WriteInt( shards.Num() );
-	for ( i = 0; i < shards.Num(); i++ ) {
-		savefile->WriteWinding( shards[i]->winding );
-
-		savefile->WriteInt( shards[i]->decals.Num() );
-		for ( j = 0; j < shards[i]->decals.Num(); j++ ) {
-			savefile->WriteWinding( *shards[i]->decals[j] );
-		}
-
-		savefile->WriteInt( shards[i]->neighbours.Num() );
-		for ( j = 0; j < shards[i]->neighbours.Num(); j++ ) {
-			int index = shards.FindIndex(shards[i]->neighbours[j]);
-			assert(index != -1);
-			savefile->WriteInt( index );
-		}
-
-		savefile->WriteInt( shards[i]->edgeHasNeighbour.Num() );
-		for ( j = 0; j < shards[i]->edgeHasNeighbour.Num(); j++ ) {
-			savefile->WriteBool( shards[i]->edgeHasNeighbour[j] );
-		}
-
-		savefile->WriteInt( shards[i]->droppedTime );
-		savefile->WriteInt( shards[i]->islandNum );
-		savefile->WriteBool( shards[i]->atEdge );
-		savefile->WriteStaticObject( shards[i]->physicsObj );
+	// So we can re-break the object on load if needed
+	savefile->WriteInt( storedEvents.Num() );
+	for ( int i = 0; i < storedEvents.Num(); ++i ) {
+		savefile->WriteInt( storedEvents[i].eventType );
+		savefile->WriteVec3( storedEvents[i].point );
+		savefile->WriteVec3( storedEvents[i].vector );
 	}
-
-#ifdef _D3XP
 	savefile->WriteBool( isXraySurface );
-#endif
 }
 
 /*
@@ -142,14 +120,6 @@ idBrittleFracture::Restore
 ================
 */
 void idBrittleFracture::Restore( idRestoreGame *savefile ) {
-	int i, j , num;
-
-	renderEntity.hModel = renderModelManager->AllocModel();
-	renderEntity.hModel->InitEmpty( brittleFracture_SnapshotName );
-	renderEntity.callback = idBrittleFracture::ModelCallback;
-	renderEntity.noShadow = true;
-	renderEntity.noSelfShadow = true;
-	renderEntity.noDynamicInteractions = false;
 
 	savefile->ReadInt( health );
 	savefile->Read( &fl, sizeof( fl ) );
@@ -177,54 +147,47 @@ void idBrittleFracture::Restore( idRestoreGame *savefile ) {
 	savefile->ReadInt( lastRenderEntityUpdate );
 	savefile->ReadBool( changed );
 
-	savefile->ReadStaticObject( physicsObj );
-	RestorePhysics( &physicsObj );
+	savefile->ReadModel( defaultRenderModel );
 
-	savefile->ReadInt( num );
-	shards.SetNum( num );
-	for ( i = 0; i < num; i++ ) {
-		shards[i] = new shard_t;
-	}
+	// Reset all brittle Fractures so we can re-break them if necessary
+	fl.takedamage = true;
+	CreateFractures( defaultRenderModel );
+	FindNeighbours();
 
-	for ( i = 0; i < num; i++ ) {
-		savefile->ReadWinding( shards[i]->winding );
+	int numEvents = 0;
+	bool resolveBreaks = false;
+	savefile->ReadInt( numEvents );
+	for( int i = 0; i < numEvents; i++ ) {
+		fractureEvent_s restoredEvent;
 
-		savefile->ReadInt( j );
-		shards[i]->decals.SetNum( j );
-		for ( j = 0; j < shards[i]->decals.Num(); j++ ) {
-			shards[i]->decals[j] = new idFixedWinding;
-			savefile->ReadWinding( *shards[i]->decals[j] );
-		}
+		savefile->ReadInt( restoredEvent.eventType );
+		savefile->ReadVec3( restoredEvent.point );
+		savefile->ReadVec3( restoredEvent.vector );
 
-		savefile->ReadInt( j );
-		shards[i]->neighbours.SetNum( j );
-		for ( j = 0; j < shards[i]->neighbours.Num(); j++ ) {
-			int index;
-			savefile->ReadInt( index );
-			assert(index != -1);
-			shards[i]->neighbours[j] = shards[index];
-		}
-
-		savefile->ReadInt( j );
-		shards[i]->edgeHasNeighbour.SetNum( j );
-		for ( j = 0; j < shards[i]->edgeHasNeighbour.Num(); j++ ) {
-			savefile->ReadBool( shards[i]->edgeHasNeighbour[j] );
-		}
-
-		savefile->ReadInt( shards[i]->droppedTime );
-		savefile->ReadInt( shards[i]->islandNum );
-		savefile->ReadBool( shards[i]->atEdge );
-		savefile->ReadStaticObject( shards[i]->physicsObj );
-		if ( shards[i]->droppedTime < 0 ) {
-			shards[i]->clipModel = physicsObj.GetClipModel( i );
+		if ( restoredEvent.eventType == EVENT_PROJECT_DECAL ) {
+			ProjectDecal( restoredEvent.point, restoredEvent.vector, gameLocal.time, NULL );
 		} else {
-			shards[i]->clipModel = shards[i]->physicsObj.GetClipModel();
+			Shatter( restoredEvent.point, restoredEvent.vector, gameLocal.time );
+		}
+		resolveBreaks = true;
+	}
+
+	// remove any dropped shards
+	for ( int i = 0; resolveBreaks && i < shards.Num(); i++ ) {
+		if ( shards[i]->droppedTime!= -1 ) {
+			RemoveShard( i );
+			i--;
 		}
 	}
 
-#ifdef _D3XP
+	renderEntity.hModel = renderModelManager->AllocModel();
+	renderEntity.hModel->InitEmpty( brittleFracture_SnapshotName );
+	renderEntity.callback = idBrittleFracture::ModelCallback;
+	renderEntity.noShadow = true;
+	renderEntity.noSelfShadow = true;
+	renderEntity.noDynamicInteractions = false;
+
 	savefile->ReadBool( isXraySurface );
-#endif
 }
 
 /*
@@ -237,13 +200,18 @@ void idBrittleFracture::Spawn() {
 	// get shard properties
 	decalMaterial = declManager->FindMaterial( spawnArgs.GetString( "mtr_decal" ) );
 	decalSize = spawnArgs.GetFloat( "decalSize", "40" );
-	maxShardArea = spawnArgs.GetFloat( "maxShardArea", "200" );
+	maxShardArea = spawnArgs.GetFloat( "maxShardArea", "200" ) * 2.0f ;
 	maxShardArea = idMath::ClampFloat( 100, 10000, maxShardArea );
 	maxShatterRadius = spawnArgs.GetFloat( "maxShatterRadius", "40" );
 	minShatterRadius = spawnArgs.GetFloat( "minShatterRadius", "10" );
 	linearVelocityScale = spawnArgs.GetFloat( "linearVelocityScale", "0.1" );
 	angularVelocityScale = spawnArgs.GetFloat( "angularVelocityScale", "40" );
 	fxFracture = spawnArgs.GetString( "fx" );
+
+	// make sure that max is greater than min  ( otherwise negative number square root happens )
+	if( maxShatterRadius < minShatterRadius ) {
+		idLib::Warning( "BrittleFracture, minShatterRadius(%2f) is greater than maxShatterRadius(%2f). Unknown results will ensue.", minShatterRadius, maxShatterRadius );
+	}
 
 	// get rigid body properties
 	shardMass = spawnArgs.GetFloat( "shardMass", "20" );
@@ -262,9 +230,8 @@ void idBrittleFracture::Spawn() {
 	// FIXME: set "bleed" so idProjectile calls AddDamageEffect
 	spawnArgs.SetBool( "bleed", 1 );
 
-#ifdef _D3XP
 	// check for xray surface
-	if ( 1 ) {
+	if ( renderEntity.hModel != NULL ) {
 		const idRenderModel *model = renderEntity.hModel;
 
 		isXraySurface = false;
@@ -278,12 +245,12 @@ void idBrittleFracture::Spawn() {
 			}
 		}
 	}
-#endif
 
 	CreateFractures( renderEntity.hModel );
 
 	FindNeighbours();
 
+	defaultRenderModel = renderEntity.hModel;
 	renderEntity.hModel = renderModelManager->AllocModel();
 	renderEntity.hModel->InitEmpty( brittleFracture_SnapshotName );
 	renderEntity.callback = idBrittleFracture::ModelCallback;
@@ -298,7 +265,7 @@ idBrittleFracture::AddShard
 ================
 */
 void idBrittleFracture::AddShard( idClipModel *clipModel, idFixedWinding &w ) {
-	shard_t *shard = new shard_t;
+	shard_t *shard = new (TAG_PARTICLE) shard_t;
 	shard->clipModel = clipModel;
 	shard->droppedTime = -1;
 	shard->winding = w;
@@ -388,6 +355,7 @@ bool idBrittleFracture::UpdateRenderEntity( renderEntity_s *renderEntity, const 
 				fade = 1.0f - (float) msec / ( SHARD_ALIVE_TIME - SHARD_FADE_START );
 			}
 		}
+
 		packedColor = PackColor( idVec4( renderEntity->shaderParms[ SHADERPARM_RED ] * fade,
 										renderEntity->shaderParms[ SHADERPARM_GREEN ] * fade,
                                         renderEntity->shaderParms[ SHADERPARM_BLUE ] * fade,
@@ -403,31 +371,28 @@ bool idBrittleFracture::UpdateRenderEntity( renderEntity_s *renderEntity, const 
 			v = &tris->verts[tris->numVerts++];
 			v->Clear();
 			v->xyz = origin + winding[0].ToVec3() * axis;
-			v->st[0] = winding[0].s;
-			v->st[1] = winding[0].t;
-			v->normal = tangents[0];
-			v->tangents[0] = tangents[1];
-			v->tangents[1] = tangents[2];
+			v->SetTexCoord( winding[0].s, winding[0].t );
+			v->SetNormal( tangents[0] );
+			v->SetTangent( tangents[1] );
+			v->SetBiTangent( tangents[2] );
 			v->SetColor( packedColor );
 
 			v = &tris->verts[tris->numVerts++];
 			v->Clear();
 			v->xyz = origin + winding[j-1].ToVec3() * axis;
-			v->st[0] = winding[j-1].s;
-			v->st[1] = winding[j-1].t;
-			v->normal = tangents[0];
-			v->tangents[0] = tangents[1];
-			v->tangents[1] = tangents[2];
+			v->SetTexCoord( winding[j-1].s, winding[j-1].t );
+			v->SetNormal( tangents[0] );
+			v->SetTangent( tangents[1] );
+			v->SetBiTangent( tangents[2] );
 			v->SetColor( packedColor );
 
 			v = &tris->verts[tris->numVerts++];
 			v->Clear();
 			v->xyz = origin + winding[j].ToVec3() * axis;
-			v->st[0] = winding[j].s;
-			v->st[1] = winding[j].t;
-			v->normal = tangents[0];
-			v->tangents[0] = tangents[1];
-			v->tangents[1] = tangents[2];
+			v->SetTexCoord( winding[j].s, winding[j].t );
+			v->SetNormal( tangents[0] );
+			v->SetTangent( tangents[1] );
+			v->SetBiTangent( tangents[2] );
 			v->SetColor( packedColor );
 
 			tris->indexes[tris->numIndexes++] = tris->numVerts - 3;
@@ -450,31 +415,28 @@ bool idBrittleFracture::UpdateRenderEntity( renderEntity_s *renderEntity, const 
 				v = &decalTris->verts[decalTris->numVerts++];
 				v->Clear();
 				v->xyz = origin + decalWinding[0].ToVec3() * axis;
-				v->st[0] = decalWinding[0].s;
-				v->st[1] = decalWinding[0].t;
-				v->normal = tangents[0];
-				v->tangents[0] = tangents[1];
-				v->tangents[1] = tangents[2];
+				v->SetTexCoord( decalWinding[0].s, decalWinding[0].t );
+				v->SetNormal( tangents[0] );
+				v->SetTangent( tangents[1] );
+				v->SetBiTangent( tangents[2] );
 				v->SetColor( packedColor );
 
 				v = &decalTris->verts[decalTris->numVerts++];
 				v->Clear();
 				v->xyz = origin + decalWinding[j-1].ToVec3() * axis;
-				v->st[0] = decalWinding[j-1].s;
-				v->st[1] = decalWinding[j-1].t;
-				v->normal = tangents[0];
-				v->tangents[0] = tangents[1];
-				v->tangents[1] = tangents[2];
+				v->SetTexCoord( decalWinding[j-1].s, decalWinding[j-1].t );
+				v->SetNormal( tangents[0] );
+				v->SetTangent( tangents[1] );
+				v->SetBiTangent( tangents[2] );
 				v->SetColor( packedColor );
 
 				v = &decalTris->verts[decalTris->numVerts++];
 				v->Clear();
 				v->xyz = origin + decalWinding[j].ToVec3() * axis;
-				v->st[0] = decalWinding[j].s;
-				v->st[1] = decalWinding[j].t;
-				v->normal = tangents[0];
-				v->tangents[0] = tangents[1];
-				v->tangents[1] = tangents[2];
+				v->SetTexCoord( decalWinding[j].s, decalWinding[j].t );
+				v->SetNormal( tangents[0] );
+				v->SetTangent( tangents[1] );
+				v->SetBiTangent( tangents[2] );
 				v->SetColor( packedColor );
 
 				decalTris->indexes[decalTris->numIndexes++] = decalTris->numVerts - 3;
@@ -521,8 +483,9 @@ bool idBrittleFracture::ModelCallback( renderEntity_s *renderEntity, const rende
 	const idBrittleFracture *ent;
 
 	ent = static_cast<idBrittleFracture *>(gameLocal.entities[ renderEntity->entityNum ]);
-	if ( !ent ) {
+	if ( ent == NULL ) {
 		gameLocal.Error( "idBrittleFracture::ModelCallback: callback with NULL game entity" );
+		return false;
 	}
 
 	return ent->UpdateRenderEntity( renderEntity, renderView );
@@ -679,11 +642,11 @@ void idBrittleFracture::ProjectDecal( const idVec3 &point, const idVec3 &dir, co
 	idMat3 axis, axistemp;
 	idPlane textureAxis[2];
 
-	if ( gameLocal.isServer ) {
+	if ( common->IsServer() ) {
 		idBitMsg	msg;
 		byte		msgBuf[MAX_EVENT_PARAM_SIZE];
 
-		msg.Init( msgBuf, sizeof( msgBuf ) );
+		msg.InitWrite( msgBuf, sizeof( msgBuf ) );
 		msg.BeginWriting();
 		msg.WriteFloat( point[0] );
 		msg.WriteFloat( point[1] );
@@ -691,8 +654,15 @@ void idBrittleFracture::ProjectDecal( const idVec3 &point, const idVec3 &dir, co
 		msg.WriteFloat( dir[0] );
 		msg.WriteFloat( dir[1] );
 		msg.WriteFloat( dir[2] );
-		ServerSendEvent( EVENT_PROJECT_DECAL, &msg, true, -1 );
+		ServerSendEvent( EVENT_PROJECT_DECAL, &msg, true );
 	}
+
+	// store the event so we can rebuilt the fracture after loading a save
+	fractureEvent_s fractureEvent;
+	fractureEvent.eventType = EVENT_PROJECT_DECAL;
+	fractureEvent.point = point;
+	fractureEvent.vector = dir;
+	storedEvents.Append( fractureEvent );
 
 	if ( time >= gameLocal.time ) {
 		// try to get the sound from the damage def
@@ -701,7 +671,10 @@ void idBrittleFracture::ProjectDecal( const idVec3 &point, const idVec3 &dir, co
 		if ( damageDefName ) {
 			damageDef = gameLocal.FindEntityDef( damageDefName, false );
 			if ( damageDef ) {
-				sndShader = declManager->FindSound( damageDef->dict.GetString( "snd_shatter", "" ) );
+				const char * sndName = damageDef->dict.GetString( "snd_shatter", "" );
+				if ( sndName[0] != 0 ) {
+					sndShader = declManager->FindSound( sndName );
+				}
 			}
 		}
 
@@ -741,12 +714,12 @@ void idBrittleFracture::ProjectDecal( const idVec3 &point, const idVec3 &dir, co
 			st[j].x = d0 = textureAxis[0].Distance( p );
 			st[j].y = d1 = textureAxis[1].Distance( p );
 
-			bits = FLOATSIGNBITSET( d0 );
+			bits = IEEE_FLT_SIGNBITSET( d0 );
 			d0 = 1.0f - d0;
-			bits |= FLOATSIGNBITSET( d1 ) << 2;
+			bits |= IEEE_FLT_SIGNBITSET( d1 ) << 2;
 			d1 = 1.0f - d1;
-			bits |= FLOATSIGNBITSET( d0 ) << 1;
-			bits |= FLOATSIGNBITSET( d1 ) << 3;
+			bits |= IEEE_FLT_SIGNBITSET( d0 ) << 1;
+			bits |= IEEE_FLT_SIGNBITSET( d1 ) << 3;
 
 			clipBits &= bits;
 		}
@@ -755,7 +728,7 @@ void idBrittleFracture::ProjectDecal( const idVec3 &point, const idVec3 &dir, co
 			continue;
 		}
 
-		idFixedWinding *decal = new idFixedWinding;
+		idFixedWinding *decal = new (TAG_PARTICLE) idFixedWinding;
 		shards[i]->decals.Append( decal );
 
 		decal->SetNumPoints( winding.GetNumPoints() );
@@ -810,7 +783,7 @@ void idBrittleFracture::DropShard( shard_t *shard, const idVec3 &point, const id
 
 	dir2 = origin - point;
 	dist = dir2.Normalize();
-	f = dist > maxShatterRadius ? 1.0f : idMath::Sqrt( dist - minShatterRadius ) * ( 1.0f / idMath::Sqrt( maxShatterRadius - minShatterRadius ) );
+	f = dist > maxShatterRadius ? 1.0f : idMath::Sqrt( idMath::Fabs( dist - minShatterRadius ) ) * ( 1.0f / idMath::Sqrt(  idMath::Fabs( maxShatterRadius - minShatterRadius ) ) );
 
 	// setup the physics
 	shard->physicsObj.SetSelf( this );
@@ -842,11 +815,11 @@ void idBrittleFracture::Shatter( const idVec3 &point, const idVec3 &impulse, con
 	shard_t *shard;
 	float m;
 
-	if ( gameLocal.isServer ) {
+	if ( common->IsServer() ) {
 		idBitMsg	msg;
 		byte		msgBuf[MAX_EVENT_PARAM_SIZE];
 
-		msg.Init( msgBuf, sizeof( msgBuf ) );
+		msg.InitWrite( msgBuf, sizeof( msgBuf ) );
 		msg.BeginWriting();
 		msg.WriteFloat( point[0] );
 		msg.WriteFloat( point[1] );
@@ -854,8 +827,15 @@ void idBrittleFracture::Shatter( const idVec3 &point, const idVec3 &impulse, con
 		msg.WriteFloat( impulse[0] );
 		msg.WriteFloat( impulse[1] );
 		msg.WriteFloat( impulse[2] );
-		ServerSendEvent( EVENT_SHATTER, &msg, true, -1 );
+		ServerSendEvent( EVENT_SHATTER, &msg, true );
 	}
+
+	// Store off the event so we can rebuilt the object if we reload a savegame
+	fractureEvent_s fractureEvent;
+	fractureEvent.eventType = EVENT_SHATTER;
+	fractureEvent.point = point;
+	fractureEvent.vector = impulse;
+	storedEvents.Append( fractureEvent );
 
 	if ( time > ( gameLocal.time - SHARD_ALIVE_TIME ) ) {
 		StartSound( "snd_shatter", SND_CHANNEL_ANY, 0, false, NULL );
@@ -1005,12 +985,14 @@ void idBrittleFracture::AddDamageEffect( const trace_t &collision, const idVec3 
 	}
 }
 
+static float fractureSplitTable[] = { 1365.123f, 5.324f, 1125.34f, 50.34f, 555.252f, 100.12f, 230.53f, 10000.87f, 10000.87f  };
+
 /*
 ================
 idBrittleFracture::Fracture_r
 ================
 */
-void idBrittleFracture::Fracture_r( idFixedWinding &w ) {
+void idBrittleFracture::Fracture_r( idFixedWinding &w, idRandom2 & random ) {
 	int i, j, bestPlane;
 	float a, c, s, dist, bestDist;
 	idVec3 origin;
@@ -1019,6 +1001,7 @@ void idBrittleFracture::Fracture_r( idFixedWinding &w ) {
 	idFixedWinding back;
 	idTraceModel trm;
 	idClipModel *clipModel;
+
 
 	while( 1 ) {
 		origin = w.GetCenter();
@@ -1030,16 +1013,12 @@ void idBrittleFracture::Fracture_r( idFixedWinding &w ) {
 
 		// randomly create a split plane
 		axis[2] = windingPlane.Normal();
-#ifdef _D3XP
 		if ( isXraySurface ) {
 			a = idMath::TWO_PI / 2.f;
 		}
 		else {
-			a = gameLocal.random.RandomFloat() * idMath::TWO_PI;
+			a = random.RandomFloat() * idMath::TWO_PI;
 		}
-#else
-		a = gameLocal.random.RandomFloat() * idMath::TWO_PI;
-#endif
 		c = cos( a );
 		s = -sin( a );
 		axis[2].NormalVectors( axistemp[0], axistemp[1] );
@@ -1067,7 +1046,7 @@ void idBrittleFracture::Fracture_r( idFixedWinding &w ) {
 		}
 
 		// recursively create shards for the back winding
-		Fracture_r( back );
+		Fracture_r( back, random );
 	}
 
 	// translate the winding to it's center
@@ -1079,7 +1058,7 @@ void idBrittleFracture::Fracture_r( idFixedWinding &w ) {
 
 	trm.SetupPolygon( w );
 	trm.Shrink( CM_CLIP_EPSILON );
-	clipModel = new idClipModel( trm );
+	clipModel = new (TAG_PHYSICS) idClipModel( trm, false );
 
 	physicsObj.SetClipModel( clipModel, 1.0f, shards.Num() );
 	physicsObj.SetOrigin( GetPhysics()->GetOrigin() + origin, shards.Num() );
@@ -1090,16 +1069,26 @@ void idBrittleFracture::Fracture_r( idFixedWinding &w ) {
 
 /*
 ================
+CompareVec5
+================
+*/
+bool CompareVec5( const idVec5 & v0, const idVec5 & v1 ) {
+	float dx = v0.x - v1.x;
+	float dy = v0.y - v1.y;
+	float dz = v0.z - v1.z;
+	float ds = v0.s - v1.s;
+	float dt = v0.t - v1.t;
+	float d = ( dx * dx ) + ( dy * dy ) + ( dz * dz ) + ( ds * ds ) + ( dt + dt );
+	return ( d == 0.0f );
+}
+
+/*
+================
 idBrittleFracture::CreateFractures
 ================
 */
 void idBrittleFracture::CreateFractures( const idRenderModel *renderModel ) {
-	int i, j, k;
-	const modelSurface_t *surf;
-	const idDrawVert *v;
-	idFixedWinding w;
-
-	if ( !renderModel ) {
+	if ( !renderModel || renderModel->NumSurfaces() < 1 ) {
 		return;
 	}
 
@@ -1107,76 +1096,74 @@ void idBrittleFracture::CreateFractures( const idRenderModel *renderModel ) {
 	physicsObj.SetOrigin( GetPhysics()->GetOrigin(), 0 );
 	physicsObj.SetAxis( GetPhysics()->GetAxis(), 0 );
 
-#ifdef _D3XP
+	const modelSurface_t * surf = renderModel->Surface( 0 );
+	material = surf->shader;
+
+	idMat3 physAxis;
+	physAxis = physicsObj.GetAxis();
 	if ( isXraySurface ) {
-		for ( i = 0; i < 1 /*renderModel->NumSurfaces()*/; i++ ) {
-			surf = renderModel->Surface( i );
-			material = surf->shader;
+		idFixedWinding w;
 
-			w.Clear();
-
-			int k = 0;
-			v = &surf->geometry->verts[k];
-			w.AddPoint( v->xyz );
-			w[k].s = v->st[0];
-			w[k].t = v->st[1];
-
-			k = 1;
-			v = &surf->geometry->verts[k];
-			w.AddPoint( v->xyz );
-			w[k].s = v->st[0];
-			w[k].t = v->st[1];
-
-			k = 3;
-			v = &surf->geometry->verts[k];
-			w.AddPoint( v->xyz );
-			w[k].s = v->st[0];
-			w[k].t = v->st[1];
-
-			k = 2;
-			v = &surf->geometry->verts[k];
-			w.AddPoint( v->xyz );
-			w[k].s = v->st[0];
-			w[k].t = v->st[1];
-
-			Fracture_r( w );
+		for ( int i = 0; i < 4; i++ ) {
+			const idDrawVert * v = &surf->geometry->verts[i];
+			w.AddPoint( idVec5( v->xyz, v->GetTexCoord() ) );
 		}
 
-	}
-	else {
-		for ( i = 0; i < 1 /*renderModel->NumSurfaces()*/; i++ ) {
-			surf = renderModel->Surface( i );
-			material = surf->shader;
+		idRandom2 random( entityNumber );
+		Fracture_r( w , random );
 
-			for ( j = 0; j < surf->geometry->numIndexes; j += 3 ) {
-				w.Clear();
-				for ( k = 0; k < 3; k++ ) {
-					v = &surf->geometry->verts[ surf->geometry->indexes[ j + 2 - k ] ];
-					w.AddPoint( v->xyz );
-					w[k].s = v->st[0];
-					w[k].t = v->st[1];
+	} else
+	{
+		const idDrawVert * verts = surf->geometry->verts;
+		triIndex_t * indexes = surf->geometry->indexes;
+
+		for ( int j = 0; j < surf->geometry->numIndexes; j += 3 ) {
+			int i0 = indexes[ j + 0 ];
+			int i1 = indexes[ j + 1 ];
+			int i2 = indexes[ j + 2 ];
+			idFixedWinding w;
+			w.AddPoint( idVec5( verts[i2].xyz, verts[i2].GetTexCoord() ) );
+			w.AddPoint( idVec5( verts[i1].xyz, verts[i1].GetTexCoord() ) );
+			w.AddPoint( idVec5( verts[i0].xyz, verts[i0].GetTexCoord() ) );
+			idPlane p1;
+			w.GetPlane( p1 );
+			for ( int k = j + 3; k < surf->geometry->numIndexes && ( w.GetNumPoints() + 1 < MAX_POINTS_ON_WINDING ); k += 3 ) {
+				int i3 = indexes[ k + 0 ];
+				int i4 = indexes[ k + 1 ];
+				int i5 = indexes[ k + 2 ];
+				idFixedWinding w2;
+				w2.AddPoint( idVec5( verts[i5].xyz, verts[i5].GetTexCoord() ) );
+				w2.AddPoint( idVec5( verts[i4].xyz, verts[i4].GetTexCoord() ) );
+				w2.AddPoint( idVec5( verts[i3].xyz, verts[i3].GetTexCoord() ) );
+				idPlane p2;
+				w2.GetPlane( p2 );
+				if ( p1 != p2 ) {
+					break;
 				}
-				Fracture_r( w );
+				bool found = false;
+				for ( int w1i = 0; w1i < w.GetNumPoints(); w1i++ ) {
+					for ( int w2i = 0; w2i < w2.GetNumPoints(); w2i++ ) {
+						if ( CompareVec5( w[w1i], w2[w2i] ) && CompareVec5( w[(w1i+1)%w.GetNumPoints()], w2[(w2i+2)%w2.GetNumPoints()] ) ) {
+							w.InsertPoint( w2[(w2i+1)%w2.GetNumPoints()], (w1i+1)%w.GetNumPoints() );
+							j = k;
+							found = true;
+							break;
+						}
+					}
+					if ( found ) {
+						break;
+					}
+				}
+				if ( !found ) {
+					break;
+				}
 			}
-		}
-	}
-#else
-	for ( i = 0; i < 1 /*renderModel->NumSurfaces()*/; i++ ) {
-		surf = renderModel->Surface( i );
-		material = surf->shader;
 
-		for ( j = 0; j < surf->geometry->numIndexes; j += 3 ) {
-			w.Clear();
-			for ( k = 0; k < 3; k++ ) {
-				v = &surf->geometry->verts[ surf->geometry->indexes[ j + 2 - k ] ];
-				w.AddPoint( v->xyz );
-				w[k].s = v->st[0];
-				w[k].t = v->st[1];
-			}
-			Fracture_r( w );
+			idRandom2 random( entityNumber );
+			Fracture_r( w, random );
 		}
 	}
-#endif
+
 
 	physicsObj.SetContents( material->GetContentFlags() );
 	SetPhysics( &physicsObj );
@@ -1289,6 +1276,11 @@ idBrittleFracture::Event_Touch
 void idBrittleFracture::Event_Touch( idEntity *other, trace_t *trace ) {
 	idVec3 point, impulse;
 
+	// Let the server handle this, clients dont' predict it
+	if ( common->IsClient() ) {
+		return;
+	}
+
 	if ( !IsBroken() ) {
 		return;
 	}
@@ -1301,6 +1293,21 @@ void idBrittleFracture::Event_Touch( idEntity *other, trace_t *trace ) {
 	impulse = other->GetPhysics()->GetLinearVelocity() * other->GetPhysics()->GetMass();
 
 	Shatter( point, impulse, gameLocal.time );
+}
+
+/*
+================
+idBrittleFracture::ClientThink
+================
+*/
+void idBrittleFracture::ClientThink( const int curTime, const float fraction, const bool predict ) {
+
+	// only think forward because the state is not synced through snapshots
+	if ( !gameLocal.isNewFrame ) {
+		return;
+	}
+
+	Think();
 }
 
 /*
@@ -1350,5 +1357,4 @@ bool idBrittleFracture::ClientReceiveEvent( int event, int time, const idBitMsg 
 			return idEntity::ClientReceiveEvent( event, time, msg );
 		}
 	}
-	return false;
 }

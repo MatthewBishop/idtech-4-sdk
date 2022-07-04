@@ -16,9 +16,9 @@ of the render model which can fracture.
 typedef struct shard_s {
 	idClipModel *				clipModel;
 	idFixedWinding				winding;
-	idList<idFixedWinding *>	decals;
+	idList<idFixedWinding *, TAG_PHYSICS_BRITTLE>	decals;
 	idList<bool>				edgeHasNeighbour;
-	idList<struct shard_s *>	neighbours;
+	idList<struct shard_s *, TAG_PHYSICS_BRITTLE>	neighbours;
 	idPhysics_RigidBody			physicsObj;
 	int							droppedTime;
 	bool						atEdge;
@@ -55,6 +55,7 @@ public:
 		EVENT_MAXEVENTS
 	};
 
+	virtual void				ClientThink( const int curTime, const float fraction, const bool predict );
 	virtual void				ClientPredictionThink();
 	virtual bool				ClientReceiveEvent( int event, int time, const idBitMsg &msg );
 
@@ -74,13 +75,19 @@ private:
 	float						bouncyness;
 	idStr						fxFracture;
 
-#ifdef _D3XP
+	struct fractureEvent_s {
+		int				eventType;
+		idVec3			point;
+		idVec3			vector;
+	};
+	idList<fractureEvent_s>		storedEvents;
+	bool						processStoredEvents;
+	idRenderModel *				defaultRenderModel;
 	bool						isXraySurface;
-#endif
 
 	// state
 	idPhysics_StaticMulti		physicsObj;
-	idList<shard_t *>			shards;
+	idList<shard_t *, TAG_PHYSICS_BRITTLE>	shards;
 	idBounds					bounds;
 	bool						disableFracture;
 
@@ -97,7 +104,7 @@ private:
 	void						Shatter( const idVec3 &point, const idVec3 &impulse, const int time );
 	void						DropFloatingIslands( const idVec3 &point, const idVec3 &impulse, const int time );
 	void						Break();
-	void						Fracture_r( idFixedWinding &w );
+	void						Fracture_r( idFixedWinding &w, idRandom2 & random );
 	void						CreateFractures( const idRenderModel *renderModel );
 	void						FindNeighbours();
 

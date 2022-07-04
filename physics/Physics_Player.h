@@ -41,6 +41,17 @@ typedef struct playerPState_s {
 	int						movementType;
 	int						movementFlags;
 	int						movementTime;
+
+	playerPState_s() :
+		origin( vec3_zero ),
+		velocity( vec3_zero ),
+		localOrigin( vec3_zero ),
+		pushVelocity( vec3_zero ),
+		stepUp( 0.0f ),
+		movementType( 0 ),
+		movementFlags( 0 ),
+		movementTime( 0 ) {
+	}
 } playerPState_t;
 
 class idPhysics_Player : public idPhysics_Actor {
@@ -59,7 +70,7 @@ public:
 	float					GetMaxStepHeight() const;
 	void					SetMaxJumpHeight( const float newMaxJumpHeight );
 	void					SetMovementType( const pmtype_t type );
-	void					SetPlayerInput( const usercmd_t &cmd, const idAngles &newViewAngles );
+	void					SetPlayerInput( const usercmd_t &cmd, const idVec3 &forwardVector );
 	void					SetKnockBack( const int knockBackTime );
 	void					SetDebugLevel( bool set );
 							// feed back from last physics frame
@@ -74,6 +85,7 @@ public:
 
 public:	// common physics interface
 	bool					Evaluate( int timeStepMSec, int endTimeMSec );
+	bool					Interpolate( const float fraction );
 	void					UpdateTime( int endTimeMSec );
 	int						GetTime() const;
 
@@ -95,19 +107,27 @@ public:	// common physics interface
 
 	const idVec3 &			GetLinearVelocity( int id = 0 ) const;
 
+	bool					ClientPusherLocked( bool & justBecameUnlocked );
 	void					SetPushed( int deltaTime );
+	void					SetPushedWithAbnormalVelocityHack( int deltaTime );
 	const idVec3 &			GetPushedLinearVelocity( const int id = 0 ) const;
 	void					ClearPushedVelocity();
 
 	void					SetMaster( idEntity *master, const bool orientated = true );
 
-	void					WriteToSnapshot( idBitMsgDelta &msg ) const;
-	void					ReadFromSnapshot( const idBitMsgDelta &msg );
+	void					WriteToSnapshot( idBitMsg &msg ) const;
+	void					ReadFromSnapshot( const idBitMsg &msg );
+
+	void					SnapToNextState() { current = next; previous = current; }
 
 private:
 	// player physics state
 	playerPState_t			current;
 	playerPState_t			saved;
+
+	// physics state for client interpolation
+	playerPState_t			previous;
+	playerPState_t			next;
 
 	// properties
 	float					walkSpeed;
@@ -118,7 +138,7 @@ private:
 
 	// player input
 	usercmd_t				command;
-	idAngles				viewAngles;
+	idVec3					commandForward;		// can't use cmd.angles cause of the delta_angles and head tracking
 
 	// run-time variables
 	int						framemsec;
@@ -140,6 +160,8 @@ private:
 	// results of last evaluate
 	waterLevel_t			waterLevel;
 	int						waterType;
+
+	bool					clientPusherLocked;
 
 private:
 	float					CmdScale( const usercmd_t &cmd ) const;

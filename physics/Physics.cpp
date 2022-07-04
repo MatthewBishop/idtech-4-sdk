@@ -1,7 +1,7 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
 
 #include "../Game_local.h"
 
@@ -39,7 +39,7 @@ idPhysics::SetClipBox
 ================
 */
 void idPhysics::SetClipBox( const idBounds &bounds, float density ) {
-	SetClipModel( new idClipModel( idTraceModel( bounds ) ), density );
+	SetClipModel( new (TAG_PHYSICS_CLIP) idClipModel( idTraceModel( bounds ) ), density );
 }
 
 /*
@@ -48,7 +48,5 @@ idPhysics::SnapTimeToPhysicsFrame
 ================
 */
 int idPhysics::SnapTimeToPhysicsFrame( int t ) {
-	int s;
-	s = t + USERCMD_MSEC - 1;
-	return ( s - s % USERCMD_MSEC );
+	return MSEC_ALIGN_TO_FRAME( t );
 }

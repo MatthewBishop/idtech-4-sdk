@@ -1,9 +1,8 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
 
-#ifdef _D3XP
 
 #include "../Game_local.h"
 
@@ -112,7 +111,7 @@ void idForce_Grab::Evaluate( int time ) {
 
 	objectCenter = physics->GetAbsBounds(id).GetCenter();
 
-	if ( g_grabberRandomMotion.GetBool() && !gameLocal.isMultiplayer ) {
+	if ( g_grabberRandomMotion.GetBool() && !common->IsMultiplayer() ) {
 		// Jitter the objectCenter around so it doesn't remain stationary
 		float SinOffset = idMath::Sin( (float)(gameLocal.time)/66.f );
 		float randScale1 = gameLocal.random.RandomFloat();
@@ -159,4 +158,3 @@ void idForce_Grab::RemovePhysics( const idPhysics *phys ) {
 	}
 }
 
-#endif	// _D3XP

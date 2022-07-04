@@ -24,6 +24,13 @@ typedef struct rididBodyIState_s {
 	idMat3					orientation;				// orientation of trace model
 	idVec3					linearMomentum;				// translational momentum relative to center of mass
 	idVec3					angularMomentum;			// rotational momentum relative to center of mass
+
+	rididBodyIState_s() :
+		position( vec3_zero ),
+		orientation( mat3_identity ),
+		linearMomentum( vec3_zero ),
+		angularMomentum( vec3_zero ) {
+	}
 } rigidBodyIState_t;
 
 typedef struct rigidBodyPState_s {
@@ -35,6 +42,16 @@ typedef struct rigidBodyPState_s {
 	idVec3					externalForce;				// external force relative to center of mass
 	idVec3					externalTorque;				// external torque relative to center of mass
 	rigidBodyIState_t		i;							// state used for integration
+
+	rigidBodyPState_s() :
+		atRest( true ),
+		lastTimeStep( 0 ),
+		localOrigin( vec3_zero ),
+		localAxis( mat3_identity ),
+		pushVelocity( vec6_zero ),
+		externalForce( vec3_zero ),
+		externalTorque( vec3_zero ) {
+	}
 } rigidBodyPState_t;
 
 class idPhysics_RigidBody : public idPhysics_Base {
@@ -75,6 +92,8 @@ public:	// common physics interface
 	const idBounds &		GetAbsBounds( int id = -1 ) const;
 
 	bool					Evaluate( int timeStepMSec, int endTimeMSec );
+	bool					Interpolate( const float fraction );
+	void					ResetInterpolationState( const idVec3 & origin, const idMat3 & axis );
 	void					UpdateTime( int endTimeMSec );
 	int						GetTime() const;
 
@@ -123,13 +142,17 @@ public:	// common physics interface
 
 	void					SetMaster( idEntity *master, const bool orientated );
 
-	void					WriteToSnapshot( idBitMsgDelta &msg ) const;
-	void					ReadFromSnapshot( const idBitMsgDelta &msg );
+	void					WriteToSnapshot( idBitMsg &msg ) const;
+	void					ReadFromSnapshot( const idBitMsg &msg );
 
 private:
 	// state of the rigid body
 	rigidBodyPState_t		current;
 	rigidBodyPState_t		saved;
+
+	// states for client interpolation
+	rigidBodyPState_t		previous;
+	rigidBodyPState_t		next;
 
 	// rigid body properties
 	float					linearFriction;				// translational friction

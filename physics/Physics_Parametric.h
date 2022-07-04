@@ -81,6 +81,7 @@ public:	// common physics interface
 	const idBounds &		GetAbsBounds( int id = -1 ) const;
 
 	bool					Evaluate( int timeStepMSec, int endTimeMSec );
+	bool					Interpolate( const float fraction );
 	void					UpdateTime( int endTimeMSec );
 	int						GetTime() const;
 
@@ -121,13 +122,16 @@ public:	// common physics interface
 	int						GetLinearEndTime() const;
 	int						GetAngularEndTime() const;
 
-	void					WriteToSnapshot( idBitMsgDelta &msg ) const;
-	void					ReadFromSnapshot( const idBitMsgDelta &msg );
+	void					WriteToSnapshot( idBitMsg &msg ) const;
+	void					ReadFromSnapshot( const idBitMsg &msg );
 
 private:
 	// parametric physics state
 	parametricPState_t		current;
 	parametricPState_t		saved;
+
+	physicsInterpolationState_t		previous;
+	physicsInterpolationState_t		next;
 
 	// pusher
 	bool					isPusher;

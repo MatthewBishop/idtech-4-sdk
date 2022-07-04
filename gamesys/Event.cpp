@@ -6,8 +6,9 @@ Event are used for scheduling tasks and for linking script commands.
 
 */
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
+
 
 #include "../Game_local.h"
 
@@ -189,9 +190,7 @@ const idEventDef *idEventDef::FindEvent( const char *name ) {
 
 static idLinkList<idEvent> FreeEvents;
 static idLinkList<idEvent> EventQueue;
-#ifdef _D3XP
 static idLinkList<idEvent> FastEventQueue;
-#endif
 static idEvent EventPool[ MAX_EVENTS ];
 
 bool idEvent::initialized = false;
@@ -240,6 +239,7 @@ idEvent *idEvent::Alloc( const idEventDef *evdef, int numargs, va_list args ) {
 		memset( ev->data, 0, size );
 	} else {
 		ev->data = NULL;
+		return ev;
 	}
 
 	format = evdef->GetArgFormat();
@@ -372,7 +372,6 @@ void idEvent::Schedule( idClass *obj, const idTypeInfo *type, int time ) {
 
 	eventNode.Remove();
 
-#ifdef _D3XP
 	if ( obj->IsType( idEntity::Type ) && ( ( (idEntity*)(obj) )->timeGroup == TIME_GROUP2 ) ) {
 		event = FastEventQueue.Next();
 		while( ( event != NULL ) && ( this->time >= event->time ) ) {
@@ -389,7 +388,6 @@ void idEvent::Schedule( idClass *obj, const idTypeInfo *type, int time ) {
 	} else {
 		this->time = gameLocal.slow.time + time;
 	}
-#endif
 
 	event = EventQueue.Next();
 	while( ( event != NULL ) && ( this->time >= event->time ) ) {
@@ -425,7 +423,6 @@ void idEvent::CancelEvents( const idClass *obj, const idEventDef *evdef ) {
 		}
 	}
 
-#ifdef _D3XP
 	for( event = FastEventQueue.Next(); event != NULL; event = next ) {
 		next = event->eventNode.Next();
 		if ( event->object == obj ) {
@@ -434,7 +431,6 @@ void idEvent::CancelEvents( const idClass *obj, const idEventDef *evdef ) {
 			}
 		}
 	}
-#endif
 }
 
 /*
@@ -485,6 +481,8 @@ void idEvent::ServiceEvents() {
 		if ( event->time > gameLocal.time ) {
 			break;
 		}
+
+		common->UpdateLevelLoadPacifier();
 
 		// copy the data into the local args array and set up pointers
 		ev = event->eventdef;
@@ -558,7 +556,6 @@ void idEvent::ServiceEvents() {
 	}
 }
 
-#ifdef _D3XP
 /*
 ================
 idEvent::ServiceFastEvents
@@ -657,7 +654,6 @@ void idEvent::ServiceFastEvents() {
 		}
 	}
 }
-#endif
 
 /*
 ================
@@ -773,11 +769,10 @@ void idEvent::Save( idSaveGame *savefile ) {
 					break;
 			}
 		}
-		assert( size == event->eventdef->GetArgSize() );
+		assert( size == (int)event->eventdef->GetArgSize() );
 		event = event->eventNode.Next();
 	}
 
-#ifdef _D3XP
 	// Save the Fast EventQueue
 	savefile->WriteInt( FastEventQueue.Num() );
 
@@ -792,7 +787,6 @@ void idEvent::Save( idSaveGame *savefile ) {
 
 		event = event->eventNode.Next();
 	}
-#endif
 }
 
 /*
@@ -824,22 +818,24 @@ void idEvent::Restore( idRestoreGame *savefile ) {
 		// read the event name
 		savefile->ReadString( name );
 		event->eventdef = idEventDef::FindEvent( name );
-		if ( !event->eventdef ) {
+		if ( event->eventdef == NULL ) {
 			savefile->Error( "idEvent::Restore: unknown event '%s'", name.c_str() );
+			return;
 		}
 
 		// read the classtype
 		savefile->ReadString( name );
 		event->typeinfo = idClass::GetClass( name );
-		if ( !event->typeinfo ) {
+		if ( event->typeinfo == NULL ) {
 			savefile->Error( "idEvent::Restore: unknown class '%s' on event '%s'", name.c_str(), event->eventdef->GetName() );
+			return;
 		}
 
 		savefile->ReadObject( event->object );
 
 		// read the args
 		savefile->ReadInt( argsize );
-		if ( argsize != event->eventdef->GetArgSize() ) {
+		if ( argsize != (int)event->eventdef->GetArgSize() ) {
 			savefile->Error( "idEvent::Restore: arg size (%d) doesn't match saved arg size(%d) on event '%s'", event->eventdef->GetArgSize(), argsize, event->eventdef->GetName() );
 		}
 		if ( argsize ) {
@@ -881,13 +877,12 @@ void idEvent::Restore( idRestoreGame *savefile ) {
 						break;
 				}
 			}
-			assert( size == event->eventdef->GetArgSize() );
+			assert( size == (int)event->eventdef->GetArgSize() );
 		} else {
 			event->data = NULL;
 		}
 	}
 
-#ifdef _D3XP
 	// Restore the Fast EventQueue
 	savefile->ReadInt( num );
 
@@ -905,22 +900,24 @@ void idEvent::Restore( idRestoreGame *savefile ) {
 		// read the event name
 		savefile->ReadString( name );
 		event->eventdef = idEventDef::FindEvent( name );
-		if ( !event->eventdef ) {
+		if ( event->eventdef == NULL ) {
 			savefile->Error( "idEvent::Restore: unknown event '%s'", name.c_str() );
+			return;
 		}
 
 		// read the classtype
 		savefile->ReadString( name );
 		event->typeinfo = idClass::GetClass( name );
-		if ( !event->typeinfo ) {
+		if ( event->typeinfo == NULL ) {
 			savefile->Error( "idEvent::Restore: unknown class '%s' on event '%s'", name.c_str(), event->eventdef->GetName() );
+			return;
 		}
 
 		savefile->ReadObject( event->object );
 
 		// read the args
 		savefile->ReadInt( argsize );
-		if ( argsize != event->eventdef->GetArgSize() ) {
+		if ( argsize != (int)event->eventdef->GetArgSize() ) {
 			savefile->Error( "idEvent::Restore: arg size (%d) doesn't match saved arg size(%d) on event '%s'", event->eventdef->GetArgSize(), argsize, event->eventdef->GetName() );
 		}
 		if ( argsize ) {
@@ -930,7 +927,6 @@ void idEvent::Restore( idRestoreGame *savefile ) {
 			event->data = NULL;
 		}
 	}
-#endif
 }
 
 /*
@@ -990,8 +986,6 @@ CreateEventCallbackHandler
 ================
 */
 void CreateEventCallbackHandler() {
-	int num;
-	int count;
 	int i, j, k;
 	char argString[ D_EVENT_MAXARGS + 1 ];
 	idStr string1;
@@ -1000,7 +994,7 @@ void CreateEventCallbackHandler() {
 
 	file = fileSystem->OpenFileWrite( "Callbacks.cpp" );
 
-	file->Printf( "// generated file - see CREATE_EVENT_CODE\n\n" );
+	file->Printf( "/*\n================================================================================================\nCONFIDENTIAL AND PROPRIETARY INFORMATION/NOT FOR DISCLOSURE WITHOUT WRITTEN PERMISSION \nCopyright 1999-2012 id Software LLC, a ZeniMax Media company. All Rights Reserved. \n================================================================================================\n*/\n\n" );
 
 	for( i = 1; i <= D_EVENT_MAXARGS; i++ ) {
 
@@ -1020,8 +1014,8 @@ void CreateEventCallbackHandler() {
 					string1 += "const float";
 					string2 += va( "*( float * )&data[ %d ]", k );
 				} else {
-					string1 += "const int";
-					string2 += va( "data[ %d ]", k );
+					string1 += "void *";
+					string2 += va( "(void *)data[ %d ]", k );
 				}
 
 				if ( k < i - 1 ) {

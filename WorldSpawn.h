@@ -19,7 +19,7 @@ public:
 
 	void			Spawn();
 
-	void			Save( idRestoreGame *savefile );
+	void			Save( idSaveGame *savefile );
 	void			Restore( idRestoreGame *savefile );
 
 private:

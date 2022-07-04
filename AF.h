@@ -73,8 +73,8 @@ protected:
 	int						modifiedAnim;		// anim to modify
 	idVec3					baseOrigin;			// offset of base body relative to skeletal model origin
 	idMat3					baseAxis;			// axis of base body relative to skeletal model origin
-	idList<jointConversion_t>jointMods;			// list with transforms from skeletal model joints to articulated figure bodies
-	idList<int>				jointBody;			// table to find the nearest articulated figure body for a joint of the skeletal model
+	idList<jointConversion_t, TAG_AF>	jointMods;			// list with transforms from skeletal model joints to articulated figure bodies
+	idList<int, TAG_AF>		jointBody;			// table to find the nearest articulated figure body for a joint of the skeletal model
 	int						poseTime;			// last time the articulated figure was transformed to reflect the current animation pose
 	int						restStartTime;		// time the articulated figure came to rest
 	bool					isLoaded;			// true when the articulated figure is properly loaded

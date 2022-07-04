@@ -142,9 +142,9 @@ void idDragEntity::Update( idPlayer *player ) {
 	idVec3 viewPoint, origin;
 	idMat3 viewAxis, axis;
 	trace_t trace;
-	idEntity *newEnt;
+	idEntity *newEnt = NULL;
 	idAngles angles;
-	jointHandle_t newJoint;
+	jointHandle_t newJoint = INVALID_JOINT;
 	idStr newBodyName;
 
 	player->GetViewPos( viewPoint, viewAxis );
@@ -242,7 +242,7 @@ void idDragEntity::Update( idPlayer *player ) {
 		renderEntity_t *renderEntity = drag->GetRenderEntity();
 		idAnimator *dragAnimator = drag->GetAnimator();
 
-		if ( joint != INVALID_JOINT && renderEntity && dragAnimator ) {
+		if ( joint != INVALID_JOINT && renderEntity != NULL && dragAnimator != NULL ) {
 			dragAnimator->GetJointTransform( joint, gameLocal.time, cursor->draggedPosition, axis );
 			cursor->draggedPosition = renderEntity->origin + cursor->draggedPosition * renderEntity->axis;
 			gameRenderWorld->DrawText( va( "%s\n%s\n%s, %s", drag->GetName(), drag->GetType()->classname, dragAnimator->GetJointName( joint ), bodyName.c_str() ), cursor->GetPhysics()->GetOrigin(), 0.1f, colorWhite, viewAxis, 1 );
@@ -1027,7 +1027,7 @@ int idGameEdit::MapGetUniqueMatchingKeyVals( const char *key, const char *list[]
 			idMapEntity *ent = mapFile->GetEntity( i );
 			if ( ent ) {
 				const char *k = ent->epairs.GetString( key );
-				if ( k && *k && count < max ) {
+				if ( k != NULL && *k != NULL && count < max ) {
 					list[count++] = k;
 				}
 			}
@@ -1044,7 +1044,7 @@ idGameEdit::MapAddEntity
 void idGameEdit::MapAddEntity( const idDict *dict ) const {
 	idMapFile *mapFile = gameLocal.GetLevelMap();
 	if ( mapFile ) {
-		idMapEntity *ent = new idMapEntity();
+		idMapEntity *ent = new (TAG_GAME) idMapEntity();
 		ent->epairs = *dict;
 		mapFile->AddEntity( ent );
 	}

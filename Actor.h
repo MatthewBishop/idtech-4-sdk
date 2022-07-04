@@ -27,9 +27,7 @@ extern const idEventDef AI_AnimDone;
 extern const idEventDef AI_SetBlendFrames;
 extern const idEventDef AI_GetBlendFrames;
 
-#ifdef _D3XP
 extern const idEventDef AI_SetState;
-#endif
 
 class idDeclParticle;
 
@@ -183,9 +181,7 @@ public:
 	bool					AnimDone( int channel, int blendFrames ) const;
 	virtual void			SpawnGibs( const idVec3 &dir, const char *damageDefName );
 
-#ifdef _D3XP
 	idEntity*				GetHeadEntity() { return head.GetEntity(); };
-#endif
 
 protected:
 	friend class			idAnimState;
@@ -201,11 +197,11 @@ protected:
 	int						pain_threshold;		// how much damage monster can take at any one time before playing pain animation
 
 	idStrList				damageGroups;		// body damage groups
-	idList<float>			damageScale;		// damage scale per damage gruop
+	idList<float, TAG_ACTOR>			damageScale;		// damage scale per damage gruop
 
 	bool						use_combat_bbox;	// whether to use the bounding box for combat collision
 	idEntityPtr<idAFAttachment>	head;
-	idList<copyJoints_t>		copyJoints;			// copied from the body animation to the head model
+	idList<copyJoints_t, TAG_ACTOR>		copyJoints;			// copied from the body animation to the head model
 
 	// state variables
 	const function_t		*state;
@@ -239,12 +235,11 @@ protected:
 	bool					finalBoss;
 
 	int						painTime;
+	bool					damageNotByFists;
 
-	idList<idAttachInfo>	attachments;
+	idList<idAttachInfo, TAG_ACTOR>	attachments;
 
-#ifdef _D3XP
 	int						damageCap;
-#endif
 
 	virtual void			Gib( const idVec3 &dir, const char *damageDefName );
 
@@ -300,7 +295,6 @@ private:
 	void					Event_SetState( const char *name );
 	void					Event_GetState();
 	void					Event_GetHead();
-#ifdef _D3XP
 	void					Event_SetDamageGroupScale( const char* groupName, float scale);
 	void					Event_SetDamageGroupScaleAll( float scale );
 	void					Event_GetDamageGroupScale( const char* groupName );
@@ -308,7 +302,6 @@ private:
 	void					Event_SetWaitState( const char* waitState);
 	void					Event_GetWaitState();
 	
-#endif
 };
 
 #endif /* !__GAME_ACTOR_H__ */

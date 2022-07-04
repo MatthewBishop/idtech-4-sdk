@@ -1,7 +1,8 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
+
 
 #include "../Game_local.h"
 
@@ -187,7 +188,6 @@ idCompiler::idCompiler() {
 	// make sure we have the right # of opcodes in the table
 	assert( ( sizeof( opcodes ) / sizeof( opcodes[ 0 ] ) ) == ( NUM_OPCODES + 1 ) );
 
-	eof	= true;
 	parserPtr = &parser;
 
 	callthread			= false;
@@ -338,7 +338,6 @@ idCompiler::Divide
 ID_INLINE float idCompiler::Divide( float numerator, float denominator ) {
 	if ( denominator == 0 ) {
 		Error( "Divide by zero" );
-		return 0;
 	}
 
 	return numerator / denominator;
@@ -461,10 +460,10 @@ idVarDef *idCompiler::OptimizeOpcode( const opcode_t *op, idVarDef *var_a, idVar
 	eval_t		c;
 	idTypeDef	*type;
 
-	if ( var_a && var_a->initialized != idVarDef::initializedConstant ) {
+	if ( var_a == NULL || var_a->initialized != idVarDef::initializedConstant ) {
 		return NULL;
 	}
-	if ( var_b && var_b->initialized != idVarDef::initializedConstant ) {
+	if ( var_b == NULL || var_b->initialized != idVarDef::initializedConstant ) {
 		return NULL;
 	}
 
@@ -846,7 +845,7 @@ idTypeDef *idCompiler::CheckType() {
 		type = &type_scriptevent;
 	} else {
 		type = gameLocal.program.FindType( token.c_str() );
-		if ( type && !type->Inherits( &type_object ) ) {
+		if ( type != NULL && !type->Inherits( &type_object ) ) {
 			type = NULL;
 		}
 	}
@@ -997,10 +996,9 @@ idVarDef *idCompiler::EmitFunctionParms( int op, idVarDef *func, int startarg, i
 			break;
 
 		default :
-			Error( "Invalid return type for function '%s'", func->Name() );
 			// shut up compiler
 			resultOp = OP_STORE_OBJ;
-			break;
+			Error( "Invalid return type for function '%s'", func->Name() );
 		}
 	}
 
@@ -1119,10 +1117,11 @@ idVarDef *idCompiler::ParseSysObjectCall( idVarDef *funcDef ) {
 		Error( "'%s' is not a function", funcDef->Name() );
 	}
 
-	if ( !funcDef->value.functionPtr->eventdef ) {
+	if ( funcDef->value.functionPtr->eventdef == NULL ) {
 		Error( "\"%s\" cannot be called with object notation", funcDef->Name() );
 	}
 
+	assert( funcDef->value.functionPtr->eventdef != NULL ); // to remove stupid analyze warning
 	if ( !idThread::Type.RespondsTo( *funcDef->value.functionPtr->eventdef ) ) {
 		Error( "\"%s\" is not callable as a 'sys' function", funcDef->Name() );
 	}
@@ -1247,7 +1246,7 @@ idVarDef *idCompiler::ParseValue() {
 
 	ParseName( name );
 	def = LookupDef( name, basetype );
-	if ( !def ) {
+	if ( def == NULL ) {
 		if ( basetype ) {
 			Error( "%s is not a member of %s", name.c_str(), basetype->TypeDef()->Name() );
 		} else {
@@ -1260,8 +1259,13 @@ idVarDef *idCompiler::ParseValue() {
 			ParseName( name );
 			namespaceDef = def;
 			def = gameLocal.program.GetDef( NULL, name, namespaceDef );
-			if ( !def ) {
-				Error( "Unknown value \"%s::%s\"", namespaceDef->GlobalName(), name.c_str() );
+			if ( def == NULL ) {
+				if ( namespaceDef != NULL ) {
+					Error( "Unknown value \"%s::%s\"", namespaceDef->GlobalName(), name.c_str() );
+				} else {
+					Error( "Unknown value \"%s\"", name.c_str() );
+				}
+				break;
 			}
 		}
 		//def = LookupDef( name, basetype );
@@ -1287,11 +1291,9 @@ idVarDef *idCompiler::GetTerm() {
 			break;
 
 		default :
-			Error( "type mismatch for ~" );
-
 			// shut up compiler
 			op = OP_COMP_F;
-			break;
+			Error( "type mismatch for ~" );
 		}
 
 		return EmitOpcode( op, e, 0 );
@@ -1321,22 +1323,18 @@ idVarDef *idCompiler::GetTerm() {
 			break;
 
 		case ev_function :
-			Error( "Invalid type for !" );
-
 			// shut up compiler
 			op = OP_NOT_F;
+			Error( "Invalid type for !" );
 			break;
-
 		case ev_object :
 			op = OP_NOT_ENT;
 			break;
 
 		default :
-			Error( "type mismatch for !" );
-
 			// shut up compiler
 			op = OP_NOT_F;
-			break;
+			Error( "type mismatch for !" );
 		}
 
 		return EmitOpcode( op, e, 0 );
@@ -1364,11 +1362,9 @@ idVarDef *idCompiler::GetTerm() {
 				op = OP_NEG_V;
 				break;
 			default :
-				Error( "type mismatch for -" );
-
 				// shut up compiler
 				op = OP_NEG_F;
-				break;
+				Error( "type mismatch for -" );
 			}
 			return EmitOpcode( &opcodes[ op ], e, 0 );
 		}
@@ -2380,14 +2376,16 @@ void idCompiler::ParseEventDef( idTypeDef *returnType, const char *name ) {
 	idStr			parmName;
 
 	ev = idEventDef::FindEvent( name );
-	if ( !ev ) {
+	if ( ev == NULL ) {
 		Error( "Unknown event '%s'", name );
+		return;
 	}
 
 	// set the return type
 	expectedType = GetTypeForEventArg( ev->GetReturnType() );
-	if ( !expectedType ) {
+	if ( expectedType == NULL ) {
 		Error( "Invalid return type '%c' in definition of '%s' event.", ev->GetReturnType(), name );
+		return;
 	}
 	if ( returnType != expectedType ) {
 		Error( "Return type doesn't match internal return type '%s'", expectedType->Name() );
@@ -2401,8 +2399,9 @@ void idCompiler::ParseEventDef( idTypeDef *returnType, const char *name ) {
 	num = strlen( format );
 	for( i = 0; i < num; i++ ) {
 		expectedType = GetTypeForEventArg( format[ i ] );
-		if ( !expectedType || ( expectedType == &type_void ) ) {
+		if ( expectedType == NULL || ( expectedType == &type_void ) ) {
 			Error( "Invalid parameter '%c' in definition of '%s' event.", format[ i ], name );
+			return;
 		}
 
 		argType = ParseType();
@@ -2604,9 +2603,9 @@ void idCompiler::CompileFile( const char *text, const char *filename, bool toCon
 
 		if ( console ) {
 			// don't print line number of an error if were calling script from the console using the "script" command
-			sprintf( error, "Error: %s\n", err.error );
+			sprintf( error, "Error: %s\n", err.GetError() );
 		} else {
-			sprintf( error, "Error: file %s, line %d: %s\n", gameLocal.program.GetFilename( currentFileNumber ), currentLineNumber, err.error );
+			sprintf( error, "Error: file %s, line %d: %s\n", gameLocal.program.GetFilename( currentFileNumber ), currentLineNumber, err.GetError() );
 		}
 
 		parser.FreeSource();

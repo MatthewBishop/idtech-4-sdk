@@ -501,7 +501,7 @@ void idSecurityCamera::Killed( idEntity *inflictor, idEntity *attacker, int dama
 	}
 
 	physicsObj.SetSelf( this );
-	physicsObj.SetClipModel( new idClipModel( trm ), 0.02f );
+	physicsObj.SetClipModel( new (TAG_PHYSICS_CLIP_ENTITY) idClipModel( trm ), 0.02f );
 	physicsObj.SetOrigin( GetPhysics()->GetOrigin() );
 	physicsObj.SetAxis( GetPhysics()->GetAxis() );
 	physicsObj.SetBouncyness( 0.2f );

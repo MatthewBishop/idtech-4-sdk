@@ -77,7 +77,7 @@ void idWorldspawn::Spawn() {
 idWorldspawn::Save
 =================
 */
-void idWorldspawn::Save( idRestoreGame *savefile ) {
+void idWorldspawn::Save( idSaveGame *savefile ) {
 }
 
 /*

@@ -1,7 +1,7 @@
 
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
 
 #include "../Game_local.h"
 
@@ -196,6 +196,24 @@ idPhysics_Base::Evaluate
 */
 bool idPhysics_Base::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	return false;
+}
+
+/*
+================
+idPhysics_Base::Interpolate
+================
+*/
+bool idPhysics_Base::Interpolate( const float fraction ) {
+	return false;
+}
+
+/*
+================
+idPhysics_Base::ResetInterpolationState
+================
+*/
+void idPhysics_Base::ResetInterpolationState( const idVec3 & origin, const idMat3 & axis ) {
+
 }
 
 /*
@@ -513,7 +531,7 @@ void idPhysics_Base::ClearContacts() {
 			ent->RemoveContactEntity( self );
 		}
 	}
-	contacts.SetNum( 0, false );
+	contacts.SetNum( 0 );
 }
 
 /*
@@ -690,13 +708,13 @@ void idPhysics_Base::AddGroundContacts( const idClipModel *clipModel ) {
 	int index, num;
 
 	index = contacts.Num();
-	contacts.SetNum( index + 10, false );
+	contacts.SetNum( index + 10 );
 
 	dir.SubVec3(0) = gravityNormal;
 	dir.SubVec3(1) = vec3_origin;
 	num = gameLocal.clip.Contacts( &contacts[index], 10, clipModel->GetOrigin(),
 					dir, CONTACT_EPSILON, clipModel, clipModel->GetAxis(), clipMask, self );
-	contacts.SetNum( index + num, false );
+	contacts.SetNum( index + num );
 }
 
 /*
@@ -760,7 +778,7 @@ void idPhysics_Base::DrawVelocity( int id, float linearScale, float angularScale
 	dir = GetLinearVelocity( id );
 	dir *= linearScale;
 	if ( dir.LengthSqr() > Square( 0.1f ) ) {
-		dir.Truncate( 10.0f );
+		dir = dir.Truncate( 10.0f );
 		org = GetOrigin( id );
 		gameRenderWorld->DebugArrow( colorRed, org, org + dir, 1 );
 	}
@@ -799,7 +817,7 @@ void idPhysics_Base::DrawVelocity( int id, float linearScale, float angularScale
 idPhysics_Base::WriteToSnapshot
 ================
 */
-void idPhysics_Base::WriteToSnapshot( idBitMsgDelta &msg ) const {
+void idPhysics_Base::WriteToSnapshot( idBitMsg &msg ) const {
 }
 
 /*
@@ -807,5 +825,5 @@ void idPhysics_Base::WriteToSnapshot( idBitMsgDelta &msg ) const {
 idPhysics_Base::ReadFromSnapshot
 ================
 */
-void idPhysics_Base::ReadFromSnapshot( const idBitMsgDelta &msg ) {
+void idPhysics_Base::ReadFromSnapshot( const idBitMsg &msg ) {
 }

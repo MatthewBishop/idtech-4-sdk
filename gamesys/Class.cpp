@@ -6,8 +6,9 @@ instancing of objects.
 
 */
 
-#include "../../idlib/precompiled.h"
 #pragma hdrstop
+#include "../../idlib/precompiled.h"
+
 
 #include "../Game_local.h"
 
@@ -139,13 +140,13 @@ void idTypeInfo::Init() {
 	// are events.  NOTE: could save some space by keeping track of the maximum
 	// event that the class responds to and doing range checking.
 	num = idEventDef::NumEventCommands();
-	eventMap = new eventCallback_t[ num ];
+	eventMap = new (TAG_SYSTEM) eventCallback_t[ num ];
 	memset( eventMap, 0, sizeof( eventCallback_t ) * num );
 	eventCallbackMemory += sizeof( eventCallback_t ) * num;
 
 	// allocate temporary memory for flags so that the subclass's event callbacks
 	// override the superclass's event callback
-	set = new bool[ num ];
+	set = new (TAG_SYSTEM) bool[ num ];
 	memset( set, 0, sizeof( bool ) * num );
 
 	// go through the inheritence order and copies the event callback function into
@@ -209,9 +210,9 @@ ABSTRACT_DECLARATION( NULL, idClass )
 END_CLASS
 
 // alphabetical order
-idList<idTypeInfo *>	idClass::types;
+idList<idTypeInfo *, TAG_IDCLASS>	idClass::types;
 // typenum order
-idList<idTypeInfo *>	idClass::typenums;
+idList<idTypeInfo *, TAG_IDCLASS>	idClass::typenums;
 
 bool	idClass::initialized	= false;
 int		idClass::typeNumBits	= 0;
@@ -414,57 +415,17 @@ void idClass::Shutdown() {
 idClass::new
 ================
 */
-#ifdef ID_DEBUG_MEMORY
-#undef new
-#endif
-
 void * idClass::operator new( size_t s ) {
 	int *p;
 
 	s += sizeof( int );
-	p = (int *)Mem_Alloc( s );
+	p = (int *)Mem_Alloc( s, TAG_IDCLASS );
 	*p = s;
 	memused += s;
 	numobjects++;
 
-#ifdef ID_DEBUG_UNINITIALIZED_MEMORY
-	unsigned long *ptr = (unsigned long *)p;
-	int size = s;
-	assert( ( size & 3 ) == 0 );
-	size >>= 3;
-	for ( int i = 1; i < size; i++ ) {
-		ptr[i] = 0xcdcdcdcd;
-	}
-#endif
-
 	return p + 1;
 }
-
-void * idClass::operator new( size_t s, int, int, char *, int ) {
-	int *p;
-
-	s += sizeof( int );
-	p = (int *)Mem_Alloc( s );
-	*p = s;
-	memused += s;
-	numobjects++;
-
-#ifdef ID_DEBUG_UNINITIALIZED_MEMORY
-	unsigned long *ptr = (unsigned long *)p;
-	int size = s;
-	assert( ( size & 3 ) == 0 );
-	size >>= 3;
-	for ( int i = 1; i < size; i++ ) {
-		ptr[i] = 0xcdcdcdcd;
-	}
-#endif
-
-	return p + 1;
-}
-
-#ifdef ID_DEBUG_MEMORY
-#define new ID_DEBUG_NEW
-#endif
 
 /*
 ================
@@ -472,17 +433,6 @@ idClass::delete
 ================
 */
 void idClass::operator delete( void *ptr ) {
-	int *p;
-
-	if ( ptr ) {
-		p = ( ( int * )ptr ) - 1;
-		memused -= *p;
-		numobjects--;
-        Mem_Free( p );
-	}
-}
-
-void idClass::operator delete( void *ptr, int, int, char *, int ) {
 	int *p;
 
 	if ( ptr ) {
@@ -616,10 +566,19 @@ bool idClass::PostEventArgs( const idEventDef *ev, int time, int numargs, ... ) 
 		return false;
 	}
 
+	bool isReplicated = true;
+	// If this is an entity with skipReplication, we want to process the event normally even on clients.
+	if ( IsType( idEntity::Type ) ) {
+		idEntity * thisEnt = static_cast< idEntity * >( this );
+		if ( thisEnt->fl.skipReplication ) {
+			isReplicated = false;
+		}
+	}
+
 	// we service events on the client to avoid any bad code filling up the event pool
 	// we don't want them processed usually, unless when the map is (re)loading.
 	// we allow threads to run fine, though.
-	if ( gameLocal.isClient && ( gameLocal.GameState() != GAMESTATE_STARTUP ) && !IsType( idThread::Type ) ) {
+	if ( common->IsClient() && isReplicated && ( gameLocal.GameState() != GAMESTATE_STARTUP ) && !IsType( idThread::Type ) ) {
 		return true;
 	}
 
@@ -918,14 +877,12 @@ bool idClass::ProcessEventArgPtr( const idEventDef *ev, int *data ) {
 	assert( ev );
 	assert( idEvent::initialized );
 
-#ifdef _D3XP
 	SetTimeState ts;
 
 	if ( IsType( idEntity::Type ) ) {
 		idEntity *ent = (idEntity*)this;
 		ts.PushState( ent->timeGroup );
 	}
-#endif
 
 	if ( g_debugTriggers.GetBool() && ( ev == &EV_Activate ) && IsType( idEntity::Type ) ) {
 		const idEntity *ent = *reinterpret_cast<idEntity **>( data );

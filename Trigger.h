@@ -60,11 +60,7 @@ public:
 	void				Save( idSaveGame *savefile ) const;
 	void				Restore( idRestoreGame *savefile );
 
-#ifdef CTF    
 protected:
-#else
-private:
-#endif    
 
 	float				wait;
 	float				random;
@@ -113,6 +109,7 @@ private:
 	int					nextTriggerTime;
 	bool				triggerFirst;
 	idStr				entityName;
+	bool				testPartialName;
 
 	void				TriggerAction( idEntity *activator );
 	void				Event_TriggerAction( idEntity *activator );
@@ -263,7 +260,6 @@ private:
 	void				Event_Trigger( idEntity *activator );
 };
 
-#ifdef CTF
 /*
 ===============================================================================
 
@@ -286,7 +282,5 @@ private:
 
 	void				Event_Touch( idEntity *other, trace_t *trace );
 };
-
-#endif /* CTF */
 
 #endif /* !__GAME_TRIGGER_H__ */

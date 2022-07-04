@@ -47,7 +47,7 @@ void idTrigger::DrawDebugInfo() {
 			if ( !show ) {
 				for( i = 0; i < ent->targets.Num(); i++ ) {
 					target = ent->targets[ i ].GetEntity();
-					if ( target && viewBounds.IntersectsBounds( target->GetPhysics()->GetAbsBounds() ) ) {
+					if ( target != NULL && viewBounds.IntersectsBounds( target->GetPhysics()->GetAbsBounds() ) ) {
 						show = true;
 						break;
 					}
@@ -373,13 +373,9 @@ void idTrigger_Multi::TriggerAction( idEntity *activator ) {
 	} else {
 		// we can't just remove (this) here, because this is a touch function
 		// called while looping through area links...
-#ifdef _D3XP
 		// If the player spawned inside the trigger, the player Spawn function called Think directly,
 		// allowing for multiple triggers on a trigger_once.  Increasing the nextTriggerTime prevents it.
 		nextTriggerTime = gameLocal.time + 99999;
-#else
-		nextTriggerTime = gameLocal.time + 1;
-#endif
 		PostEventMS( &EV_Remove, 0 );
 	}
 }
@@ -441,6 +437,10 @@ idTrigger_Multi::Event_Touch
 ================
 */
 void idTrigger_Multi::Event_Touch( idEntity *other, trace_t *trace ) {
+	if ( common->IsClient() ) {
+		return;
+	}
+
 	if( triggerFirst ) {
 		return;
 	}
@@ -511,6 +511,7 @@ idTrigger_EntityName::idTrigger_EntityName() {
 	random_delay = 0.0f;
 	nextTriggerTime = 0;
 	triggerFirst = false;
+	testPartialName = false;
 }
 
 /*
@@ -526,6 +527,7 @@ void idTrigger_EntityName::Save( idSaveGame *savefile ) const {
 	savefile->WriteInt( nextTriggerTime );
 	savefile->WriteBool( triggerFirst );
 	savefile->WriteString( entityName );
+	savefile->WriteBool( testPartialName );
 }
 
 /*
@@ -541,6 +543,7 @@ void idTrigger_EntityName::Restore( idRestoreGame *savefile ) {
 	savefile->ReadInt( nextTriggerTime );
 	savefile->ReadBool( triggerFirst );
 	savefile->ReadString( entityName );
+	savefile->ReadBool( testPartialName );
 }
 
 /*
@@ -576,6 +579,8 @@ void idTrigger_EntityName::Spawn() {
 	if ( !spawnArgs.GetBool( "noTouch" ) ) {
 		GetPhysics()->SetContents( CONTENTS_TRIGGER );
 	}
+
+	testPartialName = spawnArgs.GetBool( "testPartialName", testPartialName );
 }
 
 /*
@@ -622,7 +627,19 @@ void idTrigger_EntityName::Event_Trigger( idEntity *activator ) {
 		return;
 	}
 
-	if ( !activator || ( activator->name != entityName ) ) {
+	bool validEntity = false;
+	if ( activator ) {
+		if ( testPartialName ) {
+			if ( activator->name.Find( entityName, false ) >= 0 ) {
+				validEntity = true;
+			}
+		}
+		if ( activator->name == entityName ) {
+			validEntity = true;
+		}
+	}
+
+	if ( !validEntity ) {
 		return;
 	}
 
@@ -649,6 +666,10 @@ idTrigger_EntityName::Event_Touch
 ================
 */
 void idTrigger_EntityName::Event_Touch( idEntity *other, trace_t *trace ) {
+	if ( common->IsClient() ) {
+		return;
+	}
+		
 	if( triggerFirst ) {
 		return;
 	}
@@ -658,7 +679,19 @@ void idTrigger_EntityName::Event_Touch( idEntity *other, trace_t *trace ) {
 		return;
 	}
 
-	if ( !other || ( other->name != entityName ) ) {
+	bool validEntity = false;
+	if ( other ) {
+		if ( testPartialName ) {
+			if ( other->name.Find( entityName, false ) >= 0 ) {
+				validEntity = true;
+			}
+		}
+		if ( other->name == entityName ) {
+			validEntity = true;
+		}
+	}
+
+	if ( !validEntity ) {
 		return;
 	}
 
@@ -976,27 +1009,25 @@ idTrigger_Hurt::Event_Touch
 void idTrigger_Hurt::Event_Touch( idEntity *other, trace_t *trace ) {
 	const char *damage;
 
+	if ( common->IsClient() ) {
+		return;
+	}
+
 	if ( on && other && gameLocal.time >= nextTime ) {
-#ifdef _D3XP
 		bool playerOnly = spawnArgs.GetBool( "playerOnly" );
 		if ( playerOnly ) {
 			if ( !other->IsType( idPlayer::Type ) ) {
 				return;
 			}
 		}
-#endif
 		damage = spawnArgs.GetString( "def_damage", "damage_painTrigger" );
 
-#ifdef _D3XP
 		idVec3 dir = vec3_origin;
 		if(spawnArgs.GetBool("kick_from_center", "0")) {
 			dir = other->GetPhysics()->GetOrigin() - GetPhysics()->GetOrigin();
 			dir.Normalize();
 		}
 		other->Damage( NULL, NULL, dir, damage, 1.0f, INVALID_JOINT );
-#else
-		other->Damage( NULL, NULL, vec3_origin, damage, 1.0f, INVALID_JOINT );
-#endif
 
 		ActivateTargets( other );
 		CallScript();
@@ -1075,7 +1106,7 @@ idTrigger_Touch::Spawn
 */
 void idTrigger_Touch::Spawn() {
 	// get the clip model
-	clipModel = new idClipModel( GetPhysics()->GetClipModel() );
+	clipModel = new (TAG_THREAD) idClipModel( GetPhysics()->GetClipModel() );
 
 	// remove the collision model from the physics object
 	GetPhysics()->SetClipModel( NULL, 1.0f );
@@ -1189,7 +1220,6 @@ void idTrigger_Touch::Disable() {
 	BecomeInactive( TH_THINK );
 }
 
-#ifdef CTF
 /*
 ===============================================================================
 
@@ -1226,9 +1256,11 @@ void idTrigger_Flag::Spawn() {
 }
 
 void idTrigger_Flag::Event_Touch( idEntity *other, trace_t *trace ) {
-
-	bool bTrigger = false;
 	idItemTeam * flag = NULL;
+
+	if ( common->IsClient() ) {
+		return;
+	}
 
 	if ( player ) {
 		if ( !other->IsType( idPlayer::Type ) )
@@ -1285,7 +1317,7 @@ void idTrigger_Flag::Event_Touch( idEntity *other, trace_t *trace ) {
 		}
 
 /*
-		ServerSendEvent( eventFlag->GetEventNum(), NULL, true, false );
+		ServerSendEvent( eventFlag->GetEventNum(), NULL, true );
 
 		idThread *thread;
 		if ( scriptFlag ) {
@@ -1297,5 +1329,3 @@ void idTrigger_Flag::Event_Touch( idEntity *other, trace_t *trace ) {
 		idTrigger_Multi::Event_Touch( other, trace );
 	}
 }
-
-#endif

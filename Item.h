@@ -12,6 +12,26 @@
 ===============================================================================
 */
 
+/*
+================================================
+These flags are passed to the Give functions
+to set their behavior. We need to be able to
+separate the feedback from the actual
+state modification so that we can hide lag
+on MP clients.
+
+For the previous behavior of functions which
+take a giveFlags parameter (this is usually
+desired on the server too) pass
+ITEM_GIVE_FEEDBACK | ITEM_GIVE_UPDATE_STATE.
+================================================
+*/
+enum itemGiveFlags_t {
+	ITEM_GIVE_FEEDBACK			= BIT( 0 ),
+	ITEM_GIVE_UPDATE_STATE		= BIT( 1 ),
+	ITEM_GIVE_FROM_WEAPON		= BIT( 2 ),			// indicates this was given via a weapon's launchPowerup (for bloodstone powerups)
+};
+
 class idItem : public idEntity {
 public:
 	CLASS_PROTOTYPE( idItem );
@@ -23,8 +43,8 @@ public:
 	void					Restore( idRestoreGame *savefile );
 
 	void					Spawn();
-	void					GetAttributes( idDict &attributes );
-	virtual bool			GiveToPlayer( idPlayer *player );
+	void					GetAttributes( idDict &attributes ) const;
+	virtual bool			GiveToPlayer( idPlayer *player, unsigned int giveFlags );
 	virtual bool			Pickup( idPlayer *player );
 	virtual void			Think();
 	virtual void			Present();
@@ -33,21 +53,23 @@ public:
 		EVENT_PICKUP = idEntity::EVENT_MAXEVENTS,
 		EVENT_RESPAWN,
 		EVENT_RESPAWNFX,
-#ifdef CTF
         EVENT_TAKEFLAG,
         EVENT_DROPFLAG,
         EVENT_FLAGRETURN,
 		EVENT_FLAGCAPTURE,
-#endif
 		EVENT_MAXEVENTS
 	};
 
+	void					ClientThink( const int curTime, const float fraction, const bool predict );
 	virtual void			ClientPredictionThink();
 	virtual bool			ClientReceiveEvent( int event, int time, const idBitMsg &msg );
 
 	// networking
-	virtual void			WriteToSnapshot( idBitMsgDelta &msg ) const;
-	virtual void			ReadFromSnapshot( const idBitMsgDelta &msg );
+	virtual void			WriteToSnapshot( idBitMsg &msg ) const;
+	virtual void			ReadFromSnapshot( const idBitMsg &msg );
+
+protected:
+	int						GetPredictPickupMilliseconds() const { return clientPredictPickupMilliseconds; }
 
 private:
 	idVec3					orgOrigin;
@@ -65,6 +87,9 @@ private:
 	mutable int				lastCycle;
 	mutable int				lastRenderViewTime;
 
+	// used for prediction in mp
+	int						clientPredictPickupMilliseconds;
+	
 	bool					UpdateRenderEntity( renderEntity_s *renderEntity, const renderView_t *renderView ) const;
 	static bool				ModelCallback( renderEntity_s *renderEntity, const renderView_t *renderView );
 
@@ -85,7 +110,7 @@ public:
 	void					Restore( idRestoreGame *savefile );
 
 	void					Spawn();
-	virtual bool			GiveToPlayer( idPlayer *player );
+	virtual bool			GiveToPlayer( idPlayer *player, unsigned int giveFlags );
 
 private:
 	int						time;
@@ -105,26 +130,25 @@ public:
 
 private:
 	idVec3					playerPos;
+	const idMaterial *		screenshot;
 
 	void					Event_Trigger( idEntity *activator );
 	void					Event_HideObjective( idEntity *e );
 	void					Event_GetPlayerPos();
-	void					Event_CamShot();
 };
 
 class idVideoCDItem : public idItem {
 public:
 	CLASS_PROTOTYPE( idVideoCDItem );
 
-	void					Spawn();
-	virtual bool			GiveToPlayer( idPlayer *player );
+	virtual bool			GiveToPlayer( idPlayer *player, unsigned int giveFlags );
 };
 
 class idPDAItem : public idItem {
 public:
 	CLASS_PROTOTYPE( idPDAItem );
 
-	virtual bool			GiveToPlayer( idPlayer *player );
+	virtual bool			GiveToPlayer( idPlayer *player, unsigned int giveFlags );
 };
 
 class idMoveableItem : public idItem {
@@ -139,41 +163,30 @@ public:
 
 	void					Spawn();
 	virtual void			Think();
-#ifdef _D3XP
+	void					ClientThink( const int curTime, const float fraction, const bool predict );
 	virtual bool			Collide( const trace_t &collision, const idVec3 &velocity );
-#endif
 	virtual bool			Pickup( idPlayer *player );
 
 	static void				DropItems( idAnimatedEntity *ent, const char *type, idList<idEntity *> *list );
 	static idEntity	*		DropItem( const char *classname, const idVec3 &origin, const idMat3 &axis, const idVec3 &velocity, int activateDelay, int removeDelay );
 
-	virtual void			WriteToSnapshot( idBitMsgDelta &msg ) const;
-	virtual void			ReadFromSnapshot( const idBitMsgDelta &msg );
+	virtual void			WriteToSnapshot( idBitMsg &msg ) const;
+	virtual void			ReadFromSnapshot( const idBitMsg &msg );
 
-#ifdef CTF    
 protected:
-#else
-private:
-#endif
 	idPhysics_RigidBody		physicsObj;
 	idClipModel *			trigger;
 	const idDeclParticle *	smoke;
 	int						smokeTime;
 
-#ifdef _D3XP
 	int						nextSoundTime;
-#endif
-#ifdef CTF
 	bool					repeatSmoke;	// never stop updating the particles
-#endif
 
 	void					Gib( const idVec3 &dir, const char *damageDefName );
 
 	void					Event_DropToFloor();
 	void					Event_Gib( const char *damageDefName );
 };
-
-#ifdef CTF
 
 class idItemTeam : public idMoveableItem {
 public:
@@ -195,8 +208,8 @@ public:
 	virtual void			Present();
 
 	// networking
-	virtual void			WriteToSnapshot( idBitMsgDelta &msg ) const;
-	virtual void			ReadFromSnapshot( const idBitMsgDelta &msg );
+	virtual void			WriteToSnapshot( idBitMsg &msg ) const;
+	virtual void			ReadFromSnapshot( const idBitMsg &msg );
 
 public:
     int                     team;
@@ -237,14 +250,11 @@ private:
     void                    UpdateGuis();
 };
 
-#endif
-
-
 class idMoveablePDAItem : public idMoveableItem {
 public:
 	CLASS_PROTOTYPE( idMoveablePDAItem );
 
-	virtual bool			GiveToPlayer( idPlayer *player );
+	virtual bool			GiveToPlayer( idPlayer *player, unsigned int giveFlags );
 };
 
 /*
