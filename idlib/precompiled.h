@@ -21,6 +21,9 @@
 // dedicated sets windows version here
 #define	_WIN32_WINNT WINVER
 #define	WIN32_LEAN_AND_MEAN
+//HUMANHEAD PCF rww 08/14/06 - make the debug dedicated compile
+#include "../tools/comafx/StdAfx.h"			// this will go away when MFC goes away
+//HUMANHEAD END
 #else
 // non-dedicated includes MFC and sets windows verion here
 #include "../tools/comafx/StdAfx.h"			// this will go away when MFC goes away
@@ -43,6 +46,8 @@
 #pragma warning(disable : 4100)				// unreferenced formal parameter
 #pragma warning(disable : 4244)				// conversion to smaller type, possible loss of data
 #pragma warning(disable : 4714)				// function marked as __forceinline not inlined
+
+#include "../framework/dotnetwarnings.h" //HUMANHEAD rww
 
 #include <malloc.h>							// no malloc.h on mac or unix
 #include <windows.h>						// for qgl.h
@@ -70,6 +75,12 @@
 
 //-----------------------------------------------------
 
+//HUMANHEAD rww - moved up from "framework"
+//#include "../framework/BuildVersion.h" // HUMANHEAD mdl:  Removed from precompiled headers and put in individual cpp files as needed.
+#include "../framework/BuildDefines.h"
+#include "../framework/Licensee.h"
+//HUMANHEAD END
+
 // non-portable system services
 #include "../sys/sys_public.h"
 
@@ -81,9 +92,6 @@
 #endif
 
 // framework
-#include "../framework/BuildVersion.h"
-#include "../framework/BuildDefines.h"
-#include "../framework/Licensee.h"
 #include "../framework/CmdSystem.h"
 #include "../framework/CVarSystem.h"
 #include "../framework/Common.h"
@@ -100,6 +108,17 @@
 #include "../framework/DeclParticle.h"
 #include "../framework/DeclAF.h"
 #include "../framework/DeclPDA.h"
+#include "../framework/declPreyBeam.h" // HUMANHEAD CJR
+
+//HUMANHEAD rww - for memory build
+#ifdef ID_REDIRECT_NEWDELETE
+#undef new
+void *						operator new( size_t );
+void *						operator new( size_t s, int, int, char *, int );
+void						operator delete( void * );
+void						operator delete( void *, int, int, char *, int );
+#endif
+//HUMANHEAD END
 
 // We have expression parsing and evaluation code in multiple places:
 // materials, sound shaders, and guis. We should unify them.
@@ -132,6 +151,11 @@ const int MAX_EXPRESSION_REGISTERS = 4096;
 #include "../tools/compilers/aas/AASFile.h"
 #include "../tools/compilers/aas/AASFileManager.h"
 
+//HUMANHEAD
+#include "../preyengine/profiler.h"			// Exposed to both engine and game
+											// Must be after engine systems, but before game.h
+//HUMANHEAD END
+
 // game
 #if defined(_D3XP) && defined(GAME_DLL)
 #include "../d3xp/Game.h"
@@ -163,6 +187,11 @@ const int MAX_EXPRESSION_REGISTERS = 4096;
 #include "../framework/Console.h"
 #include "../framework/DemoFile.h"
 #include "../framework/Session.h"
+//HUMANHEAD rww
+#if _HH_SECUROM_DONOTREALLYNEED
+#include "../framework/securom/securom_api.h"
+#endif
+//HUMANHEAD END
 
 // asynchronous networking
 #include "../framework/async/AsyncNetwork.h"

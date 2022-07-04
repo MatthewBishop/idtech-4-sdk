@@ -98,6 +98,11 @@ public:
 	static void			ArgCompletion_ConfigName( const idCmdArgs &args, void(*callback)( const char *s ) );
 	static void			ArgCompletion_SaveGame( const idCmdArgs &args, void(*callback)( const char *s ) );
 	static void			ArgCompletion_DemoName( const idCmdArgs &args, void(*callback)( const char *s ) );
+#ifdef HUMANHEAD	// HUMANHEAD pdm
+	static void			ArgCompletion_CmdDemoName( const idCmdArgs &args, void(*callback)( const char *s ) );
+	static void			ArgCompletion_ReplayDemoName( const idCmdArgs &args, void(*callback)( const char *s ) );
+	static void			ArgCompletion_ClassName( const idCmdArgs &args, void(*callback)( const char *s ) );
+#endif
 };
 
 extern idCmdSystem *	cmdSystem;
@@ -159,5 +164,14 @@ ID_INLINE void idCmdSystem::ArgCompletion_SaveGame( const idCmdArgs &args, void(
 ID_INLINE void idCmdSystem::ArgCompletion_DemoName( const idCmdArgs &args, void(*callback)( const char *s ) ) {
 	cmdSystem->ArgCompletion_FolderExtension( args, callback, "demos/", true, ".demo", NULL );
 }
+
+#ifdef HUMANHEAD	// HUMANHEAD pdm
+ID_INLINE void idCmdSystem::ArgCompletion_CmdDemoName( const idCmdArgs &args, void(*callback)( const char *s ) ) {
+	cmdSystem->ArgCompletion_FolderExtension( args, callback, "demos/", true, ".cmd", NULL );
+}
+ID_INLINE void idCmdSystem::ArgCompletion_ReplayDemoName( const idCmdArgs &args, void(*callback)( const char *s ) ) {
+	cmdSystem->ArgCompletion_FolderExtension( args, callback, "demos/replay/", true, ".cmd", NULL );
+}
+#endif
 
 #endif /* !__CMDSYSTEM_H__ */

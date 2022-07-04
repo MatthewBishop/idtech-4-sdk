@@ -13,6 +13,11 @@ Event are used for scheduling tasks and for linking script commands.
 #include "../Game_local.h"
 
 #define MAX_EVENTSPERFRAME			4096
+
+//HUMANHEAD: aob - needed for networking to send the least amount of bits
+const int MAX_EVENTS_NUM_BITS		= hhMath::BitsForInteger( MAX_EVENTS );
+//HUMANHEAD END
+
 //#define CREATE_EVENT_CODE
 
 /***********************************************************************
@@ -180,6 +185,21 @@ const idEventDef *idEventDef::FindEvent( const char *name ) {
 	}
 
 	return NULL;
+}
+
+/*
+================
+idEventDef::FindEvent
+
+HUMANHEAD: aob
+================
+*/
+const idEventDef *idEventDef::FindEvent( int eventId ) {
+	if( eventId < 0 || eventId >= numEventDefs ) {
+		return NULL;
+	}
+
+	return eventDefList[ eventId ];
 }
 
 /***********************************************************************
@@ -581,6 +601,28 @@ void idEvent::Shutdown( void ) {
 	initialized = false;
 }
 
+// HUMANHEAD pdm
+int idEvent::NumQueuedEvents( const idClass *obj, const idEventDef *evdef ) {
+	idEvent *event;
+	idEvent *next;
+	int count=0;
+
+	if ( !initialized ) {
+		return 0;
+	}
+
+	for( event = EventQueue.Next(); event != NULL; event = next ) {
+		next = event->eventNode.Next();
+		if ( event->object == obj ) {
+			if ( !evdef || ( evdef == event->eventdef ) ) {
+				count++;
+			}
+		}
+	}
+	return count;
+}
+// HUMANHEAD END
+
 /*
 ================
 idEvent::Save
@@ -636,6 +678,13 @@ void idEvent::Save( idSaveGame *savefile ) {
 						}
 					}
 					break;
+				// HUMANHEAD mdl:  Added support for saving strings passed in events
+				case D_EVENT_STRING:
+					str = reinterpret_cast<char *>( dataPtr );
+					savefile->Write( str, MAX_STRING_LEN );
+					size += MAX_STRING_LEN;
+					break;
+				// HUMANHEAD END
 				default:
 					break;
 			}
@@ -727,6 +776,13 @@ void idEvent::Restore( idRestoreGame *savefile ) {
 							}
 						}
 						break;
+					// HUMANHEAD mdl:  Added support for saving strings passed in events
+					case D_EVENT_STRING:
+						str = reinterpret_cast<char *>( dataPtr );
+						savefile->Read( str, MAX_STRING_LEN );
+						size += MAX_STRING_LEN;
+						break;
+					// HUMANHEAD END
 					default:
 						break;
 				}

@@ -132,7 +132,10 @@ typedef enum {
 	CPUID_HTT							= 0x01000,	// Hyper-Threading Technology
 	CPUID_CMOV							= 0x02000,	// Conditional Move (CMOV) and fast floating point comparison (FCOMI) instructions
 	CPUID_FTZ							= 0x04000,	// Flush-To-Zero mode (denormal results are flushed to zero)
-	CPUID_DAZ							= 0x08000	// Denormals-Are-Zero mode (denormal source operands are set to zero)
+	CPUID_DAZ							= 0x08000,	// Denormals-Are-Zero mode (denormal source operands are set to zero)
+	//HUMANHEAD rww
+	CPUID_LONGMODE						= 0x10000,	//long mode (64-bit) registers, address space, rip-relative addressing mode
+	//HUMANHEAD END
 } cpuid_t;
 
 typedef enum {
@@ -209,6 +212,20 @@ typedef struct sysMemoryStats_s {
 	int availExtendedVirtual;
 } sysMemoryStats_t;
 
+//HUMANHEAD rww
+typedef struct procMemoryStats_s {
+	int pageFaultCount;
+	int peakWorkingSetSize;
+	int workingSetSize;
+	int quotaPeakPagedPoolUsage;
+	int quotaPagedPoolUsage;
+	int quotaPeakNonPagedPoolUsage;
+	int quotaNonPagedPoolUsage;
+	int pagefileUsage;
+	int peakPagefileUsage;
+} procMemoryStats_t;
+//HUMANHEAD END
+
 typedef unsigned long address_t;
 
 template<class type> class idList;		// for Sys_ListFiles
@@ -247,6 +264,7 @@ int				Sys_Milliseconds( void );
 // for accurate performance testing
 double			Sys_GetClockTicks( void );
 double			Sys_ClockTicksPerSecond( void );
+double			Sys_RealClockTicksPerSecond(void); //HUMANHEAD rww
 
 // returns a selection of the CPUID_* flags
 cpuid_t			Sys_GetProcessorId( void );
@@ -257,6 +275,11 @@ bool			Sys_FPU_StackIsEmpty( void );
 
 // empties the FPU stack
 void			Sys_FPU_ClearStack( void );
+
+//HUMANHEAD rww
+//checks the invalid operation bit of the status word.
+bool			Sys_FPU_CheckException(void);
+//HUMANHEAD END
 
 // returns the FPU state as a string
 const char *	Sys_FPU_GetState( void );
@@ -285,7 +308,25 @@ int				Sys_GetVideoRam( void );
 // returns amount of drive space in path
 int				Sys_GetDriveFreeSpace( const char *path );
 
+//HUMANHEAD rww
+//disallow openal with old creative drivers (so we don't get molested by bluescreens)
+bool			Sys_CheckCreativeDrivers(void);
+
+//logitech lcd keyboard interface functions
+bool			Sys_LGLCD_Init(void);
+void			Sys_LGLCD_Shutdown(void);
+bool			Sys_LGLCD_Valid(void);
+void			Sys_LGLCD_UploadImage(unsigned char *pixels, int w, int h, bool highPriority, bool flipColor);
+bool			Sys_LGLCD_ReadSoftButtons(DWORD *out);
+void			Sys_LGLCD_DrawBegin(void);
+void			Sys_LGLCD_DrawFinish(bool clearBuffer);
+void			Sys_LGLCD_DrawRaw(unsigned char *pixels, int x, int y, int w, int h, int pitch, bool flipColor, bool layered, int rotate);
+void			Sys_LGLCD_DrawText(const char *text, int x, int y, bool layered);
+void			Sys_LGLCD_DrawShape(int shapeType, int x, int y, int sizeX, int sizeY, int parm, bool layered);
+//HUMANHEAD END
+
 // returns memory stats
+void			Sys_GetProcessMemoryInfo(procMemoryStats_t &stats); //HUMANHEAD rww
 void			Sys_GetCurrentMemoryStatus( sysMemoryStats_t &stats );
 void			Sys_GetExeLaunchMemoryStatus( sysMemoryStats_t &stats );
 
@@ -335,6 +376,14 @@ int				Sys_PollMouseInputEvents( void );
 int				Sys_ReturnMouseInputEvent( const int n, int &action, int &value );
 void			Sys_EndMouseInputEvents( void );
 
+#if GAMEPAD_SUPPORT	// VENOM BEGIN
+void	Sys_UpdateJoystick( void );
+int		Sys_PollJockstickEvents( void );
+void	Sys_ReturnJoyStickInputEvent( int iEvent,  int &iKey, int &iState );
+SHORT	Sys_GetJoyStickAxis( int iAxis );
+float	Sys_GetJoyStickModifier( int iAxis );
+#endif // VENOM END
+
 // when the console is down, or the game is about to perform a lengthy
 // operation like map loading, the system can release the mouse cursor
 // when in windowed mode
@@ -363,6 +412,12 @@ void			Sys_SetFatalError( const char *error );
 
 // display perference dialog
 void			Sys_DoPreferences( void );
+
+
+#if GAMEPAD_SUPPORT	// VENOM BEGIN
+void Sys_SetRumble ( int effect );
+void Sys_StopRumble( void );
+#endif // VENOM END
 
 /*
 ==============================================================
@@ -530,6 +585,20 @@ public:
 
 	virtual bool			LockMemory( void *ptr, int bytes ) = 0;
 	virtual bool			UnlockMemory( void *ptr, int bytes ) = 0;
+
+	//HUMANHEAD rww
+	//logitech lcd keyboard interface functions
+	virtual bool			LGLCD_Init(void) = 0;
+	virtual void			LGLCD_Shutdown(void) = 0;
+	virtual bool			LGLCD_Valid(void) = 0;
+	virtual void			LGLCD_UploadImage(unsigned char *pixels, int w, int h, bool highPriority, bool flipColor) = 0;
+	virtual bool			LGLCD_ReadSoftButtons(DWORD *out) = 0;
+	virtual void			LGLCD_DrawBegin(void) = 0;
+	virtual void			LGLCD_DrawFinish(bool clearBuffer) = 0;
+	virtual void			LGLCD_DrawRaw(unsigned char *pixels, int x, int y, int w, int h, int pitch, bool flipColor, bool layered, int rotate) = 0;
+	virtual void			LGLCD_DrawText(const char *text, int x, int y, bool layered) = 0;
+	virtual void			LGLCD_DrawShape(int shapeType, int x, int y, int sizeX, int sizeY, int parm, bool layered) = 0;
+	//HUMANHEAD END
 
 	virtual void			GetCallStack( address_t *callStack, const int callStackSize ) = 0;
 	virtual const char *	GetCallStackStr( const address_t *callStack, const int callStackSize ) = 0;

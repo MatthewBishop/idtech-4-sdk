@@ -6,6 +6,17 @@
 
 idBounds bounds_zero( vec3_zero, vec3_zero );
 
+float idBounds::GetMaxExtent( void ) const {
+	float max = 0.0f;
+	for (int i=0; i<3; i++) {
+		float dist = idMath::Fabs(b[1][i] - b[0][i]);
+		if (dist > max) {
+			max = dist;
+		}
+	}
+	return max;
+}
+
 /*
 ============
 idBounds::GetRadius

@@ -67,7 +67,8 @@ idAFAttachment
 ===============================================================================
 */
 
-class idAFAttachment : public idAnimatedEntity {
+// HUMANHEAD pdm: Changed to inherit from hhAnimatedEntity
+class idAFAttachment : public hhAnimatedEntity {
 public:
 	CLASS_PROTOTYPE( idAFAttachment );
 
@@ -95,7 +96,7 @@ public:
 	virtual void			AddForce( idEntity *ent, int id, const idVec3 &point, const idVec3 &force );
 
 	virtual	void			Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &dir, const char *damageDefName, const float damageScale, const int location );
-	virtual void			AddDamageEffect( const trace_t &collision, const idVec3 &velocity, const char *damageDefName );
+	virtual void			AddDamageEffect( const trace_t &collision, const idVec3 &velocity, const char *damageDefName, bool broadcast = false ); //HUMANHEAD rww - added broadcast
 
 	void					SetCombatModel( void );
 	idClipModel *			GetCombatModel( void ) const;
@@ -118,7 +119,12 @@ idAFEntity_Base
 ===============================================================================
 */
 
-class idAFEntity_Base : public idAnimatedEntity {
+// HUMANHEAD nla
+extern const idEventDef EV_Dispose;
+// HUMANHEAD
+
+// HUMANHEAD pdm: inherit from hhAnimatedEntity
+class idAFEntity_Base : public hhAnimatedEntity {
 public:
 	CLASS_PROTOTYPE( idAFEntity_Base );
 
@@ -157,11 +163,18 @@ public:
 	void					LoadState( const idDict &args );
 
 	void					AddBindConstraints( void );
+	void					AddBindConstraint( constraintType_t type, int bodyId, jointHandle_t joint );
 	void					RemoveBindConstraints( void );
 
 	virtual void			ShowEditingDialog( void );
 
 	static void				DropAFs( idEntity *ent, const char *type, idList<idEntity *> *list );
+
+	// HUMANHEAD nla
+	virtual bool			CheckImpulse( idEntity *impulseSource );
+	virtual bool			IsImpulseFromSelf( void ) { return( impulseFromSelf ); }
+	void					Event_SetCollision(int on);
+	// HUMANHEAD END
 
 protected:
 	idAF					af;				// articulated figure
@@ -170,6 +183,12 @@ protected:
 	idVec3					spawnOrigin;	// spawn origin
 	idMat3					spawnAxis;		// rotation axis used when spawned
 	int						nextSoundTime;	// next time this can make a sound
+	int						numSplats;		// HUMANHEAD bjk: splat counter
+	idVec3					splats[16];
+
+	// HUMANHEAD nla
+	bool					impulseFromSelf;	// nla Is the impulse from ourselves.  (Used for ragdolls/making sure the ragdolls behave the same regardless if they are made up of 1 body or 100 bodies)
+	// HUMANHEAD END
 
 	void					Event_SetConstraintPosition( const char *name, const idVec3 &pos );
 };
@@ -199,6 +218,10 @@ public:
 	virtual	void			Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &dir, const char *damageDefName, const float damageScale, const int location );
 	virtual void			SpawnGibs( const idVec3 &dir, const char *damageDefName );
 
+	// HUMANHEAD mdl:  Moved from idAFEntity_Base
+	virtual	bool			CheckRagdollDamage( idEntity *inflictor, idEntity *attacker, const idVec3 &dir, const char *damageDefName, int location );
+	// HUMANHEAD END
+
 protected:
 	idRenderModel *			skeletonModel;
 	int						skeletonModelDefHandle;
@@ -208,6 +231,11 @@ protected:
 	void					InitSkeletonModel( void );
 
 	void					Event_Gib( const char *damageDefName );
+
+	// HUMANHEAD mdl
+protected:
+	int						gibHealth;		// Health at which you gib
+	// HUMANHEAD END
 };
 
 /*

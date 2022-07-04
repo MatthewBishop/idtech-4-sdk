@@ -49,6 +49,12 @@
 #define FLOAT_IS_IND(x)			((*(const unsigned long *)&x) == 0xffc00000)
 #define	FLOAT_IS_DENORMAL(x)	(((*(const unsigned long *)&x) & 0x7f800000) == 0x00000000 && \
 								 ((*(const unsigned long *)&x) & 0x007fffff) != 0x00000000 )
+//HUMANHEAD rww
+#define	FLOAT_IS_INVALID(x)		(FLOAT_IS_NAN(x) || FLOAT_IS_DENORMAL(x))
+
+#define FLOAT_SET_NAN( x )		(*(unsigned long *)&x) |= 0x7f800000
+
+//HUMANHEAD END
 
 #define IEEE_FLT_MANTISSA_BITS	23
 #define IEEE_FLT_EXPONENT_BITS	8

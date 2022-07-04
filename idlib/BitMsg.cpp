@@ -4,6 +4,12 @@
 #include "precompiled.h"
 #pragma hdrstop
 
+#ifdef _HH_NET_DEBUGGING //HUMANHEAD rww
+#ifndef ID_DEBUG_MEMORY
+#define _STD_USING
+#include <map>
+#endif
+#endif //HUMANHEAD END
 
 /*
 ==============================================================================
@@ -29,6 +35,9 @@ idBitMsg::idBitMsg() {
 	numValueOverflows = 0;
 	allowOverflow = false;
 	overflowed = false;
+#if !GOLD //HUMANHEAD rww
+	debugEntType = 0;
+#endif //HUMANHEAD END
 }
 
 /*
@@ -36,13 +45,18 @@ idBitMsg::idBitMsg() {
 idBitMsg::CheckOverflow
 ================
 */
-bool idBitMsg::CheckOverflow( int length ) {
-	if ( GetRemainingSpace() < length ) {
+bool idBitMsg::CheckOverflow( int numBits ) {
+	assert( numBits >= 0 );
+	if ( numBits > GetRemainingWriteBits() ) {
 		if ( !allowOverflow ) {
+#if !GOLD //HUMANHEAD rww - i want more detailed info on this when it occurs
+			idLib::common->FatalError( "idBitMsg: overflow for entity '%i' without allowOverflow set", debugEntType );
+#else //HUMANHEAD END
 			idLib::common->FatalError( "idBitMsg: overflow without allowOverflow set" );
+#endif
 		}
-		if ( length > maxSize ) {
-			idLib::common->FatalError( "idBitMsg: %i is > full message size", length );
+		if ( numBits > ( maxSize << 3 ) ) {
+			idLib::common->FatalError( "idBitMsg: %i bits is > full message size", numBits );
 		}
 		idLib::common->Printf( "idBitMsg: overflow\n" );
 		BeginWriting();
@@ -68,7 +82,7 @@ byte *idBitMsg::GetByteSpace( int length ) {
 	WriteByteAlign();
 
 	// check for overflow
-	CheckOverflow( length );
+	CheckOverflow( length << 3 );
 
 	ptr = writeData + curSize;
 	curSize += length;
@@ -95,11 +109,6 @@ void idBitMsg::WriteBits( int value, int numBits ) {
 		idLib::common->FatalError( "idBitMsg::WriteBits: bad numBits %i", numBits );
 	}
 
-	// check for msg overflow
-	if ( CheckOverflow( ( numBits + writeBit ) >> 3 ) ) {
-		return;
-	}
-
 	// check for value overflows
 	if ( numBits != 32 ) {
 		if ( numBits > 0 ) {
@@ -119,6 +128,11 @@ void idBitMsg::WriteBits( int value, int numBits ) {
 	}
 	if ( numBits < 0 ) {
 		numBits = -numBits;
+	}
+
+	// check for msg overflow
+	if ( CheckOverflow( numBits ) ) {
+		return;
 	}
 
 	// write the bits
@@ -348,11 +362,6 @@ int idBitMsg::ReadBits( int numBits ) const {
 		idLib::common->FatalError( "idBitMsg::ReadBits: bad numBits %i", numBits );
 	}
 
-	// check for overflow
-	if ( ( ( ( curSize - readCount + 1 ) << 3 ) - readBit ) < numBits ) {
-		return -1;
-	}
-
 	value = 0;
 	valueBits = 0;
 
@@ -363,13 +372,18 @@ int idBitMsg::ReadBits( int numBits ) const {
 		sgn = false;
 	}
 
+	// check for overflow
+	if ( numBits > GetRemainingReadBits() ) {
+		return -1;
+	}
+
 	while ( valueBits < numBits ) {
 		if ( readBit == 0 ) {
 			readCount++;
 		}
 		get = 8 - readBit;
 		if ( get > (numBits - valueBits) ) {
-			get = (numBits - valueBits);
+			get = numBits - valueBits;
 		}
 		fraction = readData[readCount - 1];
 		fraction >>= readBit;
@@ -570,11 +584,11 @@ int idBitMsg::DirToBits( const idVec3 &dir, int numBits ) {
 	bias = 0.5f / max;
 
 	bits = FLOATSIGNBITSET( dir.x ) << ( numBits * 3 - 1 );
-	bits |= ( (int) ( ( idMath::Fabs( dir.x ) + bias ) * max ) ) << ( numBits * 2 );
+	bits |= ( idMath::Ftoi( ( idMath::Fabs( dir.x ) + bias ) * max ) ) << ( numBits * 2 );
 	bits |= FLOATSIGNBITSET( dir.y ) << ( numBits * 2 - 1 );
-	bits |= ( (int) ( ( idMath::Fabs( dir.y ) + bias ) * max ) ) << ( numBits * 1 );
+	bits |= ( idMath::Ftoi( ( idMath::Fabs( dir.y ) + bias ) * max ) ) << ( numBits * 1 );
 	bits |= FLOATSIGNBITSET( dir.z ) << ( numBits * 1 - 1 );
-	bits |= ( (int) ( ( idMath::Fabs( dir.z ) + bias ) * max ) ) << ( numBits * 0 );
+	bits |= ( idMath::Ftoi( ( idMath::Fabs( dir.z ) + bias ) * max ) ) << ( numBits * 0 );
 	return bits;
 }
 
@@ -613,12 +627,88 @@ idVec3 idBitMsg::BitsToDir( int bits, int numBits ) {
 
 const int MAX_DATA_BUFFER		= 1024;
 
+#ifdef _HH_NET_DEBUGGING //HUMANHEAD rww
+#ifndef ID_DEBUG_MEMORY
+
+typedef struct bitWriteStatus_s {
+	bool					used;
+	std::map<int,int>		bitUsageMap;
+	std::map<int,int>		bitMaxMap;
+} bitWriteStatus_t;
+
+static std::map<int, bitWriteStatus_t> g_typeNetworkUseMap;
+
+void PrintHHNetworkUseStats(const char *typeName, int type) {
+	bool printed = false;
+	int totalBits = 0;
+	bitWriteStatus_t *stats = &g_typeNetworkUseMap[type];
+
+	if (stats->used) {
+		std::map<int,int>::iterator it = stats->bitUsageMap.begin();
+		while (it != stats->bitUsageMap.end()) {
+			int max = stats->bitMaxMap[it->first];
+			if (it->second < max-1) { //never reached max bits-1, consider it potential
+				if (!printed) {
+					common->Printf("ENTITY %s\n------\n", typeName);
+					printed = true;
+				}
+				common->Printf("Write number %i, max bits %i, used bits %i\n", it->first, max, it->second);
+			}
+			totalBits += max;
+			it++;
+		}
+	}
+
+	if (printed) {
+		common->Printf("Total bits in snapshot: %i\n", totalBits);
+		common->Printf("============================================\n");
+	}
+}
+
+/*
+================
+idBitMsgDelta::BeginEntLog
+================
+*/
+void idBitMsgDelta::BeginEntLog(int type) {
+	entType = type;
+	writeCount = 0;
+}
+#else
+void idBitMsgDelta::BeginEntLog(int type) {
+}
+void PrintHHNetworkUseStats(const char *typeName, int type) {
+}
+#endif //!ID_DEBUG_MEMORY
+#endif //HUMANHEAD END
+
 /*
 ================
 idBitMsgDelta::WriteBits
 ================
 */
 void idBitMsgDelta::WriteBits( int value, int numBits ) {
+#ifdef _HH_NET_DEBUGGING //HUMANHEAD rww
+#ifndef ID_DEBUG_MEMORY
+	if (entType) {
+		int i = 0;
+		unsigned int b = (unsigned int)(1<<i);
+		while (b < (unsigned int)value && i < 32) {
+			i++;
+			b = (unsigned int)(1<<i);
+		}
+		if (g_typeNetworkUseMap[entType].bitUsageMap[writeCount] < i) {
+			g_typeNetworkUseMap[entType].used = true;
+			g_typeNetworkUseMap[entType].bitUsageMap[writeCount] = i;
+			g_typeNetworkUseMap[entType].bitMaxMap[writeCount] = numBits;
+		}
+		writeCount++;
+	}
+#endif
+#endif //HUMANHEAD END
+
+	assert(abs(value) < ((__int64)1<<abs(numBits))); //HUMANHEAD rww
+
 	if ( newBase ) {
 		newBase->WriteBits( value, numBits );
 	}
@@ -920,7 +1010,7 @@ void idBitMsgDelta::ReadData( void *data, int length ) const {
 	} else {
 		char baseData[MAX_DATA_BUFFER];
 		assert( length < sizeof( baseData ) );
-		base->ReadData( baseData, sizeof( baseData ) );
+		base->ReadData( baseData, length );
 		if ( !readDelta || readDelta->ReadBits( 1 ) == 0 ) {
 			memcpy( data, baseData, length );
 		} else {
@@ -1038,3 +1128,231 @@ int idBitMsgDelta::ReadDeltaLongCounter( int oldValue ) const {
 	}
 	return value;
 }
+
+//HUMANHEAD rww
+/*
+===============
+idMsgQueue::idMsgQueue
+===============
+*/
+idMsgQueue::idMsgQueue( void ) {
+	Init( 0 );
+}
+
+/*
+===============
+idMsgQueue::Init
+===============
+*/
+void idMsgQueue::Init( int sequence ) {
+	first = last = sequence;
+	startIndex = endIndex = 0;
+}
+
+/*
+===============
+idMsgQueue::Add
+===============
+*/
+bool idMsgQueue::Add( const byte *data, const int size ) {
+	if ( GetSpaceLeft() < size + 8 ) {
+		return false;
+	}
+	int sequence = last;
+	WriteShort( size );
+	WriteLong( sequence );
+	WriteData( data, size );
+	last++;
+	return true;
+}
+
+/*
+===============
+idMsgQueue::Get
+===============
+*/
+bool idMsgQueue::Get( byte *data, int &size ) {
+	if ( first == last ) {
+		size = 0;
+		return false;
+	}
+	int sequence;
+	size = ReadShort();
+	sequence = ReadLong();
+	ReadData( data, size );
+	assert( sequence == first );
+	first++;
+	return true;
+}
+
+/*
+===============
+idMsgQueue::GetTotalSize
+===============
+*/
+int idMsgQueue::GetTotalSize( void ) const {
+	if ( startIndex <= endIndex ) {
+		return ( endIndex - startIndex );
+	} else {
+		return ( sizeof( buffer ) - startIndex + endIndex );
+	}
+}
+
+/*
+===============
+idMsgQueue::GetSpaceLeft
+===============
+*/
+int idMsgQueue::GetSpaceLeft( void ) const {
+	if ( startIndex <= endIndex ) {
+		return sizeof( buffer ) - ( endIndex - startIndex ) - 1;
+	} else {
+		return ( startIndex - endIndex ) - 1;
+	}
+}
+
+/*
+===============
+idMsgQueue::CopyToBuffer
+===============
+*/
+void idMsgQueue::CopyToBuffer( byte *buf ) const {
+	if ( startIndex <= endIndex ) {
+		memcpy( buf, buffer + startIndex, endIndex - startIndex );
+	} else {
+		memcpy( buf, buffer + startIndex, sizeof( buffer ) - startIndex );
+		memcpy( buf + sizeof( buffer ) - startIndex, buffer, endIndex );
+	}
+}
+
+/*
+===============
+idMsgQueue::WriteToMsg
+HUMANHEAD rww - write the queue to a bitmsg
+===============
+*/
+void idMsgQueue::WriteToMsg(idBitMsg &msg) const {
+	msg.WriteShort(GetTotalSize());
+	assert(startIndex <= endIndex); //only support writing from an unread queue
+	msg.WriteData(buffer + startIndex, endIndex - startIndex);
+}
+
+/*
+===============
+idMsgQueue::WriteToMsg
+HUMANHEAD rww - read the queue from a bitmsg
+===============
+*/
+void idMsgQueue::ReadFromMsg(const idBitMsg &msg) {
+	Init(0); //ensure a flushed buffer
+	endIndex = msg.ReadShort();
+	msg.ReadData(buffer, endIndex);
+}
+
+/*
+===============
+idMsgQueue::GetDirect
+HUMANHEAD rww - doesn't care about sequence
+===============
+*/
+bool idMsgQueue::GetDirect( byte *data, int &size ) {
+	if (startIndex == endIndex) {
+		size = 0;
+		return false;
+	}
+	size = ReadShort();
+	ReadLong(); //read over sequence
+	ReadData( data, size );
+	first++;
+	return true;
+}
+
+/*
+===============
+idMsgQueue::WriteByte
+===============
+*/
+void idMsgQueue::WriteByte( byte b ) {
+	buffer[endIndex] = b;
+	endIndex = ( endIndex + 1 ) & ( MAX_MSG_QUEUE_SIZE - 1 );
+}
+
+/*
+===============
+idMsgQueue::ReadByte
+===============
+*/
+byte idMsgQueue::ReadByte( void ) {
+	byte b = buffer[startIndex];
+	startIndex = ( startIndex + 1 ) & ( MAX_MSG_QUEUE_SIZE - 1 );
+	return b;
+}
+
+/*
+===============
+idMsgQueue::WriteShort
+===============
+*/
+void idMsgQueue::WriteShort( int s ) {
+	WriteByte( ( s >>  0 ) & 255 );
+	WriteByte( ( s >>  8 ) & 255 );
+}
+
+/*
+===============
+idMsgQueue::ReadShort
+===============
+*/
+int idMsgQueue::ReadShort( void ) {
+	return ReadByte() | ( ReadByte() << 8 );
+}
+
+/*
+===============
+idMsgQueue::WriteLong
+===============
+*/
+void idMsgQueue::WriteLong( int l ) {
+	WriteByte( ( l >>  0 ) & 255 );
+	WriteByte( ( l >>  8 ) & 255 );
+	WriteByte( ( l >> 16 ) & 255 );
+	WriteByte( ( l >> 24 ) & 255 );
+}
+
+/*
+===============
+idMsgQueue::ReadLong
+===============
+*/
+int idMsgQueue::ReadLong( void ) {
+	return ReadByte() | ( ReadByte() << 8 ) | ( ReadByte() << 16 ) | ( ReadByte() << 24 );
+}
+
+/*
+===============
+idMsgQueue::WriteData
+===============
+*/
+void idMsgQueue::WriteData( const byte *data, const int size ) {
+	for ( int i = 0; i < size; i++ ) {
+		WriteByte( data[i] );
+	}
+}
+
+/*
+===============
+idMsgQueue::ReadData
+===============
+*/
+void idMsgQueue::ReadData( byte *data, const int size ) {
+	if ( data ) {
+		for ( int i = 0; i < size; i++ ) {
+			data[i] = ReadByte();
+		}
+	} else {
+		for ( int i = 0; i < size; i++ ) {
+			ReadByte();
+		}
+	}
+}
+//HUMANHEAD END

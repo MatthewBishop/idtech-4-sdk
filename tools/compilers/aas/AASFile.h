@@ -106,6 +106,7 @@ public:
 	idDict						dict;
 };
 
+
 // index
 typedef int aasIndex_t;
 

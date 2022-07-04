@@ -105,6 +105,10 @@ public:
 	float					rotate;
 	float					jointThreshold;
 	int						cycleStart;
+
+	// HUMANHEAD pdm: Allow bounds expansion (shared animations calculate bounds based on a different mesh, so give some slop)
+	float					boundsExpansion;
+	// HUMANHEAD END
 							
 							idExportOptions( const char *commandline, const char *ospath );
 							

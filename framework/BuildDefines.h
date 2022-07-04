@@ -14,19 +14,22 @@
 //#define ID_DEBUG_MEMORY
 //#define ID_DEBUG_UNINITIALIZED_MEMORY
 
+// HUMANHEAD mdl:  Moved this below so we can see if _ENABLE_GOLD_ is defined
 // if enabled, the console won't toggle upon ~, unless you start the binary with +set com_allowConsole 1
-// Ctrl+Alt+~ will always toggle the console no matter what
-#ifndef ID_CONSOLE_LOCK
-	#if defined(_WIN32) || defined(MACOS_X)
-		#ifdef _DEBUG
-			#define ID_CONSOLE_LOCK 0
-		#else
-			#define ID_CONSOLE_LOCK 1
-		#endif
-	#else
-		#define ID_CONSOLE_LOCK 0
-	#endif
-#endif
+// Ctrl+Alt+~ will always bring the console no matter what
+//#define ID_CONSOLE_LOCK 0	// HUMANHEAD pdm
+//#ifndef ID_CONSOLE_LOCK
+//	#if defined(_WIN32) || defined(MACOS_X)
+//		#ifdef _DEBUG
+//			#define ID_CONSOLE_LOCK 0
+//		#else
+//			#define ID_CONSOLE_LOCK 1
+//		#endif
+//	#else
+//		#define ID_CONSOLE_LOCK 0
+//	#endif
+//#endif
+// HUMANHEAD END
 
 // useful for network debugging, turns off 'LAN' checks, all IPs are classified 'internet'
 #ifndef ID_NOLANADDRESS
@@ -89,13 +92,14 @@
 	#endif
 #endif
 
-#ifndef ID_ENFORCE_KEY
-#	if !defined( ID_DEDICATED ) && !defined( ID_DEMO_BUILD )
-#		define ID_ENFORCE_KEY 1
-#	else
-#		define ID_ENFORCE_KEY 0
-#	endif
-#endif
+// HUMANHEAD mdl:  Moved to licensee.h
+//#ifndef ID_ENFORCE_KEY
+//#	if !defined( ID_DEDICATED ) && !defined( ID_DEMO_BUILD )
+//#		define ID_ENFORCE_KEY 1
+//#	else
+//#		define ID_ENFORCE_KEY 0
+//#	endif
+//#endif // HUMANHEAD END
 
 #ifndef ID_OPENAL
 #	if defined( _WIN32 ) && !defined( ID_DEDICATED )
@@ -112,4 +116,48 @@
 #		define ID_ALLOW_D3XP 1
 #	endif
 #endif
+
+// HUMANHEAD tmj: build automation will search and replace these if necessary
+// #define _EXPIRE_
+// #define _NODONGLE_
+// #define _SYSTEM_BUILD_
+// #define _3DR_BUILD_
+// #define _T2_BUILD_
+// #define _VENOM_BUILD_
+// #define _ATI_BUILD_
+// #define _IBETA_BUILD_
+// #define _NVIDIA_BUILD_
+// #define _CREATIVE_BUILD_
+// #define _ENABLE_GOLD_
+// #define _DISCLAIMER_
+// #define _USE_SECUROM_
+// #define _HH_DEMO_BUILD_
+// #define _GERMAN_BUILD_
+// #define _LOCALIZATION_BUILD_
+// #define _DISTREAM_BUILD_
+// #define _MOBILE_BUILD_
+// #define _INTERNAL_BUILD_
+
+// if enabled, the console won't toggle upon ~, unless you start the binary with +set com_allowConsole 1
+// Ctrl+Alt+~ will always bring the console no matter what
+#ifdef _ENABLE_GOLD_
+
+#ifndef ID_CONSOLE_LOCK
+	#if !defined _INTERNAL_BUILD_ && ( defined(_WIN32) || defined(MACOS_X) )
+		#ifdef _DEBUG
+			#define ID_CONSOLE_LOCK 0
+		#else
+			#define ID_CONSOLE_LOCK 1
+		#endif
+	#else
+		#define ID_CONSOLE_LOCK 0
+	#endif
+#endif
+
+#else // _ENABLE_GOLD_
+#define ID_CONSOLE_LOCK 0
+#endif
+// HUMANHEAD END
+
+// END HUMANHEAD
 

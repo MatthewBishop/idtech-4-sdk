@@ -20,6 +20,9 @@ enum {
 	FX_SOUND,
 	FX_SHAKE,
 	FX_ATTACHLIGHT,
+	// HUMANHEAD nla - Support for the 'useAxis'
+	FX_USEAXIS,
+	// HUMANHEAD nla
 	FX_ATTACHENTITY,
 	FX_LAUNCH,
 	FX_SHOCKWAVE
@@ -35,6 +38,11 @@ typedef struct {
 	idStr					data;
 	idStr					name;
 	idStr					fire;
+
+	// HUMANHEAD nla
+	int					useAxis;
+	idVec3				dir;
+	// HUMANHEAD END
 
 	float					delay;
 	float					duration;
@@ -66,6 +74,10 @@ typedef struct {
 	bool					trackOrigin;
 } idFXSingleAction;
 
+// HUMANHEAD nla
+enum fxAxis { AXIS_CURRENT, AXIS_NORMAL, AXIS_BOUNCE, AXIS_INCOMING, AXIS_CUSTOMLOCAL };	
+// HUMANHEAD END
+
 //
 // grouped fx structures
 //
@@ -83,6 +95,10 @@ public:
 
 private:
 	void					ParseSingleFXAction( idLexer &src, idFXSingleAction& FXAction );
+
+	// HUMANHEAD nla
+	void	ParseUseAxis		( idStr &text, idFXSingleAction& action ) const;
+	// HUMANHEAD END
 };
 
 #endif /* !__DECLFX_H__ */

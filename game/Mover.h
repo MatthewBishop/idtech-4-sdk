@@ -9,6 +9,18 @@ extern const idEventDef EV_PartBlocked;
 extern const idEventDef EV_ReachedPos;
 extern const idEventDef EV_ReachedAng;
 
+//HUMANHEAD: aob
+extern const idEventDef EV_StopRotating;
+extern const idEventDef EV_Mover_ClosePortal;
+
+extern const idEventDef EV_Mover_ReturnToPos1;
+extern const idEventDef EV_Mover_OpenPortal;
+
+extern const idEventDef EV_Door_Open;
+
+extern const char *guiBinaryMoverStates[];
+//HUMANHEAD END
+
 /*
 ===============================================================================
 
@@ -106,7 +118,7 @@ protected:
 	virtual void			BeginRotation( idThread *thread, bool stopwhendone );
 	moveState_t				move;
 
-private:
+protected://HUMANHEAD: changed to protected
 	rotationState_t			rot;
 
 	int						move_thread;
@@ -150,6 +162,9 @@ private:
 	void					Event_RotateDownTo( int axis, float angle );
 	void					Event_RotateUpTo( int axis, float angle );
 	void					Event_RotateTo( idAngles &angles );
+	//HUMANHEAD: aob
+	void					Event_RotateTo_World( idAngles &angles );
+	//HUMANHEAD END
 	void					Event_Rotate( idAngles &angles );
 	void					Event_RotateOnce( idAngles &angles );
 	void					Event_Bob( float speed, float phase, idVec3 &depth );
@@ -177,6 +192,17 @@ public:
 							idSplinePath();
 
 	void					Spawn( void );
+	
+	//HUMANHEAD START rdr
+	void					Save( idSaveGame *savefile ) const;
+	void					Restore( idRestoreGame *savefile );
+
+protected:
+	float					splineLength;
+
+	void					Event_GetSplineLength();
+	void					Event_GetPositionForLength( float length );
+	//HUMANHEAD END
 };
 
 
@@ -207,6 +233,7 @@ protected:
 	void					SpawnTrigger( const idVec3 &pos );
 	void					GetLocalTriggerPosition();
 	void					Event_Touch( idEntity *other, trace_t *trace );
+	void					Event_PartBlocked( idEntity *blockingEntity );
 
 private:
 	typedef enum {
@@ -273,8 +300,11 @@ public:
 	void					Enable( bool b );
 	void					InitSpeed( idVec3 &mpos1, idVec3 &mpos2, float mspeed, float maccelTime, float mdecelTime );
 	void					InitTime( idVec3 &mpos1, idVec3 &mpos2, float mtime, float maccelTime, float mdecelTime );
+	virtual//HUMANHEAD: aob - added virtual
 	void					GotoPosition1( void );
+	virtual//HUMANHEAD: aob - added virtual
 	void					GotoPosition2( void );
+	virtual//HUMANHEAD: aob - added virtual
 	void					Use_BinaryMover( idEntity *activator );
 	void					SetGuiStates( const char *state );
 	void					UpdateBuddies( int val );
@@ -365,11 +395,17 @@ public:
 	int						IsLocked( void );
 	void					Lock( int f );
 	void					Use( idEntity *other, idEntity *activator );
+	virtual//HUMANHEAD: aob
 	void					Close( void );
+	virtual//HUMANHEAD: aob
 	void					Open( void );
 	void					SetCompanion( idDoor *door );
 
-private:
+protected:	// HUMANHEAD aob
+	// HUMANHEAD nla
+	virtual bool			ForcedOpen( void ) { return( false ); };
+	idList<idStr>			buddyNames;	
+	// HUMANHEAD END
 	float					triggersize;
 	bool					crusher;
 	bool					noTouch;
@@ -394,6 +430,7 @@ private:
 	void					Event_Reached_BinaryMover( void );
 	void					Event_TeamBlocked( idEntity *blockedEntity, idEntity *blockingEntity );
 	void					Event_PartBlocked( idEntity *blockingEntity );
+	virtual // HUMANHEAD mdl:  Made virtual
 	void					Event_Touch( idEntity *other, trace_t *trace );
 	void					Event_Activate( idEntity *activator );
 	void					Event_StartOpen( void );

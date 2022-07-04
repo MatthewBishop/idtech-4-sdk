@@ -22,6 +22,24 @@
 ===============================================================================
 */
 
+#define assert_8_byte_aligned( pointer )		assert( (((UINT_PTR)(pointer))&7) == 0 );
+#define assert_16_byte_aligned( pointer )		assert( (((UINT_PTR)(pointer))&15) == 0 );
+#define assert_32_byte_aligned( pointer )		assert( (((UINT_PTR)(pointer))&31) == 0 );
+
+// HUMANHEAD mdl
+#ifdef ID_DEBUG_MEMORY //rww - this is the appropriate define to use
+# error "compile_time_asserts are not currently compatible with inline debug with memory builds.  Comment them out and disable this check to continue."
+#endif
+// HUMANHEAD END
+
+#define compile_time_assert( x )				{ typedef int compile_time_assert_failed[(x) ? 1 : -1]; }
+#define file_scoped_compile_time_assert( x )	extern int compile_time_assert_failed[(x) ? 1 : -1]
+#define assert_sizeof( type, size )				file_scoped_compile_time_assert( sizeof( type ) == size )
+#define assert_offsetof( type, field, offset )	file_scoped_compile_time_assert( offsetof( type, field ) == offset )
+#define assert_sizeof_8_byte_multiple( type )	file_scoped_compile_time_assert( ( sizeof( type ) & 8 ) == 0 )
+#define assert_sizeof_16_byte_multiple( type )	file_scoped_compile_time_assert( ( sizeof( type ) & 15 ) == 0 )
+#define assert_sizeof_32_byte_multiple( type )	file_scoped_compile_time_assert( ( sizeof( type ) & 31 ) == 0 )
+
 class idLib {
 public:
 	static class idSys *		sys;
@@ -32,6 +50,10 @@ public:
 
 	static void					Init( void );
 	static void					ShutDown( void );
+
+#ifdef _HH_NET_DEBUGGING //HUMANHEAD rww
+	static void					NetworkEntStats(const char *typeName, int type);
+#endif //HUMANHEAD END
 };
 
 
@@ -115,7 +137,12 @@ int		IntForSixtets( byte *in );
 #ifdef _DEBUG
 void AssertFailed( const char *file, int line, const char *expression );
 #undef assert
-#define assert( X )		if ( X ) { } else AssertFailed( __FILE__, __LINE__, #X )
+#ifdef HUMANHEAD_TESTSAVEGAME // HUMANHEAD mdl:  Disable asserts for automated savegame tests
+#  define assert( X )
+#else
+#  define assert( X )		if ( X ) { } else AssertFailed( __FILE__, __LINE__, #X )
+#endif
+// HUMANHEAD END
 #endif
 
 class idException {
@@ -153,6 +180,8 @@ public:
 #include "math/Polynomial.h"
 #include "math/Extrapolate.h"
 #include "math/Interpolate.h"
+#include "math/prey_interpolate.h"		// HUMANHEAD pdm
+#include "math/prey_math.h"				// HUMANHEAD pdm
 #include "math/Curve.h"
 #include "math/Ode.h"
 #include "math/Lcp.h"
@@ -196,6 +225,10 @@ public:
 #include "containers/StrPool.h"
 #include "containers/VectorSet.h"
 #include "containers/PlaneSet.h"
+
+// HUMANHEAD pdm: idlib additions
+#include "containers/PreyStack.h"
+// HUMANHEAD END
 
 // hashing
 #include "hashing/CRC8.h"

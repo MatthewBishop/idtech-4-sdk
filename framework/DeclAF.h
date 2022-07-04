@@ -136,6 +136,11 @@ public:
 	void					RenameConstraint( const char *oldName, const char *newName );
 	void					DeleteConstraint( const char *name );
 
+	//HUMANHEAD: aob
+	static int				ClipMaskFromString( const char *str );
+	static const char *		ClipMaskToString( const int contents, idStr &str );
+	//HUMANHEAD END
+
 	static int				ContentsFromString( const char *str );
 	static const char *		ContentsToString( const int contents, idStr &str );
 
@@ -166,6 +171,7 @@ public:
 
 private:
 	bool					ParseContents( idLexer &src, int &c ) const;
+	bool					ParseClipMask( idLexer &src, int &c ) const; // HUMANHEAD CJR
 	bool					ParseBody( idLexer &src );
 	bool					ParseFixed( idLexer &src );
 	bool					ParseBallAndSocketJoint( idLexer &src );

@@ -51,8 +51,10 @@ void idLib::Init( void ) {
 	// test idMatX
 	//idMatX::Test();
 
+#if !HUMANHEAD	// HUMANHEAD pdm: Don't bother testing id's unused polynomial code
 	// test idPolynomial
 	idPolynomial::Test();
+#endif
 
 	// initialize the dictionary string pools
 	idDict::Init();
@@ -77,6 +79,18 @@ void idLib::ShutDown( void ) {
 	// shut down the memory manager
 	Mem_Shutdown();
 }
+
+#ifdef _HH_NET_DEBUGGING //HUMANHEAD rww
+/*
+================
+idLib::NetworkEntStats
+================
+*/
+extern void PrintHHNetworkUseStats(const char *typeName, int type);
+void idLib::NetworkEntStats(const char *typeName, int type) {
+	PrintHHNetworkUseStats(typeName, type);
+}
+#endif //HUMANHEAD END
 
 
 /*

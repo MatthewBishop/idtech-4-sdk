@@ -525,6 +525,7 @@ bool idSecurityCamera::Pain( idEntity *inflictor, idEntity *attacker, int damage
 	if ( fx[0] != '\0' ) {
 		idEntityFx::StartFx( fx, NULL, NULL, this, true );
 	}
+
 	return true;
 }
 

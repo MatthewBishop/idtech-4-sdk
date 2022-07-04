@@ -19,6 +19,10 @@
 
 #include <xmmintrin.h>
 
+//HUMANHEAD rww - disable this since all the code is pushing ebx before modifying it
+#pragma warning(disable:4731) //warning C4731: 'x' : frame pointer register 'ebx' modified by inline assembly code
+//HUMANHEAD END
+
 #define SHUFFLEPS( x, y, z, w )		(( (x) & 3 ) << 6 | ( (y) & 3 ) << 4 | ( (z) & 3 ) << 2 | ( (w) & 3 ))
 #define R_SHUFFLEPS( x, y, z, w )	(( (w) & 3 ) << 6 | ( (z) & 3 ) << 4 | ( (y) & 3 ) << 2 | ( (x) & 3 ))
 
@@ -401,7 +405,9 @@
 
 #define JOINTQUAT_SIZE				(7*4)
 #define JOINTMAT_SIZE				(4*3*4)
+#if !NEW_MESH_TRANSFORM
 #define JOINTWEIGHT_SIZE			(4*4)
+#endif
 
 
 #define ALIGN4_INIT1( X, INIT )				ALIGN16( static X[4] ) = { INIT, INIT, INIT, INIT }
@@ -435,6 +441,7 @@ ALIGN4_INIT1( float SIMD_SP_halfPI, idMath::HALF_PI );
 ALIGN4_INIT1( float SIMD_SP_twoPI, idMath::TWO_PI );
 ALIGN4_INIT1( float SIMD_SP_oneOverTwoPI, 1.0f / idMath::TWO_PI );
 ALIGN4_INIT1( float SIMD_SP_infinity, idMath::INFINITY );
+ALIGN4_INIT1( float SIMD_SP_negInfinity, -idMath::INFINITY );
 ALIGN4_INIT4( float SIMD_SP_lastOne, 0.0f, 0.0f, 0.0f, 1.0f );
 
 ALIGN4_INIT1( float SIMD_SP_rsqrt_c0,  3.0f );
@@ -2854,6 +2861,10 @@ void VPCALL idSIMD_SSE::Dot( float &dot, const float *src1, const float *src2, c
 		dst[i] |= ( src0[i] CMP c ) << BITNUM;											\
 	}
 
+//HUMANHEAD rww
+#pragma warning(disable:4740) //warning C4740: flow in or out of inline asm code suppresses global optimization
+//HUMANHEAD END
+
 /*
 ============
 idSIMD_SSE::CmpGT
@@ -2941,6 +2952,10 @@ idSIMD_SSE::CmpLE
 void VPCALL idSIMD_SSE::CmpLE( byte *dst, const byte bitNum, const float *src0, const float constant, const int count ) {
 	COMPAREBITCONSTANT( dst, bitNum, src0, constant, count, <=, cmpnleps, FLIP )
 }
+
+//HUMANHEAD rww
+#pragma warning(default:4740) //warning C4740: flow in or out of inline asm code suppresses global optimization
+//HUMANHEAD END
 
 /*
 ============
@@ -11868,6 +11883,13 @@ void VPCALL idSIMD_SSE::UntransformJoints( idJointMat *jointMats, const int *par
 #endif
 }
 
+//HUMANHEAD rww
+#ifdef _HH_TRANSFORMVERTS_BENCH
+int transformVertBenchFrameValue = 0;
+int transformVertDebugValue = 0;
+#endif
+//HUMANHEAD END
+
 /*
 ============
 idSIMD_SSE::TransformVerts
@@ -11880,6 +11902,25 @@ void VPCALL idSIMD_SSE::TransformVerts( idDrawVert *verts, const int numVerts, c
 	assert( (int)&((idDrawVert *)0)->xyz == DRAWVERT_XYZ_OFFSET );
 	assert( sizeof( idVec4 ) == JOINTWEIGHT_SIZE );
 	assert( sizeof( idJointMat ) == JOINTMAT_SIZE );
+
+#ifdef _HH_TRANSFORMVERTS_BENCH //HUMANHEAD rww
+	//static unsigned char cacheArray[524288]; //sizeof(l2 cache)
+	//memset(cacheArray, 0, 524288);
+	//flushing the cache shows significant performance benefits from prefetching.
+	//in the common case, however, it can sometimes slow the routine down as well.
+	//further tweaking with prefetching offsets may prove to find a happy medium
+	//that offers consistent speedup, but for now i am leaving prefetching out.
+
+	__int64 start, end;
+	__int64 *pStart = &start, *pEnd = &end;
+
+	__asm {
+		rdtsc					//stuff number of clock cycles since computer boot into eax+edx
+		mov		ebx,pStart
+		mov		[ebx],eax		//put eax in low 4 bytes
+		mov		[ebx+4],edx		//put edx in high 4 bytes
+	}
+#endif //HUMANHEAD END
 
 	__asm
 	{
@@ -11957,6 +11998,17 @@ void VPCALL idSIMD_SSE::TransformVerts( idDrawVert *verts, const int numVerts, c
 	done:
 	}
 
+#ifdef _HH_TRANSFORMVERTS_BENCH //HUMANHEAD rww
+	__asm {
+		rdtsc					//stuff number of clock cycles since computer boot into eax+edx
+		mov		ebx,pEnd
+		mov		[ebx],eax		//put eax in low 4 bytes
+		mov		[ebx+4],edx		//put edx in high 4 bytes
+	}
+
+	transformVertBenchFrameValue += (end-start);
+#endif //HUMANHEAD END
+
 #else
 
 	int i, j;
@@ -11977,6 +12029,598 @@ void VPCALL idSIMD_SSE::TransformVerts( idDrawVert *verts, const int numVerts, c
 
 #endif
 }
+
+#if NEW_MESH_TRANSFORM
+
+#define SHUFFLE_PS( x, y, z, w )	(( (x) & 3 ) << 6 | ( (y) & 3 ) << 4 | ( (z) & 3 ) << 2 | ( (w) & 3 ))
+#define R_SHUFFLE_PS( x, y, z, w )	(( (w) & 3 ) << 6 | ( (z) & 3 ) << 4 | ( (y) & 3 ) << 2 | ( (x) & 3 ))
+
+#define SHUFFLE_PD( x, y )			(( (x) & 1 ) << 1 | ( (y) & 1 ))
+#define R_SHUFFLE_PD( x, y )		(( (y) & 1 ) << 1 | ( (x) & 1 ))
+
+#define SHUFFLE_D( x, y, z, w )		(( (x) & 3 ) << 6 | ( (y) & 3 ) << 4 | ( (z) & 3 ) << 2 | ( (w) & 3 ))
+#define R_SHUFFLE_D( x, y, z, w )	(( (w) & 3 ) << 6 | ( (z) & 3 ) << 4 | ( (y) & 3 ) << 2 | ( (x) & 3 ))
+
+/*
+============
+idSIMD_SSE::MultiplyJoints
+============
+*/
+void VPCALL idSIMD_SSE::MultiplyJoints( idJointMat *result, const idJointMat *joints1, const idJointMat *joints2, const int numJoints ) {
+#if 1
+
+	assert_16_byte_aligned( result );
+	assert_16_byte_aligned( joints1 );
+	assert_16_byte_aligned( joints2 );
+
+	__asm {
+
+		mov			eax, numJoints
+		test		eax, eax
+		jz			done
+		mov			ecx, joints1
+		mov			edx, joints2
+		mov			edi, result
+		imul		eax, JOINTMAT_SIZE
+		add			ecx, eax
+		add			edx, eax
+		add			edi, eax
+		neg			eax
+
+	loopJoint:
+
+		movaps		xmm0, [edx+eax+0]
+		movaps		xmm1, [edx+eax+16]
+		movaps		xmm2, [edx+eax+32]
+
+		movss		xmm3, [ecx+eax+0]
+		shufps		xmm3, xmm3, R_SHUFFLE_PS( 0, 0, 0, 0 )
+		mulps		xmm3, xmm0
+		movss		xmm4, [ecx+eax+4]
+		shufps		xmm4, xmm4, R_SHUFFLE_PS( 0, 0, 0, 0 )
+		mulps		xmm4, xmm1
+		addps		xmm3, xmm4
+		movss		xmm5, [ecx+eax+8]
+		shufps		xmm5, xmm5, R_SHUFFLE_PS( 0, 0, 0, 0 )
+		mulps		xmm5, xmm2
+		addps		xmm3, xmm5
+		movss		xmm6, [ecx+eax+12]
+		shufps		xmm6, xmm6, R_SHUFFLE_PS( 1, 2, 3, 0 )
+		addps		xmm3, xmm6
+
+		movaps		[edi+eax+0], xmm3
+
+		movss		xmm7, [ecx+eax+16]
+		shufps		xmm7, xmm7, R_SHUFFLE_PS( 0, 0, 0, 0 )
+		mulps		xmm7, xmm0
+		movss		xmm4, [ecx+eax+20]
+		shufps		xmm4, xmm4, R_SHUFFLE_PS( 0, 0, 0, 0 )
+		mulps		xmm4, xmm1
+		addps		xmm7, xmm4
+		movss		xmm5, [ecx+eax+24]
+		shufps		xmm5, xmm5, R_SHUFFLE_PS( 0, 0, 0, 0 )
+		mulps		xmm5, xmm2
+		addps		xmm7, xmm5
+		movss		xmm6, [ecx+eax+28]
+		shufps		xmm6, xmm6, R_SHUFFLE_PS( 1, 2, 3, 0 )
+		addps		xmm7, xmm6
+
+		movaps		[edi+eax+16], xmm7
+
+		movss		xmm3, [ecx+eax+32]
+		shufps		xmm3, xmm3, R_SHUFFLE_PS( 0, 0, 0, 0 )
+		mulps		xmm3, xmm0
+		movss		xmm4, [ecx+eax+36]
+		shufps		xmm4, xmm4, R_SHUFFLE_PS( 0, 0, 0, 0 )
+		mulps		xmm4, xmm1
+		addps		xmm3, xmm4
+		movss		xmm5, [ecx+eax+40]
+		shufps		xmm5, xmm5, R_SHUFFLE_PS( 0, 0, 0, 0 )
+		mulps		xmm5, xmm2
+		addps		xmm3, xmm5
+		movss		xmm6, [ecx+eax+44]
+		shufps		xmm6, xmm6, R_SHUFFLE_PS( 1, 2, 3, 0 )
+		addps		xmm3, xmm6
+
+		movaps		[edi+eax+32], xmm3
+
+		add			eax, JOINTMAT_SIZE
+		jl			loopJoint
+	done:
+	}
+
+#else
+
+	int i;
+
+	for ( i = 0; i < numJoints; i++ ) {
+		idJointMat::Multiply( result[i], joints1[i], joints2[i] );
+	}
+
+#endif
+}
+
+/*
+============
+idSIMD_SSE::TransformVertsNew
+============
+*/
+void VPCALL idSIMD_SSE::TransformVertsNew( idDrawVert *verts, const int numVerts, idBounds &bounds, const idJointMat *joints, const idVec4 *base, const jointWeight_t *weights, const int numWeights ) {
+	ALIGN16( float tmpMin[4] );
+	ALIGN16( float tmpMax[4] );
+
+	assert_16_byte_aligned( joints );
+	assert_16_byte_aligned( base );
+
+	__asm {
+		push		ebx
+		mov			eax, numVerts
+		test		eax, eax
+		jz			done
+		imul		eax, DRAWVERT_SIZE
+
+		mov			ecx, verts
+		mov			edx, weights
+		mov			esi, base
+		mov			edi, joints
+
+		add			ecx, eax
+		neg			eax
+
+		movaps		xmm6, SIMD_SP_infinity
+		movaps		xmm7, SIMD_SP_negInfinity
+		movaps		tmpMin, xmm6
+		movaps		tmpMax, xmm7
+
+	loopVert:
+		mov			ebx, dword ptr [edx+JOINTWEIGHT_JOINTMATOFFSET_OFFSET]
+		movaps		xmm2, [esi]
+		add			edx, JOINTWEIGHT_SIZE
+		movaps		xmm0, xmm2
+		add			esi, BASEVECTOR_SIZE
+		movaps		xmm1, xmm2
+
+		mulps		xmm0, [edi+ebx+ 0]						// xmm0 = m0, m1, m2, t0
+		mulps		xmm1, [edi+ebx+16]						// xmm1 = m3, m4, m5, t1
+		mulps		xmm2, [edi+ebx+32]						// xmm2 = m6, m7, m8, t2
+
+		cmp			dword ptr [edx-JOINTWEIGHT_SIZE+JOINTWEIGHT_NEXTVERTEXOFFSET_OFFSET], JOINTWEIGHT_SIZE
+
+		je			doneWeight
+
+	loopWeight:
+		mov			ebx, dword ptr [edx+JOINTWEIGHT_JOINTMATOFFSET_OFFSET]
+		movaps		xmm5, [esi]
+		add			edx, JOINTWEIGHT_SIZE
+		movaps		xmm3, xmm5
+		add			esi, BASEVECTOR_SIZE
+		movaps		xmm4, xmm5
+
+		mulps		xmm3, [edi+ebx+ 0]						// xmm3 = m0, m1, m2, t0
+		mulps		xmm4, [edi+ebx+16]						// xmm4 = m3, m4, m5, t1
+		mulps		xmm5, [edi+ebx+32]						// xmm5 = m6, m7, m8, t2
+
+		cmp			dword ptr [edx-JOINTWEIGHT_SIZE+JOINTWEIGHT_NEXTVERTEXOFFSET_OFFSET], JOINTWEIGHT_SIZE
+
+		addps		xmm0, xmm3
+		addps		xmm1, xmm4
+		addps		xmm2, xmm5
+
+		jne			loopWeight
+
+	doneWeight:
+		add			eax, DRAWVERT_SIZE
+
+		movaps		xmm6, xmm0								// xmm6 =    m0,    m1,          m2,          t0
+		unpcklps	xmm6, xmm1								// xmm6 =    m0,    m3,          m1,          m4
+		unpckhps	xmm0, xmm1								// xmm1 =    m2,    m5,          t0,          t1
+		addps		xmm6, xmm0								// xmm6 = m0+m2, m3+m5,       m1+t0,       m4+t1
+
+		movaps		xmm7, xmm2								// xmm7 =    m6,    m7,          m8,          t2
+		movlhps		xmm2, xmm6								// xmm2 =    m6,    m7,       m0+m2,       m3+m5
+		movhlps		xmm6, xmm7								// xmm6 =    m8,    t2,       m1+t0,       m4+t1
+		addps		xmm6, xmm2								// xmm6 = m6+m8, m7+t2, m0+m1+m2+t0, m3+m4+m5+t1
+
+		movhps		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_XYZ_OFFSET+0], xmm6
+
+		movaps		xmm5, xmm6								// xmm5 = m6+m8, m7+t2
+		shufps		xmm5, xmm5, R_SHUFFLE_PS( 1, 0, 2, 3 )	// xmm5 = m7+t2, m6+m8
+		addss		xmm5, xmm6								// xmm5 = m6+m8+m7+t2
+		movss		xmm6, xmm5
+
+		movss		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_XYZ_OFFSET+8], xmm5
+
+		movaps		xmm7, xmm6
+		minps		xmm7, tmpMin
+		maxps		xmm6, tmpMax
+		movaps		tmpMin, xmm7
+		movaps		tmpMax, xmm6
+
+		jl			loopVert
+
+	done:
+		pop			ebx
+		mov			esi, bounds
+		movaps		xmm6, tmpMin
+		movaps		xmm7, tmpMax
+		movhps		[esi+ 0], xmm6
+		movss		[esi+ 8], xmm6
+		movhps		[esi+12], xmm7
+		movss		[esi+20], xmm7
+	}
+}
+
+/*
+============
+idSIMD_SSE::TransformVertsAndTangents
+============
+*/
+void VPCALL idSIMD_SSE::TransformVertsAndTangents( idDrawVert *verts, const int numVerts, idBounds &bounds, const idJointMat *joints, const idVec4 *base, const jointWeight_t *weights, const int numWeights ) {
+	ALIGN16( float tmpMin[4] );
+	ALIGN16( float tmpMax[4] );
+
+	assert_16_byte_aligned( joints );
+	assert_16_byte_aligned( base );
+
+	__asm {
+		push		ebx
+		mov			eax, numVerts
+		test		eax, eax
+		jz			done
+		imul		eax, DRAWVERT_SIZE
+
+		mov			ecx, verts
+		mov			edx, weights
+		mov			esi, base
+		mov			edi, joints
+
+		add			ecx, eax
+		neg			eax
+
+		movaps		xmm6, SIMD_SP_infinity
+		movaps		xmm7, SIMD_SP_negInfinity
+		movaps		tmpMin, xmm6
+		movaps		tmpMax, xmm7
+
+	loopVert:
+		movss		xmm2, [edx+JOINTWEIGHT_WEIGHT_OFFSET]
+		mov			ebx, dword ptr [edx+JOINTWEIGHT_JOINTMATOFFSET_OFFSET]
+		shufps		xmm2, xmm2, R_SHUFFLE_PS( 0, 0, 0, 0 )
+		add			edx, JOINTWEIGHT_SIZE
+		movaps		xmm0, xmm2
+		movaps		xmm1, xmm2
+
+		mulps		xmm0, [edi+ebx+ 0]						// xmm0 = m0, m1, m2, t0
+		mulps		xmm1, [edi+ebx+16]						// xmm1 = m3, m4, m5, t1
+		mulps		xmm2, [edi+ebx+32]						// xmm2 = m6, m7, m8, t2
+
+		cmp			dword ptr [edx-JOINTWEIGHT_SIZE+JOINTWEIGHT_NEXTVERTEXOFFSET_OFFSET], JOINTWEIGHT_SIZE
+
+		je			doneWeight
+
+	loopWeight:
+		movss		xmm5, [edx+JOINTWEIGHT_WEIGHT_OFFSET]
+		mov			ebx, dword ptr [edx+JOINTWEIGHT_JOINTMATOFFSET_OFFSET]
+		shufps		xmm5, xmm5, R_SHUFFLE_PS( 0, 0, 0, 0 )
+		add			edx, JOINTWEIGHT_SIZE
+		movaps		xmm3, xmm5
+		movaps		xmm4, xmm5
+
+		mulps		xmm3, [edi+ebx+ 0]						// xmm3 = m0, m1, m2, t0
+		mulps		xmm4, [edi+ebx+16]						// xmm4 = m3, m4, m5, t1
+		mulps		xmm5, [edi+ebx+32]						// xmm5 = m6, m7, m8, t2
+
+		cmp			dword ptr [edx-JOINTWEIGHT_SIZE+JOINTWEIGHT_NEXTVERTEXOFFSET_OFFSET], JOINTWEIGHT_SIZE
+
+		addps		xmm0, xmm3
+		addps		xmm1, xmm4
+		addps		xmm2, xmm5
+
+		jne			loopWeight
+
+	doneWeight:
+		add			esi, 4*BASEVECTOR_SIZE
+		add			eax, DRAWVERT_SIZE
+
+		// transform vertex
+		movaps		xmm3, [esi-4*BASEVECTOR_SIZE]
+		movaps		xmm4, xmm3
+		movaps		xmm5, xmm3
+
+		mulps		xmm3, xmm0
+		mulps		xmm4, xmm1
+		mulps		xmm5, xmm2
+
+		movaps		xmm6, xmm3								// xmm6 =    m0,    m1,          m2,          t0
+		unpcklps	xmm6, xmm4								// xmm6 =    m0,    m3,          m1,          m4
+		unpckhps	xmm3, xmm4								// xmm4 =    m2,    m5,          t0,          t1
+		addps		xmm6, xmm3								// xmm6 = m0+m2, m3+m5,       m1+t0,       m4+t1
+
+		movaps		xmm7, xmm5								// xmm7 =    m6,    m7,          m8,          t2
+		movlhps		xmm5, xmm6								// xmm5 =    m6,    m7,       m0+m2,       m3+m5
+		movhlps		xmm6, xmm7								// xmm6 =    m8,    t2,       m1+t0,       m4+t1
+		addps		xmm6, xmm5								// xmm6 = m6+m8, m7+t2, m0+m1+m2+t0, m3+m4+m5+t1
+
+		movhps		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_XYZ_OFFSET+0], xmm6
+
+		movaps		xmm7, xmm6								// xmm7 = m6+m8, m7+t2
+		shufps		xmm7, xmm7, R_SHUFFLE_PS( 1, 0, 2, 3 )	// xmm7 = m7+t2, m6+m8
+		addss		xmm7, xmm6								// xmm7 = m6+m8+m7+t2
+		movss		xmm6, xmm7
+
+		movss		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_XYZ_OFFSET+8], xmm7
+
+		movaps		xmm5, xmm6
+		minps		xmm5, tmpMin
+		maxps		xmm6, tmpMax
+		movaps		tmpMin, xmm5
+		movaps		tmpMax, xmm6
+
+		// transform normal
+		movaps		xmm3, [esi-3*BASEVECTOR_SIZE]
+		movaps		xmm4, xmm3
+		movaps		xmm5, xmm3
+
+		mulps		xmm3, xmm0
+		mulps		xmm4, xmm1
+		mulps		xmm5, xmm2
+
+		movaps		xmm6, xmm3								// xmm6 =    m0,    m1,          m2,          t0
+		unpcklps	xmm6, xmm4								// xmm6 =    m0,    m3,          m1,          m4
+		unpckhps	xmm3, xmm4								// xmm4 =    m2,    m5,          t0,          t1
+		addps		xmm6, xmm3								// xmm6 = m0+m2, m3+m5,       m1+t0,       m4+t1
+
+		movaps		xmm7, xmm5								// xmm7 =    m6,    m7,          m8,          t2
+		movlhps		xmm5, xmm6								// xmm5 =    m6,    m7,       m0+m2,       m3+m5
+		movhlps		xmm6, xmm7								// xmm6 =    m8,    t2,       m1+t0,       m4+t1
+		addps		xmm6, xmm5								// xmm6 = m6+m8, m7+t2, m0+m1+m2+t0, m3+m4+m5+t1
+
+		movhps		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_NORMAL_OFFSET+0], xmm6
+
+		movaps		xmm7, xmm6								// xmm7 = m6+m8, m7+t2
+		shufps		xmm7, xmm7, R_SHUFFLE_PS( 1, 0, 2, 3 )	// xmm7 = m7+t2, m6+m8
+		addss		xmm7, xmm6								// xmm7 = m6+m8+m7+t2
+
+		movss		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_NORMAL_OFFSET+8], xmm7
+
+		// transform first tangent
+		movaps		xmm3, [esi-2*BASEVECTOR_SIZE]
+		movaps		xmm4, xmm3
+		movaps		xmm5, xmm3
+
+		mulps		xmm3, xmm0
+		mulps		xmm4, xmm1
+		mulps		xmm5, xmm2
+
+		movaps		xmm6, xmm3								// xmm6 =    m0,    m1,          m2,          t0
+		unpcklps	xmm6, xmm4								// xmm6 =    m0,    m3,          m1,          m4
+		unpckhps	xmm3, xmm4								// xmm4 =    m2,    m5,          t0,          t1
+		addps		xmm6, xmm3								// xmm6 = m0+m2, m3+m5,       m1+t0,       m4+t1
+
+		movaps		xmm7, xmm5								// xmm7 =    m6,    m7,          m8,          t2
+		movlhps		xmm5, xmm6								// xmm5 =    m6,    m7,       m0+m2,       m3+m5
+		movhlps		xmm6, xmm7								// xmm6 =    m8,    t2,       m1+t0,       m4+t1
+		addps		xmm6, xmm5								// xmm6 = m6+m8, m7+t2, m0+m1+m2+t0, m3+m4+m5+t1
+
+		movhps		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_TANGENT0_OFFSET+0], xmm6
+
+		movaps		xmm7, xmm6								// xmm7 = m6+m8, m7+t2
+		shufps		xmm7, xmm7, R_SHUFFLE_PS( 1, 0, 2, 3 )	// xmm7 = m7+t2, m6+m8
+		addss		xmm7, xmm6								// xmm7 = m6+m8+m7+t2
+
+		movss		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_TANGENT0_OFFSET+8], xmm7
+
+		// transform second tangent
+		movaps		xmm3, [esi-1*BASEVECTOR_SIZE]
+
+		mulps		xmm0, xmm3
+		mulps		xmm1, xmm3
+		mulps		xmm2, xmm3
+
+		movaps		xmm6, xmm0								// xmm6 =    m0,    m1,          m2,          t0
+		unpcklps	xmm6, xmm1								// xmm6 =    m0,    m3,          m1,          m4
+		unpckhps	xmm0, xmm1								// xmm1 =    m2,    m5,          t0,          t1
+		addps		xmm6, xmm0								// xmm6 = m0+m2, m3+m5,       m1+t0,       m4+t1
+
+		movaps		xmm7, xmm2								// xmm7 =    m6,    m7,          m8,          t2
+		movlhps		xmm2, xmm6								// xmm2 =    m6,    m7,       m0+m2,       m3+m5
+		movhlps		xmm6, xmm7								// xmm6 =    m8,    t2,       m1+t0,       m4+t1
+		addps		xmm6, xmm2								// xmm6 = m6+m8, m7+t2, m0+m1+m2+t0, m3+m4+m5+t1
+
+		movhps		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_TANGENT1_OFFSET+0], xmm6
+
+		movaps		xmm7, xmm6
+		shufps		xmm7, xmm7, R_SHUFFLE_D( 1, 0, 2, 3 )	// xmm7 = m7+t2, m6+m8
+		addss		xmm7, xmm6								// xmm7 = m6+m8+m7+t2
+
+		movss		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_TANGENT1_OFFSET+8], xmm7
+
+		jl			loopVert
+
+	done:
+		pop			ebx
+		mov			esi, bounds
+		movaps		xmm6, tmpMin
+		movaps		xmm7, tmpMax
+		movhps		[esi+ 0], xmm6
+		movss		[esi+ 8], xmm6
+		movhps		[esi+12], xmm7
+		movss		[esi+20], xmm7
+	}
+}
+
+/*
+============
+idSIMD_SSE::TransformVertsAndTangentsFast
+============
+*/
+void VPCALL idSIMD_SSE::TransformVertsAndTangentsFast( idDrawVert *verts, const int numVerts, idBounds &bounds, const idJointMat *joints, const idVec4 *base, const jointWeight_t *weights, const int numWeights ) {
+	ALIGN16( float tmpMin[4] );
+	ALIGN16( float tmpMax[4] );
+
+	assert_16_byte_aligned( joints );
+	assert_16_byte_aligned( base );
+
+	__asm {
+		push		ebx
+		mov			eax, numVerts
+		test		eax, eax
+		jz			done
+		imul		eax, DRAWVERT_SIZE
+
+		mov			ecx, verts
+		mov			edx, weights
+		mov			esi, base
+		mov			edi, joints
+
+		add			ecx, eax
+		neg			eax
+
+		movaps		xmm6, SIMD_SP_infinity
+		movaps		xmm7, SIMD_SP_negInfinity
+		movaps		tmpMin, xmm6
+		movaps		tmpMax, xmm7
+
+	loopVert:
+		mov			ebx, dword ptr [edx+JOINTWEIGHT_JOINTMATOFFSET_OFFSET]
+
+		add			esi, 4*BASEVECTOR_SIZE
+
+		movaps		xmm0, [edi+ebx+ 0]						// xmm0 = m0, m1, m2, t0
+		movaps		xmm1, [edi+ebx+16]						// xmm1 = m3, m4, m5, t1
+		movaps		xmm2, [edi+ebx+32]						// xmm2 = m6, m7, m8, t2
+
+		add			edx, dword ptr [edx+JOINTWEIGHT_NEXTVERTEXOFFSET_OFFSET]
+
+		add			eax, DRAWVERT_SIZE
+
+		// transform vertex
+		movaps		xmm3, [esi-4*BASEVECTOR_SIZE]
+		movaps		xmm4, xmm3
+		movaps		xmm5, xmm3
+
+		mulps		xmm3, xmm0
+		mulps		xmm4, xmm1
+		mulps		xmm5, xmm2
+
+		movaps		xmm6, xmm3								// xmm6 =    m0,    m1,          m2,          t0
+		unpcklps	xmm6, xmm4								// xmm6 =    m0,    m3,          m1,          m4
+		unpckhps	xmm3, xmm4								// xmm4 =    m2,    m5,          t0,          t1
+		addps		xmm6, xmm3								// xmm6 = m0+m2, m3+m5,       m1+t0,       m4+t1
+
+		movaps		xmm7, xmm5								// xmm7 =    m6,    m7,          m8,          t2
+		movlhps		xmm5, xmm6								// xmm5 =    m6,    m7,       m0+m2,       m3+m5
+		movhlps		xmm6, xmm7								// xmm6 =    m8,    t2,       m1+t0,       m4+t1
+		addps		xmm6, xmm5								// xmm6 = m6+m8, m7+t2, m0+m1+m2+t0, m3+m4+m5+t1
+
+		movhps		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_XYZ_OFFSET+0], xmm6
+
+		movaps		xmm7, xmm6								// xmm7 = m6+m8, m7+t2
+		shufps		xmm7, xmm7, R_SHUFFLE_PS( 1, 0, 2, 3 )	// xmm7 = m7+t2, m6+m8
+		addss		xmm7, xmm6								// xmm7 = m6+m8+m7+t2
+		movss		xmm6, xmm7
+
+		movss		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_XYZ_OFFSET+8], xmm7
+
+		movaps		xmm5, xmm6
+		minps		xmm5, tmpMin
+		maxps		xmm6, tmpMax
+		movaps		tmpMin, xmm5
+		movaps		tmpMax, xmm6
+
+		// transform normal
+		movaps		xmm3, [esi-3*BASEVECTOR_SIZE]
+		movaps		xmm4, xmm3
+		movaps		xmm5, xmm3
+
+		mulps		xmm3, xmm0
+		mulps		xmm4, xmm1
+		mulps		xmm5, xmm2
+
+		movaps		xmm6, xmm3								// xmm6 =    m0,    m1,          m2,          t0
+		unpcklps	xmm6, xmm4								// xmm6 =    m0,    m3,          m1,          m4
+		unpckhps	xmm3, xmm4								// xmm4 =    m2,    m5,          t0,          t1
+		addps		xmm6, xmm3								// xmm6 = m0+m2, m3+m5,       m1+t0,       m4+t1
+
+		movaps		xmm7, xmm5								// xmm7 =    m6,    m7,          m8,          t2
+		movlhps		xmm5, xmm6								// xmm5 =    m6,    m7,       m0+m2,       m3+m5
+		movhlps		xmm6, xmm7								// xmm6 =    m8,    t2,       m1+t0,       m4+t1
+		addps		xmm6, xmm5								// xmm6 = m6+m8, m7+t2, m0+m1+m2+t0, m3+m4+m5+t1
+
+		movhps		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_NORMAL_OFFSET+0], xmm6
+
+		movaps		xmm7, xmm6								// xmm7 = m6+m8, m7+t2
+		shufps		xmm7, xmm7, R_SHUFFLE_PS( 1, 0, 2, 3 )	// xmm7 = m7+t2, m6+m8
+		addss		xmm7, xmm6								// xmm7 = m6+m8+m7+t2
+
+		movss		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_NORMAL_OFFSET+8], xmm7
+
+		// transform first tangent
+		movaps		xmm3, [esi-2*BASEVECTOR_SIZE]
+		movaps		xmm4, xmm3
+		movaps		xmm5, xmm3
+
+		mulps		xmm3, xmm0
+		mulps		xmm4, xmm1
+		mulps		xmm5, xmm2
+
+		movaps		xmm6, xmm3								// xmm6 =    m0,    m1,          m2,          t0
+		unpcklps	xmm6, xmm4								// xmm6 =    m0,    m3,          m1,          m4
+		unpckhps	xmm3, xmm4								// xmm4 =    m2,    m5,          t0,          t1
+		addps		xmm6, xmm3								// xmm6 = m0+m2, m3+m5,       m1+t0,       m4+t1
+
+		movaps		xmm7, xmm5								// xmm7 =    m6,    m7,          m8,          t2
+		movlhps		xmm5, xmm6								// xmm5 =    m6,    m7,       m0+m2,       m3+m5
+		movhlps		xmm6, xmm7								// xmm6 =    m8,    t2,       m1+t0,       m4+t1
+		addps		xmm6, xmm5								// xmm6 = m6+m8, m7+t2, m0+m1+m2+t0, m3+m4+m5+t1
+
+		movhps		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_TANGENT0_OFFSET+0], xmm6
+
+		movaps		xmm7, xmm6								// xmm7 = m6+m8, m7+t2
+		shufps		xmm7, xmm7, R_SHUFFLE_PS( 1, 0, 2, 3 )	// xmm7 = m7+t2, m6+m8
+		addss		xmm7, xmm6								// xmm7 = m6+m8+m7+t2
+
+		movss		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_TANGENT0_OFFSET+8], xmm7
+
+		// transform second tangent
+		movaps		xmm3, [esi-1*BASEVECTOR_SIZE]
+
+		mulps		xmm0, xmm3
+		mulps		xmm1, xmm3
+		mulps		xmm2, xmm3
+
+		movaps		xmm6, xmm0								// xmm6 =    m0,    m1,          m2,          t0
+		unpcklps	xmm6, xmm1								// xmm6 =    m0,    m3,          m1,          m4
+		unpckhps	xmm0, xmm1								// xmm1 =    m2,    m5,          t0,          t1
+		addps		xmm6, xmm0								// xmm6 = m0+m2, m3+m5,       m1+t0,       m4+t1
+
+		movaps		xmm7, xmm2								// xmm7 =    m6,    m7,          m8,          t2
+		movlhps		xmm2, xmm6								// xmm2 =    m6,    m7,       m0+m2,       m3+m5
+		movhlps		xmm6, xmm7								// xmm6 =    m8,    t2,       m1+t0,       m4+t1
+		addps		xmm6, xmm2								// xmm6 = m6+m8, m7+t2, m0+m1+m2+t0, m3+m4+m5+t1
+
+		movhps		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_TANGENT1_OFFSET+0], xmm6
+
+		movaps		xmm7, xmm6
+		shufps		xmm7, xmm7, R_SHUFFLE_D( 1, 0, 2, 3 )	// xmm7 = m7+t2, m6+m8
+		addss		xmm7, xmm6								// xmm7 = m6+m8+m7+t2
+
+		movss		[ecx+eax-DRAWVERT_SIZE+DRAWVERT_TANGENT1_OFFSET+8], xmm7
+
+		jl			loopVert
+
+	done:
+		pop			ebx
+		mov			esi, bounds
+		movaps		xmm6, tmpMin
+		movaps		xmm7, tmpMax
+		movhps		[esi+ 0], xmm6
+		movss		[esi+ 8], xmm6
+		movhps		[esi+12], xmm7
+		movss		[esi+20], xmm7
+	}
+}
+#endif
 
 /*
 ============
@@ -17477,5 +18121,9 @@ void VPCALL idSIMD_SSE::MixedSoundToSamples( short *samples, const float *mixBuf
 
 #endif
 }
+
+//HUMANHEAD rww - disable this since all the code is pushing ebx before modifying it
+#pragma warning(default:4731) //warning C4731: 'x' : frame pointer register 'ebx' modified by inline assembly code
+//HUMANHEAD END
 
 #endif /* _WIN32 */

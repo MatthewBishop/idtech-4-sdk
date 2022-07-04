@@ -653,6 +653,14 @@ void idMD5Anim::GetInterpolatedFrame( frameBlend_t &frame, idJointQuat *joints, 
 					blendPtr->t.x = jointframe2[0];
 					blendPtr->t.y = jointPtr->t.y;
 					blendPtr->t.z = jointPtr->t.z;
+
+					//HUMANHEAD rww - catch nan values
+					assert(!FLOAT_IS_INVALID(jointPtr->t.x));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.x));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.y));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.z));
+					//HUMANHEAD END
+
 					jointframe1++;
 					jointframe2++;
 					break;
@@ -661,6 +669,14 @@ void idMD5Anim::GetInterpolatedFrame( frameBlend_t &frame, idJointQuat *joints, 
 					blendPtr->t.y = jointframe2[0];
 					blendPtr->t.x = jointPtr->t.x;
 					blendPtr->t.z = jointPtr->t.z;
+
+					//HUMANHEAD rww - catch nan values
+					assert(!FLOAT_IS_INVALID(jointPtr->t.y));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.y));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.x));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.z));
+					//HUMANHEAD END
+
 					jointframe1++;
 					jointframe2++;
 					break;
@@ -669,6 +685,14 @@ void idMD5Anim::GetInterpolatedFrame( frameBlend_t &frame, idJointQuat *joints, 
 					blendPtr->t.z = jointframe2[0];
 					blendPtr->t.x = jointPtr->t.x;
 					blendPtr->t.y = jointPtr->t.y;
+
+					//HUMANHEAD rww - catch nan values
+					assert(!FLOAT_IS_INVALID(jointPtr->t.z));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.z));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.x));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.y));
+					//HUMANHEAD END
+
 					jointframe1++;
 					jointframe2++;
 					break;
@@ -678,6 +702,15 @@ void idMD5Anim::GetInterpolatedFrame( frameBlend_t &frame, idJointQuat *joints, 
 					blendPtr->t.x = jointframe2[0];
 					blendPtr->t.y = jointframe2[1];
 					blendPtr->t.z = jointPtr->t.z;
+
+					//HUMANHEAD rww - catch nan values
+					assert(!FLOAT_IS_INVALID(jointPtr->t.x));
+					assert(!FLOAT_IS_INVALID(jointPtr->t.y));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.x));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.y));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.z));
+					//HUMANHEAD END
+
 					jointframe1 += 2;
 					jointframe2 += 2;
 					break;
@@ -687,6 +720,15 @@ void idMD5Anim::GetInterpolatedFrame( frameBlend_t &frame, idJointQuat *joints, 
 					blendPtr->t.x = jointframe2[0];
 					blendPtr->t.z = jointframe2[1];
 					blendPtr->t.y = jointPtr->t.y;
+
+					//HUMANHEAD rww - catch nan values
+					assert(!FLOAT_IS_INVALID(jointPtr->t.x));
+					assert(!FLOAT_IS_INVALID(jointPtr->t.z));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.x));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.z));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.y));
+					//HUMANHEAD END
+
 					jointframe1 += 2;
 					jointframe2 += 2;
 					break;
@@ -696,6 +738,15 @@ void idMD5Anim::GetInterpolatedFrame( frameBlend_t &frame, idJointQuat *joints, 
 					blendPtr->t.y = jointframe2[0];
 					blendPtr->t.z = jointframe2[1];
 					blendPtr->t.x = jointPtr->t.x;
+
+					//HUMANHEAD rww - catch nan values
+					assert(!FLOAT_IS_INVALID(jointPtr->t.y));
+					assert(!FLOAT_IS_INVALID(jointPtr->t.z));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.y));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.z));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.x));
+					//HUMANHEAD END
+
 					jointframe1 += 2;
 					jointframe2 += 2;
 					break;
@@ -706,6 +757,16 @@ void idMD5Anim::GetInterpolatedFrame( frameBlend_t &frame, idJointQuat *joints, 
 					blendPtr->t.x = jointframe2[0];
 					blendPtr->t.y = jointframe2[1];
 					blendPtr->t.z = jointframe2[2];
+
+					//HUMANHEAD rww - catch nan values
+					assert(!FLOAT_IS_INVALID(jointPtr->t.x));
+					assert(!FLOAT_IS_INVALID(jointPtr->t.y));
+					assert(!FLOAT_IS_INVALID(jointPtr->t.z));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.x));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.y));
+					assert(!FLOAT_IS_INVALID(blendPtr->t.z));
+					//HUMANHEAD END
+
 					jointframe1 += 3;
 					jointframe2 += 3;
 					break;
@@ -722,6 +783,16 @@ void idMD5Anim::GetInterpolatedFrame( frameBlend_t &frame, idJointQuat *joints, 
 					blendPtr->q.z = jointPtr->q.z;
 					jointPtr->q.w = jointPtr->q.CalcW();
 					blendPtr->q.w = blendPtr->q.CalcW();
+
+					//HUMANHEAD rww - catch nan values
+					assert(!FLOAT_IS_INVALID(jointPtr->q.x));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.x));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.y));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.z));
+					assert(!FLOAT_IS_INVALID(jointPtr->q.w));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.w));
+					//HUMANHEAD END
+
 					break;
 				case ANIM_QY:
 					jointPtr->q.y = jointframe1[0];
@@ -730,6 +801,16 @@ void idMD5Anim::GetInterpolatedFrame( frameBlend_t &frame, idJointQuat *joints, 
 					blendPtr->q.z = jointPtr->q.z;
 					jointPtr->q.w = jointPtr->q.CalcW();
 					blendPtr->q.w = blendPtr->q.CalcW();
+
+					//HUMANHEAD rww - catch nan values
+					assert(!FLOAT_IS_INVALID(jointPtr->q.y));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.y));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.x));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.z));
+					assert(!FLOAT_IS_INVALID(jointPtr->q.w));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.w));
+					//HUMANHEAD END
+
 					break;
 				case ANIM_QZ:
 					jointPtr->q.z = jointframe1[0];
@@ -738,6 +819,16 @@ void idMD5Anim::GetInterpolatedFrame( frameBlend_t &frame, idJointQuat *joints, 
 					blendPtr->q.y = jointPtr->q.y;
 					jointPtr->q.w = jointPtr->q.CalcW();
 					blendPtr->q.w = blendPtr->q.CalcW();
+
+					//HUMANHEAD rww - catch nan values
+					assert(!FLOAT_IS_INVALID(jointPtr->q.z));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.z));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.x));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.y));
+					assert(!FLOAT_IS_INVALID(jointPtr->q.w));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.w));
+					//HUMANHEAD END
+
 					break;
 				case ANIM_QX|ANIM_QY:
 					jointPtr->q.x = jointframe1[0];
@@ -747,6 +838,17 @@ void idMD5Anim::GetInterpolatedFrame( frameBlend_t &frame, idJointQuat *joints, 
 					blendPtr->q.z = jointPtr->q.z;
 					jointPtr->q.w = jointPtr->q.CalcW();
 					blendPtr->q.w = blendPtr->q.CalcW();
+
+					//HUMANHEAD rww - catch nan values
+					assert(!FLOAT_IS_INVALID(jointPtr->q.x));
+					assert(!FLOAT_IS_INVALID(jointPtr->q.y));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.x));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.y));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.z));
+					assert(!FLOAT_IS_INVALID(jointPtr->q.w));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.w));
+					//HUMANHEAD END
+
 					break;
 				case ANIM_QX|ANIM_QZ:
 					jointPtr->q.x = jointframe1[0];
@@ -756,6 +858,17 @@ void idMD5Anim::GetInterpolatedFrame( frameBlend_t &frame, idJointQuat *joints, 
 					blendPtr->q.y = jointPtr->q.y;
 					jointPtr->q.w = jointPtr->q.CalcW();
 					blendPtr->q.w = blendPtr->q.CalcW();
+
+					//HUMANHEAD rww - catch nan values
+					assert(!FLOAT_IS_INVALID(jointPtr->q.x));
+					assert(!FLOAT_IS_INVALID(jointPtr->q.z));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.x));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.z));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.y));
+					assert(!FLOAT_IS_INVALID(jointPtr->q.w));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.w));
+					//HUMANHEAD END
+
 					break;
 				case ANIM_QY|ANIM_QZ:
 					jointPtr->q.y = jointframe1[0];
@@ -765,6 +878,17 @@ void idMD5Anim::GetInterpolatedFrame( frameBlend_t &frame, idJointQuat *joints, 
 					blendPtr->q.x = jointPtr->q.x;
 					jointPtr->q.w = jointPtr->q.CalcW();
 					blendPtr->q.w = blendPtr->q.CalcW();
+
+					//HUMANHEAD rww - catch nan values
+					assert(!FLOAT_IS_INVALID(jointPtr->q.y));
+					assert(!FLOAT_IS_INVALID(jointPtr->q.z));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.y));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.z));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.x));
+					assert(!FLOAT_IS_INVALID(jointPtr->q.w));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.w));
+					//HUMANHEAD END
+
 					break;
 				case ANIM_QX|ANIM_QY|ANIM_QZ:
 					jointPtr->q.x = jointframe1[0];
@@ -775,6 +899,18 @@ void idMD5Anim::GetInterpolatedFrame( frameBlend_t &frame, idJointQuat *joints, 
 					blendPtr->q.z = jointframe2[2];
 					jointPtr->q.w = jointPtr->q.CalcW();
 					blendPtr->q.w = blendPtr->q.CalcW();
+
+					//HUMANHEAD rww - catch nan values
+					assert(!FLOAT_IS_INVALID(jointPtr->q.x));
+					assert(!FLOAT_IS_INVALID(jointPtr->q.y));
+					assert(!FLOAT_IS_INVALID(jointPtr->q.z));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.x));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.y));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.z));
+					assert(!FLOAT_IS_INVALID(jointPtr->q.w));
+					assert(!FLOAT_IS_INVALID(blendPtr->q.w));
+					//HUMANHEAD END
+
 					break;
 			}
 		}
@@ -942,7 +1078,9 @@ idMD5Anim *idAnimManager::GetAnim( const char *name ) {
 			return NULL;
 		}
 
-		anim = new idMD5Anim();
+		// HUMANHEAD nla - Create our version of the class instead of theirs
+		anim = new hhMD5Anim();
+		// HUMANHEAD END
 		if ( !anim->LoadAnim( filename ) ) {
 			gameLocal.Warning( "Couldn't load anim: '%s'", filename.c_str() );
 			delete anim;
@@ -1034,6 +1172,65 @@ void idAnimManager::ListAnims( void ) const {
 
 	gameLocal.Printf( "\n%d memory used in %d anims\n", size, num );
 	gameLocal.Printf( "%d memory used in %d joint names\n", namesize, jointnames.Num() );
+}
+
+// HUMANHEAD pdm: print animation memory statistics
+void idAnimManager::PrintMemInfo( MemInfo_t *mi ) {
+	int i, j, totalMem = 0;
+	int *sortIndex;
+	idFile *f;
+	idMD5Anim	**animptr1;
+	idMD5Anim	**animptr2;
+	idMD5Anim	*anim;
+	size_t		s1, s2;
+
+	f = fileSystem->OpenFileWrite( mi->filebase + "_anims.txt" );
+	if ( !f ) {
+		return;
+	}
+
+	// sort first
+	sortIndex = new int[ animations.Num() ];
+
+	for ( i = 0; i <  animations.Num(); i++ ) {
+		sortIndex[i] = i;
+	}
+
+	for ( i = 0; i <  animations.Num() - 1; i++ ) {
+		for ( j = i + 1; j <  animations.Num(); j++ ) {
+			s1 = s2 = 0;
+			animptr1 = animations.GetIndex( sortIndex[i] );
+			animptr2 = animations.GetIndex( sortIndex[j] );
+			if ( animptr1 && *animptr1 ) {
+				s1 = (*animptr1)->Size();
+			}
+			if ( animptr2 && *animptr2 ) {
+				s2 = (*animptr2)->Size();
+			}
+			if ( s1 < s2 ) {
+				int temp = sortIndex[i];
+				sortIndex[i] = sortIndex[j];
+				sortIndex[j] = temp;
+			}
+		}
+	}
+
+	// print next
+	for ( int i = 0 ; i < animations.Num() ; i++ ) {
+		animptr1 = animations.GetIndex( sortIndex[i] );
+		if ( animptr1 && *animptr1 ) {
+			anim = *animptr1;
+			s1 = anim->Size();
+			f->Printf( "%s %d %s\n", idStr::FormatNumber( (int)s1 ).c_str(), anim->NumRefs(), anim->Name() );
+			totalMem += s1;
+		}
+	}
+
+	delete[] sortIndex;
+	mi->animAssetsTotal = totalMem;
+
+	f->Printf( "\nTotal anim bytes allocated: %s\n", idStr::FormatNumber( totalMem ).c_str() );
+	fileSystem->CloseFile( f );
 }
 
 /*

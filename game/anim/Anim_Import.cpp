@@ -66,7 +66,11 @@ bool idModelExport::CheckMayaInstall( void ) {
 	lres = RegOpenKey( HKEY_LOCAL_MACHINE, "SOFTWARE\\Alias|Wavefront\\Maya\\4.5\\Setup\\InstallPath", &hKey );
 
 	if ( lres != ERROR_SUCCESS ) {
-		return false;
+		// HUMANHEAD - cjr:  Check for Maya 4.0 as well
+		lres = RegOpenKey( HKEY_LOCAL_MACHINE, "SOFTWARE\\Alias|Wavefront\\Maya\\4.0\\Setup\\InstallPath", &hKey );
+		if ( lres != ERROR_SUCCESS ) {
+			return false;
+		} // END HUMANHEAD
 	}
 
 	lres = RegQueryValueEx( hKey, "MAYA_INSTALL_LOCATION", NULL, (unsigned long*)&lType, (unsigned char*)NULL, (unsigned long*)NULL );
@@ -78,6 +82,8 @@ bool idModelExport::CheckMayaInstall( void ) {
 	}
 	return true;
 #else
+	//HH rww SDK - the standard EE libs don't support these reg functions
+	/*
 	HKEY	hKey;
 	long	lres;
 
@@ -89,6 +95,8 @@ bool idModelExport::CheckMayaInstall( void ) {
 		return false;
 	}
 	return true;
+	*/
+	return false;
 #endif
 }
 
@@ -276,17 +284,23 @@ idModelExport::ExportAnim
 ====================
 */
 bool idModelExport::ExportAnim( const char *anim ) {
+#if !HUMANHEAD	// HUMANHEAD pdm: Unmerged this at JimDose's suggestion to avoid reexporting our models.  Would be handy for an add-on pack though
 	const char *game = cvarSystem->GetCVarString( "fs_game" );
 	if ( strlen(game) == 0 ) {
 		game = BASE_GAMEDIR;
 	}
+#endif
 
 	Reset();
 	src  = anim;
 	dest = anim;
 	dest.SetFileExtension( MD5_ANIM_EXT );
 
+#if HUMANHEAD	// HUMANHEAD pdm: Unmerged this at JimDose's suggestion to avoid reexporting our models.  Would be handy for an add-on pack though
+	sprintf( commandLine, "anim %s -dest %s -game %s", src.c_str(), dest.c_str(), CD_BASEDIR );
+#else
 	sprintf( commandLine, "anim %s -dest %s -game %s", src.c_str(), dest.c_str(), game );
+#endif
 	if ( !ConvertMayaToMD5() ) {
 		gameLocal.Printf( "Failed to export '%s' : %s", src.c_str(), Maya_Error.c_str() );
 		return false;
@@ -434,10 +448,12 @@ int idModelExport::ParseExportSection( idParser &parser ) {
 
 			Reset();
 			if ( ParseOptions( lex ) ) {
+#if !HUMANHEAD	// HUMANHEAD pdm: Unmerged this at JimDose's suggestion to avoid reexporting our models.  Would be handy for an add-on pack though
 				const char *game = cvarSystem->GetCVarString( "fs_game" );
 				if ( strlen(game) == 0 ) {
 					game = BASE_GAMEDIR;
 				}
+#endif
 
 				if ( command == "mesh" ) {
 					dest.SetFileExtension( MD5_MESH_EXT );
@@ -449,7 +465,11 @@ int idModelExport::ParseExportSection( idParser &parser ) {
 					dest.SetFileExtension( command );
 				}
 				idStr back = commandLine;
+#if HUMANHEAD	// HUMANHEAD pdm: Unmerged this at JimDose's suggestion to avoid reexporting our models.  Would be handy for an add-on pack though
+				sprintf( commandLine, "%s %s -dest %s -game %s%s", command.c_str(), src.c_str(), dest.c_str(), CD_BASEDIR, commandLine.c_str() );
+#else
 				sprintf( commandLine, "%s %s -dest %s -game %s%s", command.c_str(), src.c_str(), dest.c_str(), game, commandLine.c_str() );
+#endif
 				if ( ConvertMayaToMD5() ) {
 					count++;
 				} else {

@@ -212,6 +212,12 @@ public:
 	virtual idFile *		OpenExplicitFileRead( const char *OSPath ) = 0;
 							// Opens a file for writing to a full OS path.
 	virtual idFile *		OpenExplicitFileWrite( const char *OSPath ) = 0;
+
+	// HUMANHEAD pdm
+							// Opens a file for appending to a full OS path
+	virtual idFile *		OpenExplicitFileAppend( const char *OSPath, bool sync = false ) = 0;
+	// HUMANHEAD END
+
 							// Closes a file.
 	virtual void			CloseFile( idFile *f ) = 0;
 							// Returns immediately, performing the read from a background thread.
@@ -220,6 +226,10 @@ public:
 	virtual void			ResetReadCount( void ) = 0;
 							// retrieves the current read count
 	virtual int				GetReadCount( void ) = 0;
+	//HUMANHEAD rww
+							// sets the current read count
+	virtual void			SetReadCount( int count ) = 0;
+	//HUMANHEAD END
 							// adds to the read count
 	virtual void			AddToReadCount( int c ) = 0;
 							// look for a dynamic module
@@ -253,7 +263,7 @@ public:
 							// the decl 'name' is in the "path" entry of the dict
 	virtual int				GetNumMaps() = 0;
 	virtual const idDict *	GetMapDecl( int i ) = 0;
-	virtual void			FindMapScreenshot( const char *path, char *buf, int len ) = 0;
+	virtual void			FindMapScreenshot( const char *path, char *buf, int len, bool thumb = true ) = 0;
 
 							// ignore case and seperator char distinctions
 	virtual bool			FilenameCompare( const char *s1, const char *s2 ) const = 0;

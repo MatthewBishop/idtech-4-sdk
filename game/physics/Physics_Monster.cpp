@@ -9,7 +9,8 @@
 CLASS_DECLARATION( idPhysics_Actor, idPhysics_Monster )
 END_CLASS
 
-const float OVERCLIP = 1.001f;
+// HUMANHEAD PDM: This now declared in physics_player.h, so not needed here
+//const float OVERCLIP = 1.001f;
 
 /*
 =====================
@@ -17,7 +18,8 @@ idPhysics_Monster::CheckGround
 =====================
 */
 void idPhysics_Monster::CheckGround( monsterPState_t &state ) {
-	trace_t groundTrace;
+// HUMANHEAD aob: groundTrace is now stored on object
+//	trace_t groundTrace;
 	idVec3 down;
 
 	if ( gravityNormal == vec3_zero ) {
@@ -62,7 +64,7 @@ void idPhysics_Monster::CheckGround( monsterPState_t &state ) {
 idPhysics_Monster::SlideMove
 =====================
 */
-monsterMoveResult_t idPhysics_Monster::SlideMove( idVec3 &start, idVec3 &velocity, const idVec3 &delta ) {
+monsterMoveResult_t idPhysics_Monster::SlideMove( idVec3 &start, idVec3 &velocity, const idVec3 &delta, idList<int> *touched ) {
 	int i;
 	trace_t tr;
 	idVec3 move;
@@ -107,6 +109,7 @@ monsterMoveResult_t idPhysics_Monster::StepMove( idVec3 &start, idVec3 &velocity
 	monsterMoveResult_t result1, result2;
 	float	stepdist;
 	float	nostepdist;
+	idList<int>			noStepEntities, stepEntities;	// HUMANHEAD nla
 
 	if ( delta == vec3_origin ) {
 		return MM_OK;
@@ -115,14 +118,16 @@ monsterMoveResult_t idPhysics_Monster::StepMove( idVec3 &start, idVec3 &velocity
 	// try to move without stepping up
 	noStepPos = start;
 	noStepVel = velocity;
-	result1 = SlideMove( noStepPos, noStepVel, delta );
+	result1 = SlideMove( noStepPos, noStepVel, delta, &noStepEntities );
 	if ( result1 == MM_OK ) {
+		AddTouchEntList( noStepEntities );		// HUMANHEAD nla
 		velocity = noStepVel;
 		if ( gravityNormal == vec3_zero ) {
 			start = noStepPos;
 			return MM_OK;
 		}
 
+		//! Check block below for requirment of any touch entities
 		// try to step down so that we walk down slopes and stairs at a normal rate
 		down = noStepPos + gravityNormal * maxStepHeight;
 		gameLocal.clip.Translation( tr, noStepPos, down, clipModel, clipModel->GetAxis(), clipMask, self );
@@ -152,9 +157,15 @@ monsterMoveResult_t idPhysics_Monster::StepMove( idVec3 &start, idVec3 &velocity
 	up = start - gravityNormal * maxStepHeight;
 	gameLocal.clip.Translation( tr, start, up, clipModel, clipModel->GetAxis(), clipMask, self );
 	if ( tr.fraction == 0.0f ) {
+		AddTouchEntList( noStepEntities );		// HUMANHEAD nla
 		start = noStepPos;
 		velocity = noStepVel;
 		return result1;
+	}
+
+	//HUMANHEAD nla - Add the entity touched
+	if (tr.fraction < 1.0f) {
+		stepEntities.Append( tr.c.entityNum );
 	}
 
 	// try to move at the stepped up position
@@ -162,6 +173,7 @@ monsterMoveResult_t idPhysics_Monster::StepMove( idVec3 &start, idVec3 &velocity
 	stepVel = velocity;
 	result2 = SlideMove( stepPos, stepVel, delta );
 	if ( result2 == MM_BLOCKED ) {
+		AddTouchEntList( noStepEntities );		// HUMANHEAD nla
 		start = noStepPos;
 		velocity = noStepVel;
 		return result1;
@@ -172,15 +184,22 @@ monsterMoveResult_t idPhysics_Monster::StepMove( idVec3 &start, idVec3 &velocity
 	gameLocal.clip.Translation( tr, stepPos, down, clipModel, clipModel->GetAxis(), clipMask, self );
 	stepPos = tr.endpos;
 
+	//HUMANHEAD nla - Add the entity touched
+	if (tr.fraction < 1.0f) {
+		stepEntities.Append( tr.c.entityNum );
+	}
+
 	// if the move is further without stepping up, or the slope is too steap, don't step up
 	nostepdist = ( noStepPos - start ).LengthSqr();
 	stepdist = ( stepPos - start ).LengthSqr();
 	if ( ( nostepdist >= stepdist ) || ( ( tr.c.normal * -gravityNormal ) < minFloorCosine ) ) {
+		AddTouchEntList( noStepEntities );		// HUMANHEAD nla
 		start = noStepPos;
 		velocity = noStepVel;
 		return MM_SLIDING;
 	}
 
+	AddTouchEntList( stepEntities );		// HUMANHEAD nla
 	start = stepPos;
 	velocity = stepVel;
 
@@ -229,7 +248,7 @@ idPhysics_Monster::idPhysics_Monster( void ) {
 	saved = current;
 	
 	delta.Zero();
-	maxStepHeight = 18.0f;
+	maxStepHeight = 22.0f; // JRM CHANGED FROM 18
 	minFloorCosine = 0.7f;
 	moveResult = MM_OK;
 	forceDeltaMove = false;
@@ -420,7 +439,9 @@ void idPhysics_Monster::DisableImpact( void ) {
 idPhysics_Monster::Evaluate
 ================
 */
+// HUMANHEAD AOB: PERSISTANT NOTIFY
 bool idPhysics_Monster::Evaluate( int timeStepMSec, int endTimeMSec ) {
+	PROFILE_SCOPE("Monster", PROFMASK_PHYSICS);
 	idVec3 masterOrigin, oldOrigin;
 	idMat3 masterAxis;
 	float timeStep;
@@ -730,6 +751,13 @@ void idPhysics_Monster::SetMaster( idEntity *master, const bool orientated ) {
 		}
 	}
 }
+
+// HUMANHEAD pdm: weren't implemented before, just stubbed out
+void idPhysics_Monster::SetMinFloorCosine( const float newMinFloorCosine ) {
+	minFloorCosine = newMinFloorCosine;
+}
+// HUMANHEAD END
+
 
 const float	MONSTER_VELOCITY_MAX			= 4000;
 const int	MONSTER_VELOCITY_TOTAL_BITS		= 16;

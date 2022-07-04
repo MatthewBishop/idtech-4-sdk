@@ -25,7 +25,7 @@ typedef enum {
 	EDITOR_PARTICLE				= BIT(9),
 	EDITOR_PDA					= BIT(10),
 	EDITOR_AAS					= BIT(11),
-	EDITOR_MATERIAL				= BIT(12)
+	EDITOR_MATERIAL				= BIT(12),
 } toolFlag_t;
 
 #define STRTABLE_ID				"#str_"
@@ -35,7 +35,8 @@ extern idCVar		com_version;
 extern idCVar		com_skipRenderer;
 extern idCVar		com_asyncInput;
 extern idCVar		com_asyncSound;
-extern idCVar		com_machineSpec;
+//extern idCVar		com_machineSpec;
+extern idCVar		com_imageQuality;
 extern idCVar		com_purgeAll;
 extern idCVar		com_developer;
 extern idCVar		com_allowConsole;
@@ -45,8 +46,17 @@ extern idCVar		com_showMemoryUsage;
 extern idCVar		com_showAsyncStats;
 extern idCVar		com_showSoundDecoders;
 extern idCVar		com_makingBuild;
+#ifdef _SYSTEM_BUILD_ //HUMANHEAD PCF mdl 05/19/2006 - Added code for demo builder
+extern idCVar		com_makingDemoBuild;
+#endif // HUMANHEAD END
 extern idCVar		com_updateLoadSize;
 extern idCVar		com_videoRam;
+extern idCVar		com_precache;		// HUMANHEAD pdm
+extern idCVar		com_profanity;	// HUMANHEAD pdm
+
+//HUMANHEAD: aob
+extern idCVar		com_timescale;
+//HUMANHEAD END
 
 extern int			time_gameFrame;			// game logic time
 extern int			time_gameDraw;			// game present time
@@ -82,6 +92,7 @@ struct MemInfo_t {
 	int				imageAssetsTotal;
 	int				modelAssetsTotal;
 	int				soundAssetsTotal;
+	int				animAssetsTotal;	// HUMANHEAD pdm
 };
 
 class idCommon {
@@ -139,6 +150,26 @@ public:
 								// Update the screen with every message printed.
 	virtual void				SetRefreshOnPrint( bool set ) = 0;
 
+	// HUMANHEAD pdm
+	virtual void				APrintf( const char *fmt, ... ) = 0;	// Another print interface for animation module
+	virtual double				GetAsyncTime() = 0;						// Method for safely retrieving async profile info
+	virtual void				FixupKeyTranslations(const char *src, char *dst, int lengthAllocated) = 0;
+	virtual void				MaterialKeyForBinding(const char *binding, char *keyMaterial, char *key, bool &isBound) = 0;
+
+	// HUMANHEAD END
+
+	//HUMANHEAD rww
+	virtual void				SetGameSensitivityFactor(float factor) = 0; //allows game logic to set a sensitivity factor for input
+	//HUMANHEAD END
+
+	//HUMANHEAD rww
+	virtual bool				CanUseOpenAL(void) = 0;
+	//HUMANHEAD END
+
+#if GAMEPAD_SUPPORT	// VENOM BEGIN
+	virtual void				SetGamePadRumble( int effect ) = 0; // allow the game to start a rumble effect
+#endif // VENOM END
+
 								// Prints message to the console, which may cause a screen update if com_refreshOnPrint is set.
 	virtual void				Printf( const char *fmt, ... )id_attribute((format(printf,2,3))) = 0;
 
@@ -171,6 +202,12 @@ public:
 
 								// Returns a pointer to the dictionary with language specific strings.
 	virtual const idLangDict *	GetLanguageDict( void ) = 0;
+
+//HUMANHEAD rww - actively check for reads after initial loading sequence
+#if !GOLD
+	bool						initialLoadDone;
+#endif
+//HUMANHEAD END
 };
 
 extern idCommon *		common;

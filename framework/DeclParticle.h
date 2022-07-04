@@ -14,11 +14,12 @@
 
 class idParticleParm {
 public:
-							idParticleParm( void ) { table = NULL; from = to = 0.0f; }
+							idParticleParm( void ) { table = NULL; from = to = randomp = 0.0f; }	//HUMANHEAD
 
 	const idDeclTable *		table;
 	float					from;
 	float					to;
+	float					randomp;		//HUMANHEAD bjk
 	
 	float					Eval( float frac, idRandom &rand ) const;
 	float					Integrate( float frac, idRandom &rand ) const;
@@ -160,6 +161,8 @@ public:
 	float					boundsExpansion;	// user tweak to fix poorly calculated bounds
 
 	idBounds				bounds;				// derived
+
+	bool					lowSkippable;		// HUMANHEAD bjk
 };
 
 
@@ -182,7 +185,12 @@ public:
 
 private:
 	bool					RebuildTextSource( void );
+	void					CalcBounds();		//HUMANHEAD bjk
+#ifdef PARTICLE_BOUNDS
+	void					GetStageBounds( idParticleStage *stage, idDrawVert *particleVerts );
+#else
 	void					GetStageBounds( idParticleStage *stage );
+#endif
 	idParticleStage *		ParseParticleStage( idLexer &src );
 	void					ParseParms( idLexer &src, float *parms, int maxParms );
 	void					ParseParametric( idLexer &src, idParticleParm *parm );

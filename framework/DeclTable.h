@@ -20,7 +20,17 @@ public:
 	virtual bool			Parse( const char *text, const int textLength );
 	virtual void			FreeData( void );
 
+	virtual	//HUMANHEAD pdm: made virtual so it can be called from game code
 	float					TableLookup( float index ) const;
+
+	//HUMANHEAD: aob - interfaces to allow integrating tables
+	virtual int				NumElements() const { return values.Num(); }
+	virtual float			Integrate( float frac ) const;
+
+protected:
+	virtual float			IntegratePreviousAreas( int numAreas, float inverseNumAreas ) const;
+	virtual float			IntegrateArea( int fromElement, int toElement, float inverseNumAreas ) const;
+	//HUMANHEAD END
 
 private:
 	bool					clamp;

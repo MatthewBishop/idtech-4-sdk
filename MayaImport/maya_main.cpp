@@ -2,8 +2,18 @@
 #include "../idlib/precompiled.h"
 #pragma hdrstop
 
+// HUMANHEAD CJR : Set-up for Maya 6.0
+#define USE_MAYA_6		1
+
+#if USE_MAYA_6
+#undef _GLOBAL_USING
+#define _GLOBAL_USING 0
+#include "Maya6.0/maya.h"			// must also change include directory in project from "MayaImport\Maya4.5\include" to "MayaImport\Maya6.0\include" (requires MSDev 7.1)
+#else
 #include "Maya5.0/maya.h"
-//#include "Maya6.0/maya.h"			// must also change include directory in project from "MayaImport\Maya4.5\include" to "MayaImport\Maya6.0\include" (requires MSDev 7.1)
+#endif
+// HUMANHEAD END
+
 #include "exporter.h"
 #include "maya_main.h"
 
@@ -23,6 +33,10 @@ idCommon *		common = NULL;
 idCVarSystem *	cvarSystem = NULL;
 
 idCVar *		idCVar::staticVars = NULL;
+
+// HUMANHEAD pdm: Output all the animation text with Green color
+#define Printf		APrintf
+// HUMANHEAD END
 
 /*
 =================
@@ -171,12 +185,12 @@ bool OSPathToRelativePath( const char *osPath, idStr &qpath, const char *game ) 
 	// Ase files from max may have the form of:
 	// "//Purgatory/purgatory/doom/base/models/mapobjects/bitch/hologirl.tga"
 	// which won't match any of our drive letter based search paths
-	base = strstr( osPath, BASE_GAMEDIR );
+	base = (char *)strstr( osPath, BASE_GAMEDIR ); //HUMANHEAD rww vs2005 - strstr now returns const char
 
 	// _D3XP added mod support
 	if ( base == NULL && strlen(game) > 0 ) {
 
-		base = s = strstr( osPath, game );
+		base = s = (char *)strstr( osPath, game ); //HUMANHEAD rww vs2005 - strstr now returns const char
 
 		while( s = strstr( s, game ) ) {
 			s += strlen( game );
@@ -441,6 +455,10 @@ void idExportOptions::Reset( const char *commandline ) {
 	quatPrecision	= DEFAULT_QUAT_EPSILON;
 	cycleStart		= -1;
 
+	// HUMANHEAD pdm: Allow bounds expansion (shared animations calculate bounds based on a different mesh, so give some slop)
+	boundsExpansion = 0.0f;
+	// HUMANHEAD END
+
 	src.Clear();
 	dest.Clear();
 
@@ -542,6 +560,13 @@ idExportOptions::idExportOptions( const char *commandline, const char *ospath ) 
 		} else if ( token == "-align" ) {
 			// parse align joint
 			align = tokens.NextToken( "Missing joint name for -align.  Usage: -align [joint name]" );
+
+		// HUMANHEAD pdm: Allow bounds expansion (shared animations calculate bounds based on a different mesh, so give some slop)
+		} else if ( token == "-expandbounds" ) {
+			// parse boundsexpansion
+			token	= tokens.NextToken( "Missing expansion amount for -expandbounds.  Usage: -expandbounds [expansion amount]" );
+			boundsExpansion = atof( token );
+		// HUMANHEAD END
 
 		} else if ( token == "-rotate" ) {
 			// parse angle rotation
@@ -1158,7 +1183,12 @@ bool idExportModel::WriteAnim( const char *filename, idExportOptions &options ) 
 	// write the frame bounds
 	WriteFloatString( file, "\nbounds {\n" );
 	for( i = 0; i < numFrames; i++ ) {
+#if 1	// HUMANHEAD pdm: Allow bounds expansion (shared animations calculate bounds based on a different mesh, so give some slop)
+		idBounds expandedBounds = bounds[i].Expand( options.boundsExpansion );
+		WriteFloatString( file, "\t( %f %f %f ) ( %f %f %f )\n", expandedBounds[ 0 ].x, expandedBounds[ 0 ].y, expandedBounds[ 0 ].z, expandedBounds[ 1 ].x, expandedBounds[ 1 ].y, expandedBounds[ 1 ].z );
+#else	// HUMANHEAD END
 		WriteFloatString( file, "\t( %f %f %f ) ( %f %f %f )\n", bounds[ i ][ 0 ].x, bounds[ i ][ 0 ].y, bounds[ i ][ 0 ].z, bounds[ i ][ 1 ].x, bounds[ i ][ 1 ].y, bounds[ i ][ 1 ].z );
+#endif
 	}
 	WriteFloatString( file, "}\n" );
 
