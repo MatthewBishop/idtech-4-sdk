@@ -1286,7 +1286,7 @@ void idObjectiveComplete::Event_Trigger( idEntity *activator ) {
 
 		if ( spawnArgs.GetString( "inv_objective", NULL ) ) {
 	 		if ( player->hud ) {
-				player->hud->SetStateString( "objective", "2");
+				player->hud->SetStateString( "objective", "2" );
 				player->hud->SetStateString( "objectivetext", spawnArgs.GetString( "objectivetext" ) );
 				player->hud->SetStateString( "objectivetitle", spawnArgs.GetString( "objectivetitle" ) );
 				player->CompleteObjective( spawnArgs.GetString( "objectivetitle" ) );

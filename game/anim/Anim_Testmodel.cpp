@@ -289,6 +289,15 @@ void idTestModel::Think( void ) {
 					headAnimator->PlayAnim( ANIMCHANNEL_ALL, headAnim, gameLocal.time, FRAME2MS( g_testModelBlend.GetInteger() ) );
 				}
 				break;
+
+			case 5:
+				// frame by frame with fixed origin
+				animator.SetFrame( ANIMCHANNEL_ALL, anim, frame, gameLocal.time, FRAME2MS( g_testModelBlend.GetInteger() ) );
+				animator.RemoveOriginOffset( true );
+				if ( headAnim ) {
+					headAnimator->SetFrame( ANIMCHANNEL_ALL, headAnim, frame, gameLocal.time, FRAME2MS( g_testModelBlend.GetInteger() ) );
+				}
+				break;
 			}
 			
 			mode = g_testModelAnimate.GetInteger();
@@ -448,7 +457,7 @@ idTestModel::NextFrame
 ================
 */
 void idTestModel::NextFrame( const idCmdArgs &args ) {
-	if ( !anim || ( g_testModelAnimate.GetInteger() != 3 ) ) {
+	if ( !anim || ( ( g_testModelAnimate.GetInteger() != 3 ) && ( g_testModelAnimate.GetInteger() != 5 ) ) ) {
 		return;
 	}
 
@@ -469,7 +478,7 @@ idTestModel::PrevFrame
 ================
 */
 void idTestModel::PrevFrame( const idCmdArgs &args ) {
-	if ( !anim || ( g_testModelAnimate.GetInteger() != 3 ) ) {
+	if ( !anim || ( ( g_testModelAnimate.GetInteger() != 3 ) && ( g_testModelAnimate.GetInteger() != 5 ) ) ) {
 		return;
 	}
 
@@ -733,13 +742,13 @@ void idTestModel::TestModel_f( const idCmdArgs &args ) {
 			if ( name[ 0 ] != '_' ) {
 				name.DefaultFileExtension( ".ase" );
 			} 
-#ifndef _D3SDK
+			
 			if ( strstr( name, ".ma" ) || strstr( name, ".mb" ) ) {
 				idModelExport exporter;
 				exporter.ExportModel( name );
 				name.SetFileExtension( MD5_MESH_EXT );
 			}
-#endif
+
 			if ( !renderModelManager->CheckModel( name ) ) {
 				gameLocal.Printf( "Can't register model\n" );
 				return;

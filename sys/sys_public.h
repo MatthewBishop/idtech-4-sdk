@@ -39,6 +39,8 @@
 // Mac OSX
 #if defined(MACOS_X) || defined(__APPLE__)
 
+#include "osx/apple_bool.h"
+
 #ifdef __ppc__
 	#define BUILD_STRING				"MacOSX-ppc"
 	#define BUILD_OS_ID					1
@@ -54,6 +56,7 @@
 #define ALIGN16( x )					x
 #ifdef __MWERKS__
 #define PACKED
+#include <alloca.h>
 #else
 #define PACKED							__attribute__((packed))
 #endif
@@ -312,15 +315,15 @@ void			Sys_ShutdownInput( void );
 void			Sys_InitScanTable( void );
 const unsigned char *Sys_GetScanTable( void );
 unsigned char	Sys_GetConsoleKey( bool shifted );
+// map a scancode key to a char
+// does nothing on win32, as SE_KEY == SE_CHAR there
+// on other OSes, consider the keyboard mapping
+unsigned char	Sys_MapCharForKey( int key );
 
 // keyboard input polling
 int				Sys_PollKeyboardInputEvents( void );
 int				Sys_ReturnKeyboardInputEvent( const int n, int &ch, bool &state );
 void			Sys_EndKeyboardInputEvents( void );
-
-// keyboard mapping
-// unused?
-int				Sys_MapKeyChar( int k );
 
 // mouse input polling
 int				Sys_PollMouseInputEvents( void );
@@ -349,6 +352,9 @@ const char *	Sys_EXEPath( void );
 // use fs_debug to verbose Sys_ListFiles
 // returns -1 if directory was not found (the list is cleared)
 int				Sys_ListFiles( const char *directory, const char *extension, idList<class idStr> &list );
+
+// know early if we are performing a fatal error shutdown so the error message doesn't get lost
+void			Sys_SetFatalError( const char *error );
 
 
 /*
@@ -514,6 +520,11 @@ public:
 	virtual bool			FPU_StackIsEmpty( void ) = 0;
 	virtual void			FPU_SetFTZ( bool enable ) = 0;
 	virtual void			FPU_SetDAZ( bool enable ) = 0;
+
+	// TMP: only the Linux 1.1 build has those, the SDK game source doesn't use them
+#ifdef __linux__
+	virtual void			FPU_EnableExceptions( int exceptions ) = 0;
+#endif
 
 	virtual bool			LockMemory( void *ptr, int bytes ) = 0;
 	virtual bool			UnlockMemory( void *ptr, int bytes ) = 0;

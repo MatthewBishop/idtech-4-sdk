@@ -49,7 +49,13 @@ const char *idGameLocal::sufaceTypeNames[ MAX_SURFACE_TYPES ] = {
 GetGameAPI
 ============
 */
+#if __MWERKS__
+#pragma export on
+#endif
 extern "C" gameExport_t *GetGameAPI( gameImport_t *import ) {
+#if __MWERKS__
+#pragma export off
+#endif
 
 	if ( import->version == GAME_API_VERSION ) {
 
@@ -308,10 +314,8 @@ void idGameLocal::Shutdown( void ) {
 
 	idAI::FreeObstacleAvoidanceNodes();
 
-#ifndef _D3SDK
 	// shutdown the model exporter
 	idModelExport::Shutdown();
-#endif
 
 	idEvent::Shutdown();
 

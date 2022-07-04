@@ -1230,7 +1230,7 @@ void idEntity::UpdatePVSAreas( void ) {
 	// FIXME: some particle systems may have huge bounds and end up in many PVS areas
 	// the first MAX_PVS_AREAS may not be visible to a network client and as a result the particle system may not show up when it should
 	if ( localNumPVSAreas > MAX_PVS_AREAS ) {
-		localNumPVSAreas = gameLocal.pvs.GetPVSAreas( idBounds( renderEntity.origin ).Expand( 64.0f ), localPVSAreas, sizeof( localPVSAreas ) / sizeof( localPVSAreas[0] ) );
+		localNumPVSAreas = gameLocal.pvs.GetPVSAreas( idBounds( modelAbsBounds.GetCenter() ).Expand( 64.0f ), localPVSAreas, sizeof( localPVSAreas ) / sizeof( localPVSAreas[0] ) );
 	}
 
 	for ( numPVSAreas = 0; numPVSAreas < MAX_PVS_AREAS && numPVSAreas < localNumPVSAreas; numPVSAreas++ ) {
@@ -2932,7 +2932,7 @@ bool idEntity::CanDamage( const idVec3 &origin, idVec3 &damagePoint ) const {
 ================
 idEntity::DamageFeedback
 
-callback function for when another entity recieved damage from this entity.  damage can be adjusted and returned to the caller.
+callback function for when another entity received damage from this entity.  damage can be adjusted and returned to the caller.
 ================
 */
 void idEntity::DamageFeedback( idEntity *victim, idEntity *inflictor, int &damage ) {
@@ -3038,7 +3038,7 @@ void idEntity::AddDamageEffect( const trace_t &collision, const idVec3 &velocity
 ============
 idEntity::Pain
 
-Called whenever an entity recieves damage.  Returns whether the entity responds to the pain.
+Called whenever an entity receives damage.  Returns whether the entity responds to the pain.
 This is a virtual function that subclasses are expected to implement.
 ============
 */
@@ -3085,7 +3085,7 @@ Can be overridden by subclasses when a thread doesn't need to be allocated.
 ================
 */
 idThread *idEntity::ConstructScriptObject( void ) {
-	idThread		*thread;
+	idThread *thread;
 	const function_t *constructor;
 
 	// init the script object's data
@@ -4737,16 +4737,16 @@ void idEntity::ServerSendEvent( int eventId, const idBitMsg *msg, bool saveEvent
 		outMsg.WriteBits( 0, idMath::BitsForInteger( MAX_EVENT_PARAM_SIZE ) );
 	}
 
-		if ( excludeClient != -1 ) {
-			networkSystem->ServerSendReliableMessageExcluding( excludeClient, outMsg );
-		} else {
-			networkSystem->ServerSendReliableMessage( -1, outMsg );
-		}
-
-		if ( saveEvent ) {
-			gameLocal.SaveEntityNetworkEvent( this, eventId, msg );
-		}
+	if ( excludeClient != -1 ) {
+		networkSystem->ServerSendReliableMessageExcluding( excludeClient, outMsg );
+	} else {
+		networkSystem->ServerSendReliableMessage( -1, outMsg );
 	}
+
+	if ( saveEvent ) {
+		gameLocal.SaveEntityNetworkEvent( this, eventId, msg );
+	}
+}
 
 /*
 ================
@@ -4842,7 +4842,7 @@ bool idEntity::ClientReceiveEvent( int event, int time, const idBitMsg &msg ) {
 ===============================================================================
 
   idAnimatedEntity
-	
+
 ===============================================================================
 */
 

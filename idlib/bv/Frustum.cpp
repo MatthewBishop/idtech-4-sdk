@@ -2019,6 +2019,7 @@ bool idFrustum::ProjectionBounds( const idBounds &bounds, idBounds &projectionBo
 	return ProjectionBounds( idBox( bounds, vec3_origin, mat3_identity ), projectionBounds );
 }
 
+#if !defined( __linux__ )
 /*
 ============
 idFrustum::ProjectionBounds
@@ -2130,6 +2131,7 @@ bool idFrustum::ProjectionBounds( const idBox &box, idBounds &projectionBounds )
 
 	return true;
 }
+#endif
 
 /*
 ============

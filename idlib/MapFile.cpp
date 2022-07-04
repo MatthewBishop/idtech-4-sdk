@@ -166,12 +166,23 @@ idMapPatch *idMapPatch::Parse( idLexer &src, const idVec3 &origin, bool patchDef
 			return NULL;
 		}
 	}
-	if ( !src.ExpectTokenString( ")" ) ||
-			!src.ExpectTokenString( "}" ) ||
-				!src.ExpectTokenString( "}" ) ) {
+	if ( !src.ExpectTokenString( ")" ) ) {
 		src.Error( "idMapPatch::Parse: unable to parse patch control points, no closure" );
 		delete patch;
 		return NULL;
+	}
+
+	// read any key/value pairs
+	while( src.ReadToken( &token ) ) {
+		if ( token == "}" ) {
+			src.ExpectTokenString( "}" );
+			break;
+		}
+		if ( token.type == TT_STRING ) {
+			idStr key = token;
+			src.ExpectTokenType( TT_STRING, 0, &token );
+			patch->epairs.Set( key, token );
+		}
 	}
 
 	return patch;

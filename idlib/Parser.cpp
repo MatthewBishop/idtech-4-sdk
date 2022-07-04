@@ -2466,15 +2466,15 @@ idParser::CheckTokenString
 int idParser::CheckTokenString( const char *string ) {
 	idToken tok;
 
-	if (!idParser::ReadToken( &tok )) {
+	if ( !ReadToken( &tok ) ) {
 		return false;
 	}
 	//if the token is available
 	if ( tok == string ) {
 		return true;
 	}
-	//
-	idParser::UnreadSourceToken( &tok );
+
+	UnreadSourceToken( &tok );
 	return false;
 }
 
@@ -2486,7 +2486,7 @@ idParser::CheckTokenType
 int idParser::CheckTokenType( int type, int subtype, idToken *token ) {
 	idToken tok;
 
-	if (!idParser::ReadToken( &tok )) {
+	if ( !ReadToken( &tok ) ) {
 		return false;
 	}
 	//if the type matches
@@ -2494,8 +2494,51 @@ int idParser::CheckTokenType( int type, int subtype, idToken *token ) {
 		*token = tok;
 		return true;
 	}
-	//
-	idParser::UnreadSourceToken( &tok );
+
+	UnreadSourceToken( &tok );
+	return false;
+}
+
+/*
+================
+idParser::PeekTokenString
+================
+*/
+int idParser::PeekTokenString( const char *string ) {
+	idToken tok;
+
+	if ( !ReadToken( &tok ) ) {
+		return false;
+	}
+
+	UnreadSourceToken( &tok );
+
+	// if the token is available
+	if ( tok == string ) {
+		return true;
+	}
+	return false;
+}
+
+/*
+================
+idParser::PeekTokenType
+================
+*/
+int idParser::PeekTokenType( int type, int subtype, idToken *token ) {
+	idToken tok;
+
+	if ( !ReadToken( &tok ) ) {
+		return false;
+	}
+
+	UnreadSourceToken( &tok );
+
+	// if the type matches
+	if ( tok.type == type && ( tok.subtype & subtype ) == subtype ) {
+		*token = tok;
+		return true;
+	}
 	return false;
 }
 
@@ -3021,40 +3064,40 @@ void idParser::FreeSource( bool keepDefines ) {
 	int i;
 
 	// free all the scripts
-	while(idParser::scriptstack) {
-		script = idParser::scriptstack;
-		idParser::scriptstack = idParser::scriptstack->next;
+	while( scriptstack ) {
+		script = scriptstack;
+		scriptstack = scriptstack->next;
 		delete script;
 	}
 	// free all the tokens
-	while(idParser::tokens) {
-		token = idParser::tokens;
-		idParser::tokens = idParser::tokens->next;
+	while( tokens ) {
+		token = tokens;
+		tokens = tokens->next;
 		delete token;
 	}
 	// free all indents
-	while(idParser::indentstack) {
-		indent = idParser::indentstack;
-		idParser::indentstack = idParser::indentstack->next;
+	while( indentstack ) {
+		indent = indentstack;
+		indentstack = indentstack->next;
 		Mem_Free( indent );
 	}
 	if ( !keepDefines ) {
 		// free hash table
-		if ( idParser::definehash ) {
+		if ( definehash ) {
 			// free defines
 			for ( i = 0; i < DEFINEHASHSIZE; i++ ) {
-				while( idParser::definehash[i] ) {
-					define = idParser::definehash[i];
-					idParser::definehash[i] = idParser::definehash[i]->hashnext;
+				while( definehash[i] ) {
+					define = definehash[i];
+					definehash[i] = definehash[i]->hashnext;
 					FreeDefine(define);
 				}
 			}
-			idParser::defines = NULL;
+			defines = NULL;
 			Mem_Free( idParser::definehash );
-			idParser::definehash = NULL;
+			definehash = NULL;
 		}
 	}
-	idParser::loaded = false;
+	loaded = false;
 }
 
 /*

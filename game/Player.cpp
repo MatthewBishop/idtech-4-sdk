@@ -6268,7 +6268,7 @@ void idPlayer::Think( void ) {
 			CheckBlink();
 		}
 
-		// clear out our pain flag so we can tell if we recieve any damage between now and the next time we think
+		// clear out our pain flag so we can tell if we receive any damage between now and the next time we think
 		AI_PAIN = false;
 	}
 
@@ -6294,6 +6294,10 @@ void idPlayer::Think( void ) {
 	UpdatePowerUps();
 
 	UpdateDeathSkin( false );
+
+	if ( gameLocal.isMultiplayer ) {
+		DrawPlayerIcons();
+	}
 
 	if ( head.GetEntity() ) {
 		headRenderEnt = head.GetEntity()->GetRenderEntity();
@@ -6527,7 +6531,7 @@ void idPlayer::GetAIAimTargets( const idVec3 &lastSightPos, idVec3 &headPos, idV
 ================
 idPlayer::DamageFeedback
 
-callback function for when another entity recieved damage from this entity.  damage can be adjusted and returned to the caller.
+callback function for when another entity received damage from this entity.  damage can be adjusted and returned to the caller.
 ================
 */
 void idPlayer::DamageFeedback( idEntity *victim, idEntity *inflictor, int &damage ) {
@@ -7807,7 +7811,7 @@ void idPlayer::ClientPredictionThink( void ) {
 		CheckBlink();
 	}
 
-	// clear out our pain flag so we can tell if we recieve any damage between now and the next time we think
+	// clear out our pain flag so we can tell if we receive
 	AI_PAIN = false;
 
 	// calculate the exact bobbed view position, which is used to
@@ -8444,5 +8448,6 @@ idPlayer::NeedsIcon
 ==============
 */
 bool idPlayer::NeedsIcon( void ) {
-	return ( isLagged || isChatting );
+	// local clients don't render their own icons... they're only info for other clients
+	return entityNumber != gameLocal.localClientNum && ( isLagged || isChatting );
 }

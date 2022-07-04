@@ -147,7 +147,7 @@ typedef struct {
 	bool					anim_turn					: 1;
 } animFlags_t;
 
-#ifndef _D3SDK
+
 /*
 ==============================================================================================
 
@@ -183,7 +183,7 @@ public:
 	bool					ExportAnim( const char *anim );
 	int						ExportModels( const char *pathname, const char *extension );
 };
-#endif
+
 /*
 ==============================================================================================
 

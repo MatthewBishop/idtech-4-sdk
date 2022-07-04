@@ -1305,7 +1305,6 @@ Cmd_ExportModels_f
 ==================
 */
 static void Cmd_ExportModels_f( const idCmdArgs &args ) {
-#ifndef _D3SDK
 	idModelExport	exporter;
 	idStr			name;
 
@@ -1323,7 +1322,6 @@ static void Cmd_ExportModels_f( const idCmdArgs &args ) {
 		name.DefaultFileExtension( ".def" );
 		exporter.ExportDefFile( name );
 	}
-#endif
 }
 
 /*
@@ -1332,7 +1330,6 @@ Cmd_ReexportModels_f
 ==================
 */
 static void Cmd_ReexportModels_f( const idCmdArgs &args ) {
-#ifndef _D3SDK
 	idModelExport	exporter;
 	idStr			name;
 
@@ -1352,7 +1349,6 @@ static void Cmd_ReexportModels_f( const idCmdArgs &args ) {
 		exporter.ExportDefFile( name );
 	}
 	idAnimManager::forceExport = false;
-#endif
 }
 
 /*

@@ -5379,8 +5379,10 @@ bool idMatX::Cholesky_UpdateRowColumn( const idVecX &v, int r ) {
 	if ( r == 0 ) {
 
 		if ( numColumns == 1 ) {
+			double v0 = v[0];
 			sum = (*this)[0][0];
-			sum = sum * sum + v[0];
+			sum = sum * sum; 
+			sum = sum + v0; 
 			if ( sum <= 0.0f ) {
 				return false;
 			}
@@ -5603,7 +5605,14 @@ bool idMatX::Cholesky_UpdateDecrement( const idVecX &v, int r ) {
 	v1 = -v;
 	v1[r] += 1.0f;
 
+	// NOTE:	msvc compiler bug: the this pointer stored in edi is expected to stay
+	//			untouched when calling Cholesky_UpdateRowColumn in the if statement
+#if 0
 	if ( !Cholesky_UpdateRowColumn( v1, r ) ) {
+#else
+	bool ret = Cholesky_UpdateRowColumn( v1, r );
+	if ( !ret ) {
+#endif
 		return false;
 	}
 
