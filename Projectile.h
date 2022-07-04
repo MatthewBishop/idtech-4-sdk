@@ -30,6 +30,13 @@ public :
 	virtual void			FreeLightDef();
 
 	idEntity *				GetOwner() const;
+#ifdef _D3XP
+	void					CatchProjectile( idEntity* o, const char* reflectName );
+	int						GetProjectileState();
+	void					Event_CreateProjectile( idEntity *owner, const idVec3 &start, const idVec3 &dir );
+	void					Event_LaunchProjectile( const idVec3 &start, const idVec3 &dir, const idVec3 &pushVelocity );
+	void					Event_SetGravity( float gravity );
+#endif
 
 	virtual void			Think();
 	virtual void			Killed( idEntity *inflictor, idEntity *attacker, int damage, const idVec3 &dir, int location );
@@ -80,6 +87,10 @@ protected:
 	const idDeclParticle *	smokeFly;
 	int						smokeFlyTime;
 
+#ifdef _D3XP
+	int						originalTimeGroup;
+#endif
+
 	typedef enum {
 		// must update these in script/doom_defs.script if changed
 		SPAWNED = 0,
@@ -116,6 +127,10 @@ public :
 	void					Spawn();
 	virtual void			Think();
 	virtual void			Launch( const idVec3 &start, const idVec3 &dir, const idVec3 &pushVelocity, const float timeSinceFire = 0.0f, const float launchPower = 1.0f, const float dmgPower = 1.0f );
+#ifdef _D3XP
+	void					SetEnemy( idEntity *ent );
+	void					Event_SetEnemy(idEntity *ent);
+#endif
 
 protected:
 	float					speed;

@@ -26,7 +26,11 @@ const int	LAND_RETURN_TIME = 300;
 const int	FOCUS_TIME = 300;
 const int	FOCUS_GUI_TIME = 500;
 
+#ifdef _D3XP
+const int MAX_WEAPONS = 32;
+#else
 const int MAX_WEAPONS = 16;
+#endif
 
 const int DEAD_HEARTRATE = 0;			// fall to as you die
 const int LOWHEALTH_HEARTRATE_ADJ = 20; // 
@@ -65,6 +69,13 @@ enum {
 	INVISIBILITY,
 	MEGAHEALTH,
 	ADRENALINE,
+#ifdef _D3XP
+	INVULNERABILITY,
+	HELLTIME,
+	ENVIROSUIT,
+	//HASTE,
+	ENVIROTIME,
+#endif
 	MAX_POWERUPS
 };
 
@@ -84,6 +95,19 @@ enum {
 	INFLUENCE_LEVEL3,			// slow player movement
 };
 
+#ifdef _D3XP
+typedef struct {
+	int ammo;
+	int rechargeTime;
+	char ammoName[128];
+} RechargeAmmo_t;
+
+typedef struct {
+	char		name[64];
+	idList<int>	toggleList;
+} WeaponToggle_t;
+#endif
+
 class idInventory {
 public:
 	int						maxHealth;
@@ -94,6 +118,10 @@ public:
 	int						ammo[ AMMO_NUMTYPES ];
 	int						clip[ MAX_WEAPONS ];
 	int						powerupEndTime[ MAX_POWERUPS ];
+
+#ifdef _D3XP
+	RechargeAmmo_t			rechargeAmmo[ AMMO_NUMTYPES ];
+#endif
 
 	// mp
 	int						ammoPredictTime;
@@ -143,11 +171,15 @@ public:
 	int						WeaponIndexForAmmoClass( const idDict & spawnArgs, const char *ammo_classname ) const;
 	ammo_t					AmmoIndexForWeaponClass( const char *weapon_classname, int *ammoRequired );
 	const char *			AmmoPickupNameForIndex( ammo_t ammonum ) const;
-	void					AddPickupName( const char *name, const char *icon );
+	void					AddPickupName( const char *name, const char *icon, idPlayer* owner ); //_D3XP
 
 	int						HasAmmo( ammo_t type, int amount );
 	bool					UseAmmo( ammo_t type, int amount );
-	int						HasAmmo( const char *weapon_classname );			// looks up the ammo information for the weapon class first
+	int						HasAmmo( const char *weapon_classname, bool includeClip = false, idPlayer* owner = NULL );			// _D3XP
+
+#ifdef _D3XP
+	bool					HasEmptyClipCannotRefill(const char *weapon_classname, idPlayer* owner);
+#endif
 
 	void					UpdateArmor();
 
@@ -156,6 +188,12 @@ public:
 	int						onePickupTime;
 	idList<idItemInfo>		pickupItemNames;
 	idList<idObjectiveInfo>	objectiveNames;
+
+#ifdef _D3XP
+	void					InitRechargeAmmo(idPlayer *owner);
+	void					RechargeAmmo(idPlayer *owner);
+	bool					CanGive( idPlayer *owner, const idDict &spawnArgs, const char *statname, const char *value, int *idealWeapon );
+#endif
 };
 
 typedef struct {
@@ -176,6 +214,9 @@ public:
 		EVENT_ABORT_TELEPORTER,
 		EVENT_POWERUP,
 		EVENT_SPECTATE,
+#ifdef _D3XP
+		EVENT_PICKUPNAME,
+#endif
 		EVENT_MAXEVENTS
 	};
 
@@ -230,6 +271,13 @@ public:
 	int						weapon_soulcube;
 	int						weapon_pda;
 	int						weapon_fists;
+#ifdef _D3XP
+	int						weapon_bloodstone;
+	int						weapon_bloodstone_active1;
+	int						weapon_bloodstone_active2;
+	int						weapon_bloodstone_active3;
+	bool					harvest_lock;
+#endif
 
 	int						heartRate;
 	idInterpolate<float>	heartInfo;
@@ -251,7 +299,12 @@ public:
 	idEntityPtr<idProjectile> soulCubeProjectile;
 
 	// mp stuff
+#ifdef _D3XP
+	static idVec3			colorBarTable[ 8 ];
+#else
 	static idVec3			colorBarTable[ 5 ];
+#endif
+
 	int						spectator;
 	idVec3					colorBar;			// used for scoreboard and hud display
 	int						colorBarIndex;
@@ -270,6 +323,10 @@ public:
 	int						tourneyLine;		// client side - our spot in the wait line. 0 means no info.
 	int						spawnedTime;		// when client first enters the game
 
+#ifdef CTF    
+	bool					carryingFlag;		// is the player carrying the flag?
+#endif    
+    
 	idEntityPtr<idEntity>	teleportEntity;		// while being teleported, this is set to the entity we'll use for exit
 	int						teleportKiller;		// entity number of an entity killing us at teleporter exit
 	bool					lastManOver;		// can't respawn in last man anymore (srv only)
@@ -288,6 +345,21 @@ public:
 	idMat3					firstPersonViewAxis;
 
 	idDragEntity			dragEntity;
+
+#ifdef _D3XP
+	idFuncMountedObject	*	mountedObject;
+	idEntityPtr<idLight>	enviroSuitLight;
+
+	bool					healthRecharge;
+	int						lastHealthRechargeTime;
+	int						rechargeSpeed;
+
+	float					new_g_damageScale;
+
+	bool					bloomEnabled;
+	float					bloomSpeed;
+	float					bloomIntensity;
+#endif
 
 public:
 	CLASS_PROTOTYPE( idPlayer );
@@ -416,6 +488,10 @@ public:
 	int						GetBaseHeartRate();
 	void					UpdateAir();
 
+#ifdef _D3XP
+	void					UpdatePowerupHud();
+#endif
+
 	virtual bool			HandleSingleGuiCommand( idEntity *entityGui, idLexer *src );
 	bool					GuiActive() { return focusGUIent != NULL; }
 
@@ -482,6 +558,24 @@ public:
 	virtual	void			DrawPlayerIcons();
 	virtual	void			HidePlayerIcons();
 	bool					NeedsIcon();
+
+#ifdef _D3XP
+	void					StartHealthRecharge(int speed);
+	void					StopHealthRecharge();
+
+	idStr					GetCurrentWeapon();
+
+	bool					CanGive( const char *statname, const char *value );
+
+	void					StopHelltime( bool quick = true );
+	void					PlayHelltimeStopSound();
+#endif
+
+#ifdef CTF
+	void					DropFlag();	// drop CTF item
+	void					ReturnFlag();
+	virtual void			FreeModelDef();
+#endif
 
 	bool					SelfSmooth();
 	void					SetSelfSmooth( bool b );
@@ -580,6 +674,14 @@ private:
 	idVec3					smoothedOrigin;
 	idAngles				smoothedAngles;
 
+#ifdef _D3XP
+	idHashTable<WeaponToggle_t>	weaponToggles;
+
+	int						hudPowerup;
+	int						lastHudPowerup;
+	int						hudPowerupDuration;
+#endif
+
 	// mp
 	bool					ready;					// from userInfo
 	bool					respawning;				// set to true while in SpawnToPoint for telefrag checks
@@ -637,6 +739,10 @@ private:
 	void					ExtractEmailInfo( const idStr &email, const char *scan, idStr &out );
 	void					UpdateObjectiveInfo();
 
+#ifdef _D3XP
+	bool					WeaponAvailable( const char* name );
+#endif
+
 	void					UseVehicle();
 
 	void					Event_GetButtons();
@@ -656,7 +762,20 @@ private:
 	void					Event_HideTip();
 	void					Event_LevelTrigger();
 	void					Event_Gibbed();
+
+#ifdef _D3XP //BSM: Event to remove inventory items. Useful with powercells.
+	void					Event_GiveInventoryItem( const char* name );
+	void					Event_RemoveInventoryItem( const char* name );
+
 	void					Event_GetIdealWeapon();
+	void					Event_WeaponAvailable( const char* name );
+	void					Event_SetPowerupTime( int powerup, int time );
+	void					Event_IsPowerupActive( int powerup );
+	void					Event_StartWarp();
+	void					Event_StopHelltime( int mode );
+	void					Event_ToggleBloom( int on );
+	void					Event_SetBloomParms( float speed, float intensity );
+#endif
 };
 
 ID_INLINE bool idPlayer::IsReady() {

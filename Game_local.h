@@ -154,6 +154,9 @@ typedef enum {
 typedef struct {
 	idEntity	*ent;
 	int			dist;
+#ifdef CTF
+	int			team;			
+#endif    
 } spawnSpot_t;
 
 //============================================================================
@@ -211,6 +214,29 @@ private:
 	int						spawnId;
 };
 
+#ifdef _D3XP
+struct timeState_t {
+	int					time;
+	int					previousTime;
+	int					msec;
+	int					framenum;
+	int					realClientTime;
+
+	void				Set( int t, int pt, int ms, int f, int rct )		{ time = t; previousTime = pt; msec = ms; framenum = f; realClientTime = rct; };
+	void				Get( int& t, int& pt, int& ms, int& f, int& rct )	{ t = time; pt = previousTime; ms = msec; f = framenum; rct = realClientTime; };
+	void				Save( idSaveGame *savefile ) const	{ savefile->WriteInt( time ); savefile->WriteInt( previousTime ); savefile->WriteInt( msec ); savefile->WriteInt( framenum ); savefile->WriteInt( realClientTime ); }
+	void				Restore( idRestoreGame *savefile )	{ savefile->ReadInt( time ); savefile->ReadInt( previousTime ); savefile->ReadInt( msec ); savefile->ReadInt( framenum ); savefile->ReadInt( realClientTime ); }
+	void				Increment()											{ framenum++; previousTime = time; time += msec; realClientTime = time; };
+};
+
+enum slowmoState_t {
+	SLOWMO_STATE_OFF,
+	SLOWMO_STATE_RAMPUP,
+	SLOWMO_STATE_ON,
+	SLOWMO_STATE_RAMPDOWN
+};
+#endif
+
 //============================================================================
 
 class idGameLocal : public idGame {
@@ -265,7 +291,7 @@ public:
 	int						framenum;
 	int						previousTime;			// time in msec of last frame
 	int						time;					// in msec
-	static const int		msec = USERCMD_MSEC;	// time since last update in milliseconds
+	int						msec;					// time since last update in milliseconds
 
 	int						vacuumAreaNum;			// -1 if level doesn't have any outside areas
 
@@ -286,6 +312,37 @@ public:
 
 	idEntityPtr<idEntity>	lastGUIEnt;				// last entity with a GUI, used by Cmd_NextGUI_f
 	int						lastGUI;				// last GUI on the lastGUIEnt
+
+#ifdef _D3XP
+	idEntityPtr<idEntity>	portalSkyEnt;
+	bool					portalSkyActive;
+
+	void					SetPortalSkyEnt( idEntity *ent );
+	bool					IsPortalSkyAcive();
+
+	timeState_t				fast;
+	timeState_t				slow;
+
+	slowmoState_t			slowmoState;
+	float					slowmoMsec;
+
+	bool					quickSlowmoReset;
+
+	virtual void			SelectTimeGroup( int timeGroup );
+	virtual int				GetTimeGroupTime( int timeGroup );
+
+	virtual void			GetBestGameType( const char* map, const char* gametype, char buf[ MAX_STRING_CHARS ] );
+
+	void					ComputeSlowMsec();
+	void					RunTimeGroup2();
+
+	void					ResetSlowTimeVars();
+	void					QuickSlowmoReset();
+
+	bool					NeedRestart();
+#endif
+
+	void					Tokenize( idStrList &out, const char *in );
 
 	// ---------------------- Public idGame Interface -------------------
 
@@ -330,6 +387,8 @@ public:
 	virtual void			SwitchTeam( int clientNum, int team );
 
 	virtual bool			DownloadRequest( const char *IP, const char *guid, const char *paks, char urls[ MAX_STRING_CHARS ] );
+
+	virtual void				GetMapLoadingGUI( char gui[ MAX_STRING_CHARS ] );
 
 	// ---------------------- Public idGameLocal Interface -------------------
 
@@ -379,6 +438,9 @@ public:
 
 	bool					InPlayerPVS( idEntity *ent ) const;
 	bool					InPlayerConnectedArea( idEntity *ent ) const;
+#ifdef _D3XP
+	pvsHandle_t				GetPlayerPVS()			{ return playerPVS; };
+#endif
 
 	void					SetCamera( idCamera *cam );
 	idCamera *				GetCamera() const;
@@ -439,7 +501,7 @@ public:
 	void					SetGibTime( int _time ) { nextGibTime = _time; };
 	int						GetGibTime() { return nextGibTime; };
 
-	bool					NeedRestart();
+
 
 private:
 	const static int		INITIAL_SPAWN_COUNT = 1;
@@ -454,7 +516,7 @@ private:
 	idLocationEntity **		locationEntities;		// for location names, etc
 
 	idCamera *				camera;
-	const idMaterial *		globalMaterial;			// for overriding everything
+	const idMaterial *		globalMaterial;		// for overriding everything
 
 	idList<idAAS *>			aasList;				// area system
 	idStrList				aasNames;
@@ -486,6 +548,12 @@ private:
 	idStaticList<spawnSpot_t, MAX_GENTITIES> spawnSpots;
 	idStaticList<idEntity *, MAX_GENTITIES> initialSpots;
 	int						currentInitialSpot;
+
+#ifdef CTF
+	idStaticList<spawnSpot_t, MAX_GENTITIES> teamSpawnSpots[2];
+	idStaticList<idEntity *, MAX_GENTITIES> teamInitialSpots[2];
+	int						teamCurrentInitialSpot[2];
+#endif
 
 	idDict					newInfo;
 
@@ -536,21 +604,20 @@ private:
 	void					DumpOggSounds();
 	void					GetShakeSounds( const idDict *dict );
 
-	void					SelectTimeGroup( int timeGroup );
-	int						GetTimeGroupTime( int timeGroup );
-	void					GetBestGameType( const char* map, const char* gametype, char buf[ MAX_STRING_CHARS ] );
-
-	void					Tokenize( idStrList &out, const char *in );
-
 	void					UpdateLagometer( int aheadOfServer, int dupeUsercmds );
-
-	void					GetMapLoadingGUI( char gui[ MAX_STRING_CHARS ] );
 };
 
 //============================================================================
 
 extern idGameLocal			gameLocal;
 extern idAnimManager		animationLib;
+
+//============================================================================
+
+class idGameError : public idException {
+public:
+	idGameError( const char *text ) : idException( text ) {}
+};
 
 //============================================================================
 
@@ -612,15 +679,7 @@ ID_INLINE int idEntityPtr<type>::GetEntityNum() const {
 	return ( spawnId & ( ( 1 << GENTITYNUM_BITS ) - 1 ) );
 }
 
-//============================================================================
-
-class idGameError : public idException {
-public:
-	idGameError( const char *text ) : idException( text ) {}
-};
-
-//============================================================================
-
+//  ===========================================================================
 
 //
 // these defines work for all startsounds from all entity types
@@ -667,6 +726,9 @@ const int	CINEMATIC_SKIP_DELAY	= SEC2MS( 2.0f );
 #include "physics/Force.h"
 #include "physics/Force_Constant.h"
 #include "physics/Force_Drag.h"
+#ifdef _D3XP
+#include "physics/Force_Grab.h"
+#endif
 #include "physics/Force_Field.h"
 #include "physics/Force_Spring.h"
 #include "physics/Physics.h"
@@ -684,6 +746,9 @@ const int	CINEMATIC_SKIP_DELAY	= SEC2MS( 2.0f );
 
 #include "Entity.h"
 #include "GameEdit.h"
+#ifdef _D3XP
+#include "Grabber.h"
+#endif
 #include "AF.h"
 #include "IK.h"
 #include "AFEntity.h"

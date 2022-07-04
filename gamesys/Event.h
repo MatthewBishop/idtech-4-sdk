@@ -87,6 +87,9 @@ public:
 	static void					CancelEvents( const idClass *obj, const idEventDef *evdef = NULL );
 	static void					ClearEventList();
 	static void					ServiceEvents();
+#ifdef _D3XP
+	static void					ServiceFastEvents();
+#endif
 	static void					Init();
 	static void					Shutdown();
 
