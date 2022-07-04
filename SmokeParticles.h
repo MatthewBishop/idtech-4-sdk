@@ -33,6 +33,9 @@ typedef struct singleSmoke_s {
 	idRandom					random;
 	idVec3						origin;
 	idMat3						axis;
+#ifdef _D3XP
+	int							timeGroup;
+#endif
 } singleSmoke_t;
 
 typedef struct {
@@ -51,7 +54,7 @@ public:
 
 	// spits out a particle, returning false if the system will not emit any more particles in the future
 	bool						EmitSmoke( const idDeclParticle *smoke, const int startTime, const float diversity,
-											const idVec3 &origin, const idMat3 &axis );
+											const idVec3 &origin, const idMat3 &axis, int timeGroup /*_D3XP*/ );
 
 	// free old smokes
 	void						FreeSmokes( void );

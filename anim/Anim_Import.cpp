@@ -211,8 +211,9 @@ bool idModelExport::ConvertMayaToMD5( void ) {
 	}
 
 	// we need to make sure we have a full path, so convert the filename to an OS path
-	src = fileSystem->RelativePathToOSPath( src );
-	dest = fileSystem->RelativePathToOSPath( dest );
+	// _D3XP :: we work out of the cdpath, at least until we get Alienbrain
+	src = fileSystem->RelativePathToOSPath( src, "fs_cdpath" );
+	dest = fileSystem->RelativePathToOSPath( dest, "fs_cdpath" );
 
 	dest.ExtractFilePath( path );
 	if ( path.Length() ) {
@@ -220,7 +221,7 @@ bool idModelExport::ConvertMayaToMD5( void ) {
 	}
 
 	// get the os path in case it needs to create one
-	path = fileSystem->RelativePathToOSPath( "" );
+	path = fileSystem->RelativePathToOSPath( "", "fs_cdpath" /* _D3XP */ );
 
 	common->SetRefreshOnPrint( true );
 	Maya_Error = Maya_ConvertModel( path, commandLine );
@@ -373,6 +374,12 @@ int idModelExport::ParseExportSection( idParser &parser ) {
 	idStr	temp;
 	idStr	parms;
 	int		count;
+
+	const char *game = cvarSystem->GetCVarString( "fs_game" );
+
+	if ( strlen(game) == 0 ) {
+		game = BASE_GAMEDIR;
+	}
 
 	// only export sections that match our export mask
 	if ( g_exportMask.GetString()[ 0 ] ) {
