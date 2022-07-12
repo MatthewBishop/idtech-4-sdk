@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __GAME_IK_H__
 #define __GAME_IK_H__

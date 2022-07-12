@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __MATH_SIMD_MMX_H__
 #define __MATH_SIMD_MMX_H__

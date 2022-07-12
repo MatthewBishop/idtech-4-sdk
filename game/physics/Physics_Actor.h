@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __PHYSICS_ACTOR_H__
 #define __PHYSICS_ACTOR_H__
@@ -54,7 +52,10 @@ public:	// common physics interface
 	const idMat3 &			GetAxis( int id = 0 ) const;
 
 	void					SetGravity( const idVec3 &newGravity );
-	const idMat3 &			GetGravityAxis( void ) const;
+// RAVEN BEGIN
+// abahr: made virtual
+	virtual const idMat3&	GetGravityAxis( void ) const;
+// RAVEN END
 
 	void					ClipTranslation( trace_t &results, const idVec3 &translation, const idClipModel *model ) const;
 	void					ClipRotation( trace_t &results, const idRotation &rotation, const idClipModel *model ) const;

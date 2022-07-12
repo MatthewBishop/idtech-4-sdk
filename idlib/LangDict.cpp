@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "precompiled.h"
 #pragma hdrstop
@@ -14,6 +12,7 @@ idLangDict::idLangDict( void ) {
 	args.SetGranularity( 256 );
 	hash.SetGranularity( 256 );
 	hash.Clear( 4096, 8192 );
+	baseID = 0;
 }
 
 /*
@@ -40,8 +39,11 @@ void idLangDict::Clear( void ) {
 idLangDict::Load
 ============
 */
-bool idLangDict::Load( const char *fileName ) {
-	Clear();
+bool idLangDict::Load( const char *fileName, bool clear ) {
+	if ( clear ) {
+		Clear();
+	}
+
 	const char *buffer = NULL;
 	idLexer src( LEXFL_NOFATALERRORS | LEXFL_NOSTRINGCONCAT | LEXFL_ALLOWMULTICHARLITERALS | LEXFL_ALLOWBACKSLASHSTRINGCONCAT );
 
@@ -61,6 +63,7 @@ bool idLangDict::Load( const char *fileName ) {
 		if ( tok == "}" ) {
 			break;
 		}
+
 		if ( src.ReadToken( &tok2 ) ) {
 			if ( tok2 == "}" ) {
 				break;
@@ -68,8 +71,13 @@ bool idLangDict::Load( const char *fileName ) {
 			idLangKeyValue kv;
 			kv.key = tok;
 			kv.value = tok2;
-			assert( kv.key.Cmpn( STRTABLE_ID, STRTABLE_ID_LENGTH ) == 0 );
-			hash.Add( GetHashKey( kv.key ), args.Append( kv ) );
+// RAVEN BEGIN
+			if( kv.key.CmpPrefix( STRTABLE_ID ) ) {
+				common->Warning( "Invalid token id \'%s\' in \'%s\' line %d", kv.key.c_str(), fileName, src.GetLineNum() );
+			} else {
+				hash.Add( GetHashKey( kv.key ), args.Append( kv ) );
+			}
+// RAVEN END
 		}
 	}
 	idLib::common->Printf( "%i strings read from %s\n", args.Num(), fileName );
@@ -85,7 +93,13 @@ idLangDict::Save
 */
 void idLangDict::Save( const char *fileName ) {
 	idFile *outFile = idLib::fileSystem->OpenFileWrite( fileName );
-	outFile->WriteFloatString( "// string table\n// english\n//\n\n{\n" );
+// RAVEN BEGIN
+	if( !outFile ) {
+		common->Printf( "Could not open file \'%s\'for writing\n", fileName );
+		return;
+	}
+// RAVEN END
+	outFile->WriteFloatString( "// string table" NEWLINE "// english" NEWLINE "//" NEWLINE NEWLINE "{" NEWLINE );
 	for ( int j = 0; j < args.Num(); j++ ) {
 		outFile->WriteFloatString( "\t\"%s\"\t\"", args[j].key.c_str() );
 		int l = args[j].value.Length();
@@ -104,9 +118,9 @@ void idLangDict::Save( const char *fileName ) {
 				outFile->Write( &ch, 1 );
 			}
 		}
-		outFile->WriteFloatString( "\"\n" );
+		outFile->WriteFloatString( "\"" NEWLINE );
 	}
-	outFile->WriteFloatString( "\n}\n" );
+	outFile->WriteFloatString( NEWLINE "}" NEWLINE );
 	idLib::fileSystem->CloseFile( outFile );
 }
 
@@ -156,10 +170,10 @@ const char *idLangDict::AddString( const char *str ) {
 
 	int id = GetNextId();
 	idLangKeyValue kv;
-	kv.key = va( "#str_%05i", id );
+	kv.key = va( "#str_%06i", id );
 	kv.value = str;
 	c = args.Append( kv );
-	assert( kv.key.Cmpn( STRTABLE_ID, STRTABLE_ID_LENGTH ) == 0 );
+	assert( kv.key.CmpPrefix( STRTABLE_ID ) == 0 );
 	hash.Add( GetHashKey( kv.key ), c );
 	return args[c].key;
 }
@@ -191,7 +205,7 @@ void idLangDict::AddKeyVal( const char *key, const char *val ) {
 	idLangKeyValue kv;
 	kv.key = key;
 	kv.value = val;
-	assert( kv.key.Cmpn( STRTABLE_ID, STRTABLE_ID_LENGTH ) == 0 );
+	assert( kv.key.CmpPrefix( STRTABLE_ID ) == 0 );
 	hash.Add( GetHashKey( kv.key ), args.Append( kv ) );
 }
 
@@ -242,7 +256,13 @@ idLangDict::GetNextId
 */
 int idLangDict::GetNextId( void ) const {
 	int c = args.Num();
-	int id = -1;
+	//Let and external user supply the base id for this dictionary
+	int id = baseID;
+
+	if ( c == 0 ) {
+		return id;
+	}
+
 	idStr work;
 	for ( int j = 0; j < c; j++ ) {
 		work = args[j].key;

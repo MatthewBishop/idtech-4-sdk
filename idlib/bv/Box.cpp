@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../precompiled.h"
 #pragma hdrstop
@@ -306,9 +304,9 @@ float idBox::PlaneDistance( const idPlane &plane ) const {
 	float d1, d2;
 
 	d1 = plane.Distance( center );
-	d2 = idMath::Fabs( extents[0] * plane.Normal()[0] ) +
-			idMath::Fabs( extents[1] * plane.Normal()[1] ) +
-				idMath::Fabs( extents[2] * plane.Normal()[2] );
+	d2 = idMath::Fabs( extents[0] * ( plane.Normal() * axis[0] ) ) +
+			idMath::Fabs( extents[1] * ( plane.Normal() * axis[1] ) ) +
+				idMath::Fabs( extents[2] * ( plane.Normal() * axis[2] ) );
 
 	if ( d1 - d2 > 0.0f ) {
 		return d1 - d2;
@@ -328,9 +326,9 @@ int idBox::PlaneSide( const idPlane &plane, const float epsilon ) const {
 	float d1, d2;
 
 	d1 = plane.Distance( center );
-	d2 = idMath::Fabs( extents[0] * plane.Normal()[0] ) +
-			idMath::Fabs( extents[1] * plane.Normal()[1] ) +
-				idMath::Fabs( extents[2] * plane.Normal()[2] );
+	d2 = idMath::Fabs( extents[0] * ( plane.Normal() * axis[0] ) ) +
+			idMath::Fabs( extents[1] * ( plane.Normal() * axis[1] ) ) +
+				idMath::Fabs( extents[2] * ( plane.Normal() * axis[2] ) );
 
 	if ( d1 - d2 > epsilon ) {
 		return PLANESIDE_FRONT;

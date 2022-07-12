@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __MATH_VECTOR_H__
 #define __MATH_VECTOR_H__
@@ -17,6 +15,10 @@
 class idAngles;
 class idPolar3;
 class idMat3;
+
+// RAVEN BEGIN
+class rvAngles;
+// RAVEN END
 
 //===============================================================
 //
@@ -56,6 +58,11 @@ public:
 	bool			operator==(	const idVec2 &a ) const;						// exact compare, no epsilon
 	bool			operator!=(	const idVec2 &a ) const;						// exact compare, no epsilon
 
+// RAVEN BEGIN
+// ddynerman: vector normalization operator
+	idVec2 &		operator~( void );
+// RAVEN END
+
 	float			Length( void ) const;
 	float			LengthFast( void ) const;
 	float			LengthSqr( void ) const;
@@ -73,6 +80,11 @@ public:
 	const char *	ToString( int precision = 2 ) const;
 
 	void			Lerp( const idVec2 &v1, const idVec2 &v2, const float l );
+
+// RAVEN BEGIN
+// jscott: Ensures second element greater than first
+	void			EnsureIncremental( void );
+// RAVEN END
 };
 
 extern idVec2 vec2_origin;
@@ -126,6 +138,14 @@ ID_INLINE float idVec2::operator[]( int index ) const {
 ID_INLINE float& idVec2::operator[]( int index ) {
 	return ( &x )[ index ];
 }
+
+// RAVEN BEGIN
+// ddynerman: vector normalization
+ID_INLINE idVec2& idVec2::operator~( void ) {
+	Normalize();
+	return *this;
+}
+// RAVEN END
 
 ID_INLINE float idVec2::Length( void ) const {
 	return ( float )idMath::Sqrt( x * x + y * y );
@@ -281,6 +301,21 @@ ID_INLINE float *idVec2::ToFloatPtr( void ) {
 	return &x;
 }
 
+// RAVEN BEGIN
+// jscott: ensures the second element is greater than the first
+ID_INLINE void idVec2::EnsureIncremental( void )
+{
+	float	temp;
+
+	if( x < y )
+	{
+		return;
+	}
+	temp = x;
+	x = y;
+	y = temp;
+}
+// RAVEN END
 
 //===============================================================
 //
@@ -304,6 +339,11 @@ public:
 	float &			operator[]( const int index );
 	idVec3			operator-() const;
 	idVec3 &		operator=( const idVec3 &a );		// required because of a msvc 6 & 7 bug
+// RAVEN BEGIN
+// bdube: added vec2 equal
+	idVec3 &		operator=( const idVec2 &a );
+	idVec3 &		operator*=( const idVec3 &a );
+// RAVEN END
 	float			operator*( const idVec3 &a ) const;
 	idVec3			operator*( const float a ) const;
 	idVec3			operator/( const float a ) const;
@@ -327,6 +367,12 @@ public:
 
 	idVec3			Cross( const idVec3 &a ) const;
 	idVec3 &		Cross( const idVec3 &a, const idVec3 &b );
+
+// RAVEN BEGIN
+// ddynerman: vector normalization operator
+	idVec3 &		operator~( void );
+// RAVEN END
+
 	float			Length( void ) const;
 	float			LengthSqr( void ) const;
 	float			LengthFast( void ) const;
@@ -334,6 +380,7 @@ public:
 	float			NormalizeFast( void );			// returns length
 	idVec3 &		Truncate( float length );		// cap length
 	void			Clamp( const idVec3 &min, const idVec3 &max );
+	void			ClampMin( const float &minx, const float &miny, const float &minz );
 	void			Snap( void );					// snap to closest integer value
 	void			SnapInt( void );				// snap towards integer (floor)
 
@@ -350,6 +397,14 @@ public:
 	float *			ToFloatPtr( void );
 	const char *	ToString( int precision = 2 ) const;
 
+// RAVEN BEGIN
+// abahr: added axis so we can create matrix with non-x vector
+	idMat3			ToMat3( int axis ) const;		// vector should be normalized
+// abahr:
+	idVec3			ToNormal() const { idVec3 v( *this ); v.Normalize(); return v; }
+	idVec3			Random( const idVec3& range, idRandom& random ) const;
+// RAVEN END
+
 	void			NormalVectors( idVec3 &left, idVec3 &down ) const;	// vector should be normalized
 	void			OrthogonalBasis( idVec3 &left, idVec3 &up ) const;
 
@@ -357,8 +412,169 @@ public:
 	bool			ProjectAlongPlane( const idVec3 &normal, const float epsilon, const float overBounce = 1.0f );
 	void			ProjectSelfOntoSphere( const float radius );
 
+// RAVEN BEGIN
+	float			ProjectOntoVector(const idVec3 &U);
+// RAVEN END
+
+
+// RAVEN BEGIN
+// cdr - Extremely useful Vector opterations for Computational Geometry
+    ////////////////////////////////////////////////////////////////////////////////////
+	// Area Of The Parallel Pipid (2D)
+	//
+	// Given two more points, this function calculates the area of the parallel pipid
+	// formed.
+	//
+	// Note: This function CAN return a negative "area" if (this) is above or right of
+	// (A) and (B)...  We do not take the abs because the sign of the "area" is needed
+	// for the left right test
+	//
+	//
+	//               ___---( ... )
+	//        (A)---/        /
+	//        /             /
+	//       /             /
+	//      /             /
+	//     /      ___---(B)
+	//  (this)---/
+	//
+    ////////////////////////////////////////////////////////////////////////////////////
+	float			AreaParallelPipid(const idVec3 &A, const idVec3 &B) const	{
+		return ((A.x*B.y - A.y*B.x) + (B.x*y - x*B.y) + (x*A.y - A.x*y));
+	}
+
+    ////////////////////////////////////////////////////////////////////////////////////
+	// The Left Right Test (2D)
+	//
+	// Given a line segment (Start->End) and a tolerance for *right on*, this function
+	// evaluates which side the point is of the line.
+	//
+	//
+	//
+	//          (this)        ___---/(End)
+	//                 ___---/
+	//          ___---/
+	//  (Start)/
+	//  
+    ////////////////////////////////////////////////////////////////////////////////////
+	bool			IsLeftOf(const idVec3 &Start, const idVec3 &End) const {
+		return (AreaParallelPipid(Start, End)>0.0f);
+	}
+
+    ////////////////////////////////////////////////////////////////////////////////////
+	// Distance To Line Segment
+	//
+	// Given a line segment (Start->End) this function will return the distance of the
+	// given point (this) to the segment.  You must also pass in a Scale argument which
+	// will tell you:
+	//  Scale (-INF, 0.0f) => (this) projected before (Start)
+	//  Scale [0.0f, 1.0f] => (this) projected inside the segment (Start->End)
+	//  Scale (1.0f, +INF) => (this) projected beyond (End)
+	//
+	//
+	//
+	//          (this)        ___---/(End)
+	//                 ___---/
+	//          ___---/
+	//  (Start)/
+	//  
+    ////////////////////////////////////////////////////////////////////////////////////
+	float			DistToLineSeg(const idVec3 &Start, const idVec3 &End, float& Scale) const {
+		static idVec3 U;
+		static idVec3 V;
+		static float ULen2;
+
+		V		= (*this) - Start;				// Compute V
+		U		= End	  - Start;				// Compute U
+		ULen2	= U.LengthSqr();				// Normalize U
+		Scale	= (V*U / ULen2);				// Find the scale of this vector on U
+		if (Scale<0.0f)	{return Dist(Start);}	// If Negative Scale, Projected In Front Of Start
+		if (Scale>1.0f)	{return Dist(End);}		// If Positive Scale, Projected In Beyond End
+		return Dist(Start + (U*Scale));			// Otherwise, project U to new location and return dist
+	}
+
+    ////////////////////////////////////////////////////////////////////////////////////
+	// Project On To Line Segment
+	//
+	// Given a line segment (Start->End) this function will project the point onto the
+	// segment.
+	//
+	//          (this)        ___---(End)
+	//			    \     ---/
+	//          __ (Result)
+	//  (Start)
+	//  
+    ////////////////////////////////////////////////////////////////////////////////////
+	bool			ProjectToLineSeg(const idVec3 &Start, const idVec3 &End) {
+		static idVec3 U;
+		static idVec3 V;
+		static float ULen2;
+		static float Scale;
+
+		V		= (*this) - Start;				// Compute V
+		U		= End	  - Start;				// Compute U
+		ULen2	= U.LengthSqr();				// Normalize U
+		Scale	= (V*U / ULen2);				// Find the scale of this vector on U
+
+		if (Scale<0.0f) {
+			(*this) = Start;					// If Negative Scale, Projected In Front Of Start
+			return false;						// Off The End
+		} else if (Scale>1.0f)	{
+			(*this) = End;						// If Positive Scale, Projected In Beyond End
+			return false;						// Off The End
+		} else {			
+			(*this) = Start + (U*Scale);		// Otherwise, project U to new location and return dist
+		}
+		return true;							// Perpendicular Intersection Is On The Segment
+	}
+
+    ////////////////////////////////////////////////////////////////////////////////////
+	// Distance Squared (Much Faster than Dist)
+    ////////////////////////////////////////////////////////////////////////////////////
+	float			Dist2(const idVec3& Pt) const
+	{
+		return ((Pt.x-x)*(Pt.x-x) + (Pt.y-y)*(Pt.y-y) + (Pt.z-z)*(Pt.z-z));
+	}
+
+    ////////////////////////////////////////////////////////////////////////////////////
+	// Distance Squared OnlyXY
+    ////////////////////////////////////////////////////////////////////////////////////
+	float			Dist2XY(const idVec3& Pt) const
+	{
+		return ((Pt.x-x)*(Pt.x-x) + (Pt.y-y)*(Pt.y-y));
+	}
+    ////////////////////////////////////////////////////////////////////////////////////
+	// Distance OnlyXY
+    ////////////////////////////////////////////////////////////////////////////////////
+	float			DistXY(const idVec3& Pt) const
+	{
+		idVec3 delta(x,y,Pt.z);
+		delta = delta - Pt;
+		return delta.LengthFast();	
+	}
+// RAVEN END
+
 	void			Lerp( const idVec3 &v1, const idVec3 &v2, const float l );
 	void			SLerp( const idVec3 &v1, const idVec3 &v2, const float l );
+
+// RAVEN BEGIN
+// jscott: Ensures second element greater than first
+	void			EnsureIncremental( void );
+// jscott: for BSE
+	int				GetLargestAxis( void ) const;
+// jscott: for rvAngles
+	rvAngles		ToRadians( void ) const;
+	idMat3			&ToMat3( idMat3 &mat ) const;		// vector should be normalized
+	float			Dist(const idVec3 &Pt) const 
+	{
+		idVec3 delta(x,y,z);
+		delta = delta - Pt;
+		return delta.LengthFast();	
+	}
+
+// RAVEN END
+
+	bool			IsZero( void ) const;
 };
 
 extern idVec3 vec3_origin;
@@ -401,6 +617,22 @@ ID_INLINE idVec3 &idVec3::operator=( const idVec3 &a ) {
 	z = a.z;
 	return *this;
 }
+
+// RAVEN BEGIN
+// bdube: added vec3 from vec2 assignment
+ID_INLINE idVec3 &idVec3::operator=( const idVec2 &a ) {
+	x = a.x;
+	y = a.y;
+	return *this;
+}
+ID_INLINE idVec3 &idVec3::operator*=( const idVec3 &a )
+{
+	x *= a.x;
+	y *= a.y;
+	z *= a.z;
+	return *this;
+}
+// RAVEN END
 
 ID_INLINE idVec3 idVec3::operator-( const idVec3 &a ) const {
 	return idVec3( x - a.x, y - a.y, z - a.z );
@@ -603,6 +835,14 @@ ID_INLINE idVec3 &idVec3::Cross( const idVec3 &a, const idVec3 &b ) {
 	return *this;
 }
 
+// RAVEN BEGIN
+// ddynerman: vector normalization operator
+ID_INLINE idVec3& idVec3::operator~( void ) {
+	Normalize();
+	return *this;
+}
+// RAVEN END
+
 ID_INLINE float idVec3::Length( void ) const {
 	return ( float )idMath::Sqrt( x * x + y * y + z * z );
 }
@@ -622,6 +862,12 @@ ID_INLINE float idVec3::Normalize( void ) {
 	float sqrLength, invLength;
 
 	sqrLength = x * x + y * y + z * z;
+// RAVEN BEGIN
+// jscott: fixed degenerate case
+	if ( !sqrLength ) {		
+		return 0.0f;
+	}
+// RAVEN END
 	invLength = idMath::InvSqrt( sqrLength );
 	x *= invLength;
 	y *= invLength;
@@ -664,6 +910,18 @@ ID_INLINE void idVec3::Clamp( const idVec3 &min, const idVec3 &max ) {
 		z = min.z;
 	} else if ( z > max.z ) {
 		z = max.z;
+	}
+}
+
+ID_INLINE void idVec3::ClampMin( const float &minx, const float &miny, const float &minz ) {
+	if ( x < minx ) {
+		x = minx;
+	}
+	if ( y < miny ) {
+		y = miny;
+	}
+	if ( z < minz ) {
+		z = minz;
 	}
 }
 
@@ -757,6 +1015,38 @@ ID_INLINE void idVec3::ProjectOntoPlane( const idVec3 &normal, const float overB
 	*this -= backoff * normal;
 }
 
+// RAVEN BEGIN
+////////////////////////////////////////////////////////////////////////////////////
+// Project
+//
+// Standard projection function.  Take the (this) and project it onto the vector
+// (U).  Imagine drawing a line perpendicular to U from the endpoint of the (this)
+// Vector.  That then becomes the new vector.
+//
+// The value returned is the scale of the new vector with respect to the one passed
+// to the function.  If the scale is less than (1.0) then the new vector is shorter 
+// than (U).  If the scale is negative, then the vector is going in the opposite 
+// direction of (U).
+//
+//               _  (U)
+//               /|
+//             /                                        _ (this)
+//           /                      RESULTS->           /|
+//         /                                          /
+//       /    __\ (this)                            /
+//     /___---  /                                 /
+//
+////////////////////////////////////////////////////////////////////////////////////
+ID_INLINE float	idVec3::ProjectOntoVector(const idVec3 &U)
+{
+	float	Scale = ((*this)*(U) / U.LengthSqr());	// Find the scale of this vector on U
+	(*this)=U;								// Copy U onto this vector
+	(*this)*=Scale;							// Use the previously calculated scale to get the right length.
+	return Scale;
+}
+// RAVEN END
+
+
 ID_INLINE bool idVec3::ProjectAlongPlane( const idVec3 &normal, const float epsilon, const float overBounce ) {
 	idVec3 cross;
 	float len;
@@ -773,72 +1063,154 @@ ID_INLINE bool idVec3::ProjectAlongPlane( const idVec3 &normal, const float epsi
 	return true;
 }
 
+// RAVEN BEGIN
+// jscott: ensures the second element is greater than the first and that the third is greater than the 2nd
+ID_INLINE void idVec3::EnsureIncremental( void )
+{
+	float temp;
+
+	if ( y < x )
+	{
+		temp = x;
+		x = y;
+		y = temp;
+	}
+	
+	if ( z < y )
+	{
+		temp = y;
+		y = z;
+		z = temp;
+	}
+	
+	if ( y < x )
+	{
+		temp = x;
+		x = y;
+		y = temp;
+	}
+}
+
+ID_INLINE int idVec3::GetLargestAxis( void ) const
+{
+	float a = fabs( x );
+	float b = fabs( y );
+	float c = fabs( z );
+
+	if( a >= b && a >= c )
+	{
+		return( 0 );
+	}
+	if( b >= a && b >= c )
+	{
+		return( 1 );
+	}
+	if( c >= a && c >= b )
+	{
+		return( 2 );
+	}
+	return( 0 );
+}
+
+// abahr
+ID_INLINE idVec3 idVec3::Random( const idVec3& range, idRandom& random ) const {
+	idVec3 v( *this );
+	for( int ix = 0; ix < GetDimension(); ++ix ) {
+		v[ ix ] += v[ ix ] * range[ix] * random.CRandomFloat();
+	}
+	return v;
+}
+// RAVEN END
+
+ID_INLINE bool idVec3::IsZero( void ) const {
+	return ( ( ( *( const unsigned long * ) &( x ) ) | ( *( const unsigned long * ) &( y ) ) | ( *( const unsigned long * ) &( z ) ) ) & ~( 1<<31 ) ) == 0;
+}
 
 //===============================================================
 //
 //	idVec4 - 4D vector
 //
 //===============================================================
-
+#ifdef _XENON
+#else
 class idVec4 {
+#endif
 public:	
+#ifndef _XENON
 	float			x;
 	float			y;
 	float			z;
 	float			w;
+#else
+#endif
+	ID_INLINE				idVec4( void );
+	ID_INLINE				explicit idVec4( const float x, const float y, const float z, const float w );
 
-					idVec4( void );
-					explicit idVec4( const float x, const float y, const float z, const float w );
+	ID_INLINE	void 			Set( const float x, const float y, const float z, const float w );
+	ID_INLINE	void			Zero( void );
 
-	void 			Set( const float x, const float y, const float z, const float w );
-	void			Zero( void );
+	ID_INLINE	float			operator[]( const int index ) const;
+	ID_INLINE	float &			operator[]( const int index );
+	ID_INLINE	idVec4			operator-() const;
+	ID_INLINE	float			operator*( const idVec4 &a ) const;
+	ID_INLINE	idVec4			operator*( const float a ) const;
+	ID_INLINE	idVec4			operator/( const float a ) const;
+	ID_INLINE	idVec4			operator+( const idVec4 &a ) const;
+	ID_INLINE	idVec4			operator-( const idVec4 &a ) const;
+	ID_INLINE	idVec4 &		operator+=( const idVec4 &a );
+	ID_INLINE	idVec4 &		operator-=( const idVec4 &a );
+	ID_INLINE	idVec4 &		operator/=( const idVec4 &a );
+	ID_INLINE	idVec4 &		operator/=( const float a );
+	ID_INLINE	idVec4 &		operator*=( const float a );
 
-	float			operator[]( const int index ) const;
-	float &			operator[]( const int index );
-	idVec4			operator-() const;
-	float			operator*( const idVec4 &a ) const;
-	idVec4			operator*( const float a ) const;
-	idVec4			operator/( const float a ) const;
-	idVec4			operator+( const idVec4 &a ) const;
-	idVec4			operator-( const idVec4 &a ) const;
-	idVec4 &		operator+=( const idVec4 &a );
-	idVec4 &		operator-=( const idVec4 &a );
-	idVec4 &		operator/=( const idVec4 &a );
-	idVec4 &		operator/=( const float a );
-	idVec4 &		operator*=( const float a );
+	ID_INLINE	friend idVec4	operator*( const float a, const idVec4 b );
 
-	friend idVec4	operator*( const float a, const idVec4 b );
+// RAVEN BEGIN
+// jscott: optimised vector to byte array function
+  	ID_INLINE	operator		int 			( void );
+// RAVEN END
 
-	bool			Compare( const idVec4 &a ) const;							// exact compare, no epsilon
-	bool			Compare( const idVec4 &a, const float epsilon ) const;		// compare with epsilon
-	bool			operator==(	const idVec4 &a ) const;						// exact compare, no epsilon
-	bool			operator!=(	const idVec4 &a ) const;						// exact compare, no epsilon
+	ID_INLINE	bool			Compare( const idVec4 &a ) const;							// exact compare, no epsilon
+	ID_INLINE	bool			Compare( const idVec4 &a, const float epsilon ) const;		// compare with epsilon
+	ID_INLINE	bool			operator==(	const idVec4 &a ) const;						// exact compare, no epsilon
+	ID_INLINE	bool			operator!=(	const idVec4 &a ) const;						// exact compare, no epsilon
 
-	float			Length( void ) const;
-	float			LengthSqr( void ) const;
-	float			Normalize( void );			// returns length
-	float			NormalizeFast( void );		// returns length
+// RAVEN BEGIN
+// ddynerman: unary normalization operator
+	ID_INLINE	idVec4&			operator~( void );
+// RAVEN END
 
-	int				GetDimension( void ) const;
+	ID_INLINE	float			Length( void ) const;
+	ID_INLINE	float			LengthSqr( void ) const;
+	ID_INLINE	float			Normalize( void );			// returns length
+	ID_INLINE	float			NormalizeFast( void );		// returns length
 
-	const idVec2 &	ToVec2( void ) const;
-	idVec2 &		ToVec2( void );
-	const idVec3 &	ToVec3( void ) const;
-	idVec3 &		ToVec3( void );
-	const float *	ToFloatPtr( void ) const;
-	float *			ToFloatPtr( void );
+	ID_INLINE	int				GetDimension( void ) const;
+
+	ID_INLINE	const idVec2 &	ToVec2( void ) const;
+	ID_INLINE	idVec2 &		ToVec2( void );
+	ID_INLINE	const idVec3 &	ToVec3( void ) const;
+	ID_INLINE	idVec3 &		ToVec3( void );
+	ID_INLINE	const float *	ToFloatPtr( void ) const;
+	ID_INLINE	float *			ToFloatPtr( void );
 	const char *	ToString( int precision = 2 ) const;
 
-	void			Lerp( const idVec4 &v1, const idVec4 &v2, const float l );
+	ID_INLINE	void			Lerp( const idVec4 &v1, const idVec4 &v2, const float l );
+
 };
 
 extern idVec4 vec4_origin;
+extern idVec4 vec4_one;
+
 #define vec4_zero vec4_origin
 
+#ifndef _XENON
 ID_INLINE idVec4::idVec4( void ) {
+	AlignmentChecker::UpdateCount(&x);
 }
 
 ID_INLINE idVec4::idVec4( const float x, const float y, const float z, const float w ) {
+	AlignmentChecker::UpdateCount(&x);
 	this->x = x;
 	this->y = y;
 	this->z = z;
@@ -846,6 +1218,7 @@ ID_INLINE idVec4::idVec4( const float x, const float y, const float z, const flo
 }
 
 ID_INLINE void idVec4::Set( const float x, const float y, const float z, const float w ) {
+	AlignmentChecker::UpdateCount(&x);
 	this->x = x;
 	this->y = y;
 	this->z = z;
@@ -853,47 +1226,63 @@ ID_INLINE void idVec4::Set( const float x, const float y, const float z, const f
 }
 
 ID_INLINE void idVec4::Zero( void ) {
+	AlignmentChecker::UpdateCount(&x);
 	x = y = z = w = 0.0f;
 }
 
 ID_INLINE float idVec4::operator[]( int index ) const {
+	AlignmentChecker::UpdateCount(&x);
 	return ( &x )[ index ];
 }
 
 ID_INLINE float& idVec4::operator[]( int index ) {
+	AlignmentChecker::UpdateCount(&x);
 	return ( &x )[ index ];
 }
 
 ID_INLINE idVec4 idVec4::operator-() const {
+	AlignmentChecker::UpdateCount(&x);
 	return idVec4( -x, -y, -z, -w );
 }
 
 ID_INLINE idVec4 idVec4::operator-( const idVec4 &a ) const {
+	AlignmentChecker::UpdateCount(&x);
+	AlignmentChecker::UpdateCount(&a.x);
 	return idVec4( x - a.x, y - a.y, z - a.z, w - a.w );
 }
 
 ID_INLINE float idVec4::operator*( const idVec4 &a ) const {
+	AlignmentChecker::UpdateCount(&x);
+	AlignmentChecker::UpdateCount(&a.x);
 	return x * a.x + y * a.y + z * a.z + w * a.w;
 }
 
 ID_INLINE idVec4 idVec4::operator*( const float a ) const {
+	AlignmentChecker::UpdateCount(&x);
 	return idVec4( x * a, y * a, z * a, w * a );
 }
 
 ID_INLINE idVec4 idVec4::operator/( const float a ) const {
+	AlignmentChecker::UpdateCount(&x);
 	float inva = 1.0f / a;
 	return idVec4( x * inva, y * inva, z * inva, w * inva );
 }
 
 ID_INLINE idVec4 operator*( const float a, const idVec4 b ) {
+	AlignmentChecker::UpdateCount(&b.x);
 	return idVec4( b.x * a, b.y * a, b.z * a, b.w * a );
 }
 
+
 ID_INLINE idVec4 idVec4::operator+( const idVec4 &a ) const {
+	AlignmentChecker::UpdateCount(&x);
+	AlignmentChecker::UpdateCount(&a.x);
 	return idVec4( x + a.x, y + a.y, z + a.z, w + a.w );
 }
 
 ID_INLINE idVec4 &idVec4::operator+=( const idVec4 &a ) {
+	AlignmentChecker::UpdateCount(&x);
+	AlignmentChecker::UpdateCount(&a.x);
 	x += a.x;
 	y += a.y;
 	z += a.z;
@@ -903,6 +1292,8 @@ ID_INLINE idVec4 &idVec4::operator+=( const idVec4 &a ) {
 }
 
 ID_INLINE idVec4 &idVec4::operator/=( const idVec4 &a ) {
+	AlignmentChecker::UpdateCount(&x);
+	AlignmentChecker::UpdateCount(&a.x);
 	x /= a.x;
 	y /= a.y;
 	z /= a.z;
@@ -912,6 +1303,7 @@ ID_INLINE idVec4 &idVec4::operator/=( const idVec4 &a ) {
 }
 
 ID_INLINE idVec4 &idVec4::operator/=( const float a ) {
+	AlignmentChecker::UpdateCount(&x);
 	float inva = 1.0f / a;
 	x *= inva;
 	y *= inva;
@@ -922,6 +1314,8 @@ ID_INLINE idVec4 &idVec4::operator/=( const float a ) {
 }
 
 ID_INLINE idVec4 &idVec4::operator-=( const idVec4 &a ) {
+	AlignmentChecker::UpdateCount(&x);
+	AlignmentChecker::UpdateCount(&a.x);
 	x -= a.x;
 	y -= a.y;
 	z -= a.z;
@@ -931,6 +1325,7 @@ ID_INLINE idVec4 &idVec4::operator-=( const idVec4 &a ) {
 }
 
 ID_INLINE idVec4 &idVec4::operator*=( const float a ) {
+	AlignmentChecker::UpdateCount(&x);
 	x *= a;
 	y *= a;
 	z *= a;
@@ -939,11 +1334,80 @@ ID_INLINE idVec4 &idVec4::operator*=( const float a ) {
 	return *this;
 }
 
+// RAVEN BEGIN
+// jscott: Opt float array to byte array conversion
+#ifdef _WINDOWS
+ID_INLINE idVec4::operator int( void )
+{
+  	int			tmp, retval;
+  	float		constant = 255.0f;
+  
+  	_asm
+  	{
+  		push	edx
+  		mov		edx, this
+  		fld		dword ptr[edx + 0]
+  		fld		dword ptr[edx + 4]
+  		fld		dword ptr[edx + 8]
+  		fld		dword ptr[edx + 12]
+  
+  		fmul	[constant]
+  		fistp	tmp	   
+  		mov		ah, byte ptr [tmp]
+  
+  		fmul	[constant]
+ 		fistp	tmp	   
+  		mov		al, byte ptr [tmp]
+ 
+  		shl		eax, 16
+ 		
+  		fmul	[constant]
+  		fistp	tmp
+  		mov		ah, byte ptr [tmp]
+  
+  		fmul	[constant]
+  		fistp	tmp
+  		mov		al, byte ptr [tmp]
+  
+  		mov		[retval], eax
+  		pop		edx
+  	}
+  	return( retval );
+}
+#else
+ID_INLINE idVec4::operator int( void )
+{
+	AlignmentChecker::UpdateCount(&x);
+  	int		retval;
+// RAVEN BEGIN
+// jnewquist: byte ordering depends on platform
+#ifdef _LITTLE_ENDIAN
+	retval = ( ( int )( x * 255.0f ) ) << 0;
+	retval |= ( ( int )( y * 255.0f ) ) << 8;
+	retval |= ( ( int )( z * 255.0f ) ) << 16;
+	retval |= ( ( int )( w * 255.0f ) ) << 24;
+#else
+	retval = ( ( int )( x * 255.0f ) ) << 24;
+	retval |= ( ( int )( y * 255.0f ) ) << 16;
+	retval |= ( ( int )( z * 255.0f ) ) << 8;
+	retval |= ( ( int )( w * 255.0f ) ) << 0;
+#endif
+// RAVEN END
+
+  	return( retval );
+}
+#endif
+// RAVEN END
+
 ID_INLINE bool idVec4::Compare( const idVec4 &a ) const {
+	AlignmentChecker::UpdateCount(&x);
+	AlignmentChecker::UpdateCount(&a.x);
 	return ( ( x == a.x ) && ( y == a.y ) && ( z == a.z ) && w == a.w );
 }
 
 ID_INLINE bool idVec4::Compare( const idVec4 &a, const float epsilon ) const {
+	AlignmentChecker::UpdateCount(&x);
+	AlignmentChecker::UpdateCount(&a.x);
 	if ( idMath::Fabs( x - a.x ) > epsilon ) {
 		return false;
 	}
@@ -964,22 +1428,38 @@ ID_INLINE bool idVec4::Compare( const idVec4 &a, const float epsilon ) const {
 }
 
 ID_INLINE bool idVec4::operator==( const idVec4 &a ) const {
+	AlignmentChecker::UpdateCount(&x);
+	AlignmentChecker::UpdateCount(&a.x);
 	return Compare( a );
 }
 
 ID_INLINE bool idVec4::operator!=( const idVec4 &a ) const {
+	AlignmentChecker::UpdateCount(&x);
+	AlignmentChecker::UpdateCount(&a.x);
 	return !Compare( a );
 }
 
+// RAVEN BEGIN
+// ddynerman: unary normalization operator
+ID_INLINE idVec4& idVec4::operator~( void ) {
+	AlignmentChecker::UpdateCount(&x);
+	Normalize();
+	return *this;
+}
+// RAVEN END
+
 ID_INLINE float idVec4::Length( void ) const {
+	AlignmentChecker::UpdateCount(&x);
 	return ( float )idMath::Sqrt( x * x + y * y + z * z + w * w );
 }
 
 ID_INLINE float idVec4::LengthSqr( void ) const {
+	AlignmentChecker::UpdateCount(&x);
 	return ( x * x + y * y + z * z + w * w );
 }
 
 ID_INLINE float idVec4::Normalize( void ) {
+	AlignmentChecker::UpdateCount(&x);
 	float sqrLength, invLength;
 
 	sqrLength = x * x + y * y + z * z + w * w;
@@ -992,6 +1472,7 @@ ID_INLINE float idVec4::Normalize( void ) {
 }
 
 ID_INLINE float idVec4::NormalizeFast( void ) {
+	AlignmentChecker::UpdateCount(&x);
 	float sqrLength, invLength;
 
 	sqrLength = x * x + y * y + z * z + w * w;
@@ -1004,33 +1485,53 @@ ID_INLINE float idVec4::NormalizeFast( void ) {
 }
 
 ID_INLINE int idVec4::GetDimension( void ) const {
+	AlignmentChecker::UpdateCount(&x);
 	return 4;
 }
 
 ID_INLINE const idVec2 &idVec4::ToVec2( void ) const {
+	AlignmentChecker::UpdateCount(&x);
 	return *reinterpret_cast<const idVec2 *>(this);
 }
 
 ID_INLINE idVec2 &idVec4::ToVec2( void ) {
+	AlignmentChecker::UpdateCount(&x);
 	return *reinterpret_cast<idVec2 *>(this);
 }
 
 ID_INLINE const idVec3 &idVec4::ToVec3( void ) const {
+	AlignmentChecker::UpdateCount(&x);
 	return *reinterpret_cast<const idVec3 *>(this);
 }
 
 ID_INLINE idVec3 &idVec4::ToVec3( void ) {
+	AlignmentChecker::UpdateCount(&x);
 	return *reinterpret_cast<idVec3 *>(this);
 }
 
 ID_INLINE const float *idVec4::ToFloatPtr( void ) const {
+	AlignmentChecker::UpdateCount(&x);
 	return &x;
 }
 
 ID_INLINE float *idVec4::ToFloatPtr( void ) {
+	AlignmentChecker::UpdateCount(&x);
 	return &x;
 }
 
+ID_INLINE void idVec4::Lerp( const idVec4 &v1, const idVec4 &v2, const float l ) {
+	AlignmentChecker::UpdateCount(&x);
+	AlignmentChecker::UpdateCount(&v1.x);
+	AlignmentChecker::UpdateCount(&v2.x);
+	if ( l <= 0.0f ) {
+		(*this) = v1;
+	} else if ( l >= 1.0f ) {
+		(*this) = v2;
+	} else {
+		(*this) = v1 + l * ( v2 - v1 );
+	}
+}
+#endif
 
 //===============================================================
 //
@@ -1407,6 +1908,13 @@ ID_INLINE float *idVec6::ToFloatPtr( void ) {
 #define VECX_ALLOCA( n )	( (float *) _alloca16( VECX_QUAD( n ) ) )
 #define VECX_SIMD
 
+// RAVEN BEGIN
+// jsinger: this is broken at the moment because idSIMDProcessor is no longer virtual
+#ifdef _XENON
+#undef VECX_SIMD
+#endif
+// RAVEN END
+
 class idVecX {
 	friend class idMatX;
 
@@ -1469,8 +1977,10 @@ private:
 	int				alloced;				// if -1 p points to data set with SetData
 	float *			p;						// memory the vector is stored
 
-	static float	temp[VECX_MAX_TEMP+4];	// used to store intermediate results
-	static float *	tempPtr;				// pointer to 16 byte aligned temporary memory
+// RAVEN BEGIN
+	ALIGN16( static float tempPtr[VECX_MAX_TEMP]; )	// used to store intermediate results
+//	static float *	tempPtr;				// pointer to 16 byte aligned temporary memory
+// RAVEN END
 	static int		tempIndex;				// index into memory pool, wraps around
 
 private:
@@ -1685,7 +2195,10 @@ ID_INLINE void idVecX::SetSize( int newSize ) {
 		if ( p ) {
 			Mem_Free16( p );
 		}
-		p = (float *) Mem_Alloc16( alloc * sizeof( float ) );
+//RAVEN BEGIN
+//amccarthy: Added allocation tag
+		p = (float *) Mem_Alloc16( alloc * sizeof( float ), MA_MATH );
+//RAVEN END
 		alloced = alloc;
 	}
 	size = newSize;
@@ -1696,7 +2209,10 @@ ID_INLINE void idVecX::ChangeSize( int newSize, bool makeZero ) {
 	int alloc = ( newSize + 3 ) & ~3;
 	if ( alloc > alloced && alloced != -1 ) {
 		float *oldVec = p;
-		p = (float *) Mem_Alloc16( alloc * sizeof( float ) );
+//RAVEN BEGIN
+//amccarthy: Added allocation tag
+		p = (float *) Mem_Alloc16( alloc * sizeof( float ), MA_MATH );
+//RAVEN END
 		alloced = alloc;
 		if ( oldVec ) {
 			for ( int i = 0; i < size; i++ ) {

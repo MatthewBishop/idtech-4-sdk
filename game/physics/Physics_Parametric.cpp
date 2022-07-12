@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../../idlib/precompiled.h"
 #pragma hdrstop
@@ -100,6 +98,12 @@ idPhysics_Parametric::idPhysics_Parametric( void ) {
 
 	hasMaster = false;
 	isOrientated = false;
+
+// RAVEN BEGIN
+// abahr:
+	useAxisOffset = false;
+	axisOffset.Identity();
+// RAVEN END
 }
 
 /*
@@ -258,6 +262,9 @@ void idPhysics_Parametric::Save( idSaveGame *savefile ) const {
 
 	savefile->WriteBool( hasMaster );
 	savefile->WriteBool( isOrientated );
+
+	savefile->WriteBool ( useAxisOffset );	// cnicholson: Added unsaved var
+	savefile->WriteMat3 ( axisOffset );		// cnicholson: Added unsaved var
 }
 
 /*
@@ -279,6 +286,10 @@ void idPhysics_Parametric::Restore( idRestoreGame *savefile ) {
 
 	savefile->ReadBool( hasMaster );
 	savefile->ReadBool( isOrientated );
+
+	savefile->ReadBool ( useAxisOffset );	// cnicholson: Added unrestored var
+	savefile->ReadMat3 ( axisOffset );		// cnicholson: Added unrestored var
+
 }
 
 /*
@@ -456,7 +467,10 @@ void idPhysics_Parametric::SetClipModel( idClipModel *model, float density, int 
 		delete clipModel;
 	}
 	clipModel = model;
-	clipModel->Link( gameLocal.clip, self, 0, current.origin, current.axis );
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+	clipModel->Link( self, 0, current.origin, current.axis );
+// RAVEN END
 }
 
 /*
@@ -603,7 +617,10 @@ bool idPhysics_Parametric::Evaluate( int timeStepMSec, int endTimeMSec ) {
 
 		gameLocal.push.ClipPush( pushResults, self, pushFlags, oldOrigin, oldAxis, current.origin, current.axis );
 		if ( pushResults.fraction < 1.0f ) {
-			clipModel->Link( gameLocal.clip, self, 0, oldOrigin, oldAxis );
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+			clipModel->Link( self, 0, oldOrigin, oldAxis );
+// RAVEN END
 			current.localOrigin = oldLocalOrigin;
 			current.origin = oldOrigin;
 			current.localAngles = oldLocalAngles;
@@ -617,7 +634,10 @@ bool idPhysics_Parametric::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	}
 
 	if ( clipModel ) {
-		clipModel->Link( gameLocal.clip, self, 0, current.origin, current.axis );
+// RAVEN BEGIN
+// abahr: a hack way of hiding gimble lock from movers.
+		clipModel->Link( self, 0, current.origin, UseAxisOffset() ? GetAxisOffset() * current.axis : current.axis );
+// RAVEN END
 	}
 
 	current.time = endTimeMSec;
@@ -704,7 +724,10 @@ void idPhysics_Parametric::RestoreState( void ) {
 	current = saved;
 
 	if ( clipModel ) {
-		clipModel->Link( gameLocal.clip, self, 0, current.origin, current.axis );
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+		clipModel->Link( self, 0, current.origin, current.axis );
+// RAVEN END
 	}
 }
 
@@ -729,7 +752,10 @@ void idPhysics_Parametric::SetOrigin( const idVec3 &newOrigin, int id ) {
 		current.origin = current.localOrigin;
 	}
 	if ( clipModel ) {
-		clipModel->Link( gameLocal.clip, self, 0, current.origin, current.axis );
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+		clipModel->Link( self, 0, current.origin, current.axis );
+// RAVEN END
 	}
 	Activate();
 }
@@ -759,7 +785,10 @@ void idPhysics_Parametric::SetAxis( const idMat3 &newAxis, int id ) {
 		current.angles = current.localAngles;
 	}
 	if ( clipModel ) {
-		clipModel->Link( gameLocal.clip, self, 0, current.origin, current.axis );
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+		clipModel->Link( self, 0, current.origin, current.axis );
+// RAVEN END
 	}
 	Activate();
 }
@@ -903,7 +932,10 @@ idPhysics_Parametric::LinkClip
 */
 void idPhysics_Parametric::LinkClip( void ) {
 	if ( clipModel ) {
-		clipModel->Link( gameLocal.clip, self, 0, current.origin, current.axis );
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+		clipModel->Link( self, 0, current.origin, current.axis );
+// RAVEN END
 	}
 }
 
@@ -1151,6 +1183,9 @@ void idPhysics_Parametric::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 	current.axis = current.angles.ToMat3();
 
 	if ( clipModel ) {
-		clipModel->Link( gameLocal.clip, self, 0, current.origin, current.axis );
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+		clipModel->Link( self, 0, current.origin, current.axis );
+// RAVEN END
 	}
 }

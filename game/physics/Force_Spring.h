@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __FORCE_SPRING_H__
 #define __FORCE_SPRING_H__
@@ -24,6 +22,9 @@ public:
 						// set the entities and positions on these entities the spring is attached to
 	void				SetPosition(	idPhysics *physics1, int id1, const idVec3 &p1,
 										idPhysics *physics2, int id2, const idVec3 &p2 );
+
+	void				Save( idSaveGame *savefile ) const;
+	void				Restore( idRestoreGame *savefile );
 
 public: // common force interface
 	virtual void		Evaluate( int time );

@@ -1,8 +1,7 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __SYS_PUBLIC__
 #define __SYS_PUBLIC__
+
 
 /*
 ===============================================================================
@@ -14,7 +13,7 @@
 
 
 // Win32
-#if defined(WIN32) || defined(_WIN32)
+#ifdef _WINDOWS 
 
 #define	BUILD_STRING					"win-x86"
 #define BUILD_OS_ID						0
@@ -26,9 +25,6 @@
 
 #define _alloca16( x )					((void *)((((int)_alloca( (x)+15 )) + 15) & ~15))
 
-#define PATHSEPERATOR_STR				"\\"
-#define PATHSEPERATOR_CHAR				'\\'
-
 #define ID_INLINE						__forceinline
 #define ID_STATIC_TEMPLATE				static
 
@@ -36,8 +32,16 @@
 
 #endif
 
+#ifdef __GNUC__
+#define id_attribute(x) __attribute__(x)
+#else
+#define id_attribute(x)  
+#endif
+
 // Mac OSX
 #if defined(MACOS_X) || defined(__APPLE__)
+
+#include "osx/apple_bool.h"
 
 #ifdef __ppc__
 	#define BUILD_STRING				"MacOSX-ppc"
@@ -60,9 +64,6 @@
 
 #define _alloca							alloca
 #define _alloca16( x )					((void *)((((int)alloca( (x)+15 )) + 15) & ~15))
-
-#define PATHSEPERATOR_STR				"/"
-#define PATHSEPERATOR_CHAR				'/'
 
 #define __cdecl
 #define ASSERT							assert
@@ -95,9 +96,6 @@
 #define ALIGN16( x )					x
 #define PACKED							__attribute__((packed))
 
-#define PATHSEPERATOR_STR				"/"
-#define PATHSEPERATOR_CHAR				'/'
-
 #define __cdecl
 #define ASSERT							assert
 
@@ -108,6 +106,108 @@
 
 #endif
 
+// Xenon
+#ifdef _XENON
+
+#define	BUILD_STRING					"Xenon-ppc"
+#define BUILD_OS_ID						3	//fixme if id ever addes in apple i386 or linux ppc defines
+#define CPUSTRING						"ppc"
+
+#define _alloca16( x )					((void *)((((int)_alloca( (x)+15 )) + 15) & ~15))
+
+#define ALIGN16( x )					x
+#define PACKED							
+
+#define __cdecl
+#define ASSERT							assert
+
+#define ID_INLINE						inline
+#define ID_STATIC_TEMPLATE
+
+#define assertmem( x, y )
+
+class idCmdArgs;
+extern void Com_DoNothing( const idCmdArgs &args );
+
+#ifndef _FINAL
+
+	// Memory tracking helpers
+	namespace MemTracker {
+		// Dummy func so the command system doesnt barf on startup
+		extern void Com_DumpAllocInfo( const idCmdArgs &args );
+		extern void OnAlloc( void *mem, size_t size );
+		extern void OnDelete( void *mem );
+		extern void Init();
+		extern void BeginFrame();
+		extern void EndFrame();
+		extern void Enable( bool enabled );
+		
+		// Tag tracking
+		extern int PushTag( int tag ); // Returns a safe int value that can be used to pop the tag
+		extern int PushTag( const char* tag );  // Returns a safe int value that can be used to pop the tag
+		extern void PopTag( int tag );
+		extern void PopTag( const char* tag );
+	
+		// Helper class for automagic tracking
+		class AutoPushPop 
+		{
+			int mPopVal;
+		public:
+			AutoPushPop( const char* name ) 
+			{
+				mPopVal = PushTag( name );
+			}
+			
+			AutoPushPop( int tag ) 
+			{
+				mPopVal = PushTag( tag );
+			}
+			
+			~AutoPushPop() 
+			{
+				PopTag( mPopVal );
+			}
+			
+			// You can force it to pop as well
+			void Pop() 
+			{
+				PopTag( mPopVal );
+				mPopVal = 0xffffffff;
+			}
+		};
+	
+	};
+
+	#define MEMTRACKER_INDIRECT(F, X) F(X)
+	#define MEMTRACKER_STRINGIZE(X) #X
+	#define MEMTRACKER_LINESTR MEMTRACKER_INDIRECT(MEMTRACKER_STRINGIZE, __LINE__)
+
+	#define MEM_TRACK(X) \
+		MemTracker::AutoPushPop __FILE__##MEMTRACKER_LINESTR##_autoPushPop(X);
+	/**/
+	
+	#define MEM_PUSH_TAG(X) \
+		MemTracker::PushTag(X);
+	/**/
+	
+	#define MEM_POP_TAG(X) \
+		MemTracker::PopTag(X);
+	/**/
+
+#else
+
+	#define MEM_TRACK(X) \
+	/**/
+	
+	#define MEM_PUSH_TAG(X) \
+	/**/
+	
+	#define MEM_POP_TAG(X) \
+	/**/
+
+#endif
+
+#endif
 
 typedef enum {
 	CPUID_NONE							= 0x00000,
@@ -124,7 +224,12 @@ typedef enum {
 	CPUID_HTT							= 0x01000,	// Hyper-Threading Technology
 	CPUID_CMOV							= 0x02000,	// Conditional Move (CMOV) and fast floating point comparison (FCOMI) instructions
 	CPUID_FTZ							= 0x04000,	// Flush-To-Zero mode (denormal results are flushed to zero)
-	CPUID_DAZ							= 0x08000	// Denormals-Are-Zero mode (denormal source operands are set to zero)
+	CPUID_DAZ							= 0x08000,	// Denormals-Are-Zero mode (denormal source operands are set to zero)
+	CPUID_EM64T							= 0x10000,	// 64-bit Memory Extensions
+	CPUID_AMD64							= 0x20000,	// possibly redundant with EM64T, but see comment in Is64BitAMD() to see why I'm not chancing it.
+// RAVEN BEGIN
+	CPUID_XENON							= 0x80000	// Xenon PPC processor
+// RAVEN END
 } cpuid_t;
 
 typedef enum {
@@ -150,22 +255,17 @@ typedef enum {
 } fpuRounding_t;
 
 typedef enum {
-	AXIS_SIDE,
-	AXIS_FORWARD,
-	AXIS_UP,
-	AXIS_ROLL,
-	AXIS_YAW,
-	AXIS_PITCH,
-	MAX_JOYSTICK_AXIS
-} joystickAxis_t;
-
-typedef enum {
 	SE_NONE,				// evTime is still valid
 	SE_KEY,					// evValue is a key code, evValue2 is the down flag
 	SE_CHAR,				// evValue is an ascii char
 	SE_MOUSE,				// evValue and evValue2 are reletive signed x / y moves
 	SE_JOYSTICK_AXIS,		// evValue is an axis number and evValue2 is the current state (-127 to 127)
 	SE_CONSOLE				// evPtr is a char*, from typing something at a non-game console
+// RAVEN BEGIN
+// rjohnson: debug event overflow stuff
+	,
+	SE_MAX
+// RAVEN END
 } sysEventType_t;
 
 typedef enum {
@@ -181,6 +281,46 @@ typedef enum {
 	M_DELTAY,
 	M_DELTAZ
 } sys_mEvents;
+
+// RAVEN BEGIN
+// rjohnson: new joystick code
+#define MAX_AXIS_RANGE	127
+#define JOY_TO_CURSOR_SPEED		( idMath::M_MS2SEC * common->GetUserCmdMSec() * 1.5f * 140.f )
+
+typedef enum {
+	AXIS_LEFT_HORIZONTAL,
+	AXIS_LEFT_VERTICAL,
+	AXIS_RIGHT_HORIZONTAL,
+	AXIS_RIGHT_VERTICAL,
+	MAX_JOYSTICK_AXIS
+} joystickAxis_t;
+
+typedef enum {
+	J_ACTION_BUTTON_LEFT_SHOULDER,		// K_JOY1
+	J_ACTION_BUTTON_RIGHT_SHOULDER,		// K_JOY2
+	J_ACTION_BUTTON_A,					// K_JOY3
+	J_ACTION_BUTTON_B,					// K_JOY4
+	J_ACTION_BUTTON_Y,					// K_JOY5
+	J_ACTION_BUTTON_X,					// K_JOY6
+	J_ACTION_BUTTON_START,				// K_JOY7
+	J_ACTION_BUTTON_BACK,				// K_JOY8
+	J_ACTION_BUTTON_DPAD_UP,			// K_JOY9
+	J_ACTION_BUTTON_DPAD_DOWN,			// K_JOY10
+	J_ACTION_BUTTON_DPAD_RIGHT,			// K_JOY11
+	J_ACTION_BUTTON_DPAD_LEFT,			// K_JOY12
+	J_ACTION_BUTTON_AXIS_LEFT,			// K_JOY13
+	J_ACTION_BUTTON_AXIS_RIGHT,			// K_JOY14
+	J_ACTION_BUTTON_LEFT_TRIGGER,		// K_JOY16
+	J_ACTION_BUTTON_RIGHT_TRIGGER,		// K_JOY15
+
+	J_DELTA_LEFT_HORIZONTAL,
+	J_DELTA_LEFT_VERTICAL,
+	J_DELTA_RIGHT_HORIZONTAL,
+	J_DELTA_RIGHT_VERTICAL,
+	
+	J_ACTION_BUTTON_GARBAGE,
+} sys_jEvents;
+// RAVEN END
 
 typedef struct sysEvent_s {
 	sysEventType_t	evType;
@@ -219,10 +359,10 @@ void			Sys_SetClipboardData( const char *string );
 
 // will go to the various text consoles
 // NOT thread safe - never use in the async paths
-void			Sys_Printf( const char *msg, ... );
+void			Sys_Printf( const char *msg, ... )id_attribute((format(printf,1,2)));
 
 // guaranteed to be thread-safe
-void			Sys_DebugPrintf( const char *fmt, ... );
+void			Sys_DebugPrintf( const char *fmt, ... )id_attribute((format(printf,1,2)));
 void			Sys_DebugVPrintf( const char *fmt, va_list arg );
 
 // a decent minimum sleep time to avoid going below the process scheduler speeds
@@ -231,6 +371,9 @@ void			Sys_DebugVPrintf( const char *fmt, va_list arg );
 // allow game to yield CPU time
 // NOTE: due to SYS_MINSLEEP this is very bad portability karma, and should be completely removed
 void			Sys_Sleep( int msec );
+
+// returns whether the main rendering window has focus
+bool			Sys_IsAppActive( void );
 
 // Sys_Milliseconds should only be used for profiling purposes,
 // any game related timing information should come from event timestamps
@@ -295,10 +438,12 @@ const char *	Sys_GetCallStackCurStr( int depth );
 const char *	Sys_GetCallStackCurAddressStr( int depth );
 void			Sys_ShutdownSymbols( void );
 
+#ifdef _LOAD_DLL
 // DLL loading, the path should be a fully qualified OS path to the DLL file to be loaded
 int				Sys_DLL_Load( const char *dllName );
 void *			Sys_DLL_GetProcAddress( int dllHandle, const char *procName );
 void			Sys_DLL_Unload( int dllHandle );
+#endif // _LOAD_DLL
 
 // event generation
 void			Sys_GenerateEvents( void );
@@ -309,36 +454,44 @@ void			Sys_ClearEvents( void );
 // the main window is recreated
 void			Sys_InitInput( void );
 void			Sys_ShutdownInput( void );
-void			Sys_InitScanTable( void );
-const unsigned char *Sys_GetScanTable( void );
-unsigned char	Sys_GetConsoleKey( bool shifted );
-
 // keyboard input polling
 int				Sys_PollKeyboardInputEvents( void );
 int				Sys_ReturnKeyboardInputEvent( const int n, int &ch, bool &state );
 void			Sys_EndKeyboardInputEvents( void );
-
-// keyboard mapping
-// unused?
-int				Sys_MapKeyChar( int k );
+int				Sys_MapKey( unsigned long key, unsigned short wParam );
 
 // mouse input polling
 int				Sys_PollMouseInputEvents( void );
 int				Sys_ReturnMouseInputEvent( const int n, int &action, int &value );
 void			Sys_EndMouseInputEvents( void );
 
+// RAVEN BEGIN
+// ksergent: joystick input polling
+int				Sys_PollJoystickInputEvents( void );
+bool			Sys_IsJoystickEnabled( void );
+bool			Sys_IsJoystickConnected( int index );
+int				Sys_ReturnJoystickInputEvent( const int n, int &action, int &value );
+void			Sys_EndJoystickInputEvents( void );
+// RAVEN END
+
 // when the console is down, or the game is about to perform a lengthy
 // operation like map loading, the system can release the mouse cursor
 // when in windowed mode
-void			Sys_GrabMouseCursor( bool grabIt );
-
-void			Sys_ShowWindow( bool show );
 bool			Sys_IsWindowVisible( void );
-void			Sys_ShowConsole( int visLevel, bool quitOnClose );
-
-
 void			Sys_Mkdir( const char *path );
-long			Sys_FileTimeStamp( FILE *fp );
+
+// RAVEN BEGIN
+// jscott: thread handling
+void			Sys_StartAsyncThread( void );
+void			Sys_EndAsyncThread( void );
+
+// jscott: VTune interface
+#ifndef _FINAL
+void			Sys_StartProfiling( void );
+void			Sys_StopProfiling( void );
+#endif
+// RAVEN END
+
 // NOTE: do we need to guarantee the same output on all platforms?
 const char *	Sys_TimeStampToStr( long timeStamp );
 const char *	Sys_DefaultCDPath( void );
@@ -350,6 +503,17 @@ const char *	Sys_EXEPath( void );
 // returns -1 if directory was not found (the list is cleared)
 int				Sys_ListFiles( const char *directory, const char *extension, idList<class idStr> &list );
 
+
+// RAVEN BEGIN
+// rjohnson: added block
+bool			Sys_AppShouldSleep		( void );
+// RAVEN END
+
+// RAVEN BEGIN
+// twhitaker: directx version
+// return NULL if the DirectX 9 or greater is not found.  otherwise returns version in the format "9.0c"
+const char *	Sys_GetDirectXVersion	( void );
+// RAVEN END
 
 /*
 ==============================================================
@@ -364,6 +528,11 @@ typedef enum {
 	NA_LOOPBACK,
 	NA_BROADCAST,
 	NA_IP
+// RAVEN BEGIN
+// rjohnson: add fake clients
+	,
+	NA_FAKE
+// RAVEN END
 } netadrtype_t;
 
 typedef struct {
@@ -377,27 +546,87 @@ typedef struct {
 class idPort {
 public:
 				idPort();				// this just zeros netSocket and port
-	virtual		~idPort();
+				~idPort();
 
 	// if the InitForPort fails, the idPort.port field will remain 0
+// RAVEN BEGIN
+// asalmon: option for xbox to create a VDP socket
+#ifdef _XBOX
+	bool		InitForPort( int portNumber, bool vdp = false );
+#else
 	bool		InitForPort( int portNumber );
+#endif
+// RAVEN END
 	int			GetPort( void ) const { return port; }
+// RAVEN BEGIN
+// amccarthy: For Xbox this needs to be an unsigned int
+#ifdef _XBOX
+	unsigned int GetSocket( void ) const { return netSocket; }
+#endif
+// RAVEN END
 	void		Close();
 
 	bool		GetPacket( netadr_t &from, void *data, int &size, int maxSize );
 	bool		GetPacketBlocking( netadr_t &from, void *data, int &size, int maxSize, int timeout );
 	void		SendPacket( const netadr_t to, const void *data, int size );
 
+//RAVEN BEGIN
+//asalmon: second version of sendPacket for Xbox avoids netadr_t
+#ifdef _XBOX
+	bool		SendPacketVDP( const struct sockaddr *to, const void *data, int size );
+#endif
+//RAVEN END
+
+	void		GetTrafficStats(  int &bytesSent, int &packetsSent, int &bytesReceived, int &packetsReceived ) const;
+
+	void		SetSilent( bool silent );
+	bool		GetSilent( void ) const;
+
+private:
 	int			packetsRead;
 	int			bytesRead;
 
 	int			packetsWritten;
 	int			bytesWritten;
 
-private:
 	int			port;			// UDP port
-	int			netSocket;		// OS specific socket
+//RAVEN BEGIN
+//amccarthy: For Xbox this needs to be an unsigned int
+#ifdef _XBOX
+	unsigned int			netSocket;		// OS specific socket
+#else
+	int						netSocket;
+#endif
+//RAVEN END
+
+	bool		silent;			// don't emit anything for a while
 };
+
+/*
+===============
+idPort::GetTrafficStats
+===============
+*/
+ID_INLINE void idPort::GetTrafficStats(  int &_bytesSent, int &_packetsSent, int &_bytesReceived, int &_packetsReceived ) const {
+	_bytesSent = bytesWritten;
+	_packetsSent = packetsWritten;
+	_bytesReceived = bytesRead;
+	_packetsReceived = packetsRead;
+}
+
+/*
+===============
+idPort::SetSilent
+===============
+*/
+ID_INLINE void idPort::SetSilent( bool _silent ) { silent = _silent; }
+
+/*
+===============
+idPort::GetSilent
+===============
+*/
+ID_INLINE bool idPort::GetSilent( void ) const { return silent; }
 
 class idTCP {
 public:
@@ -429,11 +658,23 @@ const char *	Sys_NetAdrToString( const netadr_t a );
 bool			Sys_IsLANAddress( const netadr_t a );
 bool			Sys_CompareNetAdrBase( const netadr_t a, const netadr_t b );
 
-int				Sys_GetLocalIPCount( void );
-const char *	Sys_GetLocalIP( int i );
-
 void			Sys_InitNetworking( void );
 void			Sys_ShutdownNetworking( void );
+
+// RAVEN BEGIN
+// ddynerman: utility functions
+// TTimo: FIXME if exposed, call them Sys_
+int Net_GetNumInterfaces( void );
+netadr_t Net_GetInterface( int index );
+
+// asalmon: Xbox live related functions
+#ifdef _XBOX
+#define NONCE_SIZE  8
+bool			Sys_CreateLiveMatch( void );
+bool			Sys_CreateSystemLinkMatch( void );
+bool			Sys_VerifyString(const char *string);
+#endif
+// RAVEN END
 
 
 /*
@@ -456,6 +697,12 @@ typedef struct {
 	const char *	name;
 	int				threadHandle;
 	unsigned long	threadId;
+// RAVEN BEGIN
+// ksergent: included to track multiprocessor system
+#ifdef _XBOX
+	unsigned char cpuID;
+#endif
+// RAVEN END
 } xthreadInfo;
 
 const int MAX_THREADS				= 10;
@@ -503,7 +750,7 @@ void				Sys_TriggerEvent( int index = TRIGGER_EVENT_ZERO );
 
 class idSys {
 public:
-	virtual void			DebugPrintf( const char *fmt, ... ) = 0;
+	virtual void			DebugPrintf( const char *fmt, ... )id_attribute((format(printf,2,3))) = 0;
 	virtual void			DebugVPrintf( const char *fmt, va_list arg ) = 0;
 
 	virtual double			GetClockTicks( void ) = 0;
@@ -514,6 +761,9 @@ public:
 	virtual bool			FPU_StackIsEmpty( void ) = 0;
 	virtual void			FPU_SetFTZ( bool enable ) = 0;
 	virtual void			FPU_SetDAZ( bool enable ) = 0;
+// RAVEN BEGIN
+	virtual void			FPU_SetPrecision( int flags ) = 0;
+// RAVEN END
 
 	virtual bool			LockMemory( void *ptr, int bytes ) = 0;
 	virtual bool			UnlockMemory( void *ptr, int bytes ) = 0;
@@ -531,10 +781,181 @@ public:
 	virtual sysEvent_t		GenerateMouseButtonEvent( int button, bool down ) = 0;
 	virtual sysEvent_t		GenerateMouseMoveEvent( int deltax, int deltay ) = 0;
 
+// RAVEN BEGIN
+	virtual int				MapKey( unsigned long lParam, unsigned short wParam ) = 0;
+	virtual void			AddKeyPress( int key, bool state ) = 0;
+	virtual int				GetNumKeyPresses( void ) = 0;
+	virtual	bool			GetKeyPress( const int n, int &key, bool &state ) = 0;
+
+	virtual void *			CreateWindowEx( const char *className, const char *windowName, int style, int x, int y, int w, int h, void *parent, void *menu, void *instance, void *param, int extStyle = 0 ) = 0;
+	virtual void *			GetDC( void *hWnd ) = 0;
+	virtual	void			ReleaseDC( void *hWnd, void *hDC ) = 0;
+	virtual	void			ShowWindow( void *hWnd, int show ) = 0;
+	virtual	void			UpdateWindow( void *hWnd ) = 0;
+	virtual bool			IsWindowVisible( void *hWnd ) = 0;
+	virtual void			SetForegroundWindow( void *hWnd ) = 0;
+	virtual void			SetFocus( void *hWnd ) = 0;
+	virtual	void			DestroyWindow( void *hWnd ) = 0;
+
+	virtual	void			ShowConsole( int visLevel, bool quitOnClose ) = 0;
+	virtual	void			UpdateConsole( void ) = 0;
+	virtual bool			IsAppActive( void ) const = 0;
+	virtual	int				Milliseconds( void ) = 0;
+	virtual void			InitInput( void ) = 0;
+	virtual void			ShutdownInput( void ) = 0;
+	virtual void			GenerateEvents( void ) = 0;
+	virtual void			GrabMouseCursor( bool grabIt ) = 0;
+
+	virtual FILE			*FOpen( const char *name, const char *mode ) = 0;
+	virtual void			FPrintf( FILE *file, const char *fmt ) = 0;
+	virtual int				FTell( FILE *file ) = 0;
+	virtual int				FSeek( FILE *file, long offset, int mode ) = 0;
+	virtual void			FClose( FILE *file ) = 0;
+	virtual int				FRead( void *buffer, int size, int count, FILE *file ) = 0;
+	virtual int				FWrite( void *buffer, int size, int count, FILE *file ) = 0;
+	virtual	long			FileTimeStamp( FILE *file ) = 0;
+	virtual int				FEof( FILE *stream  ) = 0;
+	virtual char			*FGets( char *string, int n, FILE *stream ) = 0;
+	virtual void			FFlush( FILE *f ) = 0;
+	virtual int				SetVBuf( FILE *stream, char *buffer, int mode, size_t size  ) = 0;
+// RAVEN END
+
 	virtual void			OpenURL( const char *url, bool quit ) = 0;
 	virtual void			StartProcess( const char *exePath, bool quit ) = 0;
 };
 
 extern idSys *				sys;
+
+// RAVEN BEGIN
+// jnewquist: Scope timing tools
+#if defined(_XENON)
+class ScopeAutoMeasure {
+public:
+	ID_INLINE ScopeAutoMeasure(const char *name) {
+		mName = name;
+		QueryPerformanceCounter( &mStartTime ); 
+	}
+	ID_INLINE ~ScopeAutoMeasure() {
+		LARGE_INTEGER endTime;
+		QueryPerformanceCounter( &endTime );
+		double time = (double)(endTime.QuadPart - mStartTime.QuadPart) / (Sys_ClockTicksPerSecond() * 0.000001);
+		printf("Time %s: %f us\n", mName, time);
+	}
+protected:
+	LARGE_INTEGER	mStartTime;
+	const char *	mName;
+};
+
+#if defined(TIME_CAPTURE) //&& defined(_PROFILE)
+
+class TimedScope {
+public:
+	ID_INLINE TimedScope(const char *name) {
+		mName = name;
+		mNext = mFirst;
+		mFirst = this;
+		mTime.QuadPart = 0;
+	}
+	static void ComputeCost() {
+		LARGE_INTEGER TicksPerSecond;
+		QueryPerformanceFrequency( &TicksPerSecond );
+		sTicksPerMicrosecond = (double)TicksPerSecond.QuadPart * 0.000001;
+
+		// get a rough time estimate for the cost of a call to Sys_Milliseconds so that we can remove it from the function costs
+		LARGE_INTEGER before;
+		QueryPerformanceCounter( &before );
+
+		LARGE_INTEGER test;
+		for(int i=0; i<1000000; i++)
+		{
+			QueryPerformanceCounter( &test );
+		}
+		LARGE_INTEGER after;
+		QueryPerformanceCounter( &after );
+
+		__int64 Ticks = after.QuadPart - before.QuadPart;
+		sQueryPerformanceCounterCost.QuadPart = (double)Ticks/1000000.0f;
+	}
+
+	// automatically deducts the cost of the Sys_Milliseconds() call used to gather the timing
+	ID_INLINE void AddTime(unsigned long long ticks) {
+		// add number of microseconds
+		mTime.QuadPart += (ticks - sQueryPerformanceCounterCost.QuadPart)/sTicksPerMicrosecond;
+	}
+	ID_INLINE void AddCall() {
+		mCalls++;
+	}
+	ID_INLINE static void PrintTimes(void) {
+		if (!mFirst) {
+			return;
+		}
+		printf("Start Frame\n");
+		for (TimedScope* p=mFirst; p; p = p->mNext) {
+			printf("\t%20s: %d us\t%d calls\t %f us/call\n", p->mName, p->mTime, p->mCalls, (p->mCalls)?(double)p->mTime.QuadPart/(double)p->mCalls:0.0f);
+		}
+		printf("End Frame\n\n");
+	}
+	ID_INLINE static void ClearTimes(void) {
+		if (!mFirst) {
+			return;
+		}
+		for (TimedScope* p=mFirst; p; p = p->mNext) {
+			p->mTime.QuadPart = 0;
+		}
+	}
+	ID_INLINE static void ClearCalls(void) {
+		if (!mFirst) {
+			return;
+		}
+		for (TimedScope* p=mFirst; p; p = p->mNext) {
+			p->mCalls = 0;
+		}
+	}
+protected:
+	static TimedScope *		mFirst;
+	TimedScope *			mNext;
+	const char *			mName;
+	LARGE_INTEGER			mTime;
+	unsigned int			mCalls;
+	static LARGE_INTEGER	sQueryPerformanceCounterCost;
+	static double			sTicksPerMicrosecond;
+};
+
+class ScopeAutoTimer {
+public:
+	ID_INLINE ScopeAutoTimer(TimedScope *scope) {
+		QueryPerformanceCounter( &mStartTime );
+		//mStartTime = Sys_Milliseconds();
+		mScope = scope;
+	}
+	ID_INLINE ~ScopeAutoTimer() {
+		LARGE_INTEGER endTime;
+		QueryPerformanceCounter( &endTime );
+
+		//unsigned int time = (unsigned int)Sys_Milliseconds() - mStartTime;
+		// pass in number of ticks used and TimedScope will adjust it to a number of microseconds
+		mScope->AddTime(endTime.QuadPart - mStartTime.QuadPart);
+		mScope->AddCall();
+	}
+protected:
+	LARGE_INTEGER	mStartTime;
+	TimedScope *	mScope;
+};
+
+#define TIME_THIS_SCOPE(name) \
+	static TimedScope scopeTime(name); \
+	ScopeAutoTimer autoTimer(&scopeTime)
+#else
+#define TIME_THIS_SCOPE(name)
+#endif
+#endif
+
+#define STRINGIZE_INDIRECT(F, X) F(X)
+#define STRINGIZE(X) #X
+#define __LINESTR__ STRINGIZE_INDIRECT(STRINGIZE, __LINE__)
+#define __FILELINEFUNC__ (__FILE__ " " __LINESTR__ " " __FUNCTION__)
+#define __FUNCLINE__ ( __FUNCTION__ " " __LINESTR__ )
+
+// RAVEN END
 
 #endif /* !__SYS_PUBLIC__ */

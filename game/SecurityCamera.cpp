@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 /*
 
   SecurityCamera.cpp
@@ -33,6 +31,11 @@ CLASS_DECLARATION( idEntity, idSecurityCamera )
 	EVENT( EV_SecurityCam_Alert,			idSecurityCamera::Event_Alert )
 	EVENT( EV_SecurityCam_AddLight,			idSecurityCamera::Event_AddLight )
 END_CLASS
+
+
+idSecurityCamera::~idSecurityCamera() {
+	SetPhysics( NULL );
+}
 
 /*
 ================
@@ -118,7 +121,7 @@ void idSecurityCamera::Spawn( void ) {
 	negativeSweep = ( sweepAngle < 0 ) ? true : false;
 	sweepAngle = abs( sweepAngle );
 
-	scanFovCos = cos( scanFov * idMath::PI / 360.0f );
+	scanFovCos = idMath::Cos( scanFov * idMath::PI / 360.0f );
 
 	angle = GetPhysics()->GetAxis().ToAngles().yaw;
 	StartSweep();
@@ -142,7 +145,7 @@ void idSecurityCamera::Spawn( void ) {
 		str = spawnArgs.GetString( "model" );		// use the visual model
 	}
 
-	if ( !collisionModelManager->TrmFromModel( str, trm ) ) {
+	if ( !collisionModelManager->TrmFromModel( gameLocal.GetMapName(), str, trm ) ) {
 		gameLocal.Error( "idSecurityCamera '%s': cannot load collision model %s", name.c_str(), str.c_str() );
 		return;
 	}
@@ -170,7 +173,7 @@ void idSecurityCamera::Event_AddLight( void ) {
 	dir.NormalVectors( right, up );
 	target = GetPhysics()->GetOrigin() + dir * scanDist;
 		
-	radius = tan( scanFov * idMath::PI / 360.0f );
+	radius = idMath::Tan( scanFov * idMath::PI / 360.0f );
 	up = dir + up * radius;
 	up.Normalize();
 	up = GetPhysics()->GetOrigin() + up * scanDist;
@@ -189,7 +192,10 @@ void idSecurityCamera::Event_AddLight( void ) {
 	args.Set( "light_up", up.ToString() );
 	args.SetFloat( "angle", GetPhysics()->GetAxis()[0].ToYaw() );
 
-	spotLight = static_cast<idLight *>( gameLocal.SpawnEntityType( idLight::Type, &args ) );
+// RAVEN BEGIN
+// jnewquist: Use accessor for static class type 
+	spotLight = static_cast<idLight *>( gameLocal.SpawnEntityType( idLight::GetClassType(), &args ) );
+// RAVEN END
 	spotLight->Bind( this, true );
 	spotLight->UpdateVisuals();
 }
@@ -209,7 +215,7 @@ void idSecurityCamera::DrawFov( void ) {
 	idVec3 dir = GetAxis();
 	dir.NormalVectors( right, up );
 
-	radius = tan( scanFov * idMath::PI / 360.0f );
+	radius = idMath::Tan( scanFov * idMath::PI / 360.0f );
 	halfRadius = radius * 0.5f;
 	lastPoint = dir + up * radius;
 	lastPoint.Normalize();
@@ -291,11 +297,10 @@ bool idSecurityCamera::CanSeePlayer( void ) {
 			continue;
 		}
 
-		idVec3 eye;
-
-		eye = ent->EyeOffset();
-
-		gameLocal.clip.TracePoint( tr, GetPhysics()->GetOrigin(), ent->GetPhysics()->GetOrigin() + eye, MASK_OPAQUE, this );
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+		gameLocal.TracePoint( this, tr, GetPhysics()->GetOrigin(), ent->GetEyePosition(), MASK_OPAQUE, this );
+// RAVEN END
 		if ( tr.fraction == 1.0 || ( gameLocal.GetTraceEntity( tr ) == ent ) ) {
 			gameLocal.pvs.FreeCurrentPVS( handle );
 			return true;
@@ -496,11 +501,16 @@ idSecurityCamera::Killed
 void idSecurityCamera::Killed( idEntity *inflictor, idEntity *attacker, int damage, const idVec3 &dir, int location ) {
 	sweeping = false;
 	StopSound( SND_CHANNEL_ANY, false );
+// RAVEN BEGIN
+// bdube: replaced fx call with raven call
+	gameLocal.PlayEffect ( spawnArgs, "fx_destroyed", GetPhysics()->GetOrigin(), GetPhysics()->GetAxis() );
+/*
 	const char *fx = spawnArgs.GetString( "fx_destroyed" );
 	if ( fx[0] != '\0' ) {
 		idEntityFx::StartFx( fx, NULL, NULL, this, true );
 	}
-
+*/
+// RAVEN END
 	physicsObj.SetSelf( this );
 	physicsObj.SetClipModel( new idClipModel( trm ), 0.02f );
 	physicsObj.SetOrigin( GetPhysics()->GetOrigin() );
@@ -521,10 +531,16 @@ idSecurityCamera::Pain
 ============
 */
 bool idSecurityCamera::Pain( idEntity *inflictor, idEntity *attacker, int damage, const idVec3 &dir, int location ) {
+// RAVEN BEGIN
+// bdube: replaced fx call with raven call
+	PlayEffect ( "fx_damage", renderEntity.origin, renderEntity.axis );
+/*
 	const char *fx = spawnArgs.GetString( "fx_damage" );
 	if ( fx[0] != '\0' ) {
 		idEntityFx::StartFx( fx, NULL, NULL, this, true );
 	}
+*/
+// RAVEN END
 	return true;
 }
 

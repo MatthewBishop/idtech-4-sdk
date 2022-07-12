@@ -3,9 +3,9 @@
 #pragma hdrstop
 
 #include "../Game_local.h"
-#ifndef _D3SDK
+
 #include "../../MayaImport/maya_main.h"
-#endif
+
 /***********************************************************************
 
 	Maya conversion functions
@@ -19,6 +19,28 @@ static exporterShutdown_t	Maya_Shutdown = NULL;
 static int					importDLL = 0;
 
 bool idModelExport::initialized = false;
+
+
+// RAVEN BEGIN
+// scork: now needed to cleanup after last Maya model conversion since I cache them for speed during "exportmodels"
+bool g_bMayaConversionCleanerRunning = false;	// so we can check all calls to Maya_ConvertModel have been updated to include this ;-)
+struct MayaConversionCleaner
+{
+	MayaConversionCleaner()
+	{
+		g_bMayaConversionCleanerRunning = true;
+	}
+	~MayaConversionCleaner()
+	{
+		if ( Maya_ConvertModel )
+		{
+			Maya_ConvertModel( NULL, NULL, NULL );
+		}
+		g_bMayaConversionCleanerRunning = false;
+	}
+};
+// RAVEN END
+
 
 /*
 ====================
@@ -58,7 +80,10 @@ Determines if Maya is installed on the user's machine
 =====================
 */
 bool idModelExport::CheckMayaInstall( void ) {
-#ifndef _WIN32
+// RAVEN BEGIN
+// jscott:revisit - this should go into the exe
+//#ifdef _WIN32
+#ifndef _WINDOWS
 	return false;
 #elif 0
 	HKEY	hKey;
@@ -127,7 +152,14 @@ void idModelExport::LoadMayaDll( void ) {
 	}
 
 	// initialize the DLL
+// RAVEN BEGIN
+// rhummer: unify allocation strategy to try to fix some of our crashes
+#ifdef RV_UNIFIED_ALLOCATOR
+	if ( !dllEntry( MD5_VERSION, common, sys, Memory::Allocate, Memory::Free, Memory::MSize ) ) {
+#else
 	if ( !dllEntry( MD5_VERSION, common, sys ) ) {
+#endif
+// RAVEN END
 		// init failed
 		Maya_ConvertModel = NULL;
 		Maya_Shutdown = NULL;
@@ -136,6 +168,10 @@ void idModelExport::LoadMayaDll( void ) {
 		gameLocal.Error( "Export DLL init failed." );
 		return;
 	}
+// RAVEN BEGIN
+// jscott: maya needs the source control in the tools dll
+	common->LoadToolsDLL();
+// RAVEN END
 }
 
 /*
@@ -164,11 +200,30 @@ bool idModelExport::ConvertMayaToMD5( void ) {
 		force = true;
 	}
 
+// RAVEN BEGIN
+// bdube: fs_import path
+
+	// we need to make sure we have a full path, so convert the filename to an OS path
+	path.AppendPath( cvarSystem->GetCVarString ("fs_importpath"));
+	path.AppendPath(src);
+
+	idFile* f = fileSystem->OpenExplicitFileRead ( path );
+	if ( !f ) {
+		Maya_Error = "could not open source file";
+		return false;
+	}
+	sourceTime = f->Timestamp ( );
+	fileSystem->CloseFile ( f );
+
+/*
 	// get the source file's time
 	if ( fileSystem->ReadFile( src, NULL, &sourceTime ) < 0 ) {
 		// source file doesn't exist
 		return true;
 	}
+*/
+   
+// RAVEN END
 
 	// get the destination file's time
 	if ( !force && ( fileSystem->ReadFile( dest, NULL, &destTime ) >= 0 ) ) {
@@ -224,7 +279,12 @@ bool idModelExport::ConvertMayaToMD5( void ) {
 	path = fileSystem->RelativePathToOSPath( "" );
 
 	common->SetRefreshOnPrint( true );
-	Maya_Error = Maya_ConvertModel( path, commandLine );
+// RAVEN BEGIN
+// scork: if this assert ever triggers it means there's a call to ConvertMayaToMD5() that doesn't have a 'MayaConversionCleaner' object above it. Go and put one in. Now.
+	assert( g_bMayaConversionCleanerRunning );
+// bdube: support src and dest ospath
+	Maya_Error = Maya_ConvertModel( cvarSystem->GetCVarString ( "fs_importpath" ), path, commandLine );
+// RAVEN END
 	common->SetRefreshOnPrint( false );
 	if ( Maya_Error != "Ok" ) {
 		return false;
@@ -252,6 +312,12 @@ idModelExport::ExportModel
 ====================
 */
 bool idModelExport::ExportModel( const char *model ) {
+
+// RAVEN BEGIN
+// scork:
+	MayaConversionCleaner _any_old_name;
+// RAVEN END
+
 	const char *game = cvarSystem->GetCVarString( "fs_game" );
 
 	if ( strlen(game) == 0 ) {
@@ -278,6 +344,12 @@ idModelExport::ExportAnim
 ====================
 */
 bool idModelExport::ExportAnim( const char *anim ) {
+
+// RAVEN BEGIN
+// scork:
+	MayaConversionCleaner _any_old_name;
+// RAVEN END
+
 	Reset();
 	src  = anim;
 	dest = anim;
@@ -363,6 +435,12 @@ idModelExport::ParseExportSection
 ====================
 */
 int idModelExport::ParseExportSection( idParser &parser ) {
+
+// RAVEN BEGIN
+// scork:
+	MayaConversionCleaner _any_old_name;
+// RAVEN END
+
 	idToken	command;
 	idToken	token;
 	idStr	defaultCommands;

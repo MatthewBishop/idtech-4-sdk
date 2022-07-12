@@ -1,6 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
-
 #ifndef __GAME_LIGHT_H__
 #define __GAME_LIGHT_H__
 
@@ -56,6 +53,12 @@ public:
 	void			SetLightParent( idEntity *lparent ) { lightParent = lparent; }
 	void			SetLightLevel( void );
 
+// RAVEN BEGIN
+// jshepard: other entities (speakers) need access to the refSound of a light object
+	void			SetRefSound( int rSound ) { refSound.referenceSoundHandle = rSound;}
+// ddynerman: sometimes the game needs to know if this light is ambient
+	bool			IsAmbient( void ) { return renderLight.shader->IsAmbientLight(); }
+// RAVEN END
 	virtual void	ShowEditingDialog( void );
 
 	enum {
@@ -85,12 +88,34 @@ private:
 	idVec4			fadeTo;
 	int				fadeStart;
 	int				fadeEnd;
-	bool			soundWasPlaying;
+// RAVEN BEGIN
+// bdube: light gui
+	idEntityPtr<idEntity>	lightGUI;
+// abahr:
+	float			wait;
+	float			random;	
+// RAVEN END
 
 private:
+	bool			soundWasPlaying;
+
 	void			PresentLightDefChange( void );
 	void			PresentModelDefChange( void );
 
+// RAVEN BEGIN
+// jscott: added events for light level
+private:
+	void			Event_SetCurrentLightLevel ( int in );
+	void			Event_SetMaxLightLevel ( int in );
+	void			Event_IsOn ( void );
+	void			Event_Break (idEntity *activator, float turnOff);
+	void			Event_DoneBlinking ( void );
+	void			Event_DoneBlinkingOff ( void );
+	void			Event_EarthQuake				(float requiresLOS);
+	void			Event_Timer( void );
+// RAVEN END
+
+private:
 	void			Event_SetShader( const char *shadername );
 	void			Event_GetLightParm( int parmnum );
 	void			Event_SetLightParm( int parmnum, float value );
@@ -105,6 +130,17 @@ private:
 	void			Event_SetSoundHandles( void );
 	void			Event_FadeOut( float time );
 	void			Event_FadeIn( float time );
+// RAVEN BEGIN
+// bdube: set light gui
+	void			Event_SetLightGUI ( const char* gui );
+// RAVEN END	
 };
+
+// RAVEN BEGIN
+// bdube: externed events
+extern const idEventDef EV_Light_SetCurrentLightLevel;
+extern const idEventDef EV_Light_SetMaxLightLevel;
+extern const idEventDef EV_Light_SetRadius;
+// RAVEN END
 
 #endif /* !__GAME_LIGHT_H__ */

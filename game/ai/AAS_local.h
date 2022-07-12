@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __AAS_LOCAL_H__
 #define __AAS_LOCAL_H__
@@ -57,13 +55,16 @@ private:
 	idList<int>					areas;					// areas the bounds are in
 };
 
-
 class idAASLocal : public idAAS {
 public:
 								idAASLocal( void );
 	virtual						~idAASLocal( void );
 	virtual bool				Init( const idStr &mapName, unsigned int mapFileCRC );
 	virtual void				Shutdown( void );
+// RAVEN BEGIN
+// jscott: added summary flag
+	virtual size_t				StatsSummary( void ) const;
+// RAVEN END
 	virtual void				Stats( void ) const;
 	virtual void				Test( const idVec3 &origin );
 	virtual const idAASSettings *GetSettings( void ) const;
@@ -72,6 +73,12 @@ public:
 	virtual int					BoundsReachableAreaNum( const idBounds &bounds, const int areaFlags ) const;
 	virtual void				PushPointIntoAreaNum( int areaNum, idVec3 &origin ) const;
 	virtual idVec3				AreaCenter( int areaNum ) const;
+// RAVEN BEGIN
+// bdube: added
+	virtual float				AreaRadius( int areaNum ) const;
+	virtual idBounds &			AreaBounds( int areaNum ) const;
+	virtual float				AreaCeiling( int areaNum ) const;
+// RAVEN END
 	virtual int					AreaFlags( int areaNum ) const;
 	virtual int					AreaTravelFlags( int areaNum ) const;
 	virtual bool				Trace( aasTrace_t &trace, const idVec3 &start, const idVec3 &end ) const;
@@ -92,7 +99,17 @@ public:
 	virtual bool				FlyPathValid( int areaNum, const idVec3 &origin, int goalAreaNum, const idVec3 &goalOrigin, int travelFlags, idVec3 &endPos, int &endAreaNum ) const;
 	virtual void				ShowWalkPath( const idVec3 &origin, int goalAreaNum, const idVec3 &goalOrigin ) const;
 	virtual void				ShowFlyPath( const idVec3 &origin, int goalAreaNum, const idVec3 &goalOrigin ) const;
-	virtual bool				FindNearestGoal( aasGoal_t &goal, int areaNum, const idVec3 origin, const idVec3 &target, int travelFlags, aasObstacle_t *obstacles, int numObstacles, idAASCallback &callback ) const;
+	virtual bool				FindNearestGoal( aasGoal_t &goal, int areaNum, const idVec3 origin, const idVec3 &target, int travelFlags, float minDistance, float maxDistance, aasObstacle_t *obstacles, int numObstacles, idAASCallback &callback ) const;
+// RAVEN BEGIN 
+// creed: Added Area Wall Extraction For AASTactical
+	virtual idAASFile*			GetFile( void ) {return file;}
+// cdr: Alternate Routes Bug
+	 virtual void				SetReachabilityState( idReachability* reach, bool enable );
+// rjohnson: added more debug drawing
+	virtual bool				IsValid( void ) const;
+	virtual void				ShowAreas( const idVec3 &origin, bool ShowProblemAreas = false ) const;
+// RAVEN END
+
 
 private:
 	idAASFile *					file;
@@ -149,6 +166,7 @@ private:	// pathing
 private:	// debug
 	const idBounds &			DefaultSearchBounds( void ) const;
 	void						DrawCone( const idVec3 &origin, const idVec3 &dir, float radius, const idVec4 &color ) const;
+	void						DrawAreaBounds( int areaNum ) const;
 	void						DrawArea( int areaNum ) const;
 	void						DrawFace( int faceNum, bool side ) const;
 	void						DrawEdge( int edgeNum, bool arrow ) const;
@@ -159,6 +177,17 @@ private:	// debug
 	bool						PullPlayer( const idVec3 &origin, int toAreaNum ) const;
 	void						RandomPullPlayer( const idVec3 &origin ) const;
 	void						ShowPushIntoArea( const idVec3 &origin ) const;
+
+// RAVEN BEGIN 
+// rjohnson: added more debug drawing
+	void						DrawSimpleEdge( int edgeNum ) const;
+	void						DrawSimpleFace( int faceNum, bool visited ) const;
+	void						DrawSimpleArea( int areaNum ) const;
+	void						ShowProblemEdge( int edgeNum ) const;
+	void						ShowProblemFace( int faceNum ) const;
+	void						ShowProblemArea( int areaNum ) const;
+	void						ShowProblemArea( const idVec3 &origin ) const;
+// RAVEN END
 };
 
 #endif /* !__AAS_LOCAL_H__ */

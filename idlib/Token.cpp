@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "precompiled.h"
 #pragma hdrstop
@@ -75,7 +73,7 @@ void idToken::NumberValue( void ) {
 				}
 			}
 		}
-		intvalue = idMath::Ftol( floatvalue );
+		intvalue = idMath::Ftoi( floatvalue );
 	}
 	else if ( subtype & TT_DECIMAL ) {
 		while( *p ) {

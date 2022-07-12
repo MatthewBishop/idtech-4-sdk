@@ -1,6 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
-
 #ifndef __MATH_SIMD_H__
 #define __MATH_SIMD_H__
 
@@ -40,7 +37,11 @@ public:
 
 class idVec2;
 class idVec3;
+#ifdef _XENON
+class __declspec(align(16)) idVec4;
+#else
 class idVec4;
+#endif
 class idVec5;
 class idVec6;
 class idVecX;
@@ -51,10 +52,20 @@ class idMat5;
 class idMat6;
 class idMatX;
 class idPlane;
+class idBounds;
 class idDrawVert;
 class idJointQuat;
 class idJointMat;
 struct dominantTri_s;
+struct jointWeight_t;
+struct silEdge_s;
+
+// RAVEN BEGIN
+// dluetscher: declared new vertex format
+#ifdef _MD5R_SUPPORT
+class rvSilTraceVertT;
+#endif
+// RAVEN END
 
 const int MIXBUFFER_SAMPLES = 4096;
 
@@ -68,6 +79,13 @@ typedef enum {
 } speakerLabel;
 
 
+// RAVEN BEGIN
+// jsinger: forward declare and use a typedef so that xenon doesn't have to use inheritence for the SIMD stuff
+#ifdef _XENON
+class idSIMD_Xenon;
+typedef idSIMD_Xenon idSIMDProcessor;
+#else
+// RAVEN END
 class idSIMDProcessor {
 public:
 									idSIMDProcessor( void ) { cpuid = CPUID_NONE; }
@@ -150,7 +168,10 @@ public:
 	virtual void VPCALL ConvertJointMatsToJointQuats( idJointQuat *jointQuats, const idJointMat *jointMats, const int numJoints ) = 0;
 	virtual void VPCALL TransformJoints( idJointMat *jointMats, const int *parents, const int firstJoint, const int lastJoint ) = 0;
 	virtual void VPCALL UntransformJoints( idJointMat *jointMats, const int *parents, const int firstJoint, const int lastJoint ) = 0;
-	virtual void VPCALL TransformVerts( idDrawVert *verts, const int numVerts, const idJointMat *joints, const idVec4 *weights, const int *index, const int numWeights ) = 0;
+	virtual void VPCALL MultiplyJoints( idJointMat *result, const idJointMat *joints1, const idJointMat *joints2, const int numJoints ) = 0;
+	virtual void VPCALL TransformVertsNew( idDrawVert *verts, const int numVerts, idBounds &bounds, const idJointMat *joints, const idVec4 *base, const jointWeight_t *weights, const int numWeights ) = 0;
+	virtual void VPCALL TransformVertsAndTangents( idDrawVert *verts, const int numVerts, idBounds &bounds, const idJointMat *joints, const idVec4 *base, const jointWeight_t *weights, const int numWeights ) = 0;
+	virtual void VPCALL TransformVertsAndTangentsFast( idDrawVert *verts, const int numVerts, idBounds &bounds, const idJointMat *joints, const idVec4 *base, const jointWeight_t *weights, const int numWeights ) = 0;
 	virtual void VPCALL TracePointCull( byte *cullBits, byte &totalOr, const float radius, const idPlane *planes, const idDrawVert *verts, const int numVerts ) = 0;
 	virtual void VPCALL DecalPointCull( byte *cullBits, const idPlane *planes, const idDrawVert *verts, const int numVerts ) = 0;
 	virtual void VPCALL OverlayPointCull( byte *cullBits, idVec2 *texCoords, const idPlane *planes, const idDrawVert *verts, const int numVerts ) = 0;
@@ -162,6 +183,10 @@ public:
 	virtual void VPCALL CreateSpecularTextureCoords( idVec4 *texCoords, const idVec3 &lightOrigin, const idVec3 &viewOrigin, const idDrawVert *verts, const int numVerts, const int *indexes, const int numIndexes ) = 0;
 	virtual int  VPCALL CreateShadowCache( idVec4 *vertexCache, int *vertRemap, const idVec3 &lightOrigin, const idDrawVert *verts, const int numVerts ) = 0;
 	virtual int  VPCALL CreateVertexProgramShadowCache( idVec4 *vertexCache, const idDrawVert *verts, const int numVerts ) = 0;
+	virtual int  VPCALL ShadowVolume_CountFacing( const byte *facing, const int numFaces ) = 0;
+	virtual int  VPCALL ShadowVolume_CountFacingCull( byte *facing, const int numFaces, const int *indexes, const byte *cull ) = 0;
+	virtual int  VPCALL ShadowVolume_CreateSilTriangles( int *shadowIndexes, const byte *facing, const silEdge_s *silEdges, const int numSilEdges ) = 0;
+	virtual int  VPCALL ShadowVolume_CreateCapTriangles( int *shadowIndexes, const byte *facing, const int *indexes, const int numIndexes ) = 0;
 
 	// sound mixing
 	virtual void VPCALL UpSamplePCMTo44kHz( float *dest, const short *pcm, const int numSamples, const int kHz, const int numChannels ) = 0;
@@ -171,7 +196,29 @@ public:
 	virtual void VPCALL MixSoundSixSpeakerMono( float *mixBuffer, const float *samples, const int numSamples, const float lastV[6], const float currentV[6] ) = 0;
 	virtual void VPCALL MixSoundSixSpeakerStereo( float *mixBuffer, const float *samples, const int numSamples, const float lastV[6], const float currentV[6] ) = 0;
 	virtual void VPCALL MixedSoundToSamples( short *samples, const float *mixBuffer, const int numSamples ) = 0;
+
+	// rvSilTraceVertT operations
+// RAVEN BEGIN
+// dluetscher: added support for operations on idSilTraceVerts
+#ifdef _MD5R_SUPPORT
+	virtual void VPCALL JointMat_MultiplyMats( float *destMats, const idJointMat *src1Mats, const idJointMat *src2Mats, int *transformPalette, int transformCount ) = 0;
+	virtual void VPCALL TransformVertsMinMax4Bone( rvSilTraceVertT *silTraceVertOutputData, idVec3 &min, idVec3 &max, byte *vertexInputData, int vertStride, int numVerts, float *skinToModelTransforms ) = 0; // transforms an array of index-weighted vertices into an array of idSilTraceVerts, while simulatenously calculating the bounds
+	virtual void VPCALL TransformVertsMinMax1Bone( rvSilTraceVertT *silTraceVertOutputData, idVec3 &min, idVec3 &max, byte *vertexInputData, int vertStride, int numVerts, float *skinToModelTransforms ) = 0; // transforms an array of index-weighted vertices into an array of idSilTraceVerts, while simulatenously calculating the bounds
+	virtual void VPCALL Dot( float *dst, const idVec3 &constant, const rvSilTraceVertT *src,	const int count ) = 0;
+	virtual void VPCALL Dot( float *dst, const idPlane &constant, const rvSilTraceVertT *src, const int count ) = 0;
+	virtual void VPCALL TracePointCull( byte *cullBits, byte &totalOr, const float radius, const idPlane *planes, const rvSilTraceVertT *verts, const int numVerts ) = 0;
+	virtual void VPCALL DecalPointCull( byte *cullBits, const idPlane *planes, const rvSilTraceVertT *verts, const int numVerts ) = 0;
+	virtual void VPCALL OverlayPointCull( byte *cullBits, idVec2 *texCoords, const idPlane *planes, const rvSilTraceVertT *verts, const int numVerts ) = 0;
+	virtual void VPCALL DeriveTriPlanes( idPlane *planes, const rvSilTraceVertT *verts, const int numVerts, const int *indexes, const int numIndexes ) = 0;
+	virtual void VPCALL DeriveTriPlanes( idPlane *planes, const rvSilTraceVertT *verts, const int numVerts, const unsigned short *indexes, const int numIndexes ) = 0;
+	virtual	void VPCALL MinMax( idVec3 &min, idVec3 &max, const rvSilTraceVertT *src, const int count ) = 0;
+	virtual	void VPCALL MinMax( idVec3 &min, idVec3 &max, const rvSilTraceVertT *src, const int *indexes, const int count ) = 0;
+#endif
+// RAVEN END
 };
+// RAVEN BEGIN
+#endif
+// RAVEN END
 
 // pointer to SIMD processor
 extern idSIMDProcessor *SIMDProcessor;

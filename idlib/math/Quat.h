@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __MATH_QUAT_H__
 #define __MATH_QUAT_H__
@@ -146,8 +144,10 @@ ID_INLINE idVec3 idQuat::operator*( const idVec3 &a ) const {
 	return ( ToMat3() * a );
 #else
 	// result = this->Inverse() * idQuat( a.x, a.y, a.z, 0.0f ) * (*this)
-	float xxzz = x*x - z*z;
-	float wwyy = w*w - y*y;
+	float xx = x * x;
+	float zz = z * z;
+	float ww = w * w;
+	float yy = y * y;
 
 	float xw2 = x*w*2.0f;
 	float xy2 = x*y*2.0f;
@@ -157,10 +157,9 @@ ID_INLINE idVec3 idQuat::operator*( const idVec3 &a ) const {
 	float zw2 = z*w*2.0f;
 
 	return idVec3(
-		(xxzz + wwyy)*a.x		+ (xy2 + zw2)*a.y		+ (xz2 - yw2)*a.z,
-		(xy2 - zw2)*a.x			+ (xxzz - wwyy)*a.y		+ (yz2 + xw2)*a.z,
-		(xz2 + yw2)*a.x			+ (yz2 - xw2)*a.y		+ (wwyy - xxzz)*a.z
-	);
+		( xx - yy - zz + ww )	* a.x	+ ( xy2 + zw2 )			* a.y	+ ( xz2 - yw2 )			* a.z,
+		( xy2 - zw2 )			* a.x	+ ( -xx + yy - zz + ww )* a.y	+ ( yz2 + xw2 )			* a.z,
+		( xz2 + yw2 )			* a.x	+ ( yz2 - xw2 )			* a.y	+ ( -xx - yy + zz + ww )* a.z );
 #endif
 }
 
@@ -254,7 +253,7 @@ ID_INLINE idQuat& idQuat::Normalize( void ) {
 
 ID_INLINE float idQuat::CalcW( void ) const {
 	// take the absolute value because floating point rounding may cause the dot of x,y,z to be larger than 1
-	return sqrt( fabs( 1.0f - ( x * x + y * y + z * z ) ) );
+	return idMath::Sqrt( fabs( 1.0f - ( x * x + y * y + z * z ) ) );
 }
 
 ID_INLINE int idQuat::GetDimension( void ) const {
@@ -365,7 +364,7 @@ ID_INLINE int idCQuat::GetDimension( void ) const {
 
 ID_INLINE idQuat idCQuat::ToQuat( void ) const {
 	// take the absolute value because floating point rounding may cause the dot of x,y,z to be larger than 1
-	return idQuat( x, y, z, sqrt( fabs( 1.0f - ( x * x + y * y + z * z ) ) ) );
+	return idQuat( x, y, z, idMath::Sqrt( fabs( 1.0f - ( x * x + y * y + z * z ) ) ) );
 }
 
 ID_INLINE const float *idCQuat::ToFloatPtr( void ) const {

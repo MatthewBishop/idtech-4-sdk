@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 /*
 sys_event.h
 
@@ -20,7 +18,7 @@ Event are used for scheduling tasks and for linking script commands.
 #define	D_EVENT_ENTITY_NULL			'E'			// event can handle NULL entity pointers
 #define D_EVENT_TRACE				't'
 
-#define MAX_EVENTS					4096
+#define MAX_EVENTS					8192		// Upped from 4096
 
 class idClass;
 class idTypeInfo;
@@ -70,14 +68,15 @@ private:
 
 	idLinkList<idEvent>			eventNode;
 
-	static idDynamicBlockAlloc<byte, 16 * 1024, 256> eventDataAllocator;
+	static idDynamicBlockAlloc<byte, 16 * 1024, 256, MA_EVENT> eventDataAllocator;
 
 
 public:
 	static bool					initialized;
 
 								~idEvent();
-
+	
+	static void					WriteDebugInfo( void );
 	static idEvent				*Alloc( const idEventDef *evdef, int numargs, va_list args );
 	static void					CopyArgs( const idEventDef *evdef, int numargs, va_list args, int data[ D_EVENT_MAXARGS ]  );
 	
@@ -86,6 +85,10 @@ public:
 	byte						*GetData( void );
 
 	static void					CancelEvents( const idClass *obj, const idEventDef *evdef = NULL );
+// RAVEN BEGIN
+// abahr:
+	static bool					EventIsPosted( const idClass *obj, const idEventDef *evdef );
+// RAVEN END
 	static void					ClearEventList( void );
 	static void					ServiceEvents( void );
 	static void					Init( void );

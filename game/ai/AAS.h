@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __AAS_H__
 #define __AAS_H__
@@ -41,8 +39,27 @@ typedef struct aasObstacle_s {
 
 class idAASCallback {
 public:
-	virtual						~idAASCallback() {};
-	virtual	bool				TestArea( const class idAAS *aas, int areaNum ) = 0;
+	virtual	~idAASCallback ( void );
+	
+	enum testResult_t {
+		TEST_OK,
+		TEST_BADAREA,
+		TEST_BADPOINT
+	};
+	
+	virtual void				Init		( void );
+	virtual void				Finish		( void );
+	
+	testResult_t				Test		( class idAAS *aas, int areaNum, const idVec3& origin, float minDistance, float maxDistance, const idVec3* point, aasGoal_t& goal );
+	
+protected:
+
+	virtual bool				TestArea	( class idAAS *aas, int areaNum, const aasArea_t& area );
+	virtual	bool				TestPoint	( class idAAS *aas, const idVec3& pos, const float zAllow=0.0f );
+	
+private:
+
+	bool		TestPointDistance		( const idVec3& origin, const idVec3& point, float minDistance, float maxDistance );
 };
 
 typedef int aasHandle_t;
@@ -53,6 +70,18 @@ public:
 	virtual						~idAAS( void ) = 0;
 								// Initialize for the given map.
 	virtual bool				Init( const idStr &mapName, unsigned int mapFileCRC ) = 0;
+// RAVEN BEGIN
+// jscott: added
+								// Prints out the memory used by this AAS
+	virtual size_t				StatsSummary( void ) const = 0;
+// RAVEN END
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+	virtual void				Shutdown( void ) = 0;
+#endif
+// RAVEN END
 								// Print AAS stats.
 	virtual void				Stats( void ) const = 0;
 								// Test from the given origin.
@@ -69,6 +98,13 @@ public:
 	virtual void				PushPointIntoAreaNum( int areaNum, idVec3 &origin ) const = 0;
 								// Returns a reachable point inside the given area.
 	virtual idVec3				AreaCenter( int areaNum ) const = 0;
+// RAVEN BEGIN
+// bdube: added
+								// Returns a reachable point inside the given area.
+	virtual float				AreaRadius( int areaNum ) const = 0;
+	virtual idBounds &			AreaBounds( int areaNum ) const = NULL;
+	virtual float				AreaCeiling( int areaNum ) const = 0;
+// RAVEN END	
 								// Returns the area flags.
 	virtual int					AreaFlags( int areaNum ) const = 0;
 								// Returns the travel flags for traveling through the area.
@@ -110,7 +146,18 @@ public:
 								// Show the fly path from the origin towards the area.
 	virtual void				ShowFlyPath( const idVec3 &origin, int goalAreaNum, const idVec3 &goalOrigin ) const = 0;
 								// Find the nearest goal which satisfies the callback.
-	virtual bool				FindNearestGoal( aasGoal_t &goal, int areaNum, const idVec3 origin, const idVec3 &target, int travelFlags, aasObstacle_t *obstacles, int numObstacles, idAASCallback &callback ) const = 0;
+	virtual bool				FindNearestGoal( aasGoal_t &goal, int areaNum, const idVec3 origin, const idVec3 &target, int travelFlags, float minDistance, float maxDistance, aasObstacle_t *obstacles, int numObstacles, idAASCallback &callback ) const = 0;
+
+// RAVEN BEGIN 
+// CDR : Added Area Wall Extraction For AASTactical
+	virtual idAASFile*			GetFile( void ) = 0;
+// cdr: Alternate Routes Bug
+	 virtual void				SetReachabilityState( idReachability* reach, bool enable ) = 0;
+
+// rjohnson: added more debug drawing
+	virtual void				ShowAreas( const idVec3 &origin, bool ShowProblemAreas = false ) const = 0;
+	virtual bool				IsValid( void ) const = 0;
+// RAVEN END
 };
 
 #endif /* !__AAS_H__ */

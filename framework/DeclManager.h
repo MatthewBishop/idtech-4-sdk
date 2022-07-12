@@ -44,8 +44,18 @@ typedef enum {
 	DECL_SOUND,
 	DECL_ENTITYDEF,
 	DECL_MODELDEF,
-	DECL_FX,
-	DECL_PARTICLE,
+// RAVEN BEGIN
+// jscott: added new decls
+	DECL_MATERIALTYPE,
+	DECL_LIPSYNC,
+	DECL_PLAYBACK,
+	DECL_EFFECT,
+// rjohnson: camera is now contained in a def for frame commands
+	DECL_CAMERADEF,
+// jscott: don't use these
+//	DECL_FX,
+//	DECL_PARTICLE,
+// RAVEN END
 	DECL_AF,
 	DECL_PDA,
 	DECL_VIDEO,
@@ -89,20 +99,59 @@ public:
 	virtual const char *	GetFileName( void ) const = 0;
 	virtual void			GetText( char *text ) const = 0;
 	virtual int				GetTextLength( void ) const = 0;
+// RAVEN BEGIN
+	virtual int				GetCompressedLength( void ) const = 0;
+// RAVEN END
 	virtual void			SetText( const char *text ) = 0;
 	virtual bool			ReplaceSourceFileText( void ) = 0;
 	virtual bool			SourceFileChanged( void ) const = 0;
 	virtual void			MakeDefault( void ) = 0;
 	virtual bool			EverReferenced( void ) const = 0;
+// RAVEN BEGIN
+	virtual void			SetReferencedThisLevel( void ) = 0;
+// RAVEN END
 	virtual bool			SetDefaultText( void ) = 0;
 	virtual const char *	DefaultDefinition( void ) const = 0;
-	virtual bool			Parse( const char *text, const int textLength ) = 0;
+	virtual bool			Parse( const char *text, const int textLength, bool noCaching ) = 0;
 	virtual void			FreeData( void ) = 0;
 	virtual size_t			Size( void ) const = 0;
 	virtual void			List( void ) const = 0;
 	virtual void			Print( void ) const = 0;
+// RAVEN BEGIN
+// jscott: to prevent a recursive crash
+	virtual	bool			RebuildTextSource( void ) { return( false ); }
+// scork: Validation call for detailed error-reporting
+	virtual bool			Validate( const char *psText, int iLength, idStr &strReportTo ) const = 0;
+// RAVEN END
 };
 
+// RAVEN BEGIN
+// jscott: for guides
+#define MAX_GUIDE_PARMS				20
+#define	MAX_GUIDE_SHADER_SIZE		20480
+
+class rvDeclGuide
+{
+private:
+	idStr		mName;
+	idStr		mParms[MAX_GUIDE_PARMS];
+	idStr		mDefinition;
+	int			mNumParms;
+
+public:
+				rvDeclGuide( idStr &name );
+				~rvDeclGuide( void );
+
+	const char	*GetName( void ) const { return( mName.c_str() ); }
+	int			GetNumParms( void ) const { return( mNumParms ); }
+	const char	*GetParm( int index ) const { assert( index < mNumParms ); return( mParms[index].c_str() ); }
+
+	void		SetParm( int index, const char *value );
+	void		RemoveOuterBracing( void );
+	void		Parse( idLexer *src );
+	bool		Evaluate( idLexer *src, idStr &definition );
+};
+// RAVEN END
 
 class idDecl {
 public:
@@ -151,6 +200,9 @@ public:
 							// Returns the length of the decl text.
 	int						GetTextLength( void ) const { return base->GetTextLength(); }
 
+							// Returns the compressed length of the decl text.
+	int						GetCompressedLength( void ) const { return( base->GetCompressedLength() ); }
+
 							// Sets new decl text.
 	void					SetText( const char *text ) { base->SetText( text ); }
 
@@ -186,7 +238,7 @@ public:
 							// The manager will have called FreeData() before issuing a Parse().
 							// The subclass can call MakeDefault() internally at any point if
 							// there are parse errors.
-	virtual bool			Parse( const char *text, const int textLength ) { return base->Parse( text, textLength ); }
+	virtual bool			Parse( const char *text, const int textLength, bool noCaching ) { return base->Parse( text, textLength, noCaching ); }
 
 							// Frees any pointers held by the subclass. This may be called before
 							// any Parse(), so the constructor must have set sane values. The decl will be
@@ -207,6 +259,17 @@ public:
 							// explicit data.
 	virtual void			Print( void ) const { base->Print(); }
 
+// RAVEN BEGIN
+							// Rebuilds the text source of the decl for saving
+	virtual	bool			RebuildTextSource( void ) { return( base->RebuildTextSource() ); }
+
+							// Marks this decl as referenced this level
+	virtual void			SetReferencedThisLevel( void ) { base->SetReferencedThisLevel(); }
+
+// scork: for detailed error reporting
+	virtual bool			Validate( const char *psText, int iLength, idStr &strReportTo ) const { return base->Validate( psText, iLength, strReportTo ); }
+// RAVEN END
+
 public:
 	idDeclBase *			base;
 };
@@ -217,15 +280,36 @@ ID_INLINE idDecl *idDeclAllocator( void ) {
 	return new type;
 }
 
+// RAVEN BEGIN
+// jsinger: added to allow support for serialization/deserialization of binary decls
+#ifdef RV_BINARYDECLS
+template< class type >
+ID_INLINE SerializableBase *idDeclStreamAllocator( SerialInputStream &stream ) {
+	type *ptr = new type(stream);
+
+	return dynamic_cast<SerializableBase *>(ptr);
+}
+#endif
+
 
 class idMaterial;
 class idDeclSkin;
 class idSoundShader;
 
+// RAVEN BEGIN
+// jscott: new decl types
+class rvDeclMatType;
+class rvDeclLipSync;
+class rvDeclPlayback;
+class rvDeclEffect;
+// RAVEN END
+
 class idDeclManager {
 public:
 	virtual					~idDeclManager( void ) {}
 
+	virtual void			SetInsideLoad( bool var ) = 0;
+	virtual bool			GetInsideLoad( void ) = 0;
 	virtual void			Init( void ) = 0;
 	virtual void			Shutdown( void ) = 0;
 	virtual void			Reload( bool force ) = 0;
@@ -234,10 +318,28 @@ public:
 	virtual void			EndLevelLoad() = 0;
 
 							// Registers a new decl type.
+// RAVEN BEGIN
+// jsinger: Added to support serialization/deserialization of binary decls
+#ifdef RV_BINARYDECLS
+	virtual void			RegisterDeclType( const char *typeName, declType_t type, idDecl *(*allocator)( void ), SerializableBase *(*streamAllocator)( SerialInputStream &stream ) ) = 0;
+#else
 	virtual void			RegisterDeclType( const char *typeName, declType_t type, idDecl *(*allocator)( void ) ) = 0;
+#endif
+// jsinger: Added to support loading all decls from a single file
+#ifdef RV_SINGLE_DECL_FILE
+	virtual void			StartLoadingDecls() = 0;
+	virtual void			FinishLoadingDecls() = 0;
+	virtual void			LoadDeclsFromFile() = 0;
+	virtual void			WriteDeclFile() = 0;
+	virtual void			FlushDecls() = 0;
+#endif
+// RAVEN END
 
+// RAVEN BEGIN
+// jscott: for timing
 							// Registers a new folder with decl files.
-	virtual void			RegisterDeclFolder( const char *folder, const char *extension, declType_t defaultType ) = 0;
+	virtual void			RegisterDeclFolderWrapper( const char *folder, const char *extension, declType_t defaultType, bool unique = false, bool norecurse = false ) = 0;
+// RAVEN END
 
 							// Returns a checksum for all loaded decl text.
 	virtual int				GetChecksum( void ) const = 0;
@@ -254,7 +356,11 @@ public:
 							// If makeDefault is true, a default decl of appropriate type will be created
 							// if an explicit one isn't found. If makeDefault is false, NULL will be returned
 							// if the decl wasn't explcitly defined.
-	virtual const idDecl *	FindType( declType_t type, const char *name, bool makeDefault = true ) = 0;
+	virtual const idDecl *	FindType( declType_t type, const char *name, bool makeDefault = true, bool noCaching = false ) = 0;
+
+	virtual const idDecl*	FindDeclWithoutParsing( declType_t type, const char *name, bool makeDefault = true ) = 0;
+
+	virtual void			ReloadFile( const char* filename, bool force ) = 0;
 
 							// Returns the number of decls of the given type.
 	virtual int				GetNumDecls( declType_t type ) = 0;
@@ -272,24 +378,67 @@ public:
 							// the given file used by editors to create a new decls.
 	virtual idDecl *		CreateNewDecl( declType_t type, const char *name, const char *fileName ) = 0;
 
+							// BSM - Added for the material editors rename capabilities
+	virtual bool			RenameDecl( declType_t type, const char* oldName, const char* newName ) = 0;
+
 							// When media files are loaded, a reference line can be printed at a
 							// proper indentation if decl_show is set
-	virtual void			MediaPrint( const char *fmt, ... ) = 0;
+	virtual void			MediaPrint( const char *fmt, ... ) id_attribute((format(printf,2,3))) = 0;
 
 	virtual void			WritePrecacheCommands( idFile *f ) = 0;
 
+// RAVEN BEGIN
+// jscott: precache any guide (template) files
+	virtual void					ParseGuides( void ) = 0;
+	virtual	void					ShutdownGuides( void ) = 0;
+	virtual bool					EvaluateGuide( idStr &name, idLexer *src, idStr &definition ) = 0;
+	virtual bool					EvaluateInlineGuide( idStr &name, idStr &definition ) = 0;
+// RAVEN END
 									// Convenience functions for specific types.
 	virtual	const idMaterial *		FindMaterial( const char *name, bool makeDefault = true ) = 0;
 	virtual const idDeclSkin *		FindSkin( const char *name, bool makeDefault = true ) = 0;
 	virtual const idSoundShader *	FindSound( const char *name, bool makeDefault = true ) = 0;
+// RAVEN BEGIN
+// jscott: for new Raven decls
+	virtual const rvDeclMatType *	FindMaterialType( const char *name, bool makeDefault = true ) = 0;
+	virtual	const rvDeclLipSync *	FindLipSync( const char *name, bool makeDefault = true ) = 0;
+	virtual	const rvDeclPlayback *	FindPlayback( const char *name, bool makeDefault = true ) = 0;
+	virtual	const rvDeclEffect *	FindEffect( const char *name, bool makeDefault = true ) = 0;
+// RAVEN END
 
 	virtual const idMaterial *		MaterialByIndex( int index, bool forceParse = true ) = 0;
 	virtual const idDeclSkin *		SkinByIndex( int index, bool forceParse = true ) = 0;
 	virtual const idSoundShader *	SoundByIndex( int index, bool forceParse = true ) = 0;
+// RAVEN BEGIN
+// jscott: for new Raven decls
+	virtual const rvDeclMatType *	MaterialTypeByIndex( int index, bool forceParse = true ) = 0;
+	virtual const rvDeclLipSync *	LipSyncByIndex( int index, bool forceParse = true ) = 0;
+	virtual	const rvDeclPlayback *	PlaybackByIndex( int index, bool forceParse = true ) = 0;
+	virtual const rvDeclEffect *	EffectByIndex( int index, bool forceParse = true ) = 0;
+
+	virtual void					StartPlaybackRecord( rvDeclPlayback *playback ) = 0;
+	virtual bool					SetPlaybackData( rvDeclPlayback *playback, int now, int control, class rvDeclPlaybackData *pbd ) = 0;
+	virtual bool					GetPlaybackData( const rvDeclPlayback *playback, int control, int now, int last, class rvDeclPlaybackData *pbd ) = 0;
+	virtual bool					FinishPlayback( rvDeclPlayback *playback ) = 0;
+
+	virtual	idStr					GetNewName( declType_t type, const char *base ) = 0;
+	virtual	const char *			GetDeclTypeName( declType_t type ) = 0;
+	virtual size_t					ListDeclSummary( const idCmdArgs &args ) = 0; 
+	virtual void					RemoveDeclFile( const char *file ) = 0;
+// scork: Validation call for detailed error-reporting
+	virtual bool					Validate( declType_t type, int iIndex, idStr &strReportTo ) = 0;
+	virtual idDecl *				AllocateDecl( declType_t type ) = 0;
+
+#if defined(_XENON)
+// mwhitlock: Xenon texture streaming
+	virtual void					SetLightMaterialList(idList<idMaterial*>* materialList) = 0;
+	virtual void					SetEntityMaterialList(idList<idMaterial*>* materialList) = 0;
+	virtual void					PurgeType( declType_t type ) = 0;
+#endif
+// RAVEN END
 };
 
 extern idDeclManager *		declManager;
-
 
 template< declType_t type >
 ID_INLINE void idListDecls_f( const idCmdArgs &args ) {

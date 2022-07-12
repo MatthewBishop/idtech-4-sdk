@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __GAME_AF_H__
 #define __GAME_AF_H__
@@ -36,7 +34,10 @@ public:
 	void					Restore( idRestoreGame *savefile );
 
 	void					SetAnimator( idAnimator *a ) { animator = a; }
-	bool					Load( idEntity *ent, const char *fileName );
+// RAVEN BEGIN
+// ddynerman: purge constraints/joints before loading a new one
+	bool					Load( idEntity *ent, const char *fileName, bool purgeAF = false );
+// RAVEN END
 	bool					IsLoaded( void ) const { return isLoaded && self != NULL; }
 	const char *			GetName( void ) const { return name.c_str(); }
 	void					SetupPose( idEntity *ent, int time );
@@ -66,9 +67,11 @@ public:
 	void					AddBindConstraints( void );
 	void					RemoveBindConstraints( void );
 
+	idPhysics_AF			physicsObj;			// articulated figure physics
+	bool					TestSolid( void ) const;
+
 protected:
 	idStr					name;				// name of the loaded .af file
-	idPhysics_AF			physicsObj;			// articulated figure physics
 	idEntity *				self;				// entity using the animated model
 	idAnimator *			animator;			// animator on entity
 	int						modifiedAnim;		// anim to modify
@@ -89,7 +92,6 @@ protected:
 	bool					LoadBody( const idDeclAF_Body *fb, const idJointMat *joints );
 	bool					LoadConstraint( const idDeclAF_Constraint *fc );
 
-	bool					TestSolid( void ) const;
 };
 
 #endif /* !__GAME_AF_H__ */

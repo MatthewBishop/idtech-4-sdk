@@ -1,8 +1,9 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __GAME_TARGET_H__
 #define __GAME_TARGET_H__
+
+//Used to compare two ammoData structs and see who has more.
+int					CompareAmmoData( const void* ammo1, const void* ammo2);
 
 
 /*
@@ -17,7 +18,7 @@ class idTarget : public idEntity {
 public:
 	CLASS_PROTOTYPE( idTarget );
 };
-
+ 
 
 /*
 ===============================================================================
@@ -248,6 +249,10 @@ public:
 
 private:
 	void				Event_Activate( idEntity *activator );
+// RAVEN BEGIN
+// abahr: fixing issue with EV_Activate not taking NULL ptrs
+	void				Event_PostSpawn();
+// RAVEN END
 };
 
 
@@ -387,6 +392,99 @@ public:
 private:
 	void				Event_Activate( idEntity *activator );
 };
+
+// RAVEN BEGIN
+// bdube: added player database
+/*
+===============================================================================
+
+idTarget_AddDatabaseEntry
+
+===============================================================================
+*/
+
+class rvTarget_AddDatabaseEntry : public idTarget {
+public:
+	CLASS_PROTOTYPE( rvTarget_AddDatabaseEntry );
+
+private:
+	void				Event_Activate( idEntity *activator );
+};
+
+// jshepard: secret area discovery
+
+/*
+===============================================================================
+
+idTarget_SecretArea
+
+===============================================================================
+*/
+
+class rvTarget_SecretArea : public idTarget {
+public:
+	CLASS_PROTOTYPE( rvTarget_SecretArea );
+
+private:
+	void				Event_Activate( idEntity *activator );
+};
+
+/*
+===============================================================================
+
+rvTarget_BossBattle
+
+===============================================================================
+*/
+
+class rvTarget_BossBattle : public idTarget {
+public:
+	CLASS_PROTOTYPE( rvTarget_BossBattle );
+
+private:
+	void				Event_Activate( idEntity *activator );
+	void				Event_SetShieldPercent( float percent );
+	void				Event_SetBossMaxHealth( float f );
+	void				Event_AllowShieldBar( float activate );
+	void				Event_AllowShieldWarningBar( float activate );
+
+};
+
+/*
+===============================================================================
+
+rvTarget_TetherAI
+
+===============================================================================
+*/
+
+class rvTarget_TetherAI : public idTarget {
+public:
+	CLASS_PROTOTYPE( rvTarget_TetherAI );
+
+private:
+	void				Event_Activate( idEntity *activator );
+};
+
+
+/*
+===============================================================================
+
+rvTarget_Nailable
+
+===============================================================================
+*/
+
+class rvTarget_Nailable : public idTarget {
+public:
+	CLASS_PROTOTYPE( rvTarget_Nailable );
+
+private:
+	void				Spawn( void );
+};
+
+
+// RAVEN END
 
 /*
 ===============================================================================
@@ -539,4 +637,68 @@ private:
 };
 
 
+/*
+===============================================================================
+
+rvTarget_LaunchProjectile
+
+===============================================================================
+*/
+
+class rvTarget_LaunchProjectile : public idTarget {
+public:
+	CLASS_PROTOTYPE( rvTarget_LaunchProjectile );
+
+	void				Spawn( void );
+
+private:
+	void				Event_Activate( idEntity *activator );
+	void				Event_LaunchProjectile( idEntity *activator );
+};
+
+/*
+===============================================================================
+
+rvTarget_ExitAreaAlert
+
+===============================================================================
+*/
+
+class rvTarget_ExitAreaAlert : public idTarget {
+public:
+	CLASS_PROTOTYPE( rvTarget_ExitAreaAlert );
+
+private:
+	void				Event_Activate( idEntity *activator );
+};
+
+/*
+===============================================================================
+
+rvTarget_AmmoStash
+
+===============================================================================
+*/
+typedef struct	ammodata_s	{
+
+	int			ammoIndex;
+	idStr		ammoName;
+	int			ammoCount;
+	int			ammoMax;
+	float		percentFull;
+
+} ammodata_t;
+
+#define AMMO_ARRAY_SIZE 10
+
+class rvTarget_AmmoStash : public idTarget {
+public:
+	CLASS_PROTOTYPE( rvTarget_AmmoStash );
+
+	//used to detect which weapons need ammo. The values stored are 0 to 1, with -1 meaning don't check this out.
+	ammodata_t			AmmoArray[ AMMO_ARRAY_SIZE];
+
+private:
+	void				Event_Activate( idEntity *activator );
+};
 #endif /* !__GAME_TARGET_H__ */

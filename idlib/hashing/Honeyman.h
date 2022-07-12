@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __HONEYMAN_H__
 #define __HONEYMAN_H__

@@ -1,16 +1,95 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../idlib/precompiled.h"
 #pragma hdrstop
 
+// RAVEN BEGIN
+// jsinger: attempt to eliminate cross-DLL allocation issues
+#ifdef RV_UNIFIED_ALLOCATOR
+void *(*Memory::mAllocator)(size_t size);
+void (*Memory::mDeallocator)(void *ptr);
+size_t (*Memory::mMSize)(void *ptr);
+bool Memory::sOK = true;
+
+void Memory::Error(const char *errStr)
+{
+	// If you land here it's because you allocated dynamic memory in a DLL
+	// before the Memory system was initialized and this will lead to instability
+	// later.  We can't assert here since that will cause the DLL to fail loading
+	// so set a break point on the BreakHere=0xdeadbeef; line in order to debug
+	int BreakHere;
+	BreakHere=0xdeadbeef;
+
+	if(common != NULL)
+	{
+		// this can't be an error or the game will fail to load the DLL and crash.
+		// While a crash is the desired behavior, a crash without any meaningful
+		// message to the user indicating what went wrong is not desired.
+		common->Warning(errStr);
+	}
+	else
+	{
+		// if common isn't initialized then we set a flag so that we can notify once it
+		// gets initialized
+		sOK = false;	
+	}
+}
+#endif
+// RAVEN END
+#ifndef _RV_MEM_SYS_SUPPORT
+
 #ifndef USE_LIBC_MALLOC
-	#define USE_LIBC_MALLOC		0
+	#ifdef _XBOX
+		#define USE_LIBC_MALLOC		1
+	#else
+// RAVEN BEGIN
+// scork:  changed this to a 1, since 0 will crash Radiant if you BSP large maps ~3 times because of high watermark-mem that never gets freed.
+		#define USE_LIBC_MALLOC		1
+// RAVEN END
+	#endif
 #endif
 
 #ifndef CRASH_ON_STATIC_ALLOCATION
 //	#define CRASH_ON_STATIC_ALLOCATION
 #endif
+
+// RAVEN BEGIN
+// jnewquist: send all allocations through one place on the Xenon
+inline
+void *local_malloc(size_t size)
+{
+#ifndef _XENON
+// RAVEN BEGIN
+// jsinger: attempt to eliminate cross-DLL allocation issues
+	#ifdef RV_UNIFIED_ALLOCATOR
+		return Memory::Allocate(size);
+	#else
+		void *addr = malloc(size);
+		if( !addr && size ) {
+			common->FatalError( "Out of memory" );
+		}
+		return( addr );
+	#endif  // RV_UNIFIED_ALLOCATOR
+// RAVEN END
+#else
+#endif
+}
+
+inline
+void local_free(void *ptr)
+{
+#ifndef _XENON
+// RAVEN BEGIN
+// jsinger: attempt to eliminate cross-DLL allocation issues
+	#ifdef RV_UNIFIED_ALLOCATOR
+		Memory::Free(ptr);
+	#else
+		return free(ptr);
+	#endif  // RV_UNIFIED_ALLOCATOR
+// RAVEN END
+#else
+#endif
+}
+// RAVEN END
 
 //===============================================================
 //
@@ -18,14 +97,136 @@
 //
 //===============================================================
 
+// RAVEN BEGIN
+// amccarthy:  Added space in headers in debug for allocation tag storage
+#ifdef _DEBUG
+#define SMALL_HEADER_SIZE		( (int) ( sizeof( byte ) + sizeof( byte )+ sizeof( byte ) ) )
+#define MEDIUM_HEADER_SIZE		( (int) ( sizeof( mediumHeapEntry_s ) + sizeof( byte )+ sizeof( byte ) ) )
+#define LARGE_HEADER_SIZE		( (int) ( sizeof( dword * ) + sizeof( byte )+ sizeof( byte ) ) )
+
+#define MALLOC_HEADER_SIZE		( (int) ( 11*sizeof( byte ) + sizeof( byte ) + sizeof( dword )))
+#else
 #define SMALL_HEADER_SIZE		( (int) ( sizeof( byte ) + sizeof( byte ) ) )
 #define MEDIUM_HEADER_SIZE		( (int) ( sizeof( mediumHeapEntry_s ) + sizeof( byte ) ) )
 #define LARGE_HEADER_SIZE		( (int) ( sizeof( dword * ) + sizeof( byte ) ) )
+#endif
+// RAVEN END
 
 #define ALIGN_SIZE( bytes )		( ( (bytes) + ALIGN - 1 ) & ~(ALIGN - 1) )
 #define SMALL_ALIGN( bytes )	( ALIGN_SIZE( (bytes) + SMALL_HEADER_SIZE ) - SMALL_HEADER_SIZE )
 #define MEDIUM_SMALLEST_SIZE	( ALIGN_SIZE( 256 ) + ALIGN_SIZE( MEDIUM_HEADER_SIZE ) )
 
+// RAVEN BEGIN
+// amccarthy: Allocation tag tracking and reporting
+#ifdef _DEBUG
+int OutstandingXMallocSize=0;
+int OutstandingXMallocTagSize[MA_MAX];
+int PeakXMallocTagSize[MA_MAX];
+int CurrNumAllocations[MA_MAX];
+
+
+// Descriptions that go with each tag.  When updating the tag enum in Heap.h please 
+// update this list as well.
+// (also update the list in rvHeap.cpp)
+char *TagNames[] = {
+	"none",
+	"New operation",
+	"default",
+	"Lexer",
+	"Parser",
+	"AAS routing",
+	"Class",
+	"Script program",
+	"Collision Model",
+	"CVar",
+	"Decl System",
+	"File System",
+	"Images",
+	"Materials",
+	"Models",
+	"Fonts",
+	"Main renderer",
+	"Vertex data",
+	"Sound",
+	"Window",
+	"Event loop",
+	"Math - Matrices and vectors",
+	"Animation",
+	"Dynamic Blocks",
+	"Strings",
+	"GUI",
+	"Effects",
+	"Entities",
+	"Physics",
+	"AI",
+	"Network",
+	"Not Used"
+};
+
+// jnewquist: Detect when the tag descriptions are out of sync with the enums.
+template<int X>
+class TagTableCheck
+{
+private:
+	TagTableCheck();
+};
+
+template<>
+class TagTableCheck<1>
+{
+};
+
+// An error here means you need to synchronize TagNames and Mem_Alloc_Types_t 
+TagTableCheck<sizeof(TagNames)/sizeof(char*) == MA_MAX> TagTableCheckedHere;
+// An error here means there are too many tags.  No more than 32! 
+TagTableCheck<MA_DO_NOT_USE<32> TagMaxCheckedHere;
+
+void PrintOutstandingMemAlloc()
+{
+	
+	int i;
+	unsigned long totalOutstanding = 0;
+	for (i=0;i<MA_MAX;i++)
+	{
+		if (OutstandingXMallocTagSize[i] || PeakXMallocTagSize[i])
+		{
+			idLib::common->Printf("%-30s peak %9d curr %9d\n",TagNames[i],PeakXMallocTagSize[i],OutstandingXMallocTagSize[i]);
+			totalOutstanding += OutstandingXMallocTagSize[i];
+		}
+	}
+	idLib::common->Printf("Mem_Alloc Outstanding: %d\n",totalOutstanding);
+	
+}
+
+const char *GetMemAllocStats(int tag, int &num, int &size, int &peak)
+{
+	num = CurrNumAllocations[tag];
+	size = OutstandingXMallocTagSize[tag];
+	peak = PeakXMallocTagSize[tag];
+	return TagNames[tag];
+}
+#endif
+
+
+/*
+=================
+Mem_ShowMemAlloc_f
+=================
+*/
+// amccarthy: print out outstanding mem_allocs.
+void Mem_ShowMemAlloc_f( const idCmdArgs &args ) {
+
+#ifdef _DEBUG
+	PrintOutstandingMemAlloc();
+#endif
+}
+
+// jnewquist: memory tag stack for new/delete
+#if defined(_DEBUG) && !defined(ENABLE_INTEL_SMP)
+MemScopedTag* MemScopedTag::mTop = NULL;
+#endif
+
+//RAVEN END
 
 class idHeap {
 
@@ -33,9 +234,15 @@ public:
 					idHeap( void );
 					~idHeap( void );				// frees all associated data
 	void			Init( void );					// initialize
-	void *			Allocate( const dword bytes );	// allocate memory
+//RAVEN BEGIN
+//amccarthy:  Added allocation tag
+	void *			Allocate( const dword bytes, byte tag );	// allocate memory
+//RAVEN END
 	void			Free( void *p );				// free memory
-	void *			Allocate16( const dword bytes );// allocate 16 byte aligned memory
+//RAVEN BEGIN
+//amccarthy:  Added allocation tag
+	void *			Allocate16( const dword bytes, byte tag );// allocate 16 byte aligned memory
+//RAVEN END
 	void			Free16( void *p );				// free 16 byte aligned memory
 	dword			Msize( void *p );				// return size of data block
 	void			Dump( void  );
@@ -103,16 +310,18 @@ private:
 	page_s *		AllocatePage( dword bytes );	// allocate page from the OS
 	void			FreePage( idHeap::page_s *p );	// free an OS allocated page
 
-	void *			SmallAllocate( dword bytes );	// allocate memory (1-255 bytes) from small heap manager
+//RAVEN BEGIN
+//amccarthy:  Added allocation tags
+	void *			SmallAllocate( dword bytes, byte tag );	// allocate memory (1-255 bytes) from small heap manager
 	void			SmallFree( void *ptr );			// free memory allocated by small heap manager
 
-	void *			MediumAllocateFromPage( idHeap::page_s *p, dword sizeNeeded );
-	void *			MediumAllocate( dword bytes );	// allocate memory (256-32768 bytes) from medium heap manager
+	void *			MediumAllocateFromPage( idHeap::page_s *p, dword sizeNeeded, byte tag );
+	void *			MediumAllocate( dword bytes, byte tag );	// allocate memory (256-32768 bytes) from medium heap manager
 	void			MediumFree( void *ptr );		// free memory allocated by medium heap manager
 
-	void *			LargeAllocate( dword bytes );	// allocate large block from OS directly
+	void *			LargeAllocate( dword bytes, byte tag );	// allocate large block from OS directly
 	void			LargeFree( void *ptr );			// free memory allocated by large heap manager
-
+//RAVEN END
 	void			ReleaseSwappedPages( void );
 	void			FreePageReal( idHeap::page_s *p );
 };
@@ -145,6 +354,20 @@ void idHeap::Init () {
 	mediumFirstUsedPage	= NULL;
 
 	c_heapAllocRunningCount = 0;
+
+//RAVEN BEGIN
+//amccarthy:  initalize allocation tracking
+#ifdef _DEBUG
+	OutstandingXMallocSize=0;
+	int i;
+	for (i=0;i<MA_MAX;i++)
+	{
+		OutstandingXMallocTagSize[i] = 0;
+		PeakXMallocTagSize[i] = 0;
+		CurrNumAllocations[i] = 0;
+	}
+#endif
+//RAVEN END
 }
 
 /*
@@ -201,7 +424,10 @@ idHeap::~idHeap( void ) {
 	ReleaseSwappedPages();			
 
 	if ( defragBlock ) {
-		free( defragBlock );
+// RAVEN BEGIN
+// jnewquist: send all allocations through one place on the Xenon
+		local_free( defragBlock );
+// RAVEN END
 	}
 
 	assert( pagesAllocated == 0 );
@@ -219,7 +445,10 @@ void idHeap::AllocDefragBlock( void ) {
 		return;
 	}
 	while( 1 ) {
-		defragBlock = malloc( size );
+// RAVEN BEGIN
+// jnewquist: send all allocations through one place on the Xenon
+		defragBlock = local_malloc( size );
+// RAVEN END
 		if ( defragBlock ) {
 			break;
 		}
@@ -233,22 +462,53 @@ void idHeap::AllocDefragBlock( void ) {
 idHeap::Allocate
 ================
 */
-void *idHeap::Allocate( const dword bytes ) {
+//RAVEN BEGIN
+//amccarthy:  Added allocation tag
+void *idHeap::Allocate( const dword bytes, byte tag ) {
+//RAVEN END
 	if ( !bytes ) {
 		return NULL;
 	}
 	c_heapAllocRunningCount++;
 
 #if USE_LIBC_MALLOC
-	return malloc( bytes );
+
+//RAVEN BEGIN
+//amccarthy:  Added allocation tags for malloc
+#ifdef _DEBUG
+	byte *p = (byte *)local_malloc( bytes + MALLOC_HEADER_SIZE );
+	OutstandingXMallocSize += bytes;
+	assert( tag > 0 && tag < MA_MAX);
+	OutstandingXMallocTagSize[tag] += bytes;
+	if (OutstandingXMallocTagSize[tag] > PeakXMallocTagSize[tag])
+	{
+		PeakXMallocTagSize[tag] = OutstandingXMallocTagSize[tag];
+	}
+	CurrNumAllocations[tag]++;
+	dword *d = (dword *)p;
+	d[0] = bytes;
+	byte *ret = p+MALLOC_HEADER_SIZE;
+	ret[-1] = tag;
+	return ret;
 #else
+	return local_malloc( bytes);
+#endif
+
+//RAVEN END
+
+	
+#else
+//RAVEN BEGIN
+//amccarthy:  Added allocation tag
 	if ( !(bytes & ~255) ) {
-		return SmallAllocate( bytes );
+		return SmallAllocate( bytes, tag );
 	}
 	if ( !(bytes & ~32767) ) {
-		return MediumAllocate( bytes );
+		return MediumAllocate( bytes, tag );
 	}
-	return LargeAllocate( bytes );
+	return LargeAllocate( bytes, tag );
+	
+//RAVEN END
 #endif
 }
 
@@ -264,7 +524,21 @@ void idHeap::Free( void *p ) {
 	c_heapAllocRunningCount--;
 
 #if USE_LIBC_MALLOC
-	free( p );
+//RAVEN BEGIN
+//amccarthy:  allocation tracking
+#ifdef _DEBUG
+	byte *ptr = ((byte *)p) - MALLOC_HEADER_SIZE;
+	dword size = ((dword*)(ptr))[0];
+	byte tag = ((byte *)(p))[-1];
+	OutstandingXMallocSize -= size;
+	assert( tag > 0 && tag < MA_MAX);
+	OutstandingXMallocTagSize[tag] -= size;
+	CurrNumAllocations[tag]--;
+	local_free( ptr );
+#else
+	local_free( p );
+#endif
+//RAVEN END
 #else
 	switch( ((byte *)(p))[-1] ) {
 		case SMALL_ALLOC: {
@@ -284,6 +558,7 @@ void idHeap::Free( void *p ) {
 			break;
 		}
 	}
+	
 #endif
 }
 
@@ -292,28 +567,66 @@ void idHeap::Free( void *p ) {
 idHeap::Allocate16
 ================
 */
-void *idHeap::Allocate16( const dword bytes ) {
+//RAVEN BEGIN
+//amccarthy:  Added allocation tag
+void *idHeap::Allocate16( const dword bytes, byte tag ) {
+//RAVEN END
 	byte *ptr, *alignedPtr;
 
-	ptr = (byte *) malloc( bytes + 16 + 4 );
+//RAVEN BEGIN
+//amccarthy: Added allocation tag
+#ifdef  _DEBUG
+	ptr = (byte *) Allocate(bytes+16, tag);
+	alignedPtr = (byte *) ( ( (int) ptr ) + 15 & ~15 );
+	int padSize = alignedPtr - ptr;
+	if ( padSize == 0 ) {
+		alignedPtr += 16;
+		padSize += 16;
+	}
+	*((byte *)(alignedPtr - 1)) = (byte) padSize;
+
+	assert( ( unsigned int )alignedPtr < 0xff000000 );
+
+	return (void *) alignedPtr;
+#else
+//RAVEN END
+// RAVEN BEGIN
+// jnewquist: send all allocations through one place on the Xenon
+	ptr = (byte *) local_malloc( bytes + 16 + 4 );
+// RAVEN END
 	if ( !ptr ) {
 		if ( defragBlock ) {
 			idLib::common->Printf( "Freeing defragBlock on alloc of %i.\n", bytes );
-			free( defragBlock );
+// RAVEN BEGIN
+// jnewquist: send all allocations through one place on the Xenon
+			local_free( defragBlock );
+// RAVEN END
 			defragBlock = NULL;
-			ptr = (byte *) malloc( bytes + 16 + 4 );			
+// RAVEN BEGIN
+// jnewquist: send all allocations through one place on the Xenon
+			ptr = (byte *) local_malloc( bytes + 16 + 4 );			
+// RAVEN END
 			AllocDefragBlock();
 		}
 		if ( !ptr ) {
 			common->FatalError( "malloc failure for %i", bytes );
 		}
 	}
+
 	alignedPtr = (byte *) ( ( (int) ptr ) + 15 & ~15 );
-	if ( alignedPtr - ptr < 4 ) {
-		alignedPtr += 16;
-	}
-	*((int *)(alignedPtr - 4)) = (int) ptr;
-	return (void *) alignedPtr;
+  	if ( alignedPtr - ptr < 4 ) {
+   		alignedPtr += 16;
+
+   	}
+  	*((int *)(alignedPtr - 4)) = (int) ptr;
+   	assert( ( unsigned int )alignedPtr < 0xff000000 );
+   	return (void *) alignedPtr;
+
+//RAVEN BEGIN
+//amccarthy: allocation tracking added for debug xbox only.
+#endif
+//RAVEN END
+
 }
 
 /*
@@ -322,7 +635,17 @@ idHeap::Free16
 ================
 */
 void idHeap::Free16( void *p ) {
-	free( (void *) *((int *) (( (byte *) p ) - 4)) );
+//RAVEN BEGIN
+//amccarthy: allocation tag
+#ifdef _DEBUG
+	byte* ptr = (byte*)p;
+	int padSize = *(ptr-1);
+	ptr -= padSize;
+	Free( ptr );
+#else
+	local_free( (void *) *((int *) (( (byte *) p ) - 4)) );
+#endif
+//RAVEN END
 }
 
 /*
@@ -342,8 +665,25 @@ dword idHeap::Msize( void *p ) {
 	}
 
 #if USE_LIBC_MALLOC
-	#ifdef _WIN32
-		return _msize( p );
+	#ifdef _WINDOWS
+//RAVEN BEGIN
+//amccarthy:  allocation tracking
+		#ifdef _DEBUG
+			byte *ptr = ((byte *)p) - MALLOC_HEADER_SIZE;
+// jsinger: attempt to eliminate cross-DLL allocation issues
+			#ifdef RV_UNIFIED_ALLOCATOR
+						return Memory::MSize(ptr);
+			#else
+						return _msize(ptr);
+			#endif  // RV_UNIFIED_ALLOCATOR
+		#else
+			#ifdef RV_UNIFIED_ALLOCATOR
+						return Memory::MSize(p);
+			#else
+						return _msize(p);
+			#endif  // RV_UNIFIED_ALLOCATOR
+		#endif
+//RAVEN END
 	#else
 		return 0;
 	#endif
@@ -410,7 +750,10 @@ idHeap::FreePageReal
 */
 void idHeap::FreePageReal( idHeap::page_s *p ) {
 	assert( p );
-	::free( p );
+// RAVEN BEGIN
+// jnewquist: send all allocations through one place on the Xenon
+	::local_free( p );
+// RAVEN END
 }
 
 /*
@@ -450,13 +793,22 @@ idHeap::page_s* idHeap::AllocatePage( dword bytes ) {
 
 		size = bytes + sizeof(idHeap::page_s);
 
-		p = (idHeap::page_s *) ::malloc( size + ALIGN - 1 );
+// RAVEN BEGIN
+// jnewquist: send all allocations through one place on the Xenon
+		p = (idHeap::page_s *) ::local_malloc( size + ALIGN - 1 );
+// RAVEN END
 		if ( !p ) {
 			if ( defragBlock ) {
 				idLib::common->Printf( "Freeing defragBlock on alloc of %i.\n", size + ALIGN - 1 );
-				free( defragBlock );
+// RAVEN BEGIN
+// jnewquist: send all allocations through one place on the Xenon
+				local_free( defragBlock );
+// RAVEN END
 				defragBlock = NULL;
-				p = (idHeap::page_s *) ::malloc( size + ALIGN - 1 );			
+// RAVEN BEGIN
+// jnewquist: send all allocations through one place on the Xenon
+				p = (idHeap::page_s *) ::local_malloc( size + ALIGN - 1 );			
+// RAVEN END
 				AllocDefragBlock();
 			}
 			if ( !p ) {
@@ -515,7 +867,10 @@ idHeap::SmallAllocate
   returns pointer to allocated memory
 ================
 */
-void *idHeap::SmallAllocate( dword bytes ) {
+//RAVEN BEGIN
+//amccarthy:  Added allocation tag
+void *idHeap::SmallAllocate( dword bytes, byte tag ) {
+//RAVEN END
 	// we need the at least sizeof( dword ) bytes for the free list
 	if ( bytes < sizeof( dword ) ) {
 		bytes = sizeof( dword );
@@ -527,7 +882,26 @@ void *idHeap::SmallAllocate( dword bytes ) {
 	byte *smallBlock = (byte *)(smallFirstFree[bytes / ALIGN]);
 	if ( smallBlock ) {
 		dword *link = (dword *)(smallBlock + SMALL_HEADER_SIZE);
-		smallBlock[1] = SMALL_ALLOC;					// allocation identifier
+//RAVEN BEGIN
+//amccarthy:  Added allocation tag
+#ifdef _DEBUG
+		OutstandingXMallocSize += smallBlock[0];
+		assert( tag > 0 && tag < MA_MAX);
+		OutstandingXMallocTagSize[tag] += smallBlock[0];
+		if (OutstandingXMallocTagSize[tag] > PeakXMallocTagSize[tag])
+		{
+			PeakXMallocTagSize[tag] = OutstandingXMallocTagSize[tag];
+		}
+		CurrNumAllocations[tag]++;
+		smallBlock[1] = tag;
+		smallBlock[2] = SMALL_ALLOC;		// allocation identifier
+
+#else
+		
+		smallBlock[1] = SMALL_ALLOC;		// allocation identifier
+#endif
+		
+//RAVEN END
 		smallFirstFree[bytes / ALIGN] = (void *)(*link);
 		return (void *)(link);
 	}
@@ -548,7 +922,25 @@ void *idHeap::SmallAllocate( dword bytes ) {
 
 	smallBlock			= ((byte *)smallCurPage->data) + smallCurPageOffset;
 	smallBlock[0]		= (byte)(bytes / ALIGN);		// write # of bytes/ALIGN
-	smallBlock[1]		= SMALL_ALLOC;					// allocation identifier
+//RAVEN BEGIN
+//amccarthy:  Added allocation tag
+#ifdef _DEBUG
+		OutstandingXMallocSize += smallBlock[0];
+		assert( tag > 0 && tag < MA_MAX);
+		OutstandingXMallocTagSize[tag] += smallBlock[0];
+		if (OutstandingXMallocTagSize[tag] > PeakXMallocTagSize[tag])
+		{
+			PeakXMallocTagSize[tag] = OutstandingXMallocTagSize[tag];
+		}
+		CurrNumAllocations[tag]++;
+		smallBlock[1] = tag;
+		smallBlock[2] = SMALL_ALLOC;		// allocation identifier
+
+#else
+		
+		smallBlock[1] = SMALL_ALLOC;		// allocation identifier
+#endif
+//RAVEN END
 	smallCurPageOffset  += bytes + SMALL_HEADER_SIZE;	// increase the offset on the current page
 	return ( smallBlock + SMALL_HEADER_SIZE );			// skip the first two bytes
 }
@@ -563,6 +955,18 @@ idHeap::SmallFree
 */
 void idHeap::SmallFree( void *ptr ) {
 	((byte *)(ptr))[-1] = INVALID_ALLOC;
+
+//RAVEN BEGIN
+//amccarthy:  allocation tracking
+#ifdef _DEBUG
+	byte tag = ((byte *)(ptr))[-2];
+	byte size = ((byte *)(ptr))[-3];
+	OutstandingXMallocSize -= size;
+	assert( tag > 0 && tag < MA_MAX);
+	OutstandingXMallocTagSize[tag] -= size;
+	CurrNumAllocations[tag]--;
+#endif
+//RAVEN END
 
 	byte *d = ( (byte *)ptr ) - SMALL_HEADER_SIZE;
 	dword *dt = (dword *)ptr;
@@ -597,7 +1001,10 @@ idHeap::MediumAllocateFromPage
   returns pointer to allocated memory
 ================
 */
-void *idHeap::MediumAllocateFromPage( idHeap::page_s *p, dword sizeNeeded ) {
+//RAVEN BEGIN
+//amccarthy:  Added allocation tag
+void *idHeap::MediumAllocateFromPage( idHeap::page_s *p, dword sizeNeeded, byte tag ) {
+//RAVEN END
 
 	mediumHeapEntry_s	*best,*nw = NULL;
 	byte				*ret;
@@ -646,6 +1053,20 @@ void *idHeap::MediumAllocateFromPage( idHeap::page_s *p, dword sizeNeeded ) {
 	}
 
 	ret		= (byte *)(nw) + ALIGN_SIZE( MEDIUM_HEADER_SIZE );
+//RAVEN BEGIN
+//amccarthy:  Added allocation tag
+#ifdef _DEBUG
+	OutstandingXMallocSize += nw->size;
+	assert( tag > 0 && tag < MA_MAX);
+	OutstandingXMallocTagSize[tag] += nw->size;
+	if (OutstandingXMallocTagSize[tag] > PeakXMallocTagSize[tag])
+	{
+		PeakXMallocTagSize[tag] = OutstandingXMallocTagSize[tag];
+	}
+	CurrNumAllocations[tag]++;
+	ret[-2] = tag;
+#endif
+//RAVEN END
 	ret[-1] = MEDIUM_ALLOC;		// allocation identifier
 
 	return (void *)(ret);
@@ -660,7 +1081,10 @@ idHeap::MediumAllocate
   returns pointer to allocated memory
 ================
 */
-void *idHeap::MediumAllocate( dword bytes ) {
+//RAVEN BEGIN
+//amccarthy:  Added allocation tag
+void *idHeap::MediumAllocate( dword bytes, byte tag ) {
+//RAVEN END
 	idHeap::page_s		*p;
 	void				*data;
 
@@ -704,7 +1128,10 @@ void *idHeap::MediumAllocate( dword bytes ) {
 		e->freeBlock	= 1;
 	}
 
-	data = MediumAllocateFromPage( p, sizeNeeded );		// allocate data from page
+//RAVEN BEGIN
+//amccarthy:  Added allocation tag
+	data = MediumAllocateFromPage( p, sizeNeeded, tag );		// allocate data from page
+//RAVEN END
 
     // if the page can no longer serve memory, move it away from free list
 	// (so that it won't slow down the later alloc queries)
@@ -775,6 +1202,18 @@ void idHeap::MediumFree( void *ptr ) {
 
 	assert( e->size );
 	assert( e->freeBlock == 0 );
+
+//RAVEN BEGIN
+//amccarthy:  allocation tracking
+#ifdef _DEBUG
+	byte tag = ((byte *)(ptr))[-2];
+	dword size = e->size;
+	OutstandingXMallocSize -= size;
+	assert( tag > 0 && tag < MA_MAX);
+	OutstandingXMallocTagSize[tag] -= size;
+	CurrNumAllocations[tag]--;
+#endif
+//RAVEN END
 
 	mediumHeapEntry_s *prev = e->prev;
 
@@ -894,7 +1333,10 @@ idHeap::LargeAllocate
   returns pointer to allocated memory
 ================
 */
-void *idHeap::LargeAllocate( dword bytes ) {
+//RAVEN BEGIN
+//amccarthy:  Added allocation tag
+void *idHeap::LargeAllocate( dword bytes, byte tag ) {
+//RAVEN END
 	idHeap::page_s *p = AllocatePage( bytes + ALIGN_SIZE( LARGE_HEADER_SIZE ) );
 
 	assert( p );
@@ -906,6 +1348,20 @@ void *idHeap::LargeAllocate( dword bytes ) {
 	byte *	d	= (byte*)(p->data) + ALIGN_SIZE( LARGE_HEADER_SIZE );
 	dword *	dw	= (dword*)(d - ALIGN_SIZE( LARGE_HEADER_SIZE ));
 	dw[0]		= (dword)p;				// write pointer back to page table
+//RAVEN BEGIN
+//amccarthy:  Added allocation tag
+#ifdef _DEBUG
+	OutstandingXMallocSize += p->dataSize;
+	assert( tag > 0 && tag < MA_MAX);
+	OutstandingXMallocTagSize[tag] += p->dataSize;
+	if (OutstandingXMallocTagSize[tag] > PeakXMallocTagSize[tag])
+	{
+		PeakXMallocTagSize[tag] = OutstandingXMallocTagSize[tag];
+	}
+	CurrNumAllocations[tag]++;
+	d[-2]		= tag;
+#endif
+//RAVEN END
 	d[-1]		= LARGE_ALLOC;			// allocation identifier
 
 	// link to 'large used page list'
@@ -934,6 +1390,18 @@ void idHeap::LargeFree( void *ptr) {
 
 	// get page pointer
 	pg = (idHeap::page_s *)(*((dword *)(((byte *)ptr) - ALIGN_SIZE( LARGE_HEADER_SIZE ))));
+
+	//RAVEN BEGIN
+//amccarthy:  allocation tracking
+#ifdef _DEBUG
+	byte tag = ((byte *)(ptr))[-2];
+	dword size = pg->dataSize;
+	OutstandingXMallocSize -= size;
+	assert( tag > 0 && tag < MA_MAX);
+	OutstandingXMallocTagSize[tag] -= size;
+	CurrNumAllocations[tag]--;
+#endif
+//RAVEN END
 
 	// unlink from doubly linked list
 	if ( pg->prev ) {
@@ -1039,7 +1507,9 @@ void Mem_UpdateFreeStats( int size ) {
 Mem_Alloc
 ==================
 */
-void *Mem_Alloc( const int size ) {
+// RAVEN BEGIN
+// amccarthy: Added allocation tag
+void *Mem_Alloc( const int size, byte tag ) {
 	if ( !size ) {
 		return NULL;
 	}
@@ -1047,12 +1517,15 @@ void *Mem_Alloc( const int size ) {
 #ifdef CRASH_ON_STATIC_ALLOCATION
 		*((int*)0x0) = 1;
 #endif
-		return malloc( size );
+// jnewquist: send all allocations through one place on the Xenon
+		return local_malloc( size );
 	}
-	void *mem = mem_heap->Allocate( size );
+// amccarthy: Added allocation tag
+	void *mem = mem_heap->Allocate( size, tag );
 	Mem_UpdateAllocStats( mem_heap->Msize( mem ) );
 	return mem;
 }
+// RAVEN END
 
 /*
 ==================
@@ -1067,7 +1540,10 @@ void Mem_Free( void *ptr ) {
 #ifdef CRASH_ON_STATIC_ALLOCATION
 		*((int*)0x0) = 1;
 #endif
-		free( ptr );
+// RAVEN BEGIN
+// jnewquist: send all allocations through one place on the Xenon
+		local_free( ptr );
+// RAVEN END
 		return;
 	}
 	Mem_UpdateFreeStats( mem_heap->Msize( ptr ) );
@@ -1079,7 +1555,9 @@ void Mem_Free( void *ptr ) {
 Mem_Alloc16
 ==================
 */
-void *Mem_Alloc16( const int size ) {
+// RAVEN BEGIN
+// amccarthy: Added allocation tag
+void *Mem_Alloc16( const int size, byte tag ) {
 	if ( !size ) {
 		return NULL;
 	}
@@ -1087,13 +1565,17 @@ void *Mem_Alloc16( const int size ) {
 #ifdef CRASH_ON_STATIC_ALLOCATION
 		*((int*)0x0) = 1;
 #endif
-		return malloc( size );
+// jnewquist: send all allocations through one place on the Xenon
+		return local_malloc( size );
 	}
-	void *mem = mem_heap->Allocate16( size );
+
+// amccarthy: Added allocation tag
+	void *mem = mem_heap->Allocate16( size, tag );
 	// make sure the memory is 16 byte aligned
 	assert( ( ((int)mem) & 15) == 0 );
 	return mem;
 }
+// RAVEN END
 
 /*
 ==================
@@ -1108,7 +1590,10 @@ void Mem_Free16( void *ptr ) {
 #ifdef CRASH_ON_STATIC_ALLOCATION
 		*((int*)0x0) = 1;
 #endif
-		free( ptr );
+// RAVEN BEGIN
+// jnewquist: send all allocations through one place on the Xenon
+		local_free( ptr );
+// RAVEN END
 		return;
 	}
 	// make sure the memory is 16 byte aligned
@@ -1121,8 +1606,11 @@ void Mem_Free16( void *ptr ) {
 Mem_ClearedAlloc
 ==================
 */
-void *Mem_ClearedAlloc( const int size ) {
-	void *mem = Mem_Alloc( size );
+// RAVEN BEGIN
+// amccarthy: Added allocation tag
+void *Mem_ClearedAlloc( const int size, byte tag ) {
+	void *mem = Mem_Alloc( size, tag );
+// RAVEN END
 	SIMDProcessor->Memset( mem, 0, size );
 	return mem;
 }
@@ -1143,8 +1631,11 @@ Mem_CopyString
 */
 char *Mem_CopyString( const char *in ) {
 	char	*out;
-	
-	out = (char *)Mem_Alloc( strlen(in) + 1 );
+
+// RAVEN BEGIN
+// amccarthy: Added allocation tag
+	out = (char *)Mem_Alloc( strlen(in) + 1, MA_STRING );
+// RAVEN END
 	strcpy( out, in );
 	return out;
 }
@@ -1171,6 +1662,10 @@ Mem_Init
 ==================
 */
 void Mem_Init( void ) {
+// RAVEN BEGIN
+// jnewquist: Tag scope and callees to track allocations using "new".
+	MEM_SCOPED_TAG(tag,MA_DEFAULT);
+// RAVEN END
 	mem_heap = new idHeap;
 	Mem_ClearFrameStats();
 }
@@ -1207,16 +1702,20 @@ void Mem_EnableLeakTest( const char *name ) {
 
 #define MAX_CALLSTACK_DEPTH		6
 
+// RAVEN BEGIN
+// jnewquist: Add a signature to avoid misinterpreting an early allocation
 // size of this struct must be a multiple of 16 bytes
 typedef struct debugMemory_s {
+	unsigned short			signature;
+	unsigned short			lineNumber;
 	const char *			fileName;
-	int						lineNumber;
 	int						frameNumber;
 	int						size;
 	address_t				callStack[MAX_CALLSTACK_DEPTH];
 	struct debugMemory_s *	prev;
 	struct debugMemory_s *	next;
 } debugMemory_t;
+// RAVEN END
 
 static debugMemory_t *	mem_debugMemory = NULL;
 static char				mem_leakName[256] = "";
@@ -1300,6 +1799,8 @@ void Mem_Dump( const char *fileName ) {
 	fclose( f );
 }
 
+
+
 /*
 ==================
 Mem_Dump_f
@@ -1322,6 +1823,7 @@ void Mem_Dump_f( const idCmdArgs &args ) {
 Mem_DumpCompressed
 ==================
 */
+
 typedef struct allocInfo_s {
 	const char *			fileName;
 	int						lineNumber;
@@ -1343,11 +1845,14 @@ void Mem_DumpCompressed( const char *fileName, memorySortType_t memSort, int sor
 	debugMemory_t *b;
 	allocInfo_t *a, *nexta, *allocInfo = NULL, *sortedAllocInfo = NULL, *prevSorted, *nextSorted;
 	idStr module, funcName;
-	FILE *f;
 
 	// build list with memory allocations
 	totalSize = 0;
 	numBlocks = 0;
+// RAVEN BEGIN
+	nextSorted = NULL;
+// RAVEN END
+
 	for ( b = mem_debugMemory; b; b = b->next ) {
 
 		if ( numFrames && b->frameNumber < idLib::frameNumber - numFrames ) {
@@ -1362,6 +1867,9 @@ void Mem_DumpCompressed( const char *fileName, memorySortType_t memSort, int sor
 			if ( a->lineNumber != b->lineNumber ) {
 				continue;
 			}
+// RAVEN BEGIN
+// dluetscher: removed the call stack info for better consolidation of info and speed of dump
+#ifndef _XENON
 			for ( j = 0; j < MAX_CALLSTACK_DEPTH; j++ ) {
 				if ( a->callStack[j] != b->callStack[j] ) {
 					break;
@@ -1370,6 +1878,8 @@ void Mem_DumpCompressed( const char *fileName, memorySortType_t memSort, int sor
 			if ( j < MAX_CALLSTACK_DEPTH ) {
 				continue;
 			}
+#endif
+// RAVEN END
 			if ( idStr::Cmp( a->fileName, b->fileName ) != 0 ) {
 				continue;
 			}
@@ -1380,7 +1890,10 @@ void Mem_DumpCompressed( const char *fileName, memorySortType_t memSort, int sor
 
 		// if this is an allocation from a new source location
 		if ( !a ) {
-			a = (allocInfo_t *) ::malloc( sizeof( allocInfo_t ) );
+// RAVEN BEGIN
+// jnewquist: send all allocations through one place on the Xenon
+			a = (allocInfo_t *) ::local_malloc( sizeof( allocInfo_t ) );
+// RAVEN END
 			a->fileName = b->fileName;
 			a->lineNumber = b->lineNumber;
 			a->size = b->size;
@@ -1451,6 +1964,30 @@ void Mem_DumpCompressed( const char *fileName, memorySortType_t memSort, int sor
 		}
 	}
 
+// RAVEN BEGIN
+// dluetscher: changed xenon version to output anything above 1K to the console 
+#ifdef _XENON
+	// write list to debug output and console
+	for ( a = sortedAllocInfo; a; a = nexta ) {
+		nexta = a->next;
+		if ( (a->size >> 10) > 0 ) {
+
+			idLib::common->Printf("size: %6d KB, allocs: %5d: %s, line: %d, call stack: %s\r\n",
+						(a->size >> 10), a->numAllocs, Mem_CleanupFileName(a->fileName),
+								a->lineNumber, idLib::sys->GetCallStackStr( a->callStack, MAX_CALLSTACK_DEPTH ) );
+
+		}
+		::local_free( a );
+	}
+
+	idLib::sys->ShutdownSymbols();
+
+	idLib::common->Printf("%8d total memory blocks allocated\r\n", numBlocks );
+	idLib::common->Printf("%8d KB memory allocated\r\n", ( totalSize >> 10 ) );
+#else
+// RAVEN END
+	FILE *f;
+
 	f = fopen( fileName, "wb" );
 	if ( !f ) {
 		return;
@@ -1462,7 +1999,10 @@ void Mem_DumpCompressed( const char *fileName, memorySortType_t memSort, int sor
 		fprintf( f, "size: %6d KB, allocs: %5d: %s, line: %d, call stack: %s\r\n",
 					(a->size >> 10), a->numAllocs, Mem_CleanupFileName(a->fileName),
 							a->lineNumber, idLib::sys->GetCallStackStr( a->callStack, MAX_CALLSTACK_DEPTH ) );
-		::free( a );
+// RAVEN BEGIN
+// jnewquist: send all allocations through one place on the Xenon
+		::local_free( a );
+// RAVEN END
 	}
 
 	idLib::sys->ShutdownSymbols();
@@ -1471,6 +2011,7 @@ void Mem_DumpCompressed( const char *fileName, memorySortType_t memSort, int sor
 	fprintf( f, "%8d KB memory allocated\r\n", ( totalSize >> 10 ) );
 
 	fclose( f );
+#endif
 }
 
 /*
@@ -1535,7 +2076,9 @@ void Mem_DumpCompressed_f( const idCmdArgs &args ) {
 Mem_AllocDebugMemory
 ==================
 */
-void *Mem_AllocDebugMemory( const int size, const char *fileName, const int lineNumber, const bool align16 ) {
+// RAVEN BEGIN
+void *Mem_AllocDebugMemory( const int size, const char *fileName, const int lineNumber, const bool align16, byte tag ) {
+// RAVEN END
 	void *p;
 	debugMemory_t *m;
 
@@ -1548,19 +2091,28 @@ void *Mem_AllocDebugMemory( const int size, const char *fileName, const int line
 		*((int*)0x0) = 1;
 #endif
 		// NOTE: set a breakpoint here to find memory allocations before mem_heap is initialized
-		return malloc( size );
+// RAVEN BEGIN
+// jnewquist: send all allocations through one place on the Xenon
+		return local_malloc( size );
+// RAVEN END
 	}
 
 	if ( align16 ) {
-		p = mem_heap->Allocate16( size + sizeof( debugMemory_t ) );
+// RAVEN BEGIN
+		p = mem_heap->Allocate16( size + sizeof( debugMemory_t ), tag );
 	}
 	else {
-		p = mem_heap->Allocate( size + sizeof( debugMemory_t ) );
+		p = mem_heap->Allocate( size + sizeof( debugMemory_t ), tag );
+// RAVEN END
 	}
 
 	Mem_UpdateAllocStats( size );
 
 	m = (debugMemory_t *) p;
+// RAVEN BEGIN
+// jnewquist: Add a signature to avoid misinterpreting an early allocation
+	m->signature = 0xf00d;
+// RAVEN END
 	m->fileName = fileName;
 	m->lineNumber = lineNumber;
 	m->frameNumber = idLib::frameNumber;
@@ -1588,17 +2140,21 @@ void Mem_FreeDebugMemory( void *p, const char *fileName, const int lineNumber, c
 		return;
 	}
 
-	if ( !mem_heap ) {
+// RAVEN BEGIN
+// jnewquist: Add a signature to avoid misinterpreting an early allocation
+	m = (debugMemory_t *) ( ( (byte *) p ) - sizeof( debugMemory_t ) );
+
+	if ( !mem_heap || m->signature != 0xf00d ) {
 #ifdef CRASH_ON_STATIC_ALLOCATION
 		*((int*)0x0) = 1;
 #endif
 		// NOTE: set a breakpoint here to find memory being freed before mem_heap is initialized
-		free( p );
+// jnewquist: send all allocations through one place on the Xenon
+		local_free( p );
 		return;
 	}
 
-	m = (debugMemory_t *) ( ( (byte *) p ) - sizeof( debugMemory_t ) );
-
+// RAVEN END
 	if ( m->size < 0 ) {
 		idLib::common->FatalError( "memory freed twice, first from %s, now from %s", idLib::sys->GetCallStackStr( m->callStack, MAX_CALLSTACK_DEPTH ), idLib::sys->GetCallStackCurStr( MAX_CALLSTACK_DEPTH ) );
 	}
@@ -1634,11 +2190,11 @@ void Mem_FreeDebugMemory( void *p, const char *fileName, const int lineNumber, c
 Mem_Alloc
 ==================
 */
-void *Mem_Alloc( const int size, const char *fileName, const int lineNumber ) {
+void *Mem_Alloc( const int size, const char *fileName, const int lineNumber, byte tag ) {
 	if ( !size ) {
 		return NULL;
 	}
-	return Mem_AllocDebugMemory( size, fileName, lineNumber, false );
+	return Mem_AllocDebugMemory( size, fileName, lineNumber, false, tag );
 }
 
 /*
@@ -1658,11 +2214,11 @@ void Mem_Free( void *ptr, const char *fileName, const int lineNumber ) {
 Mem_Alloc16
 ==================
 */
-void *Mem_Alloc16( const int size, const char *fileName, const int lineNumber ) {
+void *Mem_Alloc16( const int size, const char *fileName, const int lineNumber, byte tag ) {
 	if ( !size ) {
 		return NULL;
 	}
-	void *mem = Mem_AllocDebugMemory( size, fileName, lineNumber, true );
+	void *mem = Mem_AllocDebugMemory( size, fileName, lineNumber, true, tag );
 	// make sure the memory is 16 byte aligned
 	assert( ( ((int)mem) & 15) == 0 );
 	return mem;
@@ -1687,8 +2243,8 @@ void Mem_Free16( void *ptr, const char *fileName, const int lineNumber ) {
 Mem_ClearedAlloc
 ==================
 */
-void *Mem_ClearedAlloc( const int size, const char *fileName, const int lineNumber ) {
-	void *mem = Mem_Alloc( size, fileName, lineNumber );
+void *Mem_ClearedAlloc( const int size, const char *fileName, const int lineNumber, byte tag ) {
+	void *mem = Mem_Alloc( size, fileName, lineNumber, tag );
 	SIMDProcessor->Memset( mem, 0, size );
 	return mem;
 }
@@ -1742,4 +2298,18 @@ void Mem_EnableLeakTest( const char *name ) {
 	idStr::Copynz( mem_leakName, name, sizeof( mem_leakName ) );
 }
 
+// RAVEN BEGIN
+// jnewquist: Add Mem_Size to query memory allocation size
+/*
+==================
+Mem_Size
+==================
+*/
+int	Mem_Size( void *ptr ) {
+	return mem_heap->Msize(ptr);
+}
+// RAVEN END
+
 #endif /* !ID_DEBUG_MEMORY */
+
+#endif	// #ifndef _RV_MEM_SYS_SUPPORT

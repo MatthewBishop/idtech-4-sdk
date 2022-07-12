@@ -1,6 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
-
 #ifndef __LIB_H__
 #define __LIB_H__
 
@@ -38,6 +35,62 @@ public:
 /*
 ===============================================================================
 
+	Asserts and Exceptions
+
+===============================================================================
+*/
+
+/*
+The verify(x) macro just returns true or false in release mode, but breaks
+in debug mode.  That way the code can take a non-fatal path in release mode
+if something that's not supposed to happen happens.
+
+if ( !verify(game) ) {
+	// This should never happen!
+	return;
+}
+*/
+
+#ifdef _DEBUG
+void AssertFailed( const char *file, int line, const char *expression );
+#undef assert
+#define assert( x )		if ( x ) { } else AssertFailed( __FILE__, __LINE__, #x )
+#define verify( x )		( ( x ) ? true : ( AssertFailed( __FILE__, __LINE__, #x ), false ) )
+#else
+#define verify( x )		( ( x ) ? true : false )
+#endif
+
+#define assert_8_byte_aligned( pointer )		assert( (((UINT_PTR)(pointer))&7) == 0 );
+#define assert_16_byte_aligned( pointer )		assert( (((UINT_PTR)(pointer))&15) == 0 );
+#define assert_32_byte_aligned( pointer )		assert( (((UINT_PTR)(pointer))&31) == 0 );
+
+#ifndef __TYPE_INFO_GEN__
+#define compile_time_assert( x )				{ typedef int compile_time_assert_failed[(x) ? 1 : -1]; }
+#define file_scoped_compile_time_assert( x )	extern int compile_time_assert_failed[(x) ? 1 : -1]
+#define assert_sizeof( type, size )				file_scoped_compile_time_assert( sizeof( type ) == size )
+#define assert_offsetof( type, field, offset )	file_scoped_compile_time_assert( offsetof( type, field ) == offset )
+#define assert_sizeof_8_byte_multiple( type )	file_scoped_compile_time_assert( ( sizeof( type ) & 8 ) == 0 )
+#define assert_sizeof_16_byte_multiple( type )	file_scoped_compile_time_assert( ( sizeof( type ) & 15 ) == 0 )
+#define assert_sizeof_32_byte_multiple( type )	file_scoped_compile_time_assert( ( sizeof( type ) & 31 ) == 0 )
+#else
+#define compile_time_assert( x )
+#define file_scoped_compile_time_assert( x )
+#define assert_sizeof( type, size )
+#define assert_offsetof( type, field, offset )
+#define assert_sizeof_16_byte_multiple( type )
+#endif
+
+class idException {
+public:
+	char error[2048];
+
+	idException( const char *text = "" ) { strcpy( error, text ); }
+};
+
+
+/*
+===============================================================================
+
 	Types and defines used throughout the engine.
 
 ===============================================================================
@@ -53,7 +106,12 @@ typedef int						qhandle_t;
 
 class idFile;
 class idVec3;
-class idVec4;
+#ifdef _XENON
+#define ID_VEC4_ALIGN __declspec(align(16))
+#else
+#define ID_VEC4_ALIGN
+#endif
+class ID_VEC4_ALIGN idVec4;
 
 #ifndef NULL
 #define NULL					((void *)0)
@@ -71,21 +129,21 @@ class idVec4;
 #define MAX_WORLD_SIZE			( MAX_WORLD_COORD - MIN_WORLD_COORD )
 
 // basic colors
-extern	idVec4 colorBlack;
-extern	idVec4 colorWhite;
-extern	idVec4 colorRed;
-extern	idVec4 colorGreen;
-extern	idVec4 colorBlue;
-extern	idVec4 colorYellow;
-extern	idVec4 colorMagenta;
-extern	idVec4 colorCyan;
-extern	idVec4 colorOrange;
-extern	idVec4 colorPurple;
-extern	idVec4 colorPink;
-extern	idVec4 colorBrown;
-extern	idVec4 colorLtGrey;
-extern	idVec4 colorMdGrey;
-extern	idVec4 colorDkGrey;
+extern	ID_VEC4_ALIGN idVec4 colorBlack;
+extern	ID_VEC4_ALIGN idVec4 colorWhite;
+extern	ID_VEC4_ALIGN idVec4 colorRed;
+extern	ID_VEC4_ALIGN idVec4 colorGreen;
+extern	ID_VEC4_ALIGN idVec4 colorBlue;
+extern	ID_VEC4_ALIGN idVec4 colorYellow;
+extern	ID_VEC4_ALIGN idVec4 colorMagenta;
+extern	ID_VEC4_ALIGN idVec4 colorCyan;
+extern	ID_VEC4_ALIGN idVec4 colorOrange;
+extern	ID_VEC4_ALIGN idVec4 colorPurple;
+extern	ID_VEC4_ALIGN idVec4 colorPink;
+extern	ID_VEC4_ALIGN idVec4 colorBrown;
+extern	ID_VEC4_ALIGN idVec4 colorLtGrey;
+extern	ID_VEC4_ALIGN idVec4 colorMdGrey;
+extern	ID_VEC4_ALIGN idVec4 colorDkGrey;
 
 // packs color floats in the range [0,1] into an integer
 dword	PackColor( const idVec3 &color );
@@ -111,20 +169,6 @@ void	SixtetsForInt( byte *out, int src);
 int		IntForSixtets( byte *in );
 
 
-#ifdef _DEBUG
-void AssertFailed( const char *file, int line, const char *expression );
-#undef assert
-#define assert( X )		if ( X ) { } else AssertFailed( __FILE__, __LINE__, #X )
-#endif
-
-class idException {
-public:
-	char error[MAX_STRING_CHARS];
-
-	idException( const char *text = "" ) { strcpy( error, text ); }
-};
-
-
 /*
 ===============================================================================
 
@@ -135,6 +179,16 @@ public:
 
 // memory management and arrays
 #include "Heap.h"
+
+// RAVEN BEGIN
+// dluetscher: added includes for new heap/memory management system
+#ifdef _RV_MEM_SYS_SUPPORT
+#include "rvHeapArena.h"
+#include "rvHeap.h"
+#include "rvMemSys.h"
+#endif
+// RAVEN END
+
 #include "containers/List.h"
 
 // math
@@ -144,6 +198,7 @@ public:
 #include "math/Complex.h"
 #include "math/Vector.h"
 #include "math/Matrix.h"
+#include "math/Mat3x4.h"
 #include "math/Angles.h"
 #include "math/Quat.h"
 #include "math/Rotation.h"
@@ -155,6 +210,10 @@ public:
 #include "math/Curve.h"
 #include "math/Ode.h"
 #include "math/Lcp.h"
+// RAVEN BEGIN
+#include "math/Radians.h"
+#include "math/FFT.h"
+// RAVEN END
 
 // bounding volumes
 #include "bv/Sphere.h"
@@ -172,6 +231,13 @@ public:
 #include "geometry/Surface_Polytope.h"
 #include "geometry/Surface_SweptSpline.h"
 #include "geometry/TraceModel.h"
+
+// RAVEN BEGIN
+// dluetscher: added some headers for new vertex formats
+#ifdef _MD5R_SUPPORT
+#include "geometry/rvVertex.h"
+#endif
+// RAVEN END
 
 // text manipulation
 #include "Str.h"
@@ -195,6 +261,13 @@ public:
 #include "containers/StrPool.h"
 #include "containers/VectorSet.h"
 #include "containers/PlaneSet.h"
+#include "containers/rvBlockPool.h"
+// RAVEN BEGIN
+// ddynerman: a pair
+#include "containers/Pair.h"
+// ddynerman: algorithms
+#include "algorithms/MultifieldSort.h"
+// RAVEN END
 
 // hashing
 #include "hashing/CRC8.h"
@@ -210,5 +283,14 @@ public:
 #include "BitMsg.h"
 #include "MapFile.h"
 #include "Timer.h"
+// RAVEN BEGIN
+// jsinger: xenon needs these because the simd class is no longer virtual
+#ifdef _XENON
+#include "math/Simd_generic.h"
+#include "math/Simd_Xenon.h"
+#include "Threads/ThreadEventManager.h"
+#include "Threads/WorkerThreadManager.h"
+#endif
+// RAVEN END
 
 #endif	/* !__LIB_H__ */

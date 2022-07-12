@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "precompiled.h"
 #pragma hdrstop
@@ -16,6 +14,10 @@ idDict::operator=
 */
 idDict &idDict::operator=( const idDict &other ) {
 	int i;
+// RAVEN BEGIN
+// jnewquist: Tag scope and callees to track allocations using "new".
+	MEM_SCOPED_TAG(tag,MA_STRING);
+// RAVEN END
 
 	// check for assignment to self
 	if ( this == &other ) {
@@ -85,6 +87,10 @@ idDict::TransferKeyValues
 */
 void idDict::TransferKeyValues( idDict &other ) {
 	int i, n;
+// RAVEN BEGIN
+// jnewquist: Tag scope and callees to track allocations using "new".
+	MEM_SCOPED_TAG(tag,MA_STRING);
+// RAVEN END
 
 	if ( this == &other ) {
 		return;
@@ -250,6 +256,10 @@ idDict::Set
 void idDict::Set( const char *key, const char *value ) {
 	int i;
 	idKeyValue kv;
+// RAVEN BEGIN
+// jnewquist: Tag scope and callees to track allocations using "new".
+	MEM_SCOPED_TAG(tag,MA_STRING);
+// RAVEN END
 
 	if ( key == NULL || key[0] == '\0' ) {
 		return;
@@ -525,13 +535,18 @@ const idKeyValue *idDict::MatchPrefix( const char *prefix, const idKeyValue *las
 idDict::RandomPrefix
 ================
 */
-const char *idDict::RandomPrefix( const char *prefix, idRandom &random ) const {
+// RAVEN BEGIN
+// abahr: added default value param
+const char *idDict::RandomPrefix( const char *prefix, idRandom &random, const char* defaultValue ) const {
 	int count;
 	const int MAX_RANDOM_KEYS = 2048;
 	const char *list[MAX_RANDOM_KEYS];
 	const idKeyValue *kv;
 
-	list[0] = "";
+// RAVEN BEGIN
+// abahr: added defaultValue param
+	list[0] = defaultValue;
+// RAVEN END
 	for ( count = 0, kv = MatchPrefix( prefix ); kv && count < MAX_RANDOM_KEYS; kv = MatchPrefix( prefix, kv ) ) {
 		list[count++] = kv->GetValue().c_str();
 	}
@@ -546,7 +561,10 @@ idDict::WriteToFileHandle
 void idDict::WriteToFileHandle( idFile *f ) const {
 	int c = LittleLong( args.Num() );
 	f->Write( &c, sizeof( c ) );
-	for ( int i = 0; i < c; i++ ) {
+// RAVEN BEGIN
+// jnewquist: For loop was looking at c, which got swapped on Xenon!
+	for ( int i = 0; i < args.Num(); i++ ) {
+// RAVEN END
 		WriteString( args[i].GetKey().c_str(), f );
 		WriteString( args[i].GetValue().c_str(), f );
 	}
@@ -594,6 +612,100 @@ void idDict::ReadFromFileHandle( idFile *f ) {
 	}
 }
 
+// RAVEN BEGIN
+/*
+================
+idDict::WriteToMemory
+================
+*/
+int idDict::WriteToMemory( void *mem, int maxSize ) const {
+	int bytesWritten = 0;
+	char *out = (char*)mem;
+	if ( out ) {
+		*((int*)out) = args.Num();
+		out+=sizeof(int);
+	}
+	bytesWritten+=sizeof(int);
+	
+	int l;
+	for ( int i = 0; i < args.Num(); i++ ) {
+		l = args[i].GetKey().Length();
+		++l;
+		
+		if ( bytesWritten + l > maxSize ) {
+			assert( 0 );
+			return bytesWritten;
+		}
+		
+		if ( out ) {
+			memcpy( out, args[i].GetKey().c_str(), l );
+		}
+		if ( out ) {
+			out+=l;
+		}
+		bytesWritten+=l;
+		
+		l = args[i].GetValue().Length();
+		++l;
+		
+		if ( bytesWritten + l > maxSize ) {
+			assert( 0 );
+			return bytesWritten;
+		}
+
+		if ( out ) {
+			memcpy( out, args[i].GetValue().c_str(), l );
+		}
+		if ( out ) {
+			out+=l;
+		}
+		bytesWritten+=l;
+	}
+
+	return bytesWritten;
+}
+
+/*
+================
+idDict::ReadFromMemory
+================
+*/
+void idDict::ReadFromMemory( void *mem, int size ) {
+	int bytesRead = 0;
+	
+	char *in = (char*)mem;
+	int c = *((int*)in);
+	in+=sizeof(int);
+	
+	idStr key, val;
+
+	Clear();
+		
+	int readLen;
+	for ( int i = 0; i < c; i++ ) {
+		key = in;
+		readLen = key.Length() + 1;
+		in+=readLen;
+		bytesRead+=readLen;
+		if ( bytesRead >= size ) {
+			assert( 0 );
+			return;
+		}
+		
+		val = in;
+		readLen = val.Length() + 1;
+		in+=readLen;
+		bytesRead+=readLen;
+		if ( bytesRead >= size ) {
+			assert( 0 );
+			return;
+		}
+		
+		Set( key, val );
+	}
+}
+// RAVEN END
+
 /*
 ================
 idDict::Init
@@ -602,6 +714,14 @@ idDict::Init
 void idDict::Init( void ) {
 	globalKeys.SetCaseSensitive( false );
 	globalValues.SetCaseSensitive( true );
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+	globalKeys.SetAllocatorHeap(rvGetSysHeap(RV_HEAP_ID_PERMANENT));
+	globalValues.SetAllocatorHeap(rvGetSysHeap(RV_HEAP_ID_PERMANENT));
+#endif
+// RAVEN END
 }
 
 /*
@@ -672,3 +792,30 @@ void idDict::ListValues_f( const idCmdArgs &args ) {
 	}
 	idLib::common->Printf( "%5d values\n", valueStrings.Num() );
 }
+
+// RAVEN BEGIN
+// jsinger: allow support for serialization/deserialization of binary decls
+#ifdef RV_BINARYDECLS
+void idDict::Write( SerialOutputStream &stream ) const
+{
+	stream.Write(GetNumKeyVals());
+	for(int i=0;i<GetNumKeyVals();i++)
+	{
+		idKeyValue const *keyVal = GetKeyVal(i);
+		stream.Write(keyVal->GetKey());
+		stream.Write(keyVal->GetValue());
+	}
+}
+
+idDict::idDict( SerialInputStream &stream )
+{
+	int numKeyVals = stream.ReadIntValue();
+	for(int i=0; i<numKeyVals; i++)
+	{
+		idStr key = stream.ReadStringValue();
+		idStr value = stream.ReadStringValue();
+		Set(key.c_str(), value.c_str());
+	}
+}
+#endif
+// RAVEN END

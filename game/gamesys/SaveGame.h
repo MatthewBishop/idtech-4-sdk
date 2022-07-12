@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __SAVEGAME_H__
 #define __SAVEGAME_H__
@@ -14,6 +12,8 @@ const int INITIAL_RELEASE_BUILD_NUMBER = 1262;
 
 class idSaveGame {
 public:
+	friend	void Cmd_CheckSave_f( const idCmdArgs &args );
+
 							idSaveGame( idFile *savefile );
 							~idSaveGame();
 
@@ -34,6 +34,7 @@ public:
 	void					WriteVec2( const idVec2 &vec );
 	void					WriteVec3( const idVec3 &vec );
 	void					WriteVec4( const idVec4 &vec );
+	void					WriteVec5( const idVec5 &vec );
 	void					WriteVec6( const idVec6 &vec );
 	void					WriteWinding( const idWinding &winding );
 	void					WriteBounds( const idBounds &bounds );
@@ -44,11 +45,32 @@ public:
 	void					WriteDict( const idDict *dict );
 	void					WriteMaterial( const idMaterial *material );
 	void					WriteSkin( const idDeclSkin *skin );
-	void					WriteParticle( const idDeclParticle *particle );
-	void					WriteFX( const idDeclFX *fx );
+// RAVEN BEGIN
+// jscott: not using
+//	void					WriteParticle( const idDeclParticle *particle );
+//	void					WriteFX( const idDeclFX *fx );
+// RAVEN END
 	void					WriteSoundShader( const idSoundShader *shader );
 	void					WriteModelDef( const class idDeclModelDef *modelDef );
 	void					WriteModel( const idRenderModel *model );
+// RAVEN BEGIN
+// bdube: material type
+	void					WriteMaterialType ( const rvDeclMatType* matType );
+	void					WriteTable ( const idDeclTable* table );
+// abahr
+	void					WriteExtrapolate( const idExtrapolate<int>& extrap );
+	void					WriteExtrapolate( const idExtrapolate<float>& extrap );
+	void					WriteExtrapolate( const idExtrapolate<idVec3>& extrap );
+	void					WriteInterpolate( const idInterpolateAccelDecelLinear<int>& lerp );
+	void					WriteInterpolate( const idInterpolateAccelDecelLinear<float>& lerp );
+	void					WriteInterpolate( const idInterpolateAccelDecelLinear<idVec3>& lerp );
+	void					WriteInterpolate( const idInterpolate<int>& lerp ); 
+	void					WriteInterpolate( const idInterpolate<float>& lerp ); 
+	void					WriteInterpolate( const idInterpolate<idVec3>& lerp ); 
+	void					WriteRenderEffect( const renderEffect_t &renderEffect );
+	void					WriteFrustum( const idFrustum& frustum );
+	void					WriteSyncId( void );
+// RAVEN END		
 	void					WriteUserInterface( const idUserInterface *ui, bool unique );
 	void					WriteRenderEntity( const renderEntity_t &renderEntity );
 	void					WriteRenderLight( const renderLight_t &renderLight );
@@ -62,7 +84,7 @@ public:
 
 	void					WriteBuildNumber( const int value );
 
-private:
+protected:
 	idFile *				file;
 
 	idList<const idClass *>	objects;
@@ -72,6 +94,8 @@ private:
 
 class idRestoreGame {
 public:
+	friend	void Cmd_CheckSave_f( const idCmdArgs &args );
+
 							idRestoreGame( idFile *savefile );
 							~idRestoreGame();
 
@@ -93,6 +117,7 @@ public:
 	void					ReadVec2( idVec2 &vec );
 	void					ReadVec3( idVec3 &vec );
 	void					ReadVec4( idVec4 &vec );
+	void					ReadVec5( idVec5 &vec );
 	void					ReadVec6( idVec6 &vec );
 	void					ReadWinding( idWinding &winding );
 	void					ReadBounds( idBounds &bounds );
@@ -103,13 +128,34 @@ public:
 	void					ReadDict( idDict *dict );
 	void					ReadMaterial( const idMaterial *&material );
 	void					ReadSkin( const idDeclSkin *&skin );
-	void					ReadParticle( const idDeclParticle *&particle );
-	void					ReadFX( const idDeclFX *&fx );
+// RAVEN BEGIN
+// bdube: not using
+//	void					ReadParticle( const idDeclParticle *&particle );
+//	void					ReadFX( const idDeclFX *&fx );
+// RAVEN END
 	void					ReadSoundShader( const idSoundShader *&shader );
 	void					ReadModelDef( const idDeclModelDef *&modelDef );
 	void					ReadModel( idRenderModel *&model );
-	void					ReadUserInterface( idUserInterface *&ui );
-	void					ReadRenderEntity( renderEntity_t &renderEntity );
+// RAVEN BEGIN
+	void					ReadUserInterface( idUserInterface *&ui, const idDict *args );
+// bdube: material type
+	void					ReadMaterialType ( const rvDeclMatType* &matType );
+	void					ReadTable ( const idDeclTable* &table );
+// abahr
+	void					ReadExtrapolate( idExtrapolate<int>& extrap );
+	void					ReadExtrapolate( idExtrapolate<float>& extrap );
+	void					ReadExtrapolate( idExtrapolate<idVec3>& extrap );
+	void					ReadInterpolate( idInterpolateAccelDecelLinear<int>& lerp );
+	void					ReadInterpolate( idInterpolateAccelDecelLinear<float>& lerp );
+	void					ReadInterpolate( idInterpolateAccelDecelLinear<idVec3>& lerp );
+	void					ReadInterpolate( idInterpolate<int>& lerp );
+	void					ReadInterpolate( idInterpolate<float>& lerp );
+	void					ReadInterpolate( idInterpolate<idVec3>& lerp );
+	void					ReadRenderEffect( renderEffect_t &renderEffect );
+	void					ReadFrustum( idFrustum& frustum );
+	void					ReadSyncId( const char *detail = "unspecified", const char *classname = NULL ) { file->ReadSyncId( detail, classname ); }
+	void					ReadRenderEntity( renderEntity_t &renderEntity, const idDict *args );
+// RAVEN END		
 	void					ReadRenderLight( renderLight_t &renderLight );
 	void					ReadRefSound( refSound_t &refSound );
 	void					ReadRenderView( renderView_t &view );

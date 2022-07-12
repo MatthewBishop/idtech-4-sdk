@@ -12,8 +12,14 @@
 ===============================================================================
 */
 
-const int USERCMD_HZ			= 60;			// 60 frames per second
-const int USERCMD_MSEC			= 1000 / USERCMD_HZ;
+const int USERCMD_HZ_SP			= 60;			// 60 frames per second
+const int USERCMD_MSEC_SP		= 1000 / USERCMD_HZ_SP;
+
+//const int USERCMD_HZ_MP			= 30;			// 30 frames per second
+//const int USERCMD_MSEC_MP		= 1000 / USERCMD_HZ_MP;
+
+const int USERCMD_HZ_MP			= 60;			// 60 frames per second
+const int USERCMD_MSEC_MP		= 1000 / USERCMD_HZ_MP;
 
 // usercmd_t->button bits
 const int BUTTON_ATTACK			= BIT(0);
@@ -21,9 +27,17 @@ const int BUTTON_RUN			= BIT(1);
 const int BUTTON_ZOOM			= BIT(2);
 const int BUTTON_SCORES			= BIT(3);
 const int BUTTON_MLOOK			= BIT(4);
-const int BUTTON_5				= BIT(5);
-const int BUTTON_6				= BIT(6);
-const int BUTTON_7				= BIT(7);
+// RAVEN BEGIN
+// ddynerman: stats
+const int BUTTON_INGAMESTATS	= BIT(5);
+// jscott: for voicechat
+const int BUTTON_VOICECHAT		= BIT(6);
+// ddynerman: tourney display
+const int BUTTON_TOURNEY		= BIT(7);
+// twhitaker: strafe
+const int BUTTON_STRAFE			= BIT(8);
+// RAVEN END
+
 
 // usercmd_t->impulse commands
 const int IMPULSE_0				= 0;			// weap 0
@@ -47,7 +61,7 @@ const int IMPULSE_17			= 17;			// ready to play ( toggles ui_ready )
 const int IMPULSE_18			= 18;			// center view
 const int IMPULSE_19			= 19;			// show PDA/INV/MAP
 const int IMPULSE_20			= 20;			// toggle team ( toggles ui_team )
-const int IMPULSE_21			= 21;			// <unused>
+const int IMPULSE_21			= 21;			// tourney toggle waiting room/spec
 const int IMPULSE_22			= 22;			// spectate
 const int IMPULSE_23			= 23;			// <unused>
 const int IMPULSE_24			= 24;			// <unused>
@@ -56,7 +70,26 @@ const int IMPULSE_26			= 26;			// <unused>
 const int IMPULSE_27			= 27;			// <unused>
 const int IMPULSE_28			= 28;			// vote yes
 const int IMPULSE_29			= 29;			// vote no
-const int IMPULSE_40			= 40;			// use vehicle
+const int IMPULSE_40			= 40;			// repeast last radio chatter
+
+// RAVEN BEGIN
+// bdube: added flashlight
+const int IMPULSE_50			= 50;			// activate flashlight
+const int IMPULSE_51			= 51;			// switch to last weapon
+// ddynerman: mp stats
+const int IMPULSE_52			= 52;			// mp statistics
+// RAVEN END
+
+
+// RAVEN BEGIN
+// asalmon: impulses for weapons combos for xbox
+#ifdef _XBOX
+const int IMPULSE_70			= 70;			//Weapon switch up
+const int IMPULSE_71			= 71;			//Weapon switch down
+const int IMPULSE_72			= 72;			//Weapon switch right
+const int IMPULSE_73			= 73;			//Weapon Switch left
+#endif
+//RAVEN END
 
 // usercmd_t->flags
 const int UCF_IMPULSE_SEQUENCE	= 0x0001;		// toggled every time an impulse command is sent
@@ -65,8 +98,12 @@ class usercmd_t {
 public:
 	int			gameFrame;						// frame number
 	int			gameTime;						// game time
+	int			realTime;						// real game time
 	int			duplicateCount;					// duplication count for networking
-	byte		buttons;						// buttons
+// RAVEN BEGIN
+// ddynerman: expand buttons to 2 bytes
+	short		buttons;						// buttons
+// RAVEN END
 	signed char	forwardmove;					// forward/backward movement
 	signed char	rightmove;						// left/right movement
 	signed char	upmove;							// up/down movement
@@ -78,7 +115,7 @@ public:
 	int			sequence;						// just for debugging
 
 public:
-	void		ByteSwap();						// on big endien systems, byte swap the shorts and ints
+	void		ByteSwap();						// on big endian systems, byte swap the shorts and ints
 	bool		operator==( const usercmd_t &rhs ) const;
 };
 
@@ -132,6 +169,19 @@ public:
 
 	// Directly sample a usercmd.
 	virtual usercmd_t	GetDirectUsercmd( void ) = 0;
+
+//RAVEN BEGIN
+//asalmon: slow down the joystick movement for aim assist on xenon
+	virtual void		SetSlowJoystick(int slow) = 0;
+
+// nrausch: Stuff an arbitrary impulse in, which will override any other impulse this cycle
+	virtual void		StuffImpulse( int impulse ) = 0;
+
+#ifdef _XENON	
+	virtual void		GetInputs( int &y, int &p, int &r, int &f ) = 0;
+#endif
+
+//RAVEN END
 };
 
 extern idUsercmdGen	*usercmdGen;

@@ -4,6 +4,15 @@
 #ifndef __USERINTERFACE_H__
 #define __USERINTERFACE_H__
 
+struct wrapInfo_t {
+	int lastWhitespace;
+	int maxIndex;
+	wrapInfo_t ( void ) {
+		lastWhitespace = -1;
+		maxIndex = -1;
+	}
+};
+
 /*
 ===============================================================================
 
@@ -29,6 +38,12 @@ public:
 
 								// Returns true if the gui is interactive.
 	virtual bool				IsInteractive() const = 0;
+
+// RAVEN BEGIN
+// bdube: added
+								// Changes the interactive of the gui
+	virtual void				SetInteractive ( bool interactive ) = 0 ;
+// RAVEN END
 
 	virtual bool				IsUniqued() const = 0;
 
@@ -60,6 +75,27 @@ public:
 	virtual void				SetStateBool( const char *varName, const bool value ) = 0;
 	virtual void				SetStateInt( const char *varName, const int value ) = 0;
 	virtual void				SetStateFloat( const char *varName, const float value ) = 0;
+	virtual void				SetStateVector( const char *varName, const idVec3& vector ) = 0;
+	virtual void				SetStateVec4( const char *varName, const idVec4& vector ) = 0;
+// RAVEN BEGIN
+// bdube: added way to clear state
+	virtual void				ClearState( void ) = 0;
+// rjohnson: added
+	virtual void				DeleteState( const char *varName ) = 0;
+
+	virtual idVec4				GetLightColor ( void ) = 0;
+
+								// Gets a gui state variable
+	virtual const char*			GetStateString( const char *varName, const char* defaultString = "" ) const = 0;
+	virtual bool				GetStateBool( const char *varName, const char* defaultString = "0" ) const  = 0;
+	virtual int					GetStateInt( const char *varName, const char* defaultString = "0" ) const = 0;
+	virtual float				GetStateFloat( const char *varName, const char* defaultString = "0" ) const = 0;
+	virtual idVec3				GetStateVector( const char *varName, const char* defaultString = "0 0 0" ) const = 0;
+	virtual idVec4				GetStateVec4( const char *varName, const char* defaultString = "0 0 0 0" ) const = 0;
+
+// jscott: added
+	virtual class idWindow *	GetDesktop( void ) const = 0;
+// RAVEN END
 
 								// The state has changed and the gui needs to update from the state idDict.
 	virtual void				StateChanged( int time, bool redraw = false ) = 0;
@@ -78,6 +114,26 @@ public:
 	virtual void				SetKeyBindingNames( void ) = 0;
 
 	virtual void				SetCursor( float x, float y ) = 0;
+	virtual float				CursorX() = 0;
+	virtual float				CursorY() = 0;
+
+// RAVEN BEGIN
+// mekberg: Returns the index of the string where width in pixels <= specified val. Can return index of last whitespace.
+	virtual bool				GetMaxTextIndex( const char *windowName, const char *text, wrapInfo_t& wrapInfo ) const = 0;
+
+// mwhitlock: Xenon texture streaming
+#if defined(_XENON)
+	virtual const idList<idMaterial*>& GetMaterialsList(void) = 0;
+#endif
+// RAVEN END
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+	virtual bool				IsLevelLoadReferenced( void ) = 0;
+	virtual void				SetLevelLoadReferenced( bool refd ) = 0;
+#endif
+// RAVEN END
 };
 
 
@@ -95,6 +151,12 @@ public:
 
 	virtual void				BeginLevelLoad() = 0;
 	virtual void				EndLevelLoad() = 0;
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+	virtual void				FlushGUIs( void ) = 0;
+#endif
+// RAVEN END
 
 								// Reloads changed guis, or all guis.
 	virtual void				Reload( bool all ) = 0;
@@ -122,6 +184,13 @@ public:
 
 								// De-allocates a list gui
 	virtual void				FreeListGUI( idListGUI *listgui ) = 0;
+	
+// RAVEN BEGIN
+// rjohnson: added option for guis to always think
+	virtual void				RunAlwaysThinkGUIs ( int time ) = 0;
+// bdube: embedded icons
+	virtual void				RegisterIcon ( const char* code, const char* shader, int x = -1, int y = -1, int w = -1, int h = -1 ) = 0;	
+// RAVEN END
 };
 
 extern idUserInterfaceManager *	uiManager;

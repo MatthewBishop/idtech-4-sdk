@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __BINSEARCH_H__
 #define __BINSEARCH_H__

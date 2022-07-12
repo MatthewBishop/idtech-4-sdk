@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __BV_BOUNDS_H__
 #define __BV_BOUNDS_H__
@@ -49,6 +47,22 @@ public:
 	idBounds &		IntersectSelf( const idBounds &a );				// intersect this bounds with the given bounds
 	idBounds		Expand( const float d ) const;					// return bounds expanded in all directions with the given value
 	idBounds &		ExpandSelf( const float d );					// expand bounds in all directions with the given value
+
+// RAVEN BEGIN
+// jscott: for BSE
+	idBounds &		ExpandSelf( const idVec3 &d );					// expand bounds in all directions by the given vector
+	const idVec3	Size( void ) const;
+	float			ShortestDistance( const idVec3 &point ) const;
+	bool			Contains( const idBounds &a ) const;
+// jscott: for material types
+	int				GetLargestAxis( void ) const;
+// abahr: can be used to get width of bounds
+	idVec3			FindEdgePoint( const idVec3& dir ) const;
+	idVec3			FindEdgePoint( const idVec3& start, const idVec3& dir ) const;
+	idVec3			FindVectorToEdge( const idVec3& dir ) const;
+	idVec3			FindVectorToEdge( const idVec3& start, const idVec3& dir ) const;
+// RAVEN END
+
 	idBounds		Translate( const idVec3 &translation ) const;	// return translated bounds
 	idBounds &		TranslateSelf( const idVec3 &translation );		// translate this bounds
 	idBounds		Rotate( const idMat3 &rotation ) const;			// return rotated bounds
@@ -80,7 +94,6 @@ public:
 	void			AxisProjection( const idVec3 &dir, float &min, float &max ) const;
 	void			AxisProjection( const idVec3 &origin, const idMat3 &axis, const idVec3 &dir, float &min, float &max ) const;
 
-private:
 	idVec3			b[2];
 };
 
@@ -303,6 +316,58 @@ ID_INLINE idBounds &idBounds::ExpandSelf( const float d ) {
 	b[1][2] += d;
 	return *this;
 }
+
+// RAVEN BEGIN
+// jscott: for BSE
+ID_INLINE idBounds &idBounds::ExpandSelf( const idVec3 &d ) 
+{
+	b[0][0] -= d[0];
+	b[0][1] -= d[1];
+	b[0][2] -= d[2];
+	b[1][0] += d[0];
+	b[1][1] += d[1];
+	b[1][2] += d[2];
+	return( *this );
+}
+
+ID_INLINE const idVec3 idBounds::Size( void ) const 
+{
+	return( b[1] - b[0] );
+}
+
+ID_INLINE bool idBounds::Contains( const idBounds &a ) const
+{
+	int		i;
+
+	for( i = 0; i < 3; i++ ) {
+		if( a[1][i] > b[1][i] ) {
+			return( false );
+		}
+		if( a[0][i] < b[0][i] ) {
+			return( false );
+		}
+	}
+
+	return( true );
+}
+
+// jscott: for material types
+ID_INLINE int idBounds::GetLargestAxis( void ) const
+{
+	idVec3 work = b[1] - b[0];
+	int axis = 0;
+
+	if( work[1] > work[0] )
+	{
+		axis = 1;
+	}
+	if( work[2] > work[axis] )
+	{
+		axis = 2;
+	}
+	return( axis );
+}
+// RAVEN END
 
 ID_INLINE idBounds idBounds::Translate( const idVec3 &translation ) const {
 	return idBounds( b[0] + translation, b[1] + translation );

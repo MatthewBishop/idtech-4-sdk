@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __TRACEMODEL_H__
 #define __TRACEMODEL_H__
@@ -21,7 +19,7 @@ class idMat3;
 class idBounds;
 
 // trace model type
-typedef enum {
+enum traceModel_t {
 	TRM_INVALID,		// invalid trm
 	TRM_BOX,			// box
 	TRM_OCTAHEDRON,		// octahedron
@@ -32,7 +30,7 @@ typedef enum {
 	TRM_POLYGON,		// arbitrary convex polygon
 	TRM_POLYGONVOLUME,	// volume for arbitrary convex polygon
 	TRM_CUSTOM			// loaded from map model or ASE/LWO
-} traceModel_t;
+};
 
 // these are bit cache limits
 #define MAX_TRACEMODEL_VERTS		32
@@ -42,18 +40,18 @@ typedef enum {
 
 typedef idVec3 traceModelVert_t;
 
-typedef struct {
+struct traceModelEdge_t {
 	int					v[2];
 	idVec3				normal;
-} traceModelEdge_t;
+};
 
-typedef struct {
+struct traceModelPoly_t {
 	idVec3				normal;
 	float				dist;
 	idBounds			bounds;
 	int					numEdges;
 	int					edges[MAX_TRACEMODEL_POLYEDGES];
-} traceModelPoly_t;
+};
 
 class idTraceModel {
 
@@ -62,7 +60,7 @@ public:
 	int					numVerts;
 	traceModelVert_t	verts[MAX_TRACEMODEL_VERTS];
 	int					numEdges;
-	traceModelEdge_t	edges[MAX_TRACEMODEL_EDGES+1];
+	traceModelEdge_t	edges[MAX_TRACEMODEL_EDGES+1];	// edges[0] is unused because edge index signs are used for direction
 	int					numPolys;
 	traceModelPoly_t	polys[MAX_TRACEMODEL_POLYS];
 	idVec3				offset;			// offset to center of model
@@ -98,18 +96,30 @@ public:
 						// arbitrary convex polygon
 	void				SetupPolygon( const idVec3 *v, const int count );
 	void				SetupPolygon( const idWinding &w );
+
 						// generate edge normals
 	int					GenerateEdgeNormals( void );
+						// test whether or not the model is convex and set isConvex accordingly
+	void				TestConvexity( void );
 						// translate the trm
 	void				Translate( const idVec3 &translation );
 						// rotate the trm
 	void				Rotate( const idMat3 &rotation );
 						// shrink the model m units on all sides
 	void				Shrink( const float m );
+						// clear unused spots in the arrays
+	void				ClearUnused( void );
+						// make sure the trace model is well formed
+	bool				Verify( void );
+
 						// compare
 	bool				Compare( const idTraceModel &trm ) const;
 	bool				operator==(	const idTraceModel &trm ) const;
 	bool				operator!=(	const idTraceModel &trm ) const;
+
+						// returns true of the model is a closed surface
+	bool				IsClosedSurface( void ) const;
+
 						// get the area of one of the polygons
 	float				GetPolygonArea( int polyNum ) const;
 						// get the silhouette edges
@@ -124,9 +134,9 @@ private:
 	void				InitDodecahedron( void );
 	void				InitBone( void );
 
-	void				ProjectionIntegrals( int polyNum, int a, int b, struct projectionIntegrals_s &integrals ) const;
-	void				PolygonIntegrals( int polyNum, int a, int b, int c, struct polygonIntegrals_s &integrals ) const;
-	void				VolumeIntegrals( struct volumeIntegrals_s &integrals ) const;
+	void				ProjectionIntegrals( int polyNum, int a, int b, struct projectionIntegrals_t &integrals ) const;
+	void				PolygonIntegrals( int polyNum, int a, int b, int c, struct polygonIntegrals_t &integrals ) const;
+	void				VolumeIntegrals( struct volumeIntegrals_t &integrals ) const;
 	void				VolumeFromPolygon( idTraceModel &trm, float thickness ) const;
 	int					GetOrderedSilhouetteEdges( const int edgeIsSilEdge[MAX_TRACEMODEL_EDGES+1], int silEdges[MAX_TRACEMODEL_EDGES] ) const;
 };

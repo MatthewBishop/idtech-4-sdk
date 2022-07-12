@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __MATH_PLUECKER_H__
 #define __MATH_PLUECKER_H__
@@ -39,6 +37,10 @@ public:
 
 	void 			Set( const float a1, const float a2, const float a3, const float a4, const float a5, const float a6 );
 	void			Zero( void );
+
+	idPluecker		Rotate( const idMat3 &rotation ) const;
+	idPluecker		Translate( const idVec3 &translation ) const;
+	idPluecker		TranslateAndRotate( const idVec3 &translation, const idMat3 &rotation ) const;
 
 	void			FromLine( const idVec3 &start, const idVec3 &end );			// pluecker from line
 	void			FromRay( const idVec3 &start, const idVec3 &dir );			// pluecker from ray
@@ -219,6 +221,43 @@ ID_INLINE void idPluecker::Set( const float a1, const float a2, const float a3, 
 
 ID_INLINE void idPluecker::Zero( void ) {
 	p[0] = p[1] = p[2] = p[3] = p[4] = p[5] = 0.0f;
+}
+
+ID_INLINE idPluecker idPluecker::Rotate( const idMat3 &rotation ) const {
+	idPluecker result;
+	result[0] =   rotation[ 0 ].z * p[3] - rotation[ 1 ].z * p[1] + rotation[ 2 ].z * p[0];
+	result[1] = - rotation[ 0 ].y * p[3] + rotation[ 1 ].y * p[1] - rotation[ 2 ].y * p[0];
+	result[2] =   rotation[ 0 ].x * p[2] - rotation[ 1 ].x * p[5] + rotation[ 2 ].x * p[4];
+	result[3] =   rotation[ 0 ].x * p[3] - rotation[ 1 ].x * p[1] + rotation[ 2 ].x * p[0];
+	result[4] =   rotation[ 0 ].z * p[2] - rotation[ 1 ].z * p[5] + rotation[ 2 ].z * p[4];
+	result[5] = - rotation[ 0 ].y * p[2] + rotation[ 1 ].y * p[5] - rotation[ 2 ].y * p[4];
+	return result;
+}
+
+ID_INLINE idPluecker idPluecker::Translate( const idVec3 &translation ) const {
+	idPluecker result;
+	result[0] = p[0] + translation[0] * p[5] + p[2] * translation[1];
+	result[1] = p[1] - translation[0] * p[4] + p[2] * translation[2];
+	result[2] = p[2];
+	result[3] = p[3] - translation[1] * p[4] - p[5] * translation[2];
+	result[4] = p[4];
+	result[5] = p[5];
+	return result;
+}
+
+ID_INLINE idPluecker idPluecker::TranslateAndRotate( const idVec3 &translation, const idMat3 &rotation ) const {
+	idVec3 t;
+	idPluecker result;
+	t[0] = p[0] + translation[0] * p[5] + p[2] * translation[1];
+	t[1] = p[1] - translation[0] * p[4] + p[2] * translation[2];
+	t[2] = p[3] - translation[1] * p[4] - p[5] * translation[2];
+	result[0] =   rotation[ 0 ].z * t[2] - rotation[ 1 ].z * t[1] + rotation[ 2 ].z * t[0];
+	result[1] = - rotation[ 0 ].y * t[2] + rotation[ 1 ].y * t[1] - rotation[ 2 ].y * t[0];
+	result[2] =   rotation[ 0 ].x * p[2] - rotation[ 1 ].x * p[5] + rotation[ 2 ].x * p[4];
+	result[3] =   rotation[ 0 ].x * t[2] - rotation[ 1 ].x * t[1] + rotation[ 2 ].x * t[0];
+	result[4] =   rotation[ 0 ].z * p[2] - rotation[ 1 ].z * p[5] + rotation[ 2 ].z * p[4];
+	result[5] = - rotation[ 0 ].y * p[2] + rotation[ 1 ].y * p[5] - rotation[ 2 ].y * p[4];
+	return result;
 }
 
 ID_INLINE void idPluecker::FromLine( const idVec3 &start, const idVec3 &end ) {

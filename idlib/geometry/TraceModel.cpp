@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../../idlib/precompiled.h"
 #pragma hdrstop
@@ -549,8 +547,10 @@ void idTraceModel::SetupCylinder( const idBounds &cylBounds, const int numSides 
 	for ( i = 0; i < n; i++ ) {
 		// verts
 		angle = idMath::TWO_PI * i / n;
-		verts[i].x = cos( angle ) * halfSize.x + offset.x;
-		verts[i].y = sin( angle ) * halfSize.y + offset.y;
+// RAVEN BEGIN
+		verts[i].x = idMath::Cos( angle ) * halfSize.x + offset.x;
+		verts[i].y = idMath::Sin( angle ) * halfSize.y + offset.y;
+// RAVEN END
 		verts[i].z = -halfSize.z + offset.z;
 		verts[n+i].x = verts[i].x;
 		verts[n+i].y = verts[i].y;
@@ -663,8 +663,10 @@ void idTraceModel::SetupCone( const idBounds &coneBounds, const int numSides ) {
 	for ( i = 0; i < n; i++ ) {
 		// verts
 		angle = idMath::TWO_PI * i / n;
-		verts[i].x = cos( angle ) * halfSize.x + offset.x;
-		verts[i].y = sin( angle ) * halfSize.y + offset.y;
+// RAVEN BEGIN
+		verts[i].x = idMath::Cos( angle ) * halfSize.x + offset.x;
+		verts[i].y = idMath::Sin( angle ) * halfSize.y + offset.y;
+// RAVEN END
 		verts[i].z = -halfSize.z + offset.z;
 		// edges
 		ii = i + 1;
@@ -955,6 +957,7 @@ int idTraceModel::GenerateEdgeNormals( void ) {
 	}
 
 	numSharpEdges = 0;
+
 	for ( i = 0; i < numPolys; i++ ) {
 		poly = polys + i;
 		for ( j = 0; j < poly->numEdges; j++ ) {
@@ -962,24 +965,48 @@ int idTraceModel::GenerateEdgeNormals( void ) {
 			edge = edges + abs( edgeNum );
 			if ( edge->normal[0] == 0.0f && edge->normal[1] == 0.0f && edge->normal[2] == 0.0f ) {
 				edge->normal = poly->normal;
-			}
-			else {
+			} else {
 				dot = edge->normal * poly->normal;
 				// if the two planes make a very sharp edge
 				if ( dot < SHARP_EDGE_DOT ) {
 					// max length normal pointing outside both polygons
 					dir = verts[ edge->v[edgeNum > 0]] - verts[ edge->v[edgeNum < 0]];
 					edge->normal = edge->normal.Cross( dir ) + poly->normal.Cross( -dir );
-					edge->normal *= ( 0.5f / ( 0.5f + 0.5f * SHARP_EDGE_DOT ) ) / edge->normal.Length();
+					edge->normal *= ( 1.0f / ( 1.0f + SHARP_EDGE_DOT ) ) / edge->normal.Length();
 					numSharpEdges++;
-				}
-				else {
-					edge->normal = ( 0.5f / ( 0.5f + 0.5f * dot ) ) * ( edge->normal + poly->normal );
+				} else {
+					edge->normal = ( 1.0f / ( 1.0f + dot ) ) * ( edge->normal + poly->normal );
 				}
 			}
 		}
 	}
+
 	return numSharpEdges;
+}
+
+/*
+============
+idTraceModel::TestConvexity
+============
+*/
+void idTraceModel::TestConvexity( void ) {
+	int i, j;
+
+	// assume convex
+	isConvex = true;
+	// check if really convex
+	for ( i = 0; i < numPolys; i++ ) {
+		// to be convex no vertices should be in front of any polygon plane
+		for ( j = 0; j < numVerts; j++ ) {
+			if ( polys[ i ].normal * verts[ j ] - polys[ i ].dist > 0.01f ) {
+				isConvex = false;
+				break;
+			}
+		}
+		if ( j < numVerts ) {
+			break;
+		}
+	}
 }
 
 /*
@@ -1037,10 +1064,15 @@ idTraceModel::Shrink
 ============
 */
 void idTraceModel::Shrink( const float m ) {
-	int i, j, edgeNum;
+	int i, j, edgeNum, vertexNum;
+	float d, bestd, n, invDet, f0, f1;
+	traceModelPoly_t *poly, *poly1, *poly2;
 	traceModelEdge_t *edge;
-	idVec3 dir;
+	idVec3 start, dir;
+	int vertexPolys[MAX_TRACEMODEL_VERTS][MAX_TRACEMODEL_POLYS];
+	int vertexNumPolys[MAX_TRACEMODEL_VERTS];
 
+	// special case for single polygon
 	if ( type == TRM_POLYGON ) {
 		for ( i = 0; i < numEdges; i++ ) {
 			edgeNum = polys[0].edges[i];
@@ -1056,15 +1088,124 @@ void idTraceModel::Shrink( const float m ) {
 		return;
 	}
 
-	for ( i = 0; i < numPolys; i++ ) {
-		polys[i].dist -= m;
+	// the trace model should be a closed surface
+	assert( IsClosedSurface() );
 
-		for ( j = 0; j < polys[i].numEdges; j++ ) {
-			edgeNum = polys[i].edges[j];
+	memset( vertexPolys, 0, sizeof( vertexPolys ) );
+	memset( vertexNumPolys, 0, sizeof( vertexNumPolys ) );
+
+	// move polygon planes and find the vertex polygons
+	for ( i = 0; i < numPolys; i++ ) {
+		poly = &polys[i];
+
+		poly->dist -= m;
+
+		for ( j = 0; j < poly->numEdges; j++ ) {
+			edgeNum = poly->edges[j];
 			edge = &edges[abs(edgeNum)];
-			verts[ edge->v[ INTSIGNBITSET(edgeNum) ] ] -= polys[i].normal * m;
+			vertexNum = edge->v[ INTSIGNBITSET( edgeNum ) ];
+
+			vertexPolys[vertexNum][vertexNumPolys[vertexNum]] = i;
+			vertexNumPolys[vertexNum]++;
 		}
 	}
+
+	// move vertices
+	for ( i = 0; i < numVerts; i++ ) {
+
+		assert( vertexNumPolys[i] >= 3 );
+
+		poly1 = &polys[vertexPolys[i][0]];
+		poly2 = NULL;
+
+		// find the polygon that is most orthogonal to the first polygon
+		bestd = 1.0f;
+		for ( j = 1; j < vertexNumPolys[i]; j++ ) {
+			d = fabs( poly1->normal * polys[vertexPolys[i][j]].normal );
+			if ( d < bestd ) {
+				bestd = d;
+				poly2 = &polys[vertexPolys[i][j]];
+			}
+		}
+
+		// calculate intersection line between planes
+		n = poly1->normal * poly2->normal;
+		invDet = 1.0f / ( 1.0f - n * n );
+		f0 = ( poly1->dist - n * poly2->dist ) * invDet;
+		f1 = ( poly2->dist - n * poly1->dist ) * invDet;
+		start = f0 * poly1->normal + f1 * poly2->normal;
+		dir = poly1->normal.Cross( poly2->normal );
+
+		// find the polygon that is most orthogonal to the plane intersection ray
+		bestd = 0.0f;
+		for ( j = 1; j < vertexNumPolys[i]; j++ ) {
+			d = fabs( dir * polys[vertexPolys[i][j]].normal );
+			if ( d > bestd ) {
+				bestd = d;
+				poly2 = &polys[vertexPolys[i][j]];
+			}
+		}
+
+		// calculate intersection with plane intersection ray
+		f0 = poly2->normal * start - poly2->dist;
+		f1 = poly2->normal * dir;
+		verts[i] = start - dir * ( f0 / f1 );
+	}
+
+	Verify();
+}
+
+/*
+============
+idTraceModel::ClearUnused
+============
+*/
+void idTraceModel::ClearUnused( void ) {
+	int i, j;
+
+	for ( i = numVerts; i < MAX_TRACEMODEL_VERTS; i++ ) {
+		verts[i].Zero();
+	}
+	memset( &edges[0], 0, sizeof( edges[0] ) );
+	for ( i = numEdges+1; i < MAX_TRACEMODEL_EDGES+1; i++ ) {
+		memset( &edges[i], 0, sizeof( edges[i] ) );
+	}
+	for ( i = 0; i < numPolys; i++ ) {
+		for ( j = polys[i].numEdges; j < MAX_TRACEMODEL_POLYEDGES; j++ ) {
+			polys[i].edges[j] = 0;
+		}
+	}
+	for ( i = numPolys; i < MAX_TRACEMODEL_POLYS; i++ ) {
+		memset( &polys[i], 0, sizeof( polys[i] ) );
+	}
+}
+
+/*
+============
+idTraceModel::Verify
+============
+*/
+bool idTraceModel::Verify( void ) {
+	int i, j, edgeNum, vertexNum;
+	traceModelPoly_t *poly;
+	traceModelEdge_t *edge;
+
+	// test whether or not the vertices are on the polygon planes
+	for ( i = 0; i < numPolys; i++ ) {
+		poly = &polys[i];
+
+		for ( j = 0; j < polys[i].numEdges; j++ ) {
+			edgeNum = poly->edges[j];
+			edge = &edges[abs(edgeNum)];
+			vertexNum = edge->v[ INTSIGNBITSET( edgeNum ) ];
+			float d = poly->normal * verts[vertexNum] - poly->dist;
+			if ( fabs( d ) > 1e-4f ) {
+				return false;
+			}
+		}
+	}
+
+	return true;
 }
 
 /*
@@ -1107,6 +1248,29 @@ bool idTraceModel::Compare( const idTraceModel &trm ) const {
 
 /*
 ============
+idTraceModel::IsClosedSurface
+============
+*/
+bool idTraceModel::IsClosedSurface( void ) const {
+	int i, j, numEdgeUsers[MAX_TRACEMODEL_EDGES+1];
+
+	// each edge should be used exactly twice
+	memset( numEdgeUsers, 0, sizeof(numEdgeUsers) );
+	for ( i = 0; i < numPolys; i++ ) {
+		for ( j = 0; j < polys[i].numEdges; j++ ) {
+			numEdgeUsers[ abs( polys[i].edges[j] ) ]++;
+		}
+	}
+	for ( i = 1; i <= numEdges; i++ ) {
+		if ( numEdgeUsers[i] != 2 ) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/*
+============
 idTraceModel::GetPolygonArea
 ============
 */
@@ -1138,7 +1302,7 @@ idTraceModel::GetOrderedSilhouetteEdges
 */
 int idTraceModel::GetOrderedSilhouetteEdges( const int edgeIsSilEdge[MAX_TRACEMODEL_EDGES+1], int silEdges[MAX_TRACEMODEL_EDGES] ) const {
 	int i, j, edgeNum, numSilEdges, nextSilVert;
-	int unsortedSilEdges[MAX_TRACEMODEL_EDGES];
+	int unsortedSilEdges[MAX_TRACEMODEL_EDGES+1];
 
 	numSilEdges = 0;
 	for ( i = 1; i <= numEdges; i++ ) {
@@ -1234,19 +1398,19 @@ int idTraceModel::GetParallelProjectionSilhouetteEdges( const idVec3 &projection
 
 */
 
-typedef struct projectionIntegrals_s {
+struct projectionIntegrals_t {
 	float P1;
 	float Pa, Pb;
 	float Paa, Pab, Pbb;
 	float Paaa, Paab, Pabb, Pbbb;
-} projectionIntegrals_t;
+};
 
 /*
 ============
 idTraceModel::ProjectionIntegrals
 ============
 */
-void idTraceModel::ProjectionIntegrals( int polyNum, int a, int b, struct projectionIntegrals_s &integrals ) const {
+void idTraceModel::ProjectionIntegrals( int polyNum, int a, int b, projectionIntegrals_t &integrals ) const {
 	const traceModelPoly_t *poly;
 	int i, edgeNum;
 	idVec3 v1, v2;
@@ -1318,19 +1482,19 @@ void idTraceModel::ProjectionIntegrals( int polyNum, int a, int b, struct projec
 	integrals.Pabb *= (1.0f / -60.0f);
 }
 
-typedef struct polygonIntegrals_s {
+struct polygonIntegrals_t {
 	float Fa, Fb, Fc;
 	float Faa, Fbb, Fcc;
 	float Faaa, Fbbb, Fccc;
 	float Faab, Fbbc, Fcca;
-} polygonIntegrals_t;
+};
 
 /*
 ============
 idTraceModel::PolygonIntegrals
 ============
 */
-void idTraceModel::PolygonIntegrals( int polyNum, int a, int b, int c, struct polygonIntegrals_s &integrals ) const {
+void idTraceModel::PolygonIntegrals( int polyNum, int a, int b, int c, polygonIntegrals_t &integrals ) const {
 	projectionIntegrals_t pi;
 	idVec3 n;
 	float w;
@@ -1367,19 +1531,19 @@ void idTraceModel::PolygonIntegrals( int polyNum, int a, int b, int c, struct po
 			+ w * (2 * (n[a] * pi.Paa + n[b] * pi.Pab) + w * pi.Pa));
 }
 
-typedef struct volumeIntegrals_s {
+struct volumeIntegrals_t {
 	float T0;
 	idVec3 T1;
 	idVec3 T2;
 	idVec3 TP;
-} volumeIntegrals_t;
+};
 
 /*
 ============
 idTraceModel::VolumeIntegrals
 ============
 */
-void idTraceModel::VolumeIntegrals( struct volumeIntegrals_s &integrals ) const {
+void idTraceModel::VolumeIntegrals( volumeIntegrals_t &integrals ) const {
 	const traceModelPoly_t *poly;
 	polygonIntegrals_t pi;
 	int i, a, b, c;
@@ -1439,6 +1603,15 @@ void idTraceModel::GetMassProperties( const float density, float &mass, idVec3 &
 	}
 
 	VolumeIntegrals( integrals );
+
+	// if no volume
+	if ( integrals.T0 == 0.0f ) {
+		mass = 1.0f;
+		centerOfMass.Zero();
+		inertiaTensor.Identity();
+		return;
+	}
+
 	// mass of model
 	mass = density * integrals.T0;
 	// center of mass

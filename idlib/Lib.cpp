@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "precompiled.h"
 #pragma hdrstop
@@ -37,6 +35,15 @@ void idLib::Init( void ) {
 	// initialize memory manager
 	Mem_Init();
 
+// RAVEN BEGIN
+// dluetscher: added the following code to initialize each of the memory heaps immediately
+//			   following Mem_Init()
+#ifdef _RV_MEM_SYS_SUPPORT
+	// initialize each of the memory heaps
+	common->InitHeaps();
+#endif
+// RAVEN END
+
 	// init string memory allocator
 	idStr::InitMemory();
 
@@ -46,11 +53,16 @@ void idLib::Init( void ) {
 	// initialize math
 	idMath::Init();
 
+// RAVEN BEGIN
+// jsinger: There is no reason for us to be doing this on the Xenon
+#ifndef _XENON
 	// test idMatX
-	idMatX::Test();
+	//idMatX::Test();
 
 	// test idPolynomial
 	idPolynomial::Test();
+#endif
+// RAVEN END
 
 	// initialize the dictionary string pools
 	idDict::Init();
@@ -71,6 +83,15 @@ void idLib::ShutDown( void ) {
 
 	// shut down the SIMD engine
 	idSIMD::Shutdown();
+
+// RAVEN BEGIN
+// dluetscher: added the following code to shutdown each of the memory heaps immediately
+//			   before Mem_Shutdown()
+#ifdef _RV_MEM_SYS_SUPPORT
+	// shutdown each of the memory heaps
+	common->ShutdownHeaps();
+#endif
+// RAVEN END
 
 	// shut down the memory manager
 	Mem_Shutdown();
@@ -125,13 +146,14 @@ dword PackColor( const idVec4 &color ) {
 	dz = ColorFloatToByte( color.z );
 	dw = ColorFloatToByte( color.w );
 
-#if defined(_WIN32) || defined(__linux__)
+// RAVEN BEGIN
+// jnewquist: Big endian support
+#ifdef _LITTLE_ENDIAN
 	return ( dx << 0 ) | ( dy << 8 ) | ( dz << 16 ) | ( dw << 24 );
-#elif defined(MACOS_X)
-	return ( dx << 24 ) | ( dy << 16 ) | ( dz << 8 ) | ( dw << 0 );
 #else
-#error OS define is required!
+	return ( dx << 24 ) | ( dy << 16 ) | ( dz << 8 ) | ( dw << 0 );
 #endif
+// RAVEN END
 }
 
 /*
@@ -140,19 +162,20 @@ UnpackColor
 ================
 */
 void UnpackColor( const dword color, idVec4 &unpackedColor ) {
-#if defined(_WIN32) || defined(__linux__)
+// RAVEN BEGIN
+// jnewquist: Xenon is big endian
+#ifdef _LITTLE_ENDIAN
 	unpackedColor.Set( ( ( color >> 0 ) & 255 ) * ( 1.0f / 255.0f ),
 						( ( color >> 8 ) & 255 ) * ( 1.0f / 255.0f ), 
 						( ( color >> 16 ) & 255 ) * ( 1.0f / 255.0f ),
 						( ( color >> 24 ) & 255 ) * ( 1.0f / 255.0f ) );
-#elif defined(MACOS_X)
+#else
 	unpackedColor.Set( ( ( color >> 24 ) & 255 ) * ( 1.0f / 255.0f ),
 						( ( color >> 16 ) & 255 ) * ( 1.0f / 255.0f ), 
 						( ( color >> 8 ) & 255 ) * ( 1.0f / 255.0f ),
 						( ( color >> 0 ) & 255 ) * ( 1.0f / 255.0f ) );
-#else
-#error OS define is required!
 #endif
+// RAVEN END
 }
 
 /*
@@ -167,13 +190,14 @@ dword PackColor( const idVec3 &color ) {
 	dy = ColorFloatToByte( color.y );
 	dz = ColorFloatToByte( color.z );
 
-#if defined(_WIN32) || defined(__linux__)
+// RAVEN BEGIN
+// jnewquist: Xenon is big endian
+#ifdef _LITTLE_ENDIAN
 	return ( dx << 0 ) | ( dy << 8 ) | ( dz << 16 );
-#elif defined(MACOS_X)
-	return ( dy << 16 ) | ( dz << 8 ) | ( dx << 0 );
 #else
-#error OS define is required!
+	return ( dy << 16 ) | ( dz << 8 ) | ( dx << 0 );
 #endif
+// RAVEN END
 }
 
 /*
@@ -182,17 +206,18 @@ UnpackColor
 ================
 */
 void UnpackColor( const dword color, idVec3 &unpackedColor ) {
-#if defined(_WIN32) || defined(__linux__)
+// RAVEN BEGIN
+// jnewquist: Xenon is big endian
+#ifdef _LITTLE_ENDIAN
 	unpackedColor.Set( ( ( color >> 0 ) & 255 ) * ( 1.0f / 255.0f ),
 						( ( color >> 8 ) & 255 ) * ( 1.0f / 255.0f ), 
 						( ( color >> 16 ) & 255 ) * ( 1.0f / 255.0f ) );
-#elif defined(MACOS_X)
+#else
 	unpackedColor.Set( ( ( color >> 16 ) & 255 ) * ( 1.0f / 255.0f ),
 						( ( color >> 8 ) & 255 ) * ( 1.0f / 255.0f ),
 						( ( color >> 0 ) & 255 ) * ( 1.0f / 255.0f ) );
-#else
-#error OS define is required!
 #endif
+// RAVEN END
 }
 
 
@@ -471,9 +496,14 @@ bool Swap_IsBigEndian( void ) {
 */
 
 void AssertFailed( const char *file, int line, const char *expression ) {
-	idLib::sys->DebugPrintf( "\n\nASSERTION FAILED!\n%s(%d): '%s'\n", file, line, expression );
+	if ( idLib::sys ) {
+		idLib::sys->DebugPrintf( "\n\nASSERTION FAILED!\n%s(%d): '%s'\n", file, line, expression );
+	}
 #ifdef _WIN32
-	__asm int 0x03
+// RAVEN BEGIN
+// jnewquist: Visual Studio platform independent breakpoint
+	__debugbreak();
+// RAVEN END
 #elif defined( __linux__ )
 	__asm__ __volatile__ ("int $0x03");
 #elif defined( MACOS_X )

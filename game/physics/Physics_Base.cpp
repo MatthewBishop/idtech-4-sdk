@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../../idlib/precompiled.h"
 #pragma hdrstop
@@ -136,6 +134,20 @@ idPhysics_Base::GetMass
 float idPhysics_Base::GetMass( int id ) const {
 	return 0.0f;
 }
+
+// RAVEN BEGIN
+// bdube: Added center mass call
+/*
+================
+idPhysics_Base::GetCenterMass
+
+default center of mass is origin
+================
+*/
+idVec3 idPhysics_Base::GetCenterMass ( int id ) const {
+	return GetOrigin();
+}
+// RAVEN END
 
 /*
 ================
@@ -283,6 +295,13 @@ idPhysics_Base::IsPushable
 bool idPhysics_Base::IsPushable( void ) const {
 	return true;
 }
+
+// RAVEN BEGIN
+// bdube: water interraction
+bool idPhysics_Base::IsInWater ( void ) const {
+	return false;
+}
+// RAVEN END	
 
 /*
 ================
@@ -563,6 +582,41 @@ void idPhysics_Base::RemoveContactEntity( idEntity *e ) {
 	}
 }
 
+// RAVEN BEGIN
+// abahr:
+/*
+================
+idPhysics_Base::GetContactNormal
+================
+*/
+const idVec3 idPhysics_Base::GetContactNormal() const {
+	idVec3 normal( vec3_zero );
+
+	for( int ix = 0; ix < GetNumContacts(); ++ix ) {
+		normal += GetContact( ix ).normal;
+	}
+
+	return normal.ToNormal();
+}
+
+/*
+================
+idPhysics_Base::GetContactNormal
+================
+*/
+const idVec3 idPhysics_Base::GetGroundContactNormal() const {
+	idVec3 normal( vec3_zero );
+
+	for( int ix = 0; ix < GetNumContacts(); ++ix ) {
+		if ( GetContact(ix).normal * -gravityNormal > 0.0f ) {
+			normal += GetContact( ix ).normal;
+		}
+	}
+
+	return normal.ToNormal();
+}
+// RAVEN END
+
 /*
 ================
 idPhysics_Base::HasGroundContacts
@@ -695,8 +749,11 @@ void idPhysics_Base::AddGroundContacts( const idClipModel *clipModel ) {
 
 	dir.SubVec3(0) = gravityNormal;
 	dir.SubVec3(1) = vec3_origin;
-	num = gameLocal.clip.Contacts( &contacts[index], 10, clipModel->GetOrigin(),
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+	num = gameLocal.Contacts( self, &contacts[index], 10, clipModel->GetOrigin(),
 					dir, CONTACT_EPSILON, clipModel, clipModel->GetAxis(), clipMask, self );
+// RAVEN END
 	contacts.SetNum( index + num, false );
 }
 
@@ -742,7 +799,10 @@ idPhysics_Base::IsOutsideWorld
 ================
 */
 bool idPhysics_Base::IsOutsideWorld( void ) const {
-	if ( !gameLocal.clip.GetWorldBounds().Expand( 128.0f ).IntersectsBounds( GetAbsBounds() ) ) {
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+	if ( !gameLocal.GetWorldBounds( self ).Expand( 128.0f ).IntersectsBounds( GetAbsBounds() ) ) {
+// RAVEN END
 		return true;
 	}
 	return false;

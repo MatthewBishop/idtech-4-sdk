@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../idlib/precompiled.h"
 #pragma hdrstop
@@ -403,7 +401,10 @@ void idPVS::PassagePVS( void ) const {
 	for ( i = 0; i < numPortals; i++ ) {
 		source = &pvsPortals[i];
 		memset( source->vis, 0, portalVisBytes );
-		memcpy( stack->mightSee, source->mightSee, portalVisBytes );
+// RAVEN BEGIN
+// JSinger: Changed to call optimized memcpy
+		SIMDProcessor->Memcpy( stack->mightSee, source->mightSee, portalVisBytes );
+// RAVEN END
 		FloodPassagePVS_r( source, source, stack );
 		source->done = true;
 	}
@@ -694,7 +695,10 @@ void idPVS::CopyPortalPVSToMightSee( void ) const {
 
 	for ( i = 0; i < numPortals; i++ ) {
 		p = &pvsPortals[i];
-		memcpy( p->mightSee, p->vis, portalVisBytes );
+// RAVEN BEGIN
+// JSinger: Changed to call optimized memcpy
+		SIMDProcessor->Memcpy( p->mightSee, p->vis, portalVisBytes );
+// RAVEN BEGIN
 	}
 }
 
@@ -784,6 +788,13 @@ void idPVS::Init( void ) {
 	areaVisBytes = ( ((numAreas+31)&~31) >> 3);
 	areaVisLongs = areaVisBytes/sizeof(long);
 
+// RAVEN BEGIN
+// mwhitlock: Xenon texture streaming
+#if defined(_XENON)
+	justOutOfViewAreasBits = new byte[areaVisBytes];
+#endif
+// RAVEN END
+
 	areaPVS = new byte[numAreas * areaVisBytes];
 	memset( areaPVS, 0xFF, numAreas * areaVisBytes );
 
@@ -819,7 +830,14 @@ void idPVS::Init( void ) {
 	gameLocal.Printf( "%5.0f msec to calculate PVS\n", timer.Milliseconds() );
 	gameLocal.Printf( "%5d areas\n", numAreas );
 	gameLocal.Printf( "%5d portals\n", numPortals );
-	gameLocal.Printf( "%5d areas visible on average\n", totalVisibleAreas / numAreas );
+
+// RAVEN BEGIN
+// rjohnson: fix for div by 0
+	if( numAreas ) {
+		gameLocal.Printf( "%5d areas visible on average\n", totalVisibleAreas / numAreas );
+	}
+// RAVEN END
+
 	if ( numAreas * areaVisBytes < 1024 ) {
 		gameLocal.Printf( "%5d bytes PVS data\n", numAreas * areaVisBytes );
 	}
@@ -838,6 +856,16 @@ void idPVS::Shutdown( void ) {
 		delete connectedAreas;
 		connectedAreas = NULL;
 	}
+// RAVEN BEGIN
+// mwhitlock: Xenon texture streaming
+#if defined(_XENON)
+	if ( justOutOfViewAreasBits )
+	{
+		delete justOutOfViewAreasBits;
+		justOutOfViewAreasBits = NULL;
+	}
+#endif
+// RAVEN END
 	if ( areaQueue ) {
 		delete areaQueue;
 		areaQueue = NULL;
@@ -848,7 +876,14 @@ void idPVS::Shutdown( void ) {
 	}
 	if ( currentPVS ) {
 		for ( int i = 0; i < MAX_CURRENT_PVS; i++ ) {
-			delete currentPVS[i].pvs;
+// RAVEN BEGIN
+// jsinger: modified to check to make sure the pointers have a value before attempting to delete
+//          them.  This prevents a call through the unified allocator before it has been initialized
+			if(currentPVS[i].pvs)
+			{
+				delete currentPVS[i].pvs;
+			}
+// RAVEN END
 			currentPVS[i].pvs = NULL;
 		}
 	}
@@ -896,6 +931,107 @@ void idPVS::GetConnectedAreas( int srcArea, bool *areas ) const {
 		}
 	}
 }
+
+// RAVEN BEGIN
+// mwhitlock: Xenon texture streaming
+#if defined(_XENON)
+/*
+================
+idPVS::GetAreasJustOutOfView
+
+assumes the 'areas' array is initialized to -1
+================
+*/
+int idPVS::DetermineAreasJustOutOfView( int srcArea ) {
+	int curArea, nextArea;
+	int queueStart, queueEnd;
+	int i, n;
+	exitPortal_t portal;
+	int numOutOfView=0;
+
+	queueStart = -1;
+	queueEnd = 0;
+	memset( connectedAreas, 0, numAreas * sizeof( *connectedAreas ) );
+	memset( justOutOfViewAreasBits, 0, areaVisBytes );
+	assert(srcArea!=-1);
+	connectedAreas[srcArea] = true;
+
+	for ( curArea = srcArea; queueStart < queueEnd; curArea = areaQueue[++queueStart] ) {
+
+		n = gameRenderWorld->NumPortalsInArea( curArea );
+
+		for ( i = 0; i < n; i++ ) {
+			portal = gameRenderWorld->GetPortal( curArea, i );
+			
+			assert(portal.areas[1]!=-1);
+
+			// If nextArea cannot *ever* be viewed from srcArea, add it to our
+			// list of areas that are just out of view.
+			if(portal.areas[1]!=-1)
+			{
+				byte* pvs = areaPVS +  srcArea * areaVisBytes;
+				if(!pvs[portal.areas[1]>>3] & (1<<(portal.areas[1]&7)))
+				{
+					assert(numOutOfView<4096);
+					justOutOfViewAreasBits[portal.areas[1]>>3] |= 1<<(portal.areas[1]&7);
+					numOutOfView++;
+					continue;
+				}
+			}
+
+			// If nextArea could potentially be viewed from srcArea, but cannot
+			// currently be viewed from srcArea because the portal is closed, add
+			// it to our list of areas that are just out of view.
+			if ( portal.blockingBits & PS_BLOCK_VIEW )
+			{
+				if(portal.areas[1]!=-1)
+				{
+					assert(numOutOfView<4096);
+					justOutOfViewAreasBits[portal.areas[1]>>3] |= 1<<(portal.areas[1]&7);
+					numOutOfView++;
+				}
+				continue;
+			}
+
+			// Area given by portal.area[1] is always the area the portal leads to.
+			nextArea = portal.areas[1];
+
+			// If already visited this area, skip it.
+			if ( connectedAreas[nextArea] ) {
+				continue;
+			}
+		
+			// add area to queue
+			areaQueue[queueEnd++] = nextArea;
+			connectedAreas[nextArea] = true;
+			
+			// Well we got here so remove it from the set of just out of view areas.
+			justOutOfViewAreasBits[nextArea>>3] &= ~(1<<(nextArea&7));
+		}
+	}
+	return numOutOfView;
+}
+
+/*
+================
+idPVS::JustOutOFView
+================
+*/
+bool idPVS::JustOutOfView(const int *targetAreas, int numTargetAreas ) const {
+	int i;
+	
+	for ( i = 0; i < numTargetAreas; i++ ) {
+		if ( targetAreas[i] < 0 || targetAreas[i] >= numAreas ) {
+			continue;
+		}
+		if ( justOutOfViewAreasBits[targetAreas[i]>>3] & (1 << (targetAreas[i]&7)) ) {
+			return true;
+		}
+	}
+	return false;
+}
+#endif
+// RAVEN END
 
 /*
 ================
@@ -958,7 +1094,10 @@ pvsHandle_t idPVS::SetupCurrentPVS( const int sourceArea, const pvsType_t type )
 	}
 
 	if ( type != PVS_CONNECTED_AREAS ) {
-		memcpy( currentPVS[handle.i].pvs, areaPVS + sourceArea * areaVisBytes, areaVisBytes );
+// RAVEN BEGIN
+// JSinger: Changed to call optimized memcpy
+		SIMDProcessor->Memcpy( currentPVS[handle.i].pvs, areaPVS + sourceArea * areaVisBytes, areaVisBytes );
+// RAVEN END
 	} else {
 		memset( currentPVS[handle.i].pvs, -1, areaVisBytes );
 	}
@@ -1004,7 +1143,10 @@ pvsHandle_t idPVS::SetupCurrentPVS( const int *sourceAreas, const int numSourceA
 
 	if ( type != PVS_CONNECTED_AREAS ) {
 		// merge PVS of all areas the source is in
-		memcpy( currentPVS[handle.i].pvs, areaPVS + sourceAreas[0] * areaVisBytes, areaVisBytes );
+// RAVEN BEGIN
+// JSinger: Changed to call optimized memcpy
+		SIMDProcessor->Memcpy( currentPVS[handle.i].pvs, areaPVS + sourceAreas[0] * areaVisBytes, areaVisBytes );
+// RAVEN END
 		for ( i = 1; i < numSourceAreas; i++ ) {
 
 			assert( sourceAreas[i] >= 0 && sourceAreas[i] < numAreas );

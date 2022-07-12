@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __HASHTABLE_H__
 #define __HASHTABLE_H__
@@ -71,7 +69,25 @@ ID_INLINE idHashTable<Type>::idHashTable( int newtablesize ) {
 	tablesize = newtablesize;
 	assert( tablesize > 0 );
 
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT_CONTAINERS)
+	bool ok=rvPushHeapContainingMemory(this);
+#endif
+// RAVEN END
+
 	heads = new hashnode_s *[ tablesize ];
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT_CONTAINERS)
+	if(ok)
+	{
+		RV_POP_HEAP();
+	}
+#endif
+// RAVEN END
+
 	memset( heads, 0, sizeof( *heads ) * tablesize );
 
 	numentries		= 0;
@@ -92,6 +108,13 @@ ID_INLINE idHashTable<Type>::idHashTable( const idHashTable<Type> &map ) {
 
 	assert( map.tablesize > 0 );
 
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT_CONTAINERS)
+	bool ok=rvPushHeapContainingMemory(this);
+#endif
+// RAVEN END
+
 	tablesize		= map.tablesize;
 	heads			= new hashnode_s *[ tablesize ];
 	numentries		= map.numentries;
@@ -109,6 +132,16 @@ ID_INLINE idHashTable<Type>::idHashTable( const idHashTable<Type> &map ) {
 			prev = &( *prev )->next;
 		}
 	}
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT_CONTAINERS)
+	if(ok)
+	{
+		RV_POP_HEAP();
+	}
+#endif
+// RAVEN END
 }
 
 /*
@@ -176,8 +209,25 @@ ID_INLINE void idHashTable<Type>::Set( const char *key, Type &value ) {
 
 	numentries++;
 
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT_CONTAINERS)
+	bool ok=rvPushHeapContainingMemory(this);
+#endif
+// RAVEN END
+
 	*nextPtr = new hashnode_s( key, value, heads[ hash ] );
 	(*nextPtr)->next = node;
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT_CONTAINERS)
+	if(ok)
+	{
+		RV_POP_HEAP();
+	}
+#endif
+// RAVEN END
 }
 
 /*

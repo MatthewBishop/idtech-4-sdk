@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __WINDING2D_H__
 #define __WINDING2D_H__

@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __GAME_PVS_H__
 #define __GAME_PVS_H__
@@ -20,13 +18,14 @@ typedef struct pvsHandle_s {
 	unsigned int		h;			// handle for current pvs
 } pvsHandle_t;
 
-
 typedef struct pvsCurrent_s {
 	pvsHandle_t			handle;		// current pvs handle
 	byte *				pvs;		// current pvs bit string
 } pvsCurrent_t;
 
-#define MAX_CURRENT_PVS		8		// must be a power of 2
+// must be a power of 2
+// base was 8, MP now stores client PVS from frame to frame ( MAX_CLIENTS )
+#define MAX_CURRENT_PVS		64
 
 typedef enum {
 	PVS_NORMAL				= 0,	// PVS through portals taking portal states into account
@@ -68,12 +67,27 @@ public:
 	void				ReadPVS( const pvsHandle_t handle, const idBitMsg &msg );
 #endif
 
+// RAVEN BEGIN
+// mwhitlock: Xenon texture streaming
+#if defined(_XENON)
+	bool				JustOutOfView(const int *targetAreas, int numTargetAreas ) const;
+	int					DetermineAreasJustOutOfView( int srcArea );
+#endif
+// RAVEN END
+
 private:
 	int					numAreas;
 	int					numPortals;
 	bool *				connectedAreas;
+// RAVEN BEGIN
+// mwhitlock: Xenon texture streaming
+#if defined(_XENON)
+	byte *				justOutOfViewAreasBits;
+#endif
+// RAVEN END
 	int *				areaQueue;
 	byte *				areaPVS;
+
 						// current PVS for a specific source possibly taking portal states (open/closed) into account
 	mutable pvsCurrent_t currentPVS[MAX_CURRENT_PVS];
 						// used to create PVS

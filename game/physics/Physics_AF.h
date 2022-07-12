@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __PHYSICS_AF_H__
 #define __PHYSICS_AF_H__
@@ -739,7 +737,6 @@ typedef struct AFCollision_s {
 	idAFBody *				body;
 } AFCollision_t;
 
-
 class idPhysics_AF : public idPhysics_Base {
 
 public:
@@ -776,6 +773,7 @@ public:
 	void					DeleteBody( const int id );
 	void					DeleteConstraint( const char *constraintName );
 	void					DeleteConstraint( const int id );
+
 							// get all the contact constraints acting on the body
 	int						GetBodyContactConstraints( const int id, idAFConstraint_Contact *contacts[], int maxContacts ) const;
 							// set the default friction for bodies
@@ -810,6 +808,11 @@ public:
 	void					SetComeToRest( bool enable ) { comeToRest = enable; }
 							// call when structure of articulated figure changes
 	void					SetChanged( void ) { changedAF = true; }
+// RAVEN BEGIN
+// rjohnson: fast AF eval to skip some things that are not needed for specific circumstances
+							// enable or disable fast evaluation
+	void					SetFastEval( const bool enable ) { fastEval = enable; }
+// RAVEN END
 							// enable/disable activation by impact
 	void					EnableImpact( void );
 	void					DisableImpact( void );
@@ -827,6 +830,9 @@ public:	// common physics interface
 
 	void					SetMass( float mass, int id = -1 );
 	float					GetMass( int id = -1 ) const;
+
+	//MCG: added SetImpulseThreshold
+	void					SetImpulseThreshold( float newIT ) { impulseThreshold = newIT; };
 
 	void					SetContents( int contents, int id = -1 );
 	int						GetContents( int id = -1 ) const;
@@ -939,6 +945,10 @@ private:
 	bool					noImpact;						// if true do not activate when another object collides
 	bool					worldConstraintsLocked;			// if true world constraints cannot be moved
 	bool					forcePushable;					// if true can be pushed even when bound to a master
+// RAVEN BEGIN
+// rjohnson: fast AF eval to skip some things that are not needed for specific circumstances
+	bool					fastEval;						// if true the fast eval is on
+// RAVEN END
 
 							// physics state
 	AFPState_t				current;

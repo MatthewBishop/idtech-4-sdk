@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __SCRIPT_INTERPRETER_H__
 #define __SCRIPT_INTERPRETER_H__
@@ -34,8 +32,13 @@ private:
 	idThread			*thread;
 
 	void				PopParms( int numParms );
+// RAVEN BEGIN
+//	abahr: making Push public to allow parms to be put on stack
+public:
 	void				PushString( const char *string );
 	void				Push( int value );
+private:
+// RAVEN END
 	const char			*FloatToString( float value );
 	void				AppendString( idVarDef *def, const char *from );
 	void				SetString( idVarDef *def, const char *from );
@@ -48,6 +51,11 @@ private:
 	void				LeaveFunction( idVarDef *returnDef );
 	void				CallEvent( const function_t *func, int argsize );
 	void				CallSysEvent( const function_t *func, int argsize );
+// RAVEN BEGIN
+// jshepard: last variable referenced in the script-- keep tabs on it so we can print it for warnings.
+	idVarDef			*LastScriptVariable;
+// RAVEN END
+
 
 public:
 	bool				doneProcessing;

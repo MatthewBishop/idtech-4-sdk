@@ -1,15 +1,22 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "precompiled.h"
 #pragma hdrstop
 
-#ifndef ID_REDIRECT_NEWDELETE
+// TTimo - don't do anything funky if you're on a real OS ;-)
+#if defined(_WINDOWS) || defined(_XENON)
+
+// RAVEN BEGIN
+// jsinger: attempt at removing the DLL cross boundary issue
+// mwhitlock: Dynamic memory consolidation - may want to consier making a totally separate string allocator
+#if ( !defined(ID_REDIRECT_NEWDELETE) && !defined(RV_UNIFIED_ALLOCATOR) ) || defined(_RV_MEM_SYS_SUPPORT)
+// RAVEN END
 	#define USE_STRING_DATA_ALLOCATOR
 #endif
 
+#endif
+
 #ifdef USE_STRING_DATA_ALLOCATOR
-static idDynamicBlockAlloc<char, 1<<18, 128>	stringDataAllocator;
+static idDynamicBlockAlloc<char, 1<<18, 128, MA_STRING>	stringDataAllocator;
 #endif
 
 idVec4	g_color_table[16] =
@@ -24,7 +31,10 @@ idVec4	g_color_table[16] =
 	idVec4(1.0f, 1.0f, 1.0f, 1.0f), // S_COLOR_WHITE
 	idVec4(0.5f, 0.5f, 0.5f, 1.0f), // S_COLOR_GRAY
 	idVec4(0.0f, 0.0f, 0.0f, 1.0f), // S_COLOR_BLACK
-	idVec4(0.0f, 0.0f, 0.0f, 1.0f),
+// RAVEN BEGIN
+// bdube: console color
+	idVec4(0.94f, 0.62f, 0.05f, 1.0f),	// S_COLOR_CONSOLE
+// RAVEN END	
 	idVec4(0.0f, 0.0f, 0.0f, 1.0f),
 	idVec4(0.0f, 0.0f, 0.0f, 1.0f),
 	idVec4(0.0f, 0.0f, 0.0f, 1.0f),
@@ -37,6 +47,115 @@ const char *units[2][4] =
 	{ "B", "KB", "MB", "GB" },
 	{ "B/s", "KB/s", "MB/s", "GB/s" }
 };
+
+const bool idStr::printableCharacter[256] =
+{
+//
+	false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
+//
+	false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false,
+//	       !      "      #      $      &      %      '      (      )      *      +      ,      -      .      /
+	true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+//  0      1      2      3      4      5      6      7      8      9      :      ;      <      =      >      ?
+	true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+//  @      A      B      C      D      E      F      G      H      I      J      K      L      M      N      O
+	true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+//  P      Q      R      S      T      U      V      W      X      Y      Z      [      \      ]      ^      _
+	true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+//  `      a      b      c      d      e      f      g      h      i      j      k      l      m      n      o
+	true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+//  p      q      r      s      t      u      v      w      x      y      z      {      |      }      ~
+	true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  false,
+//  €             X                                                                                                                                                        Œ
+	true,  true,  false, false, false, false, false, false, false, false, false, false, true,  false, false, false,
+//                                                                 ™                    œ
+	false, false, false, false, false, false, false, false, false, true,  false, false, true,  false, false, false,
+//         ¡             £      ¤      ¥             §             ©             «                    ®
+	false, true,  false, true,  true,  true,  false, true,  false, true,  false, true,  false, false, true,  false,
+//  °                           ´      µ             ·                           »                           ¿
+	true,  false, false, false, true,  true,  false, true,  false, false, false, true,  false, false, false, true,
+//  À      Á      Â      Ã      Ä      Å      Æ      Ç      È      É      Ê      Ë      Ì      Í      Î      Ï
+	true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+//  Ð      Ñ      Ò      Ó      Ô      Õ      Ö      ×      Ø      Ù      Ú      Û      Ü      Ý      Þ      ß
+	true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+//  à      á      â      ã      ä      å      æ      ç      è      é      ê      ë      ì      í      î      ï
+	true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+//  ð      ñ      ò      ó      ô      õ      ö      ÷      ø      ù      ú      û      ü      ý      þ      ÿ
+	true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,  true,
+};
+
+const char idStr::upperCaseCharacter[256] =
+{
+//
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+//
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+//	     !    "    #    $    &    %    '    (    )    *    +    ,    -    .    /
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+//  0    1    2    3    4    5    6    7    8    9    :    ;    <    =    >    ?
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+//  @    A    B    C    D    E    F    G    H    I    J    K    L    M    N    O
+	0,   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O',
+//  P    Q    R    S    T    U    V    W    X    Y    Z    [    \    ]    ^    _
+	'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 0,   0,   0,   0,   0,
+//  `    a    b    c    d    e    f    g    h    i    j    k    l    m    n    o
+	0,   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O',
+//  p    q    r    s    t    u    v    w    x    y    z    {    |    }    ~
+	'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 0,   0,   0,   0,   0,
+//  €         X                                                                                                             Œ
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   'Œ', 0,   0,   0,
+//                                               TM             œ
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   'Œ', 0,   0,   0,
+//       ¡         £    ¤    ¥         §         ©         «              ®
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+//  °                   ´    µ         ·                   »                   ¿
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+//  À    Á    Â    Ã    Ä    Å    Æ    Ç    È    É    Ê    Ë    Ì    Í    Î    Ï
+	'À', 'Á', 'Â', 'Ã', 'Ä', 'Å', 'Æ', 'Ç', 'È', 'É', 'Ê', 'Ë', 'Ì', 'Í', 'Î', 'Ï',
+//  Ð    Ñ    Ò    Ó    Ô    Õ    Ö    ×    Ø    Ù    Ú    Û    Ü    Ý    Þ    ß
+	'Ð', 'Ñ', 'Ò', 'Ó', 'Ô', 'Õ', 'Ö', 0,   'Ø', 'Ù', 'Ú', 'Û', 'Ü', 'Ý', 'Þ', 'ß',
+//  à    á    â    ã    ä    å    æ    ç    è    é    ê    ë    ì    í    î    ï
+	'À', 'Á', 'Â', 'Ã', 'Ä', 'Å', 'Æ', 'Ç', 'È', 'É', 'Ê', 'Ë', 'Ì', 'Í', 'Î', 'Ï',
+//  ð    ñ    ò    ó    ô    õ    ö    ÷    ø    ù    ú    û    ü    ý    þ    ÿ
+	'Ð', 'Ñ', 'Ò', 'Ó', 'Ô', 'Õ', 'Ö', 0,   'Ø', 'Ù', 'Ú', 'Û', 'Ü', 'Ý', 'Þ', 'ß',
+};
+
+const char idStr::lowerCaseCharacter[256] =
+{
+//
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+//
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+//	     !    "    #    $    &    %    '    (    )    *    +    ,    -    .    /
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+//  0    1    2    3    4    5    6    7    8    9    :    ;    <    =    >    ?
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+//  @    A    B    C    D    E    F    G    H    I    J    K    L    M    N    O
+	0,   'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o',
+//  P    Q    R    S    T    U    V    W    X    Y    Z    [    \    ]    ^    _
+	'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 0,   0,   0,   0,   0,
+//  `    a    b    c    d    e    f    g    h    i    j    k    l    m    n    o
+	0,   'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o',
+//  p    q    r    s    t    u    v    w    x    y    z    {    |    }    ~
+	'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 0,   0,   0,   0,   0,
+//  €         X                                                                                                             Œ
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   'œ', 0,   0,   0,
+//                                               TM             œ
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   'œ', 0,   0,   0,
+//       ¡         £    ¤    ¥         §         ©         «              ®
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+//  °                   ´    µ         ·                   »                   ¿
+	0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+//  À    Á    Â    Ã    Ä    Å    Æ    Ç    È    É    Ê    Ë    Ì    Í    Î    Ï
+	'à', 'á', 'â', 'ã', 'ä', 'å', 'æ', 'ç', 'è', 'é', 'ê', 'ë', 'ì', 'í', 'î', 'ï',
+//  Ð    Ñ    Ò    Ó    Ô    Õ    Ö    ×    Ø    Ù    Ú    Û    Ü    Ý    Þ    ß
+	'ð', 'ñ', 'ò', 'ó', 'ô', 'õ', 'ö', 0,   'ø', 'ù', 'ú', 'û', 'ü', 'ý', 'þ', 'ß',
+//  à    á    â    ã    ä    å    æ    ç    è    é    ê    ë    ì    í    î    ï
+	'à', 'á', 'â', 'ã', 'ä', 'å', 'æ', 'ç', 'è', 'é', 'ê', 'ë', 'ì', 'í', 'î', 'ï',
+//  ð    ñ    ò    ó    ô    õ    ö    ÷    ø    ù    ú    û    ü    ý    þ    ÿ
+	'ð', 'ñ', 'ò', 'ó', 'ô', 'õ', 'ö', 0,   'ø', 'ù', 'ú', 'û', 'ü', 'ý', 'þ', 'ß',
+};
+// RAVEN END
 
 /*
 ============
@@ -70,7 +189,23 @@ void idStr::ReAllocate( int amount, bool keepold ) {
 	alloced = newsize;
 
 #ifdef USE_STRING_DATA_ALLOCATOR
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+	RV_PUSH_SYS_HEAP_ID(RV_HEAP_ID_PERMANENT);
+#endif
+// RAVEN END
+
 	newbuffer = stringDataAllocator.Alloc( alloced );
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+	RV_POP_HEAP();
+#endif
+// RAVEN END
+
 #else
 	newbuffer = new char[ alloced ];
 #endif
@@ -98,11 +233,21 @@ idStr::FreeData
 void idStr::FreeData( void ) {
 	if ( data && data != baseBuffer ) {
 #ifdef USE_STRING_DATA_ALLOCATOR
-		stringDataAllocator.Free( data );
+// RAVEN BEGIN
+// jnewquist: Ignore free request if allocator is empty, probably shutdown
+		if ( stringDataAllocator.GetNumUsedBlocks() > 0 ) {
+			stringDataAllocator.Free( data );
+		}
+// RAVEN END
 #else
 		delete[] data;
 #endif
-		data = baseBuffer;
+
+// RAVEN BEGIN
+// jsinger: was exhibiting a buffer overrun when an idStr was contained in an idList
+// due to having the wrong alloced value.  This corrects that
+		Init();
+// RAVEN END
 	}
 }
 
@@ -535,7 +680,17 @@ bool idStr::StripTrailingOnce( const char *string ) {
 idStr::Replace
 ============
 */
-void idStr::Replace( const char *old, const char *nw ) {
+// RAVEN BEGIN
+// scork: this needs to return an int of the replacement count, like MS CString etc, otherwise you can't do things like this:
+//
+// idStr str;
+//  while (str.Replace("\n\n","\n")) {};
+//
+// ... to remove blank lines from an output string if you have 3 blank lines in a row. Without the while(), you'd just be guessing about
+//	converting (eg) 3 blank lines to 2, then 2 to 1, depending on how many times you straight-line the Replace() call.
+//
+int idStr::Replace( const char *old, const char *nw ) {
+	int		iReplaced = 0;
 	int		oldLen, newLen, i, j, count;
 	idStr	oldString( data );
 
@@ -560,6 +715,7 @@ void idStr::Replace( const char *old, const char *nw ) {
 				memcpy( data + j, nw, newLen );
 				i += oldLen - 1;
 				j += newLen;
+				iReplaced++;
 			} else {
 				data[j] = oldString[i];
 				j++;
@@ -568,7 +724,9 @@ void idStr::Replace( const char *old, const char *nw ) {
 		data[j] = 0;
 		len = strlen( data );
 	}
+	return iReplaced;
 }
+// RAVEN END
 
 /*
 ============
@@ -629,6 +787,29 @@ void idStr::StripTrailingWhitespace( void ) {
 		len--;
 	}
 }
+
+// RAVEN BEGIN
+/*
+============
+idStr::StripUntil
+============
+*/
+void idStr::StripUntil( const char c )
+{
+	while( data[ 0 ] != c && len ) {
+		memmove( &data[ 0 ], &data[ 1 ], len );
+		len--;
+	}
+}
+// RAVEN END
+
+/*
+=====================================================================
+
+  info strings
+
+=====================================================================
+*/
 
 /*
 ============
@@ -709,6 +890,102 @@ idStr &idStr::BackSlashesToSlashes( void ) {
 	}
 	return *this;
 }
+
+// RAVEN BEGIN
+// jscott: for file systems that require backslashes
+/*
+============
+idStr::SlashesToBackSlashes
+============
+*/
+idStr &idStr::SlashesToBackSlashes( void ) {
+	int i;
+
+	for ( i = 0; i < len; i++ ) {
+		if ( data[ i ] == '/' ) {
+			data[ i ] = '\\';
+		}
+	}
+	return *this;
+}
+
+// nmckenzie: char replacing routine
+
+/*
+============
+idStr::SlashesToBackSlashes
+============
+*/
+
+bool idStr::HasChar( const char check ){
+	int i;
+
+	for ( i = 0; i < len; i++ ) {
+		if ( data[ i ] == check ) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/*
+============
+idStr::HasChars
+============
+*/
+
+bool idStr::HasChars( const char *check ){
+	int i;
+
+	while( *check ){
+		for ( i = 0; i < len; i++ ) {
+			if ( data[ i ] == *check ) {
+				return true;
+			}
+		}
+		check++;
+	}
+	return false;
+}
+
+/*
+============
+idStr::ReplaceChar
+============
+*/
+
+idStr &idStr::ReplaceChar( const char from, const char to ) {
+	int i;
+
+	for ( i = 0; i < len; i++ ) {
+		if ( data[ i ] == from ) {
+			data[ i ] = to;
+		}
+	}
+	return *this;
+}
+
+/*
+============
+idStr::ReplaceChars
+============
+*/
+
+idStr &idStr::ReplaceChars( const char *from, const char to ) {
+	int i;
+
+	while( *from ){
+		for ( i = 0; i < len; i++ ) {
+			if ( data[ i ] == *from ) {
+				data[ i ] = to;
+			}
+		}
+		from++;
+	}
+	return *this;
+}
+
+// RAVEN END
 
 /*
 ============
@@ -925,7 +1202,10 @@ void idStr::ExtractFileBase( idStr &dest ) const {
 	}
 
 	start = pos;
-	while( ( pos < Length() ) && ( ( *this )[ pos ] != '.' ) ) {
+// RAVEN BEGIN
+// jscott: for getting the file base out of addnormals() style filenames
+	while( ( pos < Length() ) && ( ( *this )[ pos ] != '.' ) && ( ( *this )[ pos ] != ',' ) ) {
+// RAVEN END
 		pos++;
 	}
 
@@ -956,6 +1236,44 @@ void idStr::ExtractFileExtension( idStr &dest ) const {
 	}
 }
 
+// RAVEN BEGIN
+// twhitaker: Turns a bad file name into a good one or your money back
+void idStr::ScrubFileName( void )
+{
+	int i;
+
+	RemoveEscapes();
+	StripFileExtension();
+
+	for ( i = 0; i < len; i++ ) {
+		if( !idStr::upperCaseCharacter[data[i]] && !isdigit(data[i]) ) {
+			data[i] = '_';
+		}
+	}
+}
+
+// jscott: like the declManager version, but globally accessable
+void idStr::MakeNameCanonical( void )
+{
+	ToLower();
+	BackSlashesToSlashes();
+	StripFileExtension();
+}
+
+void idStr::EnsurePrintable( void ) {
+
+	int		i;
+
+	for( i = 0; i < len; i++ ) {
+
+		if( !CharIsPrintable( data[i] ) ) {
+
+			memmove( &data[i], &data[i + 1], len - i );
+			len--;
+		}
+	}
+}
+// RAVEN END
 
 /*
 =====================================================================
@@ -982,7 +1300,7 @@ bool idStr::IsNumeric( const char *s ) {
 
 	dot = false;
 	for ( i = 0; s[i]; i++ ) {
-		if ( !isdigit( s[i] ) ) {
+		if ( !isdigit( ( byte )s[i] ) ) {
 			if ( ( s[ i ] == '.' ) && !dot ) {
 				dot = true;
 				continue;
@@ -1163,16 +1481,19 @@ int idStr::Icmpn( const char *s1, const char *s2, int n ) {
 idStr::Icmp
 ================
 */
-int idStr::IcmpNoColor( const char *s1, const char *s2 ) {
+// RAVEN BEGIN
+// bdube: escape codes
+int idStr::IcmpNoEscape ( const char *s1, const char *s2 ) {
 	int c1, c2, d;
 
 	do {
-		while ( idStr::IsColor( s1 ) ) {
-			s1 += 2;
+		for ( d = idStr::IsEscape( s1 ); d; d = idStr::IsEscape( s1 ) ) {
+			s1 += d;
 		}
-		while ( idStr::IsColor( s2 ) ) {
-			s2 += 2;
+		for ( d = idStr::IsEscape( s2 ); d; d = idStr::IsEscape( s2 ) ) {
+			s2 += d;
 		}
+// RAVEN END
 		c1 = *s1++;
 		c2 = *s2++;
 
@@ -1379,12 +1700,13 @@ void idStr::Append( char *dest, int size, const char *src ) {
 	idStr::Copynz( dest + l1, src, size - l1 );
 }
 
+// bdube: escape codes
 /*
 ================
-idStr::LengthWithoutColors
+idStr::LengthWithoutEscapes
 ================
 */
-int idStr::LengthWithoutColors( const char *s ) {
+int idStr::LengthWithoutEscapes( const char *s ) {
 	int len;
 	const char *p;
 
@@ -1395,8 +1717,10 @@ int idStr::LengthWithoutColors( const char *s ) {
 	len = 0;
 	p = s;
 	while( *p ) {
-		if ( idStr::IsColor( p ) ) {
-			p += 2;
+		int esc;
+		esc = idStr::IsEscape ( p );
+		if ( esc ) {
+			p += esc;
 			continue;
 		}
 		p++;
@@ -1408,10 +1732,10 @@ int idStr::LengthWithoutColors( const char *s ) {
 
 /*
 ================
-idStr::RemoveColors
+idStr::RemoveEscapes
 ================
 */
-char *idStr::RemoveColors( char *string ) {
+char *idStr::RemoveEscapes( char *string, int escapes ) {
 	char *d;
 	char *s;
 	int c;
@@ -1419,11 +1743,18 @@ char *idStr::RemoveColors( char *string ) {
 	s = string;
 	d = string;
 	while( (c = *s) != 0 ) {
-		if ( idStr::IsColor( s ) ) {
-			s++;
+		int esc;
+		int type;
+		esc = idStr::IsEscape( s, &type );
+		if ( esc && (type & escapes) ) {
+			s += esc;
+			continue;
 		}		
 		else {
 			*d++ = c;
+			if ( c == C_COLOR_ESCAPE && *(s+1) ) {
+				s++;
+			}
 		}
 		s++;
 	}
@@ -1431,6 +1762,75 @@ char *idStr::RemoveColors( char *string ) {
 
 	return string;
 }
+
+/*
+================
+idStr::IsEscape
+================
+*/
+int idStr::IsEscape ( const char *s, int* type )  {
+	if ( !s || *s != C_COLOR_ESCAPE || *(s+1) == C_COLOR_ESCAPE ) {
+		return 0;
+	}
+	if ( type ) {
+		*type = S_ESCAPE_UNKNOWN;
+	}
+	switch ( *(s+1) ) {
+		case '0': case '1': case '2': case '3': case '4':
+		case '5': case '6': case '7': case '8': case '9':
+		case ':':
+			if ( type ) {
+				*type = S_ESCAPE_COLORINDEX;
+			}
+			return 2;
+
+		case '-': case '+':
+			if ( type ) {
+				*type = S_ESCAPE_COLOR;
+			}
+			return 2;
+			
+		case 'r': case 'R': 
+			if ( type ) {			
+				*type = S_ESCAPE_COMMAND;
+			}
+			return 2;
+			
+		case 'c': case 'C':
+			if ( *(s+2) ) {
+				if ( *(s+3) ) {
+					if ( *(s+4) ) {
+						if ( type ) {
+							*type = S_ESCAPE_COLOR;
+						}
+						return 5;
+					}
+				}
+			}
+			return 0;
+			
+		case 'n': case 'N':
+			if ( type ) {
+				*type = S_ESCAPE_COMMAND;
+			}
+			if ( *(s+2) ) {
+				return 3;
+			}
+			return 0;
+			
+		case 'i': case 'I':
+			if ( *(s+2) && *(s+3) && *(s+4) ) {
+				if ( type ) {
+					*type = S_ESCAPE_ICON;
+				}
+				return 5;
+			}
+			return 0;		
+	}			
+	return 0;
+}
+
+// RAVEN END
 
 /*
 ================
@@ -1543,11 +1943,14 @@ NOTE: not thread safe
 char *va( const char *fmt, ... ) {
 	va_list argptr;
 	static int index = 0;
-	static char string[4][16384];	// in case called by nested functions
+// RAVEN BEGIN
+// scork: tweaked from 4 to 8, since one of my funcs uses it twice. Better safe than sorry
+	static char string[VA_NUM_BUFS][VA_BUF_LEN];	// in case called by nested functions
 	char *buf;
 
 	buf = string[index];
-	index = (index + 1) & 3;
+	index = (index + 1) & 7;
+// RAVEN END
 
 	va_start( argptr, fmt );
 	vsprintf( buf, fmt, argptr );
@@ -1556,7 +1959,40 @@ char *va( const char *fmt, ... ) {
 	return buf;
 }
 
+#ifdef _WIN32
+/*
+============
+fe
 
+Used for formatting windows errors
+NOTE: not thread safe
+============
+*/
+// RAVEN BEGIN
+// abahr
+char *fe( int errorId ) {
+	static int index = 0;
+	static char string[4][256];	// in case called by nested functions
+	char *buf;
+
+	buf = string[index];
+	index = (index + 1) & 3;
+#ifndef _XBOX
+	FormatMessage( 
+		FORMAT_MESSAGE_FROM_SYSTEM | 
+		FORMAT_MESSAGE_IGNORE_INSERTS,
+		NULL,
+		errorId,
+		0, // Default language
+		(LPTSTR) buf,
+		256,
+		NULL 
+	);
+#endif
+	return buf;
+}
+#endif
+// RAVEN END
 
 /*
 ============
@@ -1595,6 +2031,10 @@ idStr::InitMemory
 */
 void idStr::InitMemory( void ) {
 #ifdef USE_STRING_DATA_ALLOCATOR
+// RAVEN BEGIN
+// jnewquist: Tag scope and callees to track allocations using "new".
+	MEM_SCOPED_TAG(tag,MA_STRING);
+// RAVEN END
 	stringDataAllocator.Init();
 #endif
 }
@@ -1633,3 +2073,142 @@ void idStr::ShowMemoryUsage_f( const idCmdArgs &args ) {
 			stringDataAllocator.GetNumFreeBlocks(), stringDataAllocator.GetNumEmptyBaseBlocks() );
 #endif
 }
+
+/*
+================
+idStr::FormatNumber
+================
+*/
+struct formatList_t {
+	int			gran;
+	int			count;
+};
+
+// elements of list need to decend in size
+formatList_t formatList[] = {
+	{ 1000000000, 0 },
+	{ 1000000, 0 },
+	{ 1000, 0 }
+};
+
+int numFormatList = sizeof(formatList) / sizeof( formatList[0] );
+
+
+idStr idStr::FormatNumber( int number ) {
+	idStr string;
+	bool hit;
+
+	// reset
+	for ( int i = 0; i < numFormatList; i++ ) {
+		formatList_t *li = formatList + i;
+		li->count = 0;
+	}
+
+	// main loop
+	do {
+		hit = false;
+
+		for ( int i = 0; i < numFormatList; i++ ) {
+			formatList_t *li = formatList + i;
+
+			if ( number >= li->gran ) {
+				li->count++;
+				number -= li->gran;
+				hit = true;
+				break;
+			}
+		}
+	} while ( hit );
+
+	// print out
+	bool found = false;
+
+	for ( int i = 0; i < numFormatList; i++ ) {
+		formatList_t *li = formatList + i;
+
+		if ( li->count ) {
+			if ( !found ) {
+				string += va( "%i,", li->count );
+			} else {
+				string += va( "%3.3i,", li->count );
+			}
+			found = true;
+		}
+		else if ( found ) {
+			string += va( "%3.3i,", li->count );
+		}
+	}
+
+	if ( found ) {
+		string += va( "%3.3i", number );
+	}
+	else {
+		string += va( "%i", number );
+	}
+
+	// pad to proper size
+	int count = 11 - string.Length();
+
+	for ( int i = 0; i < count; i++ ) {
+		string.Insert( " ", 0 );
+	}
+
+	return string;
+}
+
+// RAVEN BEGIN
+// abahr
+/*
+================
+idStr::Split
+================
+*/
+void idStr::Split( const char* source, idList<idStr>& list, const char delimiter, const char groupDelimiter  ) {
+	const idStr localSource( source );
+	int sourceLength = localSource.Length();
+	idStr element;
+	int startIndex = 0;
+	int endIndex = -1;
+	char currentChar = '\0';
+
+	list.Clear();
+	while( startIndex < sourceLength ) {
+		currentChar = localSource[ startIndex ];
+		if( currentChar == groupDelimiter ) {
+			endIndex = localSource.Find( groupDelimiter, ++startIndex );
+			if( endIndex == -1 ) {
+				common->Error( "Couldn't find expected char %c in idStr::Split\n", groupDelimiter );
+			}
+			element = localSource.Mid( startIndex, endIndex );
+			element.Strip( groupDelimiter );
+			list.Append( element );
+			element.Clear();
+			startIndex = endIndex + 1;
+			continue;
+		} else if( currentChar == delimiter ) {
+			element += '\0';
+			list.Append( element );
+			element.Clear();
+			endIndex = ++startIndex;
+			continue;
+		}
+
+		startIndex++;
+		element += currentChar;
+	}
+
+	if( element.Length() ) {
+		element += '\0';
+		list.Append( element );
+	}
+}
+
+/*
+================
+idStr::Split
+================
+*/
+void idStr::Split( idList<idStr>& list, const char delimiter, const char groupDelimiter ) {
+	Split( c_str(), list, delimiter, groupDelimiter );
+}
+// RAVEN END

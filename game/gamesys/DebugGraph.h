@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 // DebugGraph.h
 
 class idDebugGraph {

@@ -1,9 +1,13 @@
-// Copyright (C) 2004 Id Software, Inc.
+// RAVEN BEGIN
+// bdube: note that this file is no longer merged with Doom3 updates
 //
+// MERGE_DATE 09/30/2004
 
 #ifndef __GAME_ITEM_H__
 #define __GAME_ITEM_H__
 
+extern const int ARENA_POWERUP_MASK;
+extern const idEventDef EV_ResetFlag;
 
 /*
 ===============================================================================
@@ -29,10 +33,17 @@ public:
 	virtual bool			Pickup( idPlayer *player );
 	virtual void			Think( void );
 	virtual void			Present();
+	virtual	void			InstanceJoin( void );
+	virtual void			InstanceLeave( void );
+	virtual bool			GetPhysicsToVisualTransform( idVec3 &origin, idMat3 &axis );
 
+// RAVEN BEGIN
+// mekberg: added
+	virtual bool			Collide( const trace_t &collision, const idVec3 &velocity );
+// RAVEN END
+	
 	enum {
 		EVENT_PICKUP = idEntity::EVENT_MAXEVENTS,
-		EVENT_RESPAWN,
 		EVENT_RESPAWNFX,
 		EVENT_MAXEVENTS
 	};
@@ -44,15 +55,37 @@ public:
 	virtual void			WriteToSnapshot( idBitMsgDelta &msg ) const;
 	virtual void			ReadFromSnapshot( const idBitMsgDelta &msg );
 
-private:
-	idVec3					orgOrigin;
+	virtual void			Hide( void );
+	virtual void			Show( void );
+
+	virtual bool			ClientStale( void );
+	virtual void			ClientUnstale( void );
+
+protected:
+
+	void					UpdateTrigger( void );
+	void					SendPickupMsg( int clientNum );
+
+	idClipModel *			trigger;
 	bool					spin;
+	// only a small subset of idItem need their physics object synced
+	bool					syncPhysics;
+
 	bool					pulse;
 	bool					canPickUp;
+
+	const idDeclSkin*		skin;
+	const idDeclSkin*		pickupSkin;
+
+private:
+	idVec3					orgOrigin;
+
+	rvPhysics_Particle		physicsObj;
 
 	// for item pulse effect
 	int						itemShellHandle;
 	const idMaterial *		shellMaterial;
+	rvClientEntityPtr<rvClientEffect>	effectIdle;
 
 	// used to update the item pulse effect
 	mutable bool			inView;
@@ -60,15 +93,36 @@ private:
 	mutable int				lastCycle;
 	mutable int				lastRenderViewTime;
 
-	bool					UpdateRenderEntity( renderEntity_s *renderEntity, const renderView_t *renderView ) const;
-	static bool				ModelCallback( renderEntity_s *renderEntity, const renderView_t *renderView );
+	// synced through snapshots to indicate show/hide or pickupSkin state
+	// -1 on a client means undef, 0 not ready, 1 ready
+	int						srvReady;
+	int						clReady;
 
-	void					Event_DropToFloor( void );
-	void					Event_Touch( idEntity *other, trace_t *trace );
-	void					Event_Trigger( idEntity *activator );
-	void					Event_Respawn( void );
-	void					Event_RespawnFx( void );
+	int						itemPVSArea;
+
+	bool					UpdateRenderEntity	( renderEntity_s *renderEntity, const renderView_t *renderView ) const;
+	static bool				ModelCallback		( renderEntity_s *renderEntity, const renderView_t *renderView );
+
+	void					Event_DropToFloor	( void );
+	void					Event_Touch			( idEntity *other, trace_t *trace );
+	void					Event_Trigger		( idEntity *activator );
+	void					Event_Respawn		( void );
+	void					Event_RespawnFx		( void );
+	void					Event_Pickup		( int clientNum );
+  
+// RAVEN BEGIN
+// abahr
+	void					Event_SetGravity();
+// RAVEN END
 };
+
+/*
+===============================================================================
+
+  idItemPowerup
+
+===============================================================================
+*/
 
 class idItemPowerup : public idItem {
 public:
@@ -81,11 +135,57 @@ public:
 
 	void					Spawn();
 	virtual bool			GiveToPlayer( idPlayer *player );
+	virtual void			Think( void );
+	virtual bool			Pickup( idPlayer *player );
 
-private:
+protected:
+
 	int						time;
 	int						type;
+	int						droppedTime;
+	int						team;
+	bool					unique;
 };
+
+/*
+===============================================================================
+
+  rvItemCTFFlag
+
+===============================================================================
+*/
+
+class rvItemCTFFlag : public idItem {
+public:
+	CLASS_PROTOTYPE( rvItemCTFFlag );
+	
+							rvItemCTFFlag();
+							
+	void					Spawn();
+	virtual bool			GiveToPlayer ( idPlayer* player );
+	virtual bool			Pickup( idPlayer *player );
+	
+	static void				ResetFlag( int type );
+	virtual void			Think( void );
+
+	virtual bool			Collide( const trace_t &collision, const idVec3 &velocity );
+
+private:
+	int						team;
+	int						powerup;
+	bool					dropped;
+	
+	void					Event_ResetFlag( void );
+	void					Event_LinkTrigger( void );
+};
+
+/*
+===============================================================================
+
+  idObjective
+
+===============================================================================
+*/
 
 class idObjective : public idItem {
 public:
@@ -101,26 +201,24 @@ public:
 private:
 	idVec3					playerPos;
 
+// RAVEN BEGIN
+// mekberg: store triggered time for timed removal.
+	int						triggerTime;
+// RAVEN END
+
 	void					Event_Trigger( idEntity *activator );
 	void					Event_HideObjective( idEntity *e );
 	void					Event_GetPlayerPos();
-	void					Event_CamShot();
+ 	void					Event_CamShot();
 };
 
-class idVideoCDItem : public idItem {
-public:
-	CLASS_PROTOTYPE( idVideoCDItem );
+/*
+===============================================================================
 
-	void					Spawn();
-	virtual bool			GiveToPlayer( idPlayer *player );
-};
+  idMoveableItem
 
-class idPDAItem : public idItem {
-public:
-	CLASS_PROTOTYPE( idPDAItem );
-
-	virtual bool			GiveToPlayer( idPlayer *player );
-};
+===============================================================================
+*/
 
 class idMoveableItem : public idItem {
 public:
@@ -134,31 +232,18 @@ public:
 
 	void					Spawn( void );
 	virtual void			Think( void );
-	virtual bool			Pickup( idPlayer *player );
 
-	static void				DropItems( idAnimatedEntity *ent, const char *type, idList<idEntity *> *list );
-	static idEntity	*		DropItem( const char *classname, const idVec3 &origin, const idMat3 &axis, const idVec3 &velocity, int activateDelay, int removeDelay );
+ 	static void				DropItems( idAnimatedEntity *ent, const char *type, idList<idEntity *> *list );
+	static idEntity*		DropItem( const char *classname, const idVec3 &origin, const idMat3 &axis, const idVec3 &velocity, int activateDelay, int removeDelay );
 
 	virtual void			WriteToSnapshot( idBitMsgDelta &msg ) const;
 	virtual void			ReadFromSnapshot( const idBitMsgDelta &msg );
 
 private:
 	idPhysics_RigidBody		physicsObj;
-	idClipModel *			trigger;
-	const idDeclParticle *	smoke;
-	int						smokeTime;
 
-	void					Gib( const idVec3 &dir, const char *damageDefName );
-
-	void					Event_DropToFloor( void );
-	void					Event_Gib( const char *damageDefName );
-};
-
-class idMoveablePDAItem : public idMoveableItem {
-public:
-	CLASS_PROTOTYPE( idMoveablePDAItem );
-
-	virtual bool			GiveToPlayer( idPlayer *player );
+ 	void					Gib( const idVec3 &dir, const char *damageDefName );
+ 	void					Event_Gib( const char *damageDefName );
 };
 
 /*
@@ -180,6 +265,14 @@ private:
 	void					Event_Trigger( idEntity *activator );
 };
 
+/*
+===============================================================================
+
+  idObjectiveComplete
+
+===============================================================================
+*/
+
 class idObjectiveComplete : public idItemRemover {
 public:
 	CLASS_PROTOTYPE( idObjectiveComplete );
@@ -194,9 +287,35 @@ public:
 private:
 	idVec3					playerPos;
 
+// RAVEN BEGIN
+// mekberg: store triggered time for timed removal.
+	int						triggerTime;
+// RAVEN END
+
 	void					Event_Trigger( idEntity *activator );
 	void					Event_HideObjective( idEntity *e );
 	void					Event_GetPlayerPos();
 };
 
+/*
+===============================================================================
+
+  rvObjectiveFailed
+
+===============================================================================
+*/
+
+class rvObjectiveFailed : public idItemRemover {
+public:
+	CLASS_PROTOTYPE( rvObjectiveFailed );
+
+							rvObjectiveFailed ();
+private:
+
+	void					Event_Trigger( idEntity *activator );
+};
+
 #endif /* !__GAME_ITEM_H__ */
+
+
+// RAVEN END

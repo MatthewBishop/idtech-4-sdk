@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __BITMSG_H__
 #define __BITMSG_H__
@@ -25,6 +23,7 @@ public:
 	void			Init( const byte *data, int length );
 	byte *			GetData( void );						// get data for writing
 	const byte *	GetData( void ) const;					// get data for reading
+	const byte *	GetReadData( void ) const;
 	int				GetMaxSize( void ) const;				// get the maximum message size
 	void			SetAllowOverflow( bool set );			// generate error if not set and message is overflowed
 	bool			IsOverflowed( void ) const;				// returns true if the message was overflowed
@@ -34,6 +33,8 @@ public:
 	int				GetWriteBit( void ) const;				// get current write bit
 	void			SetWriteBit( int bit );					// set current write bit
 	int				GetNumBitsWritten( void ) const;		// returns number of bits written
+	int				GetRemainingSpace( void ) const;		// space left in bytes for writing
+	int				GetRemainingWriteBits( void ) const;	// space left in bits for writing
 	void			SaveWriteState( int &s, int &b ) const;	// save the write state
 	void			RestoreWriteState( int s, int b );		// restore the write state
 
@@ -42,11 +43,12 @@ public:
 	int				GetReadBit( void ) const;				// get current read bit
 	void			SetReadBit( int bit );					// set current read bit
 	int				GetNumBitsRead( void ) const;			// returns number of bits read
+	int				GetRemainingData( void ) const;			// number of bytes left to read
+	int				GetRemainingReadBits( void ) const;		// number of bits left to read
 	void			SaveReadState( int &c, int &b ) const;	// save the read state
 	void			RestoreReadState( int c, int b );		// restore the read state
 
 	void			BeginWriting( void );					// begin writing
-	int				GetRemainingSpace( void ) const;		// space left in bytes
 	void			WriteByteAlign( void );					// write up to the next byte boundary
 	void			WriteBits( int value, int numBits );	// write the specified number of bits
 	void			WriteChar( int c );
@@ -58,7 +60,7 @@ public:
 	void			WriteAngle8( float f );
 	void			WriteAngle16( float f );
 	void			WriteDir( const idVec3 &dir, int numBits );
-	void			WriteString( const char *s, int maxLength = -1, bool make7Bit = true );
+	void			WriteString( const char *s, int maxLength = -1 );
 	void			WriteData( const void *data, int length );
 	void			WriteNetadr( const netadr_t adr );
 
@@ -74,7 +76,6 @@ public:
 	bool			WriteDeltaDict( const idDict &dict, const idDict *base );
 
 	void			BeginReading( void ) const;				// begin reading.
-	int				GetRemaingData( void ) const;			// number of bytes left to read
 	void			ReadByteAlign( void ) const;			// read up to the next byte boundary
 	int				ReadBits( int numBits ) const;			// read the specified number of bits
 	int				ReadChar( void ) const;
@@ -117,7 +118,7 @@ private:
 	bool			overflowed;			// set to true if the buffer size failed (with allowOverflow set)
 
 private:
-	bool			CheckOverflow( int length );
+	bool			CheckOverflow( int numBits );
 	byte *			GetByteSpace( int length );
 	void			WriteDelta( int oldValue, int newValue, int numBits );
 	int				ReadDelta( int oldValue, int numBits ) const;
@@ -144,6 +145,10 @@ ID_INLINE byte *idBitMsg::GetData( void ) {
 
 ID_INLINE const byte *idBitMsg::GetData( void ) const {
 	return readData;
+}
+
+ID_INLINE const byte *idBitMsg::GetReadData( void ) const {
+	return ( readData + readCount );
 }
 
 ID_INLINE int idBitMsg::GetMaxSize( void ) const {
@@ -182,7 +187,16 @@ ID_INLINE void idBitMsg::SetWriteBit( int bit ) {
 }
 
 ID_INLINE int idBitMsg::GetNumBitsWritten( void ) const {
-	return ( ( curSize << 3 ) - ( writeBit ? 8 - writeBit : 0 ) );
+//	return ( ( curSize << 3 ) - ( writeBit ? 8 - writeBit : 0 ) );
+	return ( ( curSize << 3 ) - ( ( 8 - writeBit ) & 7 ) );
+}
+
+ID_INLINE int idBitMsg::GetRemainingSpace( void ) const {
+	return maxSize - curSize;
+}
+
+ID_INLINE int idBitMsg::GetRemainingWriteBits( void ) const {
+	return ( maxSize << 3 ) - GetNumBitsWritten();
 }
 
 ID_INLINE void idBitMsg::SaveWriteState( int &s, int &b ) const {
@@ -215,7 +229,16 @@ ID_INLINE void idBitMsg::SetReadBit( int bit ) {
 }
 
 ID_INLINE int idBitMsg::GetNumBitsRead( void ) const {
-	return ( ( readCount << 3 ) - ( readBit ? 8 - readBit : 0 ) );
+//	return ( ( readCount << 3 ) - ( readBit ? 8 - readBit : 0 ) );
+	return ( ( readCount << 3 ) - ( ( 8 - readBit ) & 7 ) );
+}
+
+ID_INLINE int idBitMsg::GetRemainingData( void ) const {
+	return curSize - readCount;
+}
+
+ID_INLINE int idBitMsg::GetRemainingReadBits( void ) const {
+	return ( curSize << 3 ) - GetNumBitsRead();
 }
 
 ID_INLINE void idBitMsg::SaveReadState( int &c, int &b ) const {
@@ -232,10 +255,6 @@ ID_INLINE void idBitMsg::BeginWriting( void ) {
 	curSize = 0;
 	overflowed = false;
 	writeBit = 0;
-}
-
-ID_INLINE int idBitMsg::GetRemainingSpace( void ) const {
-	return maxSize - curSize;
 }
 
 ID_INLINE void idBitMsg::WriteByteAlign( void ) {
@@ -308,10 +327,6 @@ ID_INLINE void idBitMsg::WriteDeltaFloat( float oldValue, float newValue, int ex
 ID_INLINE void idBitMsg::BeginReading( void ) const {
 	readCount = 0;
 	readBit = 0;
-}
-
-ID_INLINE int idBitMsg::GetRemaingData( void ) const {
-	return curSize - readCount;
 }
 
 ID_INLINE void idBitMsg::ReadByteAlign( void ) const {
@@ -399,8 +414,8 @@ public:
 					idBitMsgDelta();
 					~idBitMsgDelta() {}
 
-	void			Init( const idBitMsg *base, idBitMsg *newBase, idBitMsg *delta );
-	void			Init( const idBitMsg *base, idBitMsg *newBase, const idBitMsg *delta );
+	void			InitWriting( const idBitMsg *base, idBitMsg *newBase, idBitMsg *delta );
+	void			InitReading( const idBitMsg *base, idBitMsg *newBase, const idBitMsg *delta );
 	bool			HasChanged( void ) const;
 
 	void			WriteBits( int value, int numBits );
@@ -410,6 +425,17 @@ public:
 	void			WriteLong( int c );
 	void			WriteFloat( float f );
 	void			WriteFloat( float f, int exponentBits, int mantissaBits );
+// RAVEN BEGIN
+// abahr:
+	void			WriteVec3( const idVec3& v );
+	void			WriteDeltaVec3( const idVec3& oldValue, const idVec3& newValue );
+	void			WriteVec4( const idVec4& v );
+	void			WriteDeltaVec4( const idVec4& oldValue, const idVec4& newValue );
+	void			WriteQuat( const idQuat& q );
+	void			WriteDeltaQuat( const idQuat& oldValue, const idQuat& newValue );
+    void			WriteMat3( const idMat3& m );
+	void			WriteDeltaMat3( const idMat3& oldValue, const idMat3& newValue );
+// RAVEN END
 	void			WriteAngle8( float f );
 	void			WriteAngle16( float f );
 	void			WriteDir( const idVec3 &dir, int numBits );
@@ -434,6 +460,17 @@ public:
 	int				ReadLong( void ) const;
 	float			ReadFloat( void ) const;
 	float			ReadFloat( int exponentBits, int mantissaBits ) const;
+// RAVEN BEGIN
+// abahr
+	idVec3			ReadVec3( void ) const;
+	idVec3			ReadDeltaVec3( const idVec3& oldValue ) const;
+	idVec4			ReadVec4( void ) const;
+	idVec4			ReadDeltaVec4( const idVec4& oldValue ) const;
+	idQuat			ReadQuat( void ) const;
+	idQuat			ReadDeltaQuat( const idQuat& oldValue ) const;
+	idMat3			ReadMat3( void ) const;
+	idMat3			ReadDeltaMat3( const idMat3& oldValue ) const;
+// RAVEN END
 	float			ReadAngle8( void ) const;
 	float			ReadAngle16( void ) const;
 	idVec3			ReadDir( int numBits ) const;
@@ -471,7 +508,7 @@ ID_INLINE idBitMsgDelta::idBitMsgDelta() {
 	changed = false;
 }
 
-ID_INLINE void idBitMsgDelta::Init( const idBitMsg *base, idBitMsg *newBase, idBitMsg *delta ) {
+ID_INLINE void idBitMsgDelta::InitWriting( const idBitMsg *base, idBitMsg *newBase, idBitMsg *delta ) {
 	this->base = base;
 	this->newBase = newBase;
 	this->writeDelta = delta;
@@ -479,7 +516,7 @@ ID_INLINE void idBitMsgDelta::Init( const idBitMsg *base, idBitMsg *newBase, idB
 	this->changed = false;
 }
 
-ID_INLINE void idBitMsgDelta::Init( const idBitMsg *base, idBitMsg *newBase, const idBitMsg *delta ) {
+ID_INLINE void idBitMsgDelta::InitReading( const idBitMsg *base, idBitMsg *newBase, const idBitMsg *delta ) {
 	this->base = base;
 	this->newBase = newBase;
 	this->writeDelta = NULL;
@@ -515,6 +552,57 @@ ID_INLINE void idBitMsgDelta::WriteFloat( float f, int exponentBits, int mantiss
 	int bits = idMath::FloatToBits( f, exponentBits, mantissaBits );
 	WriteBits( bits, 1 + exponentBits + mantissaBits );
 }
+
+// RAVEN BEGIN
+// abahr
+ID_INLINE void idBitMsgDelta::WriteVec3( const idVec3& v ) {
+	for( int ix = 0; ix < v.GetDimension(); ++ix ) {
+		WriteFloat( v[ix] );
+	}
+}
+
+ID_INLINE void idBitMsgDelta::WriteDeltaVec3( const idVec3& oldValue, const idVec3& newValue ) {
+	for( int ix = 0; ix < oldValue.GetDimension(); ++ix ) {
+		WriteDeltaFloat( oldValue[ix], newValue[ix] );
+	}
+}
+
+ID_INLINE void idBitMsgDelta::WriteVec4( const idVec4& v ) {
+	for( int ix = 0; ix < v.GetDimension(); ++ix ) {
+		WriteFloat( v[ix] );
+	}
+}
+
+ID_INLINE void idBitMsgDelta::WriteDeltaVec4( const idVec4& oldValue, const idVec4& newValue ) {
+	for( int ix = 0; ix < oldValue.GetDimension(); ++ix ) {
+		WriteDeltaFloat( oldValue[ix], newValue[ix] );
+	}
+}
+
+ID_INLINE void idBitMsgDelta::WriteQuat( const idQuat& q ) {
+	for( int ix = 0; ix < q.GetDimension(); ++ix ) {
+		WriteFloat( q[ix] );
+	}
+}
+
+ID_INLINE void idBitMsgDelta::WriteDeltaQuat( const idQuat& oldValue, const idQuat& newValue ) {
+	for( int ix = 0; ix < oldValue.GetDimension(); ++ix ) {
+		WriteDeltaFloat( oldValue[ix], newValue[ix] );
+	}
+}
+
+ID_INLINE void idBitMsgDelta::WriteMat3( const idMat3& m ) {
+	for( int ix = 0; ix < m.GetVec3Dimension(); ++ix ) {
+		WriteVec3( m[ix] );
+	}
+}
+
+ID_INLINE void idBitMsgDelta::WriteDeltaMat3( const idMat3& oldValue, const idMat3& newValue ) {
+	for( int ix = 0; ix < oldValue.GetDimension(); ++ix ) {
+		WriteDeltaVec3( oldValue[ix], newValue[ix] );
+	}
+}
+// RAVEN END
 
 ID_INLINE void idBitMsgDelta::WriteAngle8( float f ) {
 	WriteBits( ANGLE2BYTE( f ), 8 );
@@ -581,6 +669,80 @@ ID_INLINE float idBitMsgDelta::ReadFloat( int exponentBits, int mantissaBits ) c
 	return idMath::BitsToFloat( bits, exponentBits, mantissaBits );
 }
 
+// RAVEN BEGIN
+// abahr
+ID_INLINE idVec3 idBitMsgDelta::ReadVec3() const {
+	idVec3 v;
+	for( int ix = 0; ix < v.GetDimension(); ++ix ) {
+		v[ix] = ReadFloat();
+	}
+
+	return v;
+}
+
+ID_INLINE idVec3 idBitMsgDelta::ReadDeltaVec3( const idVec3& oldValue ) const {
+	idVec3 value;
+	for( int ix = 0; ix < value.GetDimension(); ++ix ) {
+		value[ix] = ReadDeltaFloat( oldValue[ix] );
+	}
+	return value;
+}
+
+ID_INLINE idVec4 idBitMsgDelta::ReadVec4( void ) const {
+	idVec4 v;
+	for( int ix = 0; ix < v.GetDimension(); ++ix ) {
+		v[ix] = ReadFloat();
+	}
+
+	return v;
+}
+
+ID_INLINE idVec4 idBitMsgDelta::ReadDeltaVec4( const idVec4& oldValue ) const {
+	idVec4 value;
+	for( int ix = 0; ix < value.GetDimension(); ++ix ) {
+		value[ix] = ReadDeltaFloat( oldValue[ix] );
+	}
+	return value;
+}
+
+ID_INLINE idQuat idBitMsgDelta::ReadQuat( void ) const {
+	idQuat q;
+	for( int ix = 0; ix < q.GetDimension(); ++ix ) {
+		q[ix] = ReadFloat();
+	}
+
+	return q;
+}
+
+ID_INLINE idQuat idBitMsgDelta::ReadDeltaQuat( const idQuat& oldValue ) const {
+	idQuat value;
+	for( int ix = 0; ix < value.GetDimension(); ++ix ) {
+		value[ix] = ReadDeltaFloat( oldValue[ix] );
+	}
+	return value;
+}
+
+ID_INLINE idMat3 idBitMsgDelta::ReadMat3() const {
+	idMat3 m;
+	
+	for( int ix = 0; ix < m.GetVec3Dimension(); ++ix ) {
+		m[ix] = ReadVec3();
+	}
+
+	return m;
+}
+
+ID_INLINE idMat3 idBitMsgDelta::ReadDeltaMat3( const idMat3& oldValue ) const {
+	idMat3 value;
+
+	for( int ix = 0; ix < value.GetVec3Dimension(); ++ix ) {
+		value[ix] = ReadDeltaVec3( oldValue[ix] );
+	}
+
+	return value;
+}
+// RAVEN END
+
 ID_INLINE float idBitMsgDelta::ReadAngle8( void ) const {
 	return BYTE2ANGLE( ReadByte() );
 }
@@ -620,5 +782,47 @@ ID_INLINE float idBitMsgDelta::ReadDeltaFloat( float oldValue, int exponentBits,
 	int newBits = ReadDelta( oldBits, 1 + exponentBits + mantissaBits );
 	return idMath::BitsToFloat( newBits, exponentBits, mantissaBits );
 }
+
+#define MAX_MSG_QUEUE_SIZE				16384		// must be a power of 2
+
+class idMsgQueue {
+public:
+					idMsgQueue();
+
+	void			Init( int sequence );
+
+	bool			Add( const byte *data, const int size, bool sequencing );
+// RAVEN BEGIN
+// rjohnson: added check for data overflow
+	bool			Get( byte *data, int dataSize, int &size, bool sequencing );
+// RAVEN END
+	int				GetTotalSize( void ) const;
+	int				GetSpaceLeft( void ) const;
+	int				GetFirst( void ) const { return first; }
+	int				GetLast( void ) const { return last; }
+	void			CopyToBuffer( byte *buf ) const;
+
+	void			FlushTo( idBitMsg &msg );
+	void			ReadFrom( const idBitMsg &msg );
+
+	void			Save( idFile *file ) const;
+	void			Restore( idFile *file );
+
+private:
+	byte			buffer[MAX_MSG_QUEUE_SIZE];
+	int				first;			// sequence number of first message in queue
+	int				last;			// sequence number of last message in queue
+	int				startIndex;		// index pointing to the first byte of the first message
+	int				endIndex;		// index pointing to the first byte after the last message
+
+	void			WriteByte( byte b );
+	byte			ReadByte( void );
+	void			WriteShort( int s );
+	int				ReadShort( void );
+	void			WriteLong( int l );
+	int				ReadLong( void );
+	void			WriteData( const byte *data, const int size );
+	void			ReadData( byte *data, const int size );
+};
 
 #endif /* !__BITMSG_H__ */

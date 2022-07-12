@@ -1,10 +1,8 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../precompiled.h"
 #pragma hdrstop
 
-#include "Simd_Generic.h"
+#include "Simd_generic.h"
 #include "Simd_MMX.h"
 
 
@@ -14,7 +12,7 @@
 //
 //===============================================================
 
-#ifdef _WIN32
+#ifdef _WINDOWS
 
 #define EMMS_INSTRUCTION		__asm emms
 
@@ -319,4 +317,4 @@ loop2:
 	EMMS_INSTRUCTION 
 }
 
-#endif /* _WIN32 */
+#endif // _WINDOWS

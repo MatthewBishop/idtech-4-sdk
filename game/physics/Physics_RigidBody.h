@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __PHYSICS_RIGIDBODY_H__
 #define __PHYSICS_RIGIDBODY_H__
@@ -64,6 +62,11 @@ public:	// common physics interface
 	void					SetMass( float mass, int id = -1 );
 	float					GetMass( int id = -1 ) const;
 
+// RAVEN BEGIN
+// bdube: means of getting center of mass
+	idVec3					GetCenterMass ( int id = -1 ) const;
+// RAVEN END
+
 	void					SetContents( int contents, int id = -1 );
 	int						GetContents( int id = -1 ) const;
 
@@ -122,10 +125,13 @@ public:	// common physics interface
 	void					WriteToSnapshot( idBitMsgDelta &msg ) const;
 	void					ReadFromSnapshot( const idBitMsgDelta &msg );
 
-private:
+protected:
+
 	// state of the rigid body
 	rigidBodyPState_t		current;
 	rigidBodyPState_t		saved;
+
+private:
 
 	// rigid body properties
 	float					linearFriction;				// translational friction

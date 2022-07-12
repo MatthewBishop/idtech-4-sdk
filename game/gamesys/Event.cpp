@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 /*
 sys_event.cpp
 
@@ -12,7 +10,7 @@ Event are used for scheduling tasks and for linking script commands.
 
 #include "../Game_local.h"
 
-#define MAX_EVENTSPERFRAME			4096
+#define MAX_EVENTSPERFRAME			8192		// Upped from 4096
 //#define CREATE_EVENT_CODE
 
 /***********************************************************************
@@ -110,8 +108,8 @@ idEventDef::idEventDef( const char *command, const char *formatspec, char return
 	eventnum = numEventDefs;
 	for( i = 0; i < eventnum; i++ ) {
 		ev = eventDefList[ i ];
-		if ( strcmp( command, ev->name ) == 0 ) {
-			if ( strcmp( formatspec, ev->formatspec ) != 0 ) {
+		if ( idStr::Cmp( command, ev->name ) == 0 ) {
+			if ( idStr::Cmp( formatspec, ev->formatspec ) != 0 ) {
 				eventError = true;
 				sprintf( eventErrorMsg, "idEvent '%s' defined twice with same name but differing format strings ('%s'!='%s').",
 					command, formatspec, ev->formatspec );
@@ -174,7 +172,7 @@ const idEventDef *idEventDef::FindEvent( const char *name ) {
 	num = numEventDefs;
 	for( i = 0; i < num; i++ ) {
 		ev = eventDefList[ i ];
-		if ( strcmp( name, ev->name ) == 0 ) {
+		if ( idStr::Cmp( name, ev->name ) == 0 ) {
 			return ev;
 		}
 	}
@@ -194,7 +192,7 @@ static idEvent EventPool[ MAX_EVENTS ];
 
 bool idEvent::initialized = false;
 
-idDynamicBlockAlloc<byte, 16 * 1024, 256>	idEvent::eventDataAllocator;
+idDynamicBlockAlloc<byte, 16 * 1024, 256, MA_EVENT>	idEvent::eventDataAllocator;
 
 /*
 ================
@@ -203,6 +201,28 @@ idEvent::~idEvent()
 */
 idEvent::~idEvent() {
 	Free();
+}
+
+
+void idEvent::WriteDebugInfo( void ) {
+	idEvent	*event;
+	int		count = 0;
+
+	idFile *FH = fileSystem->OpenFileAppend( "idEvents.txt" );
+
+	FH->Printf( "Num Events = %d\n", EventQueue.Num() );
+
+	event = EventQueue.Next();
+	while( event != NULL ) {
+		count++;
+
+		FH->Printf( "%d. %d - %s - %s - %s\n", count, event->time, event->eventdef->GetName(), event->typeinfo->classname, event->object->GetClassname() );
+
+		event = event->eventNode.Next();
+	}
+
+	FH->Printf( "\n\n" );
+	fileSystem->CloseFile( FH );
 }
 
 /*
@@ -220,7 +240,8 @@ idEvent *idEvent::Alloc( const idEventDef *evdef, int numargs, va_list args ) {
 	const char	*materialName;
 
 	if ( FreeEvents.IsListEmpty() ) {
-		gameLocal.Error( "idEvent::Alloc : No more free events" );
+		WriteDebugInfo( );
+		gameLocal.Error( "idEvent::Alloc : No more free events for '%s' event.", evdef->GetName() );
 	}
 
 	ev = FreeEvents.Next();
@@ -244,10 +265,20 @@ idEvent *idEvent::Alloc( const idEventDef *evdef, int numargs, va_list args ) {
 	for( i = 0; i < numargs; i++ ) {
 		arg = va_arg( args, idEventArg * );
 		if ( format[ i ] != arg->type ) {
-			// when NULL is passed in for an entity, it gets cast as an integer 0, so don't give an error when it happens
-			if ( !( ( ( format[ i ] == D_EVENT_TRACE ) || ( format[ i ] == D_EVENT_ENTITY ) ) && ( arg->type == 'd' ) && ( arg->value == 0 ) ) ) {
+// RAVEN BEGIN
+// abahr: type checking change as per Jim D.
+			if ( ( format[ i ] == D_EVENT_ENTITY_NULL ) && ( arg->type == D_EVENT_ENTITY ) ) {
+			// these types are identical, so allow them
+			} else if ( ( arg->type == D_EVENT_INTEGER ) && ( arg->value == 0 ) ) {
+				if ( ( format[ i ] == D_EVENT_ENTITY ) || ( format[ i ] == D_EVENT_ENTITY_NULL ) || ( format[ i ] == D_EVENT_TRACE ) ) {
+				 // when NULL is passed in for an entity or trace, it gets cast as an integer 0, so don't give an error when it happens
+				} else {
+					 gameLocal.Error( "idEvent::Alloc : Wrong type passed in for arg # %d on '%s' event.", i, evdef->GetName() );
+				}
+			} else {
 				gameLocal.Error( "idEvent::Alloc : Wrong type passed in for arg # %d on '%s' event.", i, evdef->GetName() );
 			}
+// RAVEN END
 		}
 
 		dataPtr = &ev->data[ evdef->GetArgOffset( i ) ];
@@ -270,10 +301,21 @@ idEvent *idEvent::Alloc( const idEventDef *evdef, int numargs, va_list args ) {
 			}
 			break;
 
+// RAVEN BEGIN
+// abahr: type checking change as per Jim D.
+// jshepard: TODO FIXME HACK this never ever produces desired, positive results. Events should be built to prepare for null entities, especially when dealing with 
+//							 script events. This will throw a warning, and events should be prepared to deal with null entities. 
 		case D_EVENT_ENTITY :
+			if ( reinterpret_cast<idEntity *>( arg->value ) == NULL ) {
+				gameLocal.Warning( "idEvent::Alloc : NULL entity passed in to event function that expects a non-NULL pointer on arg # %d on '%s' event.", i, evdef->GetName() );
+			}
+			*reinterpret_cast< idEntityPtr<idEntity> * >( dataPtr ) = reinterpret_cast<idEntity *>( arg->value );
+			break;
+ 
 		case D_EVENT_ENTITY_NULL :
 			*reinterpret_cast< idEntityPtr<idEntity> * >( dataPtr ) = reinterpret_cast<idEntity *>( arg->value );
 			break;
+//RAVEN END
 
 		case D_EVENT_TRACE :
 			if ( arg->value ) {
@@ -319,10 +361,20 @@ void idEvent::CopyArgs( const idEventDef *evdef, int numargs, va_list args, int 
 	for( i = 0; i < numargs; i++ ) {
 		arg = va_arg( args, idEventArg * );
 		if ( format[ i ] != arg->type ) {
-			// when NULL is passed in for an entity, it gets cast as an integer 0, so don't give an error when it happens
-			if ( !( ( ( format[ i ] == D_EVENT_TRACE ) || ( format[ i ] == D_EVENT_ENTITY ) ) && ( arg->type == 'd' ) && ( arg->value == 0 ) ) ) {
-				gameLocal.Error( "idEvent::CopyArgs : Wrong type passed in for arg # %d on '%s' event.", i, evdef->GetName() );
+// RAVEN BEGIN
+// abahr: type checking change as per Jim D.
+			if ( ( format[ i ] == D_EVENT_ENTITY_NULL ) && ( arg->type == D_EVENT_ENTITY ) ) {
+			// these types are identical, so allow them
+			} else if ( ( arg->type == D_EVENT_INTEGER ) && ( arg->value == 0 ) ) {
+				if ( ( format[ i ] == D_EVENT_ENTITY ) || ( format[ i ] == D_EVENT_ENTITY_NULL ) ) {
+				// when NULL is passed in for an entity, it gets cast as an integer 0, so don't give an error when it happens
+				} else {
+					gameLocal.Error( "idEvent::Alloc : Wrong type passed in for arg # %d on '%s' event.", i, evdef->GetName() );
+				}
+			} else {
+				gameLocal.Error( "idEvent::Alloc : Wrong type passed in for arg # %d on '%s' event.", i, evdef->GetName() );
 			}
+// RAVEN END
 		}
 
 		data[ i ] = arg->value;
@@ -405,6 +457,32 @@ void idEvent::CancelEvents( const idClass *obj, const idEventDef *evdef ) {
 	}
 }
 
+// RAVEN BEGIN
+// abahr:
+/*
+================
+idEvent::EventIsPosted
+================
+*/
+bool idEvent::EventIsPosted( const idClass *obj, const idEventDef *evdef ) {
+	idEvent *event;
+	idEvent *next;
+
+	if ( !initialized ) {
+		return false;
+	}
+
+	for( event = EventQueue.Next(); event != NULL; event = next ) {
+		next = event->eventNode.Next();
+		if( event->object == obj && evdef == event->eventdef ) {
+			return true;
+		}
+	}
+
+	return false;
+}
+// RAVEN END
+
 /*
 ================
 idEvent::ClearEventList
@@ -447,6 +525,11 @@ void idEvent::ServiceEvents( void ) {
 
 	num = 0;
 	while( !EventQueue.IsListEmpty() ) {
+		
+#ifdef _XENON
+		session->PacifierUpdate();
+#endif
+		
 		event = EventQueue.Next();
 		assert( event );
 
@@ -474,12 +557,19 @@ void idEvent::ServiceEvents( void ) {
 			case D_EVENT_STRING :
 				*reinterpret_cast<const char **>( &args[ i ] ) = reinterpret_cast<const char *>( &data[ offset ] );
 				break;
-
+// RAVEN BEGIN
+// abahr: type checking change as per Jim D.
 			case D_EVENT_ENTITY :
+				*reinterpret_cast<idEntity **>( &args[ i ] ) = reinterpret_cast< idEntityPtr<idEntity> * >( &data[ offset ] )->GetEntity();
+				if ( *reinterpret_cast<idEntity **>( &args[ i ] ) == NULL ) {
+					gameLocal.Warning( "idEvent::ServiceEvents : NULL entity passed in to event function that expects a non-NULL pointer on arg # %d on '%s' event.", i, ev->GetName() );
+				}
+				break;
+ 
 			case D_EVENT_ENTITY_NULL :
 				*reinterpret_cast<idEntity **>( &args[ i ] ) = reinterpret_cast< idEntityPtr<idEntity> * >( &data[ offset ] )->GetEntity();
 				break;
-
+// RAVEN END
 			case D_EVENT_TRACE :
 				tracePtr = reinterpret_cast<trace_t **>( &args[ i ] );
 				if ( *reinterpret_cast<bool *>( &data[ offset ] ) ) {
@@ -644,6 +734,7 @@ void idEvent::Restore( idRestoreGame *savefile ) {
 		}
 
 		savefile->ReadObject( event->object );
+		assert( event->object );
 
 		// read the args
 		savefile->ReadInt( argsize );

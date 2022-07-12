@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __STATICLIST_H__
 #define __STATICLIST_H__

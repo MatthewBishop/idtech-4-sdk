@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __LINKLIST_H__
 #define __LINKLIST_H__
@@ -85,7 +83,10 @@ Returns true if the list is empty.
 ================
 */
 template< class type >
-bool idLinkList<type>::IsListEmpty( void ) const {
+// RAVEN BEGIN
+// bdube: inlined
+ID_INLINE bool idLinkList<type>::IsListEmpty( void ) const {
+// RAVEN END
 	return head->next == head;
 }
 
@@ -97,7 +98,10 @@ Returns true if the node is in a list.  If called on the head of a list, will al
 ================
 */
 template< class type >
-bool idLinkList<type>::InList( void ) const {
+// RAVEN BEGIN
+// bdube: inlined
+ID_INLINE bool idLinkList<type>::InList( void ) const {
+// RAVEN END
 	return head != this;
 }
 
@@ -202,7 +206,10 @@ Adds node at the end of the list
 ================
 */
 template< class type >
-void idLinkList<type>::AddToEnd( idLinkList &node ) {
+// RAVEN BEGIN
+// bdube: inlined
+ID_INLINE void idLinkList<type>::AddToEnd( idLinkList &node ) {
+// RAVEN END
 	InsertBefore( *node.head );
 }
 
@@ -214,7 +221,10 @@ Adds node at the beginning of the list
 ================
 */
 template< class type >
-void idLinkList<type>::AddToFront( idLinkList &node ) {
+// RAVEN BEGIN
+// bdube: inlined
+ID_INLINE void idLinkList<type>::AddToFront( idLinkList &node ) {
+// RAVEN END
 	InsertAfter( *node.head );
 }
 
@@ -227,7 +237,10 @@ a pointer to itself.
 ================
 */
 template< class type >
-idLinkList<type> *idLinkList<type>::ListHead( void ) const {
+// RAVEN BEGIN
+// bdube: inlined
+ID_INLINE idLinkList<type> *idLinkList<type>::ListHead( void ) const {
+// RAVEN END
 	return head;
 }
 
@@ -239,7 +252,10 @@ Returns the next object in the list, or NULL if at the end.
 ================
 */
 template< class type >
-type *idLinkList<type>::Next( void ) const {
+// RAVEN BEGIN
+// bdube: inlined
+ID_INLINE type *idLinkList<type>::Next( void ) const {
+// RAVEN END
 	if ( !next || ( next == head ) ) {
 		return NULL;
 	}

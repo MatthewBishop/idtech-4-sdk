@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __MATH_SIMD_SSE_H__
 #define __MATH_SIMD_SSE_H__
@@ -85,7 +83,10 @@ public:
 	virtual void VPCALL ConvertJointMatsToJointQuats( idJointQuat *jointQuats, const idJointMat *jointMats, const int numJoints );
 	virtual void VPCALL TransformJoints( idJointMat *jointMats, const int *parents, const int firstJoint, const int lastJoint );
 	virtual void VPCALL UntransformJoints( idJointMat *jointMats, const int *parents, const int firstJoint, const int lastJoint );
-	virtual void VPCALL TransformVerts( idDrawVert *verts, const int numVerts, const idJointMat *joints, const idVec4 *weights, const int *index, const int numWeights );
+	virtual void VPCALL MultiplyJoints( idJointMat *result, const idJointMat *joints1, const idJointMat *joints2, const int numJoints );
+	virtual void VPCALL TransformVertsNew( idDrawVert *verts, const int numVerts, idBounds &bounds, const idJointMat *joints, const idVec4 *base, const jointWeight_t *weights, const int numWeights );
+	virtual void VPCALL TransformVertsAndTangents( idDrawVert *verts, const int numVerts, idBounds &bounds, const idJointMat *joints, const idVec4 *base, const jointWeight_t *weights, const int numWeights );
+	virtual void VPCALL TransformVertsAndTangentsFast( idDrawVert *verts, const int numVerts, idBounds &bounds, const idJointMat *joints, const idVec4 *base, const jointWeight_t *weights, const int numWeights );
 	virtual void VPCALL TracePointCull( byte *cullBits, byte &totalOr, const float radius, const idPlane *planes, const idDrawVert *verts, const int numVerts );
 	virtual void VPCALL DecalPointCull( byte *cullBits, const idPlane *planes, const idDrawVert *verts, const int numVerts );
 	virtual void VPCALL OverlayPointCull( byte *cullBits, idVec2 *texCoords, const idPlane *planes, const idDrawVert *verts, const int numVerts );
@@ -106,6 +107,21 @@ public:
 	virtual void VPCALL MixSoundSixSpeakerStereo( float *mixBuffer, const float *samples, const int numSamples, const float lastV[6], const float currentV[6] );
 	virtual void VPCALL MixedSoundToSamples( short *samples, const float *mixBuffer, const int numSamples );
 
+// RAVEN BEGIN
+// dluetscher: added support for operations on idSilTraceVerts and idJointMats
+#ifdef _MD5R_SUPPORT
+	virtual void VPCALL TransformVertsMinMax4Bone( rvSilTraceVertT *silTraceVertOutputData, idVec3 &min, idVec3 &max, byte *vertexInputData, int vertStride, int numVerts, float *skinToModelTransforms ); // transforms an array of index-weighted vertices into an array of idSilTraceVerts, while simulatenously calculating the bounds
+	virtual void VPCALL TransformVertsMinMax1Bone( rvSilTraceVertT *silTraceVertOutputData, idVec3 &min, idVec3 &max, byte *vertexInputData, int vertStride, int numVerts, float *skinToModelTransforms ); // transforms an array of index-weighted vertices into an array of idSilTraceVerts, while simulatenously calculating the bounds
+	virtual void VPCALL Dot( float *dst, const idVec3 &constant, const rvSilTraceVertT *src,	const int count );
+	virtual void VPCALL Dot( float *dst, const idPlane &constant, const rvSilTraceVertT *src, const int count );
+	virtual void VPCALL TracePointCull( byte *cullBits, byte &totalOr, const float radius, const idPlane *planes, const rvSilTraceVertT *verts, const int numVerts );
+	virtual void VPCALL DecalPointCull( byte *cullBits, const idPlane *planes, const rvSilTraceVertT *verts, const int numVerts );
+	virtual void VPCALL OverlayPointCull( byte *cullBits, idVec2 *texCoords, const idPlane *planes, const rvSilTraceVertT *verts, const int numVerts );
+	virtual void VPCALL DeriveTriPlanes( idPlane *planes, const rvSilTraceVertT *verts, const int numVerts, const int *indexes, const int numIndexes );
+	virtual	void VPCALL MinMax( idVec3 &min, idVec3 &max, const rvSilTraceVertT *src, const int count );
+	virtual	void VPCALL MinMax( idVec3 &min, idVec3 &max, const rvSilTraceVertT *src, const int *indexes, const int count );
+#endif
+// RAVEN END
 #endif
 };
 

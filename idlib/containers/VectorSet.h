@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __VECTORSET_H__
 #define __VECTORSET_H__

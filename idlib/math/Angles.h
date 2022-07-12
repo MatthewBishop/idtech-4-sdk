@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __MATH_ANGLES_H__
 #define __MATH_ANGLES_H__
@@ -16,6 +14,10 @@
 #define	PITCH				0		// up / down
 #define	YAW					1		// left / right
 #define	ROLL				2		// fall over
+
+#ifndef M_PI
+#  define M_PI (3.1415926536f)
+#endif
 
 class idVec3;
 class idQuat;
@@ -59,6 +61,8 @@ public:
 	idAngles &		Normalize360( void );	// normalizes 'this'
 	idAngles &		Normalize180( void );	// normalizes 'this'
 
+	float			Length( void ) const;
+	float			LengthSqr( void ) const;
 	void			Clamp( const idAngles &min, const idAngles &max );
 
 	int				GetDimension( void ) const;
@@ -68,6 +72,15 @@ public:
 	idQuat			ToQuat( void ) const;
 	idRotation		ToRotation( void ) const;
 	idMat3			ToMat3( void ) const;
+
+// RAVEN BEGIN
+	idMat3			&ToMat3( idMat3 &mat ) const;
+// abahr
+	idAngles		Random( const idVec3& range, idRandom& random ) const;
+	idAngles&		Scale( const idAngles& scalar );
+	idAngles&		Remap( const int map[], const int dirMap[] );
+// RAVEN END
+
 	idMat4			ToMat4( void ) const;
 	idVec3			ToAngularVelocity( void ) const;
 	const float *	ToFloatPtr( void ) const;
@@ -204,6 +217,14 @@ ID_INLINE bool idAngles::operator!=( const idAngles &a ) const {
 	return !Compare( a );
 }
 
+ID_INLINE float idAngles::Length( void ) const {
+	return idMath::Sqrt( yaw * yaw + pitch * pitch + roll * roll );
+}
+
+ID_INLINE float idAngles::LengthSqr( void ) const {
+	return ( yaw * yaw + pitch * pitch + roll * roll );
+}
+
 ID_INLINE void idAngles::Clamp( const idAngles &min, const idAngles &max ) {
 	if ( pitch < min.pitch ) {
 		pitch = min.pitch;
@@ -233,5 +254,33 @@ ID_INLINE const float *idAngles::ToFloatPtr( void ) const {
 ID_INLINE float *idAngles::ToFloatPtr( void ) {
 	return &pitch;
 }
+
+// RAVEN BEGIN
+// abahr
+ID_INLINE idAngles idAngles::Random( const idVec3& range, idRandom& random ) const {
+	idAngles a( *this );
+	for( int ix = 0; ix < GetDimension(); ++ix ) {
+		a[ ix ] += a[ ix ] * range[ix] * random.CRandomFloat();
+	}
+	return a;
+}
+
+ID_INLINE idAngles& idAngles::Scale( const idAngles& scalar ) {
+	for( int ix = 0; ix < GetDimension(); ++ix ) {
+		(*this)[ix] *= scalar[ix];
+	}
+
+	return *this;
+}
+
+ID_INLINE idAngles& idAngles::Remap( const int map[], const int dirMap[] ) {
+	idAngles ang( *this );
+	for( int ix = 0; ix < GetDimension(); ++ix ) {
+		(*this)[ ix ] = SignZero(dirMap[ix]) * ang[ abs(map[ix]) ];
+	}
+
+	return *this;
+}
+// RAVEN END
 
 #endif /* !__MATH_ANGLES_H__ */

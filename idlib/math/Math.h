@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __MATH_MATH_H__
 #define __MATH_MATH_H__
@@ -16,9 +14,28 @@
 #undef INFINITY
 #endif
 
-#ifdef FLT_EPSILON
-#undef FLT_EPSILON
+// RAVEN BEGIN
+// jscott: renamed to prevent name clash
+#ifdef FLOAT_EPSILON
+#undef FLOAT_EPSILON
 #endif
+// ddynerman: name clash prevention
+#ifdef INT_MIN
+#undef INT_MIN
+#endif
+
+#ifdef INT_MAX
+#undef INT_MAX
+#endif
+
+// jscott: uncomment this to use id's sqrt and trig approximations
+#if defined( __linux__ ) || defined( MACOS_X )
+	// TTimo - enabling for OSes I'm covering
+	// (14:34:20) mrelusive: in the general case we don't use those functions
+	// (14:34:28) mrelusive: they are only for specific cases where they are faster
+	#define _FAST_MATH
+#endif
+// RAVEN END
 
 #define DEG2RAD(a)				( (a) * idMath::M_DEG2RAD )
 #define RAD2DEG(a)				( (a) * idMath::M_RAD2DEG )
@@ -68,11 +85,13 @@ template<class T> ID_INLINE T	Max3( T x, T y, T z ) { return ( x > y ) ? ( ( x >
 template<class T> ID_INLINE T	Min3( T x, T y, T z ) { return ( x < y ) ? ( ( x < z ) ? x : z ) : ( ( y < z ) ? y : z ); }
 template<class T> ID_INLINE int	Max3Index( T x, T y, T z ) { return ( x > y ) ? ( ( x > z ) ? 0 : 2 ) : ( ( y > z ) ? 1 : 2 ); }
 template<class T> ID_INLINE int	Min3Index( T x, T y, T z ) { return ( x < y ) ? ( ( x < z ) ? 0 : 2 ) : ( ( y < z ) ? 1 : 2 ); }
-
 template<class T> ID_INLINE T	Sign( T f ) { return ( f > 0 ) ? 1 : ( ( f < 0 ) ? -1 : 0 ); }
+// RAVEN BEGIN
+// abahr: I know its not correct but return 1 if zero
+template<class T> ID_INLINE T	SignZero( T f ) { return ( f > 0 ) ? 1 : ( ( f < 0 ) ? -1 : 1 ); }
+// RAVEN END
 template<class T> ID_INLINE T	Square( T x ) { return x * x; }
 template<class T> ID_INLINE T	Cube( T x ) { return x * x * x; }
-
 
 class idMath {
 public:
@@ -81,6 +100,7 @@ public:
 
 	static float				RSqrt( float x );			// reciprocal square root, returns huge number when x == 0.0
 
+#ifdef _FAST_MATH
 	static float				InvSqrt( float x );			// inverse square root with 32 bits precision, returns huge number when x == 0.0
 	static float				InvSqrt16( float x );		// inverse square root with 16 bits precision, returns huge number when x == 0.0
 	static double				InvSqrt64( float x );		// inverse square root with 64 bits precision, returns huge number when x == 0.0
@@ -97,21 +117,9 @@ public:
 	static float				Cos16( float a );			// cosine with 16 bits precision, maximum absolute error is 2.3082e-09
 	static double				Cos64( float a );			// cosine with 64 bits precision
 
-	static void					SinCos( float a, float &s, float &c );		// sine and cosine with 32 bits precision
-	static void					SinCos16( float a, float &s, float &c );	// sine and cosine with 16 bits precision
-	static void					SinCos64( float a, double &s, double &c );	// sine and cosine with 64 bits precision
-
 	static float				Tan( float a );				// tangent with 32 bits precision
 	static float				Tan16( float a );			// tangent with 16 bits precision, maximum absolute error is 1.8897e-08
 	static double				Tan64( float a );			// tangent with 64 bits precision
-
-	static float				ASin( float a );			// arc sine with 32 bits precision, input is clamped to [-1, 1] to avoid a silent NaN
-	static float				ASin16( float a );			// arc sine with 16 bits precision, maximum absolute error is 6.7626e-05
-	static double				ASin64( float a );			// arc sine with 64 bits precision
-
-	static float				ACos( float a );			// arc cosine with 32 bits precision, input is clamped to [-1, 1] to avoid a silent NaN
-	static float				ACos16( float a );			// arc cosine with 16 bits precision, maximum absolute error is 6.7626e-05
-	static double				ACos64( float a );			// arc cosine with 64 bits precision
 
 	static float				ATan( float a );			// arc tangent with 32 bits precision
 	static float				ATan16( float a );			// arc tangent with 16 bits precision, maximum absolute error is 1.3593e-08
@@ -120,6 +128,47 @@ public:
 	static float				ATan( float y, float x );	// arc tangent with 32 bits precision
 	static float				ATan16( float y, float x );	// arc tangent with 16 bits precision, maximum absolute error is 1.3593e-08
 	static double				ATan64( float y, float x );	// arc tangent with 64 bits precision
+#else
+	static float				InvSqrt( float x ) { assert( x > 0.0f ); return( 1.0f / sqrtf( x ) ); }		// inverse square root with 32 bits precision, returns huge number when x == 0.0
+	static float				InvSqrt16( float x ) { assert( x > 0.0f ); return( 1.0f / sqrt( x ) ); }		// inverse square root with 16 bits precision, returns huge number when x == 0.0
+	static double				InvSqrt64( float x ) { assert( x > 0.0f ); return( 1.0f / sqrt( x ) ); }		// inverse square root with 64 bits precision, returns huge number when x == 0.0
+
+	static float				Sqrt( float x ) { assert( x >= 0.0f ); return( sqrtf( x ) ); }		// square root with 32 bits precision
+	static float				Sqrt16( float x ) { assert( x >= 0.0f ); return( sqrtf( x ) ); }	// square root with 16 bits precision
+	static double				Sqrt64( float x ) { assert( x >= 0.0f ); return( sqrt( x ) ); }		// square root with 64 bits precision
+
+	static float				Sin( float a ) { return( sinf( a ) ); }								// sine with 32 bits precision
+	static float				Sin16( float a ) { return( sinf( a ) ); }							// sine with 16 bits precision, maximum absolute error is 2.3082e-09
+	static double				Sin64( float a ) { return( sin( a ) ); }							// sine with 64 bits precision
+
+	static float				Cos( float a ) { return( cosf( a ) ); }								// cosine with 32 bits precision
+	static float				Cos16( float a ) { return( cosf( a ) ); }							// cosine with 16 bits precision, maximum absolute error is 2.3082e-09
+	static double				Cos64( float a ) { return( cos( a ) ); }							// cosine with 64 bits precision
+
+	static float				Tan( float a ) { return( tanf( a ) ); }								// tangent with 32 bits precision
+	static float				Tan16( float a ) { return( tanf( a ) ); }							// tangent with 16 bits precision, maximum absolute error is 1.8897e-08
+	static double				Tan64( float a ) { return( tan( a ) ); }							// tangent with 64 bits precision
+
+	static float				ATan( float a ) { return( atanf( a ) ); }							// arc tangent with 32 bits precision
+	static float				ATan16( float a ) { return( atanf( a ) ); }							// arc tangent with 16 bits precision, maximum absolute error is 1.3593e-08
+	static double				ATan64( float a ) { return( atan( a ) ); }							// arc tangent with 64 bits precision
+
+	static float				ATan( float y, float x ) { return( atan2f( y, x ) ); }				// arc tangent with 32 bits precision
+	static float				ATan16( float y, float x ) { return( atan2f( y, x ) ); }			// arc tangent with 16 bits precision, maximum absolute error is 1.3593e-08
+	static double				ATan64( float y, float x ) { return( atan2( y, x ) ); }				// arc tangent with 64 bits precision
+#endif
+
+	static void					SinCos( float a, float &s, float &c );		// sine and cosine with 32 bits precision
+	static void					SinCos16( float a, float &s, float &c );	// sine and cosine with 16 bits precision
+	static void					SinCos64( float a, double &s, double &c );	// sine and cosine with 64 bits precision
+
+	static float				ASin( float a );			// arc sine with 32 bits precision, input is clamped to [-1, 1] to avoid a silent NaN
+	static float				ASin16( float a );			// arc sine with 16 bits precision, maximum absolute error is 6.7626e-05
+	static double				ASin64( float a );			// arc sine with 64 bits precision
+
+	static float				ACos( float a );			// arc cosine with 32 bits precision, input is clamped to [-1, 1] to avoid a silent NaN
+	static float				ACos16( float a );			// arc cosine with 16 bits precision, maximum absolute error is 6.7626e-05
+	static double				ACos64( float a );			// arc cosine with 64 bits precision
 
 	static float				Pow( float x, float y );	// x raised to the power y with 32 bits precision
 	static float				Pow16( float x, float y );	// x raised to the power y with 16 bits precision
@@ -154,10 +203,12 @@ public:
 	static float				Rint( float f );			// returns the nearest integer
 	static int					Ftoi( float f );			// float to int conversion
 	static int					FtoiFast( float f );		// fast float to int conversion but uses current FPU round mode (default round nearest)
-	static unsigned long		Ftol( float f );			// float to long conversion
-	static unsigned long		FtolFast( float );			// fast float to long conversion but uses current FPU round mode (default round nearest)
+	static byte					Ftob( float f );			// float to byte conversion, the result is clamped to the range [0-255]
 
 	static signed char			ClampChar( int i );
+// RAVEN BEGIN
+	static byte					ClampByte( int i );
+// RAVEN END
 	static signed short			ClampShort( int i );
 	static int					ClampInt( int min, int max, int value );
 	static float				ClampFloat( float min, float max, float value );
@@ -178,6 +229,9 @@ public:
 	static const float			E;							// e
 	static const float			SQRT_TWO;					// sqrt( 2 )
 	static const float			SQRT_THREE;					// sqrt( 3 )
+// RAVEN BEGIN
+	static const float			THREEFOURTHS_PI;			// 3 * pi / 4
+// RAVEN END
 	static const float			SQRT_1OVER2;				// sqrt( 1 / 2 )
 	static const float			SQRT_1OVER3;				// sqrt( 1 / 3 )
 	static const float			M_DEG2RAD;					// degrees to radians multiplier
@@ -185,7 +239,28 @@ public:
 	static const float			M_SEC2MS;					// seconds to milliseconds multiplier
 	static const float			M_MS2SEC;					// milliseconds to seconds multiplier
 	static const float			INFINITY;					// huge number which should be larger than any valid number used
-	static const float			FLT_EPSILON;				// smallest positive number such that 1.0+FLT_EPSILON != 1.0
+// RAVEN BEGIN
+// jscott: renamed to prevent name clash
+	static const float			FLOAT_EPSILON;				// smallest positive number such that 1.0+FLT_EPSILON != 1.0
+// ddynerman: added from limits.h
+	static const int			INT_MIN;
+	static const int			INT_MAX;
+
+// bdube: moved here from modview
+	static void					ArtesianFromPolar( idVec3 &result, idVec3 view );
+	static void					PolarFromArtesian( idVec3 &view, idVec3 artesian );
+// jscott: for material type collision
+	static float				BarycentricTriangleArea( const idVec3 &normal, const idVec3 &a, const idVec3 &b, const idVec3 &c );
+	static void					BarycentricEvaluate( idVec2 &result, const idVec3 &point, const idVec3 &normal, const float area, const idVec3 t[3], const idVec2 tc[3] );
+// abahr
+	static float				Lerp( const idVec2& range, float frac );
+	static float				Lerp( float start, float end, float frac );
+	static float				MidPointLerp( float start, float mid, float end, float frac );
+// jscott: for sound system
+	static float				dBToScale( float db );
+	static float				ScaleToDb( float scale );
+// RAVEN END
+
 
 private:
 	enum {
@@ -205,6 +280,11 @@ private:
 
 	static dword				iSqrt[SQRT_TABLE_SIZE];
 	static bool					initialized;
+
+#ifdef ID_WIN_X86_SSE
+	static const float			SSE_FLOAT_ZERO;
+	static const float			SSE_FLOAT_255;
+#endif
 };
 
 ID_INLINE float idMath::RSqrt( float x ) {
@@ -219,6 +299,7 @@ ID_INLINE float idMath::RSqrt( float x ) {
 	return r;
 }
 
+#ifdef _FAST_MATH
 ID_INLINE float idMath::InvSqrt16( float x ) {
 	dword a = ((union _flint*)(&x))->i;
 	union _flint seed;
@@ -352,9 +433,10 @@ ID_INLINE float idMath::Cos16( float a ) {
 ID_INLINE double idMath::Cos64( float a ) {
 	return cos( a );
 }
+#endif
 
 ID_INLINE void idMath::SinCos( float a, float &s, float &c ) {
-#ifdef _WIN32
+#ifdef ID_WIN_X86_ASM
 	_asm {
 		fld		a
 		fsincos
@@ -407,7 +489,7 @@ ID_INLINE void idMath::SinCos16( float a, float &s, float &c ) {
 }
 
 ID_INLINE void idMath::SinCos64( float a, double &s, double &c ) {
-#ifdef _WIN32
+#ifdef ID_WIN_X86_ASM
 	_asm {
 		fld		a
 		fsincos
@@ -422,6 +504,7 @@ ID_INLINE void idMath::SinCos64( float a, double &s, double &c ) {
 #endif
 }
 
+#ifdef _FAST_MATH
 ID_INLINE float idMath::Tan( float a ) {
 	return tanf( a );
 }
@@ -471,6 +554,7 @@ ID_INLINE float idMath::Tan16( float a ) {
 ID_INLINE double idMath::Tan64( float a ) {
 	return tan( a );
 }
+#endif
 
 ID_INLINE float idMath::ASin( float a ) {
 	if ( a <= -1.0f ) {
@@ -542,6 +626,7 @@ ID_INLINE double idMath::ACos64( float a ) {
 	return acos( a );
 }
 
+#ifdef _FAST_MATH
 ID_INLINE float idMath::ATan( float a ) {
 	return atanf( a );
 }
@@ -598,6 +683,7 @@ ID_INLINE float idMath::ATan16( float y, float x ) {
 ID_INLINE double idMath::ATan64( float y, float x ) {
 	return atan2( y, x );
 }
+#endif
 
 ID_INLINE float idMath::Pow( float x, float y ) {
 	return powf( x, y );
@@ -621,7 +707,7 @@ ID_INLINE float idMath::Exp16( float f ) {
 
 	x = f * 1.44269504088896340f;		// multiply with ( 1 / log( 2 ) )
 #if 1
-	i = *reinterpret_cast<int *>(&x);
+	i = *reinterpret_cast<int *>( &x );
 	s = ( i >> IEEE_FLT_SIGN_BIT );
 	e = ( ( i >> IEEE_FLT_MANTISSA_BITS ) & ( ( 1 << IEEE_FLT_EXPONENT_BITS ) - 1 ) ) - IEEE_FLT_EXPONENT_BIAS;
 	m = ( i & ( ( 1 << IEEE_FLT_MANTISSA_BITS ) - 1 ) ) | ( 1 << IEEE_FLT_MANTISSA_BITS );
@@ -633,7 +719,7 @@ ID_INLINE float idMath::Exp16( float f ) {
 	}
 #endif
 	exponent = ( i + IEEE_FLT_EXPONENT_BIAS ) << IEEE_FLT_MANTISSA_BITS;
-	y = *reinterpret_cast<float *>(&exponent);
+	y = *reinterpret_cast<float *>( &exponent );
 	x -= (float) i;
 	if ( x >= 0.5f ) {
 		x -= 0.5f;
@@ -658,10 +744,10 @@ ID_INLINE float idMath::Log16( float f ) {
 	int i, exponent;
 	float y, y2;
 
-	i = *reinterpret_cast<int *>(&f);
+	i = *reinterpret_cast<int *>( &f );
 	exponent = ( ( i >> IEEE_FLT_MANTISSA_BITS ) & ( ( 1 << IEEE_FLT_EXPONENT_BITS ) - 1 ) ) - IEEE_FLT_EXPONENT_BIAS;
 	i -= ( exponent + 1 ) << IEEE_FLT_MANTISSA_BITS;	// get value in the range [.5, 1>
-	y = *reinterpret_cast<float *>(&i);
+	y = *reinterpret_cast<float *>( &i );
 	y *= 1.4142135623730950488f;						// multiply with sqrt( 2 )
 	y = ( y - 1.0f ) / ( y + 1.0f );
 	y2 = y * y;
@@ -679,7 +765,7 @@ ID_INLINE int idMath::IPow( int x, int y ) {
 }
 
 ID_INLINE int idMath::ILog2( float f ) {
-	return ( ( (*reinterpret_cast<int *>(&f)) >> IEEE_FLT_MANTISSA_BITS ) & ( ( 1 << IEEE_FLT_EXPONENT_BITS ) - 1 ) ) - IEEE_FLT_EXPONENT_BIAS;
+	return ( ( ( *reinterpret_cast<int *>( &f ) ) >> IEEE_FLT_MANTISSA_BITS ) & ( ( 1 << IEEE_FLT_EXPONENT_BITS ) - 1 ) ) - IEEE_FLT_EXPONENT_BIAS;
 }
 
 ID_INLINE int idMath::ILog2( int i ) {
@@ -695,7 +781,7 @@ ID_INLINE int idMath::BitsForInteger( int i ) {
 }
 
 ID_INLINE int idMath::MaskForFloatSign( float f ) {
-	return ( (*reinterpret_cast<int *>(&f)) >> 31 );
+	return ( ( *reinterpret_cast<int *>( &f ) ) >> 31 );
 }
 
 ID_INLINE int idMath::MaskForIntegerSign( int i ) {
@@ -761,48 +847,75 @@ ID_INLINE float idMath::Rint( float f ) {
 }
 
 ID_INLINE int idMath::Ftoi( float f ) {
+#ifdef ID_WIN_X86_SSE
+	// If a converted result is larger than the maximum signed doubleword integer,
+	// the floating-point invalid exception is raised, and if this exception is masked,
+	// the indefinite integer value (80000000H) is returned.
+	int i;
+	__asm cvttss2si	eax, f
+	__asm mov		i, eax
+	return i;
+#else
+	// If a converted result is larger than the maximum signed doubleword integer the result is undefined.
 	return (int) f;
+#endif
 }
 
 ID_INLINE int idMath::FtoiFast( float f ) {
-#ifdef _WIN32
+#ifdef ID_WIN_X86_ASM
 	int i;
 	__asm fld		f
 	__asm fistp		i		// use default rouding mode (round nearest)
 	return i;
 #elif 0						// round chop (C/C++ standard)
 	int i, s, e, m, shift;
-	i = *reinterpret_cast<int *>(&f);
+	i = *reinterpret_cast<int *>( &f );
 	s = i >> IEEE_FLT_SIGN_BIT;
 	e = ( ( i >> IEEE_FLT_MANTISSA_BITS ) & ( ( 1 << IEEE_FLT_EXPONENT_BITS ) - 1 ) ) - IEEE_FLT_EXPONENT_BIAS;
 	m = ( i & ( ( 1 << IEEE_FLT_MANTISSA_BITS ) - 1 ) ) | ( 1 << IEEE_FLT_MANTISSA_BITS );
 	shift = e - IEEE_FLT_MANTISSA_BITS;
 	return ( ( ( ( m >> -shift ) | ( m << shift ) ) & ~( e >> 31 ) ) ^ s ) - s;
+#elif defined( __linux__ )
+	#ifdef __i386__
+		int i;
+		__asm__ __volatile__ (
+						  "flds		%1\n\t"
+						  "fistpl	%0\n\t"
+						  : "=m"(i) : "m"(f));
+		return i;
+	#else
+		// lrintf is equivalent but only inlines at -O3
+		// although that should be more portable
+		return lrintf( f );
+	#endif
+#elif defined( MACOS_X )
+	return lrintf( f );
 #else
 	return (int) f;
 #endif
 }
 
-ID_INLINE unsigned long idMath::Ftol( float f ) {
-	return (unsigned long) f;
-}
-
-ID_INLINE unsigned long idMath::FtolFast( float f ) {
-#ifdef _WIN32
-	unsigned long i;
-	__asm fld		f
-	__asm fistp		i		// use default rouding mode (round nearest)
-	return i;
-#elif 0						// round chop (C/C++ standard)
-	int i, s, e, m, shift;
-	i = *reinterpret_cast<int *>(&f);
-	s = i >> IEEE_FLT_SIGN_BIT;
-	e = ( ( i >> IEEE_FLT_MANTISSA_BITS ) & ( ( 1 << IEEE_FLT_EXPONENT_BITS ) - 1 ) ) - IEEE_FLT_EXPONENT_BIAS;
-	m = ( i & ( ( 1 << IEEE_FLT_MANTISSA_BITS ) - 1 ) ) | ( 1 << IEEE_FLT_MANTISSA_BITS );
-	shift = e - IEEE_FLT_MANTISSA_BITS;
-	return ( ( ( ( m >> -shift ) | ( m << shift ) ) & ~( e >> 31 ) ) ^ s ) - s;
+ID_INLINE byte idMath::Ftob( float f ) {
+#ifdef ID_WIN_X86_SSE
+	// If a converted result is negative the value (0) is returned and if the
+	// converted result is larger than the maximum byte the value (255) is returned.
+	byte b;
+	__asm movss		xmm0, f
+	__asm maxss		xmm0, SSE_FLOAT_ZERO
+	__asm minss		xmm0, SSE_FLOAT_255
+	__asm cvttss2si	eax, xmm0
+	__asm mov		b, al
+	return b;
 #else
-	return (unsigned long) f;
+	// If a converted result is clamped to the range [0-255].
+	int i;
+	i = (int) f;
+	if ( i < 0 ) {
+		return 0;
+	} else if ( i > 255 ) {
+		return 255;
+	}
+	return i;
 #endif
 }
 
@@ -815,6 +928,21 @@ ID_INLINE signed char idMath::ClampChar( int i ) {
 	}
 	return i;
 }
+
+// RAVEN BEGIN
+ID_INLINE byte idMath::ClampByte( int i ) 
+{
+	if( i < 0 ) 
+	{
+		return( 0 );
+	}
+	if( i > 255 ) 
+	{
+		return( 255 );
+	}
+	return( i );
+}
+// RAVEN END
 
 ID_INLINE signed short idMath::ClampShort( int i ) {
 	if ( i < -32768 ) {
@@ -875,5 +1003,41 @@ ID_INLINE int idMath::FloatHash( const float *array, const int numFloats ) {
 	}
 	return hash;
 }
+
+// RAVEN BEGIN
+// jscott: fast and reliable random routines
+
+// This is the VC libc version of rand() without multiple seeds per thread or 12 levels
+// of subroutine calls.
+// Both calls have been designed to minimise the inherent number of float <--> int 
+// conversions and the additional math required to get the desired value.
+// eg the typical tint = (rand() * 255) / 32768
+// becomes tint = rvRandom::irand( 0, 255 )
+
+class rvRandom {
+private:
+	static	unsigned long	mSeed;
+public:
+							rvRandom( void ) { mSeed = 0x89abcdef; }
+
+	// for a non seed based init
+	static	int				Init( void );
+
+	// Init the seed to a unique number
+	static	void			Init( unsigned long seed ) { mSeed = seed; }
+
+	// Returns a float min <= x < max (exclusive; will get max - 0.00001; but never max)
+	static	float			flrand( float min, float max );
+
+	// Returns a float min <= 0 < 1.0
+	static	float			flrand();
+
+	static	float			flrand( const idVec2& v );
+
+	// Returns an integer min <= x <= max (ie inclusive)
+	static	int				irand( int min, int max );
+};
+
+// RAVEN END
 
 #endif /* !__MATH_MATH_H__ */

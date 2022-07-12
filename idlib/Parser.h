@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __PARSER_H__
 #define __PARSER_H__
@@ -135,9 +133,9 @@ public:
 					// returns the current line number
 	const int		GetLineNum( void ) const;
 					// print an error message
-	void			Error( const char *str, ... ) const;
+	void			Error( const char *str, ... ) const id_attribute((format(printf,2,3)));
 					// print a warning message
-	void			Warning( const char *str, ... ) const;
+	void			Warning( const char *str, ... ) const id_attribute((format(printf,2,3)));
 
 					// add a global define that will be added to all opened sources
 	static int		AddGlobalDefine( const char *string );
@@ -149,6 +147,7 @@ public:
 	static void		SetBaseFolder( const char *path );
 
 private:
+
 	int				loaded;						// set when a source file is loaded from file or memory
 	idStr			filename;					// file name of the script
 	idStr			includepath;				// path to include files

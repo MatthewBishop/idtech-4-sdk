@@ -1,9 +1,21 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../idlib/precompiled.h"
 #pragma hdrstop
 
+/*
+============
+idCmdArgs::operator=
+============
+*/
+void idCmdArgs::operator=( const idCmdArgs &args ) {
+	int i;
+
+	argc = args.argc;
+	memcpy( tokenized, args.tokenized, MAX_COMMAND_STRING );
+	for ( i = 0; i < argc; i++ ) {
+		argv[ i ] = tokenized + ( args.argv[ i ] - args.tokenized );
+	}
+}
 
 /*
 ============
@@ -129,7 +141,6 @@ void idCmdArgs::TokenizeString( const char *text, bool keepAsStrings ) {
 		totalLen += len + 1;
 	}
 }
-
 /*
 ============
 idCmdArgs::AppendArg

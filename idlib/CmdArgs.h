@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __CMDARGS_H__
 #define __CMDARGS_H__
@@ -16,6 +14,8 @@ class idCmdArgs {
 public:
 							idCmdArgs( void ) { argc = 0; }
 							idCmdArgs( const char *text, bool keepAsStrings ) { TokenizeString( text, keepAsStrings ); }
+
+	void					operator=( const idCmdArgs &args );
 
 							// The functions that execute commands get their parameters with these functions.
 	int						Argc( void ) const { return argc; }

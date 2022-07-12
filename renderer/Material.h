@@ -16,6 +16,11 @@ class idImage;
 class idCinematic;
 class idUserInterface;
 class idMegaTexture;
+// RAVEN BEGIN
+// rjohnson: new shader stage system
+class rvNewShaderStage;
+class rvGLSLShaderStage;
+// RAVEN END
 
 // moved from image.h for default parm
 typedef enum {
@@ -27,13 +32,24 @@ typedef enum {
 	// set AFTER image format selection
 	TR_CLAMP_TO_ZERO_ALPHA	// guarantee 0 alpha edge for projected textures,
 	// set AFTER image format selection
+// RAVEN BEGIN
+// AReis: Needed for mirrored repeating of tiling images.
+	, TR_MIRRORED_REPEAT,
+// RAVEN END
 } textureRepeat_t;
 
 typedef struct {
 	int		stayTime;		// msec for no change
+	float	maxAngle;		// maximum dot product to reject projection angles
+
+// RAVEN BEGIN
+// rjohnson: added new decal support
+/*
 	int		fadeTime;		// msec to fade vertex colors over
 	float	start[4];		// vertex color at spawn (possibly out of 0.0 - 1.0 range, will clamp after calc)
 	float	end[4];			// vertex color at fade-out (possibly out of 0.0 - 1.0 range, will clamp after calc)
+*/
+// RAVEN END
 } decalInfo_t;
 
 typedef enum {
@@ -44,8 +60,15 @@ typedef enum {
 	DFRM_EXPAND,
 	DFRM_MOVE,
 	DFRM_EYEBALL,
+// RAVEN BEGIN
+// jscott: unused
+/*
 	DFRM_PARTICLE,
 	DFRM_PARTICLE2,
+*/
+// ddynerman: rectangular sprites
+	DFRM_RECTSPRITE,
+// RAVEN END
 	DFRM_TURB
 } deform_t;
 
@@ -54,6 +77,11 @@ typedef enum {
 	DI_SCRATCH,		// video, screen wipe, etc
 	DI_CUBE_RENDER,
 	DI_MIRROR_RENDER,
+// RAVEN BEGIN
+// AReis: Used for water reflection/refraction.
+	DI_REFLECTION_RENDER,
+	DI_REFRACTION_RENDER,
+// RAVEN END
 	DI_REMOTE_RENDER
 } dynamicidImage_t;
 
@@ -74,6 +102,11 @@ typedef enum {
 	OP_TYPE_AND,
 	OP_TYPE_OR,
 	OP_TYPE_SOUND
+// RAVEN BEGIN
+// rjohnson: new shader stage system
+	,
+	OP_TYPE_GLSL_ENABLED,
+// RAVEN END
 } expOpType_t;
 
 typedef enum {
@@ -101,8 +134,23 @@ typedef enum {
 	EXP_REG_GLOBAL6,
 	EXP_REG_GLOBAL7,
 
+// RAVEN BEGIN
+// rjohnson: added vertex randomizing
+	EXP_REG_VERTEX_RANDOMIZER,
+// RAVEN END
+
 	EXP_REG_NUM_PREDEFINED
 } expRegister_t;
+
+// RAVEN BEGIN
+// rjohnson: added new decal support
+
+// decal registers
+#define EXP_REG_DECAL_LIFE		EXP_REG_PARM4
+#define	REG_DECAL_LIFE			4
+#define EXP_REG_DECAL_SPAWN		EXP_REG_PARM5
+#define	REG_DECAL_SPAWN			5
+// RAVEN END
 
 typedef struct {
 	expOpType_t		opType;	
@@ -119,7 +167,13 @@ typedef enum {
 	TG_REFLECT_CUBE,
 	TG_SKYBOX_CUBE,
 	TG_WOBBLESKY_CUBE,
-	TG_SCREEN			// screen aligned, for mirrorRenders and screen space temporaries
+	TG_SCREEN,			// screen aligned, for mirrorRenders and screen space temporaries
+	TG_SCREEN2,
+	TG_GLASSWARP
+// RAVEN BEGIN
+// AReis: New power-of-two correction texgen.
+	, TG_POT_CORRECTION,
+// RAVEN END
 } texgen_t;
 
 typedef struct {
@@ -152,16 +206,45 @@ typedef enum {
 } stageVertexColor_t;
 
 static const int	MAX_FRAGMENT_IMAGES = 8;
-static const int	MAX_VERTEX_PARMS = 4;
+// RAVEN BEGIN
+// AReis: Increased MAX_VERTEX_PARMS from 4 to 16 and added MAX_FRAGMENT_PARMS.
+static const int	MAX_VERTEX_PARMS = 16;
+static const int	MAX_FRAGMENT_PARMS = 8;
+// RAVEN END
 
 typedef struct {
 	int					vertexProgram;
+
+// RAVEN BEGIN
+// dluetscher: added support for specifying MD5R specfic vertex programs
+// Q4SDK: maintain compatible structure padding
+#if defined( _MD5R_SUPPORT ) || defined( Q4SDK_MD5R )
+	int					md5rVertexProgram;
+#endif
+// RAVEN END
+
 	int					numVertexParms;
 	int					vertexParms[MAX_VERTEX_PARMS][4];	// evaluated register indexes
+
+// RAVEN BEGIN
+// AReis: New Fragment Parm stuff.
+	int					numFragmentParms;
+	int					fragmentParms[MAX_FRAGMENT_PARMS][4];	// evaluated register indexes
+// RAVEN END
 
 	int					fragmentProgram;
 	int					numFragmentProgramImages;
 	idImage *			fragmentProgramImages[MAX_FRAGMENT_IMAGES];
+
+// RAVEN BEGIN
+// AReis: Custom Bindings. These override existing parm values.
+	bool				vertexParmsBindings[MAX_VERTEX_PARMS];
+	bool				fragmentParmsBindings[MAX_FRAGMENT_PARMS];
+
+// AReis: So fragment images can be bound to program specified binding, this
+// list keeps track of which image to use (if any, 0 if use specified image).
+	int					fragmentProgramBindings[MAX_FRAGMENT_IMAGES];
+// RAVEN END
 
 	idMegaTexture		*megaTexture;		// handles all the binding and parameter setting 
 } newShaderStage_t;
@@ -172,6 +255,10 @@ typedef struct {
 	int					drawStateBits;
 	colorStage_t		color;
 	bool				hasAlphaTest;
+// RAVEN BEGIN
+	bool				hasAlphaFunc;
+	int					alphaTestMode;
+// RAVEN END
 	int					alphaTestRegister;
 	textureStage_t		texture;
 	stageVertexColor_t	vertexColor;
@@ -180,6 +267,17 @@ typedef struct {
 	float				privatePolygonOffset;	// a per-stage polygon offset
 
 	newShaderStage_t	*newStage;			// vertex / fragment program based stage
+
+// RAVEN BEGIN
+// rjohnson: new shader stage system
+	rvNewShaderStage	*newShaderStage;
+
+// rjohnson: added new decal support
+	int					mStageRegisterStart;
+	int					mNumStageRegisters;
+	int					mStageOpsStart;
+	int					mNumStageOps;
+// RAVEN END
 } shaderStage_t;
 
 typedef enum {
@@ -190,10 +288,17 @@ typedef enum {
 } materialCoverage_t;
 
 typedef enum {
-	SS_SUBVIEW = -3,	// mirrors, viewscreens, etc
+	SS_MIN = -10000,
+// RAVEN BEGIN
+	SS_SUBVIEW = -4,	// mirrors, viewscreens, etc
+	SS_PREGUI = -3,		// guis
+// RAVEN END
 	SS_GUI = -2,		// guis
 	SS_BAD = -1,
 	SS_OPAQUE,			// opaque
+
+	SS_PORTAL_SKY,
+
 	SS_DECAL,			// scorch marks, etc.
 
 	SS_FAR,
@@ -204,7 +309,8 @@ typedef enum {
 
 	SS_NEAREST,			// screen blood blobs
 
-	SS_POST_PROCESS = 100	// after a screen copy to texture
+	SS_POST_PROCESS = 100,	// after a screen copy to texture
+	SS_MAX = 10000
 } materialSort_t;
 
 typedef enum {
@@ -229,6 +335,12 @@ typedef enum {
 	MF_NOSELFSHADOW				= BIT(4),
 	MF_NOPORTALFOG				= BIT(5),	// this fog volume won't ever consider a portal fogged out
 	MF_EDITOR_VISIBLE			= BIT(6)	// in use (visible) per editor
+// RAVEN BEGIN
+// jscott: for portal skies
+	, 
+	MF_SKY						= BIT(7),
+	MF_NEED_CURRENT_RENDER		= BIT(8)	// for hud guis that need sort order preseved but need back end too
+// RAVEN END
 } materialFlags_t;
 
 // contents flags, NOTE: make sure to keep the defines in doom_defs.script up to date with these!
@@ -249,10 +361,22 @@ typedef enum {
 	CONTENTS_AAS_SOLID			= BIT(13),	// solid for AAS
 	CONTENTS_AAS_OBSTACLE		= BIT(14),	// used to compile an obstacle into AAS that can be enabled/disabled
 	CONTENTS_FLASHLIGHT_TRIGGER	= BIT(15),	// used for triggers that are activated by the flashlight
+// RAVEN BEGIN
+// bdube: new clip that blocks monster visibility
+	CONTENTS_SIGHTCLIP			= BIT(16),	// used for blocking sight for actors and cameras
+	CONTENTS_LARGESHOTCLIP		= BIT(17),	// used to block large shots (fence that allows bullets through but not rockets for example)
+// cdr: AASTactical
+	CONTENTS_NOTACTICALFEATURES	= BIT(18),	// don't place tactical features here
+	CONTENTS_VEHICLECLIP		= BIT(19),	// solid to vehicles
 
 	// contents used by utils
 	CONTENTS_AREAPORTAL			= BIT(20),	// portal separating renderer areas
 	CONTENTS_NOCSG				= BIT(21),	// don't cut this brush with CSG operations in the editor
+	CONTENTS_FLYCLIP			= BIT(22),	// solid to vehicles
+
+// mekberg: added
+	CONTENTS_ITEMCLIP			= BIT(23),	// so items can collide
+// RAVEN END
 
 	CONTENTS_REMOVE_UTIL		= ~(CONTENTS_AREAPORTAL|CONTENTS_NOCSG)
 } contentsFlags_t;
@@ -296,13 +420,37 @@ typedef enum {
 	SURF_NOSTEPS				= BIT(9),	// no footstep sounds
 	SURF_DISCRETE				= BIT(10),	// not clipped or merged by utilities
 	SURF_NOFRAGMENT				= BIT(11),	// dmap won't cut surface at each bsp boundary
-	SURF_NULLNORMAL				= BIT(12)	// renderbump will draw this surface as 0x80 0x80 0x80, which
+	SURF_NULLNORMAL				= BIT(12),	// renderbump will draw this surface as 0x80 0x80 0x80, which
 											// won't collect light from any angle
+// RAVEN BEGIN
+// bdube: added bounce
+	SURF_BOUNCE					= BIT(13),	// projectiles should bounce off this surface
+
+// dluetscher: added no T fix
+	SURF_NO_T_FIX				= BIT(14),	// merge surfaces (like decals), but does not try to T-fix them
+
+// RAVEN END
 } surfaceFlags_t;
 
 class idSoundEmitter;
 
+// RAVEN BEGIN
+// jsinger: added to allow support for serialization/deserialization of binary decls
+#ifdef RV_BINARYDECLS
+class idMaterial : public idDecl, public Serializable<'IMAT'> {
+public:
+// jsinger:
+	virtual void		Write( SerialOutputStream &stream ) const;
+	virtual void		AddReferences() const;
+						idMaterial( SerialInputStream &stream );
+#else
 class idMaterial : public idDecl {
+#endif
+// rjohnson: new shader stage system
+	friend class rvNewShaderStage;
+	friend class rvGLSLShaderStage;
+// RAVEN END
+
 public:
 						idMaterial();
 	virtual				~idMaterial();
@@ -310,7 +458,7 @@ public:
 	virtual size_t		Size( void ) const;
 	virtual bool		SetDefaultText( void );
 	virtual const char *DefaultDefinition( void ) const;
-	virtual bool		Parse( const char *text, const int textLength );
+	virtual bool		Parse( const char *text, const int textLength, bool noCaching );
 	virtual void		FreeData( void );
 	virtual void		Print( void ) const;
 
@@ -320,7 +468,17 @@ public:
 	virtual const char	*ImageName( void ) const;
 
 	void				ReloadImages( bool force ) const;
-
+// RAVEN BEGIN
+// mwhitlock: Xenon texture streaming
+#if defined(_XENON)
+	int					streamCount;
+	int					streamTimeStamp;
+	static int			masterStreamTimeStamp;
+	bool				StreamImages( bool inBackground );
+	void				UnstreamImages( void );
+	void				UpdateImage( int stage, const byte *data, int width, int height );
+#endif
+// RAVEN END
 						// returns number of stages this material contains
 	const int			GetNumStages( void ) const { return numStages; }
 
@@ -411,7 +569,41 @@ public:
 						// into each other.
 	bool				NoFragment( void ) const { return ( surfaceFlags & SURF_NOFRAGMENT ) != 0; }
 
+// RAVEN BEGIN
+// dluetscher: added SURF_NO_T_FIX to merge surfaces (like decals), but skipping any T-junction fixing
+	bool				NoTFix( void ) const { return ( surfaceFlags & SURF_NO_T_FIX ) != 0; }
+// RAVEN END
+
 	//------------------------------------------------------------------
+
+// RAVEN BEGIN
+// jscott: added accessor
+	const rvDeclMatType *		GetMaterialType( void ) const { return( materialType ); }
+	const rvDeclMatType *		GetMaterialType( idVec2 &tc ) const;
+	byte *						GetMaterialTypeArray( void ) const { return( materialTypeArray ); }
+	const char *				GetMaterialTypeArrayName( void ) const { return( materialTypeArrayName.c_str() ); }
+
+// jscott: for profiling
+	int							GetTexelCount( void ) const;
+
+// jscott: for error checking
+	bool						HasDefaultedImage( void ) const;
+
+// jscott: for Radiant
+	idImage *					GetDiffuseImage( void ) const;
+
+// AReis: New portal distance culling stuff.
+	float						GetPortalNear( void ) const { return( portalDistanceNear ); }
+	float						GetPortalFar( void ) const { return( portalDistanceFar ); }
+	const idImage *				GetPortalImage( void ) const { return( portalImage ); }
+
+// jscott: to prevent a recursive crash
+	virtual	bool				RebuildTextSource( void ) { return( false ); }
+// scork: for detailed error-reporting
+	virtual bool				Validate( const char *psText, int iTextLength, idStr &strReportTo ) const;
+// RAVEN END
+
+	//==================================================================
 	// light shader specific functions, only called for light entities
 
 						// lightshader option to fill with fog from viewer instead of light from center
@@ -534,25 +726,55 @@ public:
 						// returns number of registers this material contains
 	const int			GetNumRegisters() const { return numRegisters; }
 
+// RAVEN BEGIN
+// rjohnson: added vertex randomizing
 						// regs should point to a float array large enough to hold GetNumRegisters() floats
 	void				EvaluateRegisters( float *regs, const float entityParms[MAX_ENTITY_SHADER_PARMS], 
-											const struct viewDef_s *view, idSoundEmitter *soundEmitter = NULL ) const;
+											const struct viewDef_s *view, int soundEmitter = 0, idVec3 *randomizer = NULL ) const;
+// RAVEN END
+
+// RAVEN BEGIN
+// rjohnson: added new decal support
+	void				EvaluateStageRegisters( int StageIndex, float *registers, const float shaderParms[MAX_ENTITY_SHADER_PARMS], float FloatTime) const;
+
+// rjohnson: started tracking image/material usage
+	void				ClearUseCount( void ) { useCount = 0; }
+	void				IncreaseUseCount( void ) { useCount++; globalUseCount++; }
+	int					GetUseCount( void ) { return useCount; }
+	int					GetGlobalUseCount( void ) const { return globalUseCount; }
+	void				ResolveUse( void );
+// RAVEN END
 
 						// if a material only uses constants (no entityParm or globalparm references), this
 						// will return a pointer to an internal table, and EvaluateRegisters will not need
 						// to be called.  If NULL is returned, EvaluateRegisters must be used.
 	const float *		ConstantRegisters() const;
 
+	bool				SuppressInSubview() const				{ return suppressInSubview; };
+	bool				IsPortalSky() const						{ return portalSky; };
+	void				AddReference();
+
 private:
 	// parse the entire material
 	void				CommonInit();
-	void				ParseMaterial( idLexer &src );
+// RAVEN BEGIN
+// scork: now returns false (WHEN VALIDATING) under circumstances which would cause a common->FatalError normally, caller should bail ASAP on return.
+	bool				ParseMaterial( idLexer &src );
+// RAVEN END
 	bool				MatchToken( idLexer &src, const char *match );
 	void				ParseSort( idLexer &src );
 	void				ParseBlend( idLexer &src, shaderStage_t *stage );
 	void				ParseVertexParm( idLexer &src, newShaderStage_t *newStage );
+// RAVEN BEGIN
+// AReis: New fragment parm stuff.
+	void				ParseFragmentParm( idLexer &src, newShaderStage_t *newStage );
+// RAVEN END
 	void				ParseFragmentMap( idLexer &src, newShaderStage_t *newStage );
-	void				ParseStage( idLexer &src, const textureRepeat_t trpDefault = TR_REPEAT );
+
+// RAVEN BEGIN
+// scork: now returns false (WHEN VALIDATING) under circumstances which would cause a common->FatalError normally, caller should bail ASAP on return.
+	bool				ParseStage( idLexer &src, const textureRepeat_t trpDefault = TR_REPEAT );
+// RAVEN END
 	void				ParseDeform( idLexer &src );
 	void				ParseDecalInfo( idLexer &src );
 	bool				CheckSurfaceParm( idToken *token );
@@ -569,7 +791,10 @@ private:
 	int					NameToDstBlendMode( const idStr &name );
 	void				MultiplyTextureMatrix( textureStage_t *ts, int registers[2][3] );	// FIXME: for some reason the const is bad for gcc and Mac
 	void				SortInteractionStages();
-	void				AddImplicitStages( const textureRepeat_t trpDefault = TR_REPEAT );
+// RAVEN BEGIN
+// scork: now returns false (WHEN VALIDATING) under circumstances which would cause a common->FatalError normally, caller should bail ASAP on return.
+	bool				AddImplicitStages( const textureRepeat_t trpDefault = TR_REPEAT );
+// RAVEN END
 	void				CheckForConstantRegisters();
 
 private:
@@ -581,6 +806,24 @@ private:
 	int					entityGui;			// draw a gui with the idUserInterface from the renderEntity_t
 											// non zero will draw gui, gui2, or gui3 from renderEnitty_t
 	mutable idUserInterface	*gui;			// non-custom guis are shared by all users of a material
+
+// RAVEN BEGIN
+// jscott: for material types
+	const rvDeclMatType *materialType;
+	byte				*materialTypeArray;	// an array of material type indices generated from the hit image
+	idStr				materialTypeArrayName;
+	int					MTAWidth;
+	int					MTAHeight;
+
+// rjohnson: started tracking image/material usage
+	int					useCount;
+	int					globalUseCount;
+
+// AReis: New portal distance culling stuff.
+	float				portalDistanceNear;
+	float				portalDistanceFar;
+	idImage *			portalImage;
+// RAVEN END
 
 	bool				noFog;				// surface does not create fog interactions
 
@@ -636,8 +879,24 @@ private:
 	idStr				editorImageName;
 	mutable idImage *	editorImage;		// image used for non-shaded preview
 	float				editorAlpha;
+
+	bool				suppressInSubview;
+	bool				portalSky;
+	int					refCount;
 };
 
 typedef idList<const idMaterial *> idMatList;
+
+// RAVEN BEGIN
+class rvMaterialEdit
+{
+public:
+	virtual	void		SetGui( idMaterial *edit, const char *name ) = 0;
+	virtual int			GetImageWidth( const idMaterial *edit ) const = 0;
+	virtual int			GetImageHeight( const idMaterial *edit ) const = 0;
+};
+
+extern rvMaterialEdit	*materialEdit;
+// RAVEN END
 
 #endif /* !__MATERIAL_H__ */

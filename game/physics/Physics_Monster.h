@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __PHYSICS_MONSTER_H__
 #define __PHYSICS_MONSTER_H__
@@ -30,6 +28,10 @@ typedef struct monsterPState_s {
 	idVec3					velocity;
 	idVec3					localOrigin;
 	idVec3					pushVelocity;
+// RAVEN BEGIN
+// bdube: added
+	idVec3					lastPushVelocity;
+// RAVEN END	
 } monsterPState_t;
 
 class idPhysics_Monster : public idPhysics_Actor {

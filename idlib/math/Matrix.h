@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __MATH_MATRIX_H__
 #define __MATH_MATRIX_H__
@@ -270,8 +268,11 @@ ID_INLINE idMat2 idMat2::Inverse( void ) const {
 	idMat2 invMat;
 
 	invMat = *this;
-	int r = invMat.InverseSelf();
-	assert( r );
+#ifdef _DEBUG	
+	assert( invMat.InverseSelf() );
+#else
+	invMat.InverseSelf();
+#endif
 	return invMat;
 }
 
@@ -279,8 +280,11 @@ ID_INLINE idMat2 idMat2::InverseFast( void ) const {
 	idMat2 invMat;
 
 	invMat = *this;
-	int r = invMat.InverseFastSelf();
-	assert( r );
+#ifdef _DEBUG	
+	assert ( invMat.InverseFastSelf() );
+#else
+	invMat.InverseFastSelf();
+#endif
 	return invMat;
 }
 
@@ -318,6 +322,11 @@ public:
 	idMat3			operator*( const float a ) const;
 	idVec3			operator*( const idVec3 &vec ) const;
 	idMat3			operator*( const idMat3 &a ) const;
+// RAVEN BEGIN
+// jscott: multiply by the transpose
+	idVec3			operator/( const idVec3 &vec ) const;
+	idMat3			operator/( const idMat3 &a ) const;
+// RAVEN END
 	idMat3			operator+( const idMat3 &a ) const;
 	idMat3			operator-( const idMat3 &a ) const;
 	idMat3 &		operator*=( const float a );
@@ -365,8 +374,17 @@ public:
 	idMat3 &		InertiaRotateSelf( const idMat3 &rotation );
 
 	int				GetDimension( void ) const;
+// RAVEN BEGIN
+// abahr:
+	int				GetVec3Dimension( void ) const;
+// RAVEN END
 
 	idAngles		ToAngles( void ) const;
+// RAVEN BEGIN
+	void			RotateAbsolute(int whichAxis, float	howManyDegrees);
+	void			RotateRelative(int whichAxis, float	howManyDegrees);
+	void			RotateArbitrary(const idVec3 &rotAxis, float howManyDegrees);
+// RAVEN END
 	idQuat			ToQuat( void ) const;
 	idCQuat			ToCQuat( void ) const;
 	idRotation		ToRotation( void ) const;
@@ -450,6 +468,36 @@ ID_INLINE idMat3 idMat3::operator*( const idMat3 &a ) const {
 	}
 	return dst;
 }
+
+// RAVEN BEGIN
+// jscott: divide is overridden to multiply by transpose
+ID_INLINE idVec3 idMat3::operator/( const idVec3 &vec ) const 
+{
+	return( idVec3(
+		mat[0].x * vec.x + mat[0].y * vec.y + mat[0].z * vec.z,
+		mat[1].x * vec.x + mat[1].y * vec.y + mat[1].z * vec.z,
+		mat[2].x * vec.x + mat[2].y * vec.y + mat[2].z * vec.z ) );
+}
+
+ID_INLINE idMat3 idMat3::operator/( const idMat3 &a ) const 
+{
+	idMat3		dst;
+
+	dst[0].x = mat[0].x * a.mat[0].x + mat[0].y * a.mat[0].y + mat[0].z * a.mat[0].z;
+	dst[0].y = mat[0].x * a.mat[1].x + mat[0].y * a.mat[1].y + mat[0].z * a.mat[1].z;
+	dst[0].z = mat[0].x * a.mat[2].x + mat[0].y * a.mat[2].y + mat[0].z * a.mat[2].z;
+
+	dst[1].x = mat[1].x * a.mat[0].x + mat[1].y * a.mat[0].y + mat[1].z * a.mat[0].z;
+	dst[1].y = mat[1].x * a.mat[1].x + mat[1].y * a.mat[1].y + mat[1].z * a.mat[1].z;
+	dst[1].z = mat[1].x * a.mat[2].x + mat[1].y * a.mat[2].y + mat[1].z * a.mat[2].z;
+
+	dst[2].x = mat[2].x * a.mat[0].x + mat[2].y * a.mat[0].y + mat[2].z * a.mat[0].z;
+	dst[2].y = mat[2].x * a.mat[1].x + mat[2].y * a.mat[1].y + mat[2].z * a.mat[1].z;
+	dst[2].z = mat[2].x * a.mat[2].x + mat[2].y * a.mat[2].y + mat[2].z * a.mat[2].z;
+
+	return( dst );
+}
+// RAVEN END
 
 ID_INLINE idMat3 idMat3::operator*( const float a ) const {
 	return idMat3(
@@ -597,7 +645,8 @@ ID_INLINE bool idMat3::IsDiagonal( const float epsilon ) const {
 }
 
 ID_INLINE bool idMat3::IsRotated( void ) const {
-	return !Compare( mat3_identity );
+	// NOTE: assumes the 3x3 matrix is orthonormal
+	return ( mat[0][0] != 1.0f || mat[1][1] != 1.0f || mat[2][2] != 1.0f );
 }
 
 ID_INLINE void idMat3::ProjectVector( const idVec3 &src, idVec3 &dst ) const {
@@ -675,8 +724,11 @@ ID_INLINE idMat3 idMat3::Inverse( void ) const {
 	idMat3 invMat;
 
 	invMat = *this;
-	int r = invMat.InverseSelf();
-	assert( r );
+#ifdef _DEBUG	
+	assert ( invMat.InverseSelf() );
+#else
+	invMat.InverseSelf();
+#endif
 	return invMat;
 }
 
@@ -684,8 +736,11 @@ ID_INLINE idMat3 idMat3::InverseFast( void ) const {
 	idMat3 invMat;
 
 	invMat = *this;
-	int r = invMat.InverseFastSelf();
-	assert( r );
+#ifdef _DEBUG	
+	assert ( invMat.InverseFastSelf() );
+#else
+	invMat.InverseFastSelf();
+#endif
 	return invMat;
 }
 
@@ -719,6 +774,12 @@ ID_INLINE idMat3 SkewSymmetric( idVec3 const &src ) {
 
 ID_INLINE int idMat3::GetDimension( void ) const {
 	return 9;
+}
+
+// RAVEN BEGIN
+// abahr: made version for when getting vectors
+ID_INLINE int idMat3::GetVec3Dimension( void ) const {
+	return 3;
 }
 
 ID_INLINE const float *idMat3::ToFloatPtr( void ) const {
@@ -1083,8 +1144,11 @@ ID_INLINE idMat4 idMat4::Inverse( void ) const {
 	idMat4 invMat;
 
 	invMat = *this;
-	int r = invMat.InverseSelf();
-	assert( r );
+#ifdef _DEBUG	
+	assert ( invMat.InverseSelf() );
+#else
+	invMat.InverseSelf();
+#endif
 	return invMat;
 }
 
@@ -1092,8 +1156,11 @@ ID_INLINE idMat4 idMat4::InverseFast( void ) const {
 	idMat4 invMat;
 
 	invMat = *this;
-	int r = invMat.InverseFastSelf();
-	assert( r );
+#ifdef _DEBUG	
+	assert( invMat.InverseFastSelf() );
+#else
+	invMat.InverseFastSelf();
+#endif
 	return invMat;
 }
 
@@ -1388,8 +1455,11 @@ ID_INLINE idMat5 idMat5::Inverse( void ) const {
 	idMat5 invMat;
 
 	invMat = *this;
-	int r = invMat.InverseSelf();
-	assert( r );
+#ifdef _DEBUG
+	assert ( invMat.InverseSelf() );
+#else
+	invMat.InverseSelf();
+#endif
 	return invMat;
 }
 
@@ -1397,8 +1467,11 @@ ID_INLINE idMat5 idMat5::InverseFast( void ) const {
 	idMat5 invMat;
 
 	invMat = *this;
-	int r = invMat.InverseFastSelf();
-	assert( r );
+#ifdef _DEBUG
+	assert ( invMat.InverseFastSelf() );
+#else
+	invMat.InverseFastSelf();
+#endif
 	return invMat;
 }
 
@@ -1715,8 +1788,11 @@ ID_INLINE idMat6 idMat6::Inverse( void ) const {
 	idMat6 invMat;
 
 	invMat = *this;
-	int r = invMat.InverseSelf();
-	assert( r );
+#ifdef _DEBUG
+	assert ( invMat.InverseSelf() );
+#else
+	invMat.InverseSelf();
+#endif
 	return invMat;
 }
 
@@ -1724,8 +1800,11 @@ ID_INLINE idMat6 idMat6::InverseFast( void ) const {
 	idMat6 invMat;
 
 	invMat = *this;
-	int r = invMat.InverseFastSelf();
-	assert( r );
+#ifdef _DEBUG
+	assert ( invMat.InverseFastSelf() );
+#else
+	invMat.InverseFastSelf();
+#endif
 	return invMat;
 }
 
@@ -1758,6 +1837,12 @@ ID_INLINE float *idMat6::ToFloatPtr( void ) {
 #define MATX_ALLOCA( n )	( (float *) _alloca16( MATX_QUAD( n ) ) )
 #define MATX_SIMD
 
+// RAVEN BEGIN
+// jsinger: this is broken at the moment because idSIMDProcessor is no longer virtual
+#ifdef _XENON
+#undef MATX_SIMD
+#endif
+// RAVEN END
 class idMatX {
 public:
 					idMatX( void );
@@ -1947,8 +2032,11 @@ private:
 	int				alloced;				// floats allocated, if -1 then mat points to data set with SetData
 	float *			mat;					// memory the matrix is stored
 
-	static float	temp[MATX_MAX_TEMP+4];	// used to store intermediate results
-	static float *	tempPtr;				// pointer to 16 byte aligned temporary memory
+// RAVEN BEGIN
+// jscott: avoid pointer hackery pokery and use the compiler
+	ALIGN16( static float tempPtr[MATX_MAX_TEMP]; )
+//	static float *	tempPtr;				// pointer to 16 byte aligned temporary memory
+// RAVEN END
 	static int		tempIndex;				// index into memory pool, wraps around
 
 private:
@@ -2226,7 +2314,10 @@ ID_INLINE void idMatX::SetSize( int rows, int columns ) {
 		if ( mat != NULL ) {
 			Mem_Free16( mat );
 		}
-		mat = (float *) Mem_Alloc16( alloc * sizeof( float ) );
+//RAVEN BEGIN
+//amccarthy: Added allocation tag
+		mat = (float *) Mem_Alloc16( alloc * sizeof( float ), MA_MATH );
+//RAVEN END
 		alloced = alloc;
 	}
 	numRows = rows;
@@ -2559,8 +2650,11 @@ ID_INLINE idMatX idMatX::Inverse( void ) const {
 
 	invMat.SetTempSize( numRows, numColumns );
 	memcpy( invMat.mat, mat, numRows * numColumns * sizeof( float ) );
-	int r = invMat.InverseSelf();
-	assert( r );
+#ifdef _DEBUG
+	assert ( invMat.InverseSelf() );
+#else
+	invMat.InverseSelf();
+#endif
 	return invMat;
 }
 
@@ -2588,7 +2682,6 @@ ID_INLINE bool idMatX::InverseSelf( void ) {
 		default:
 			return InverseSelfGeneric();
 	}
-	return false;
 }
 
 ID_INLINE idMatX idMatX::InverseFast( void ) const {
@@ -2596,8 +2689,11 @@ ID_INLINE idMatX idMatX::InverseFast( void ) const {
 
 	invMat.SetTempSize( numRows, numColumns );
 	memcpy( invMat.mat, mat, numRows * numColumns * sizeof( float ) );
-	int r = invMat.InverseFastSelf();
-	assert( r );
+#ifdef _DEBUG
+	assert ( invMat.InverseFastSelf() );
+#else
+	invMat.InverseFastSelf();
+#endif
 	return invMat;
 }
 
@@ -2625,7 +2721,8 @@ ID_INLINE bool idMatX::InverseFastSelf( void ) {
 		default:
 			return InverseSelfGeneric();
 	}
-	return false;
+//unreachable
+//return false;
 }
 
 ID_INLINE idVecX idMatX::Multiply( const idVecX &vec ) const {

@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 /*
 game_worldspawn.cpp
 
@@ -37,13 +35,6 @@ void idWorldspawn::Spawn( void ) {
 
 	assert( gameLocal.world == NULL );
 	gameLocal.world = this;
-
-	g_gravity.SetFloat( spawnArgs.GetFloat( "gravity", va( "%f", DEFAULT_GRAVITY ) ) );
-
-	// disable stamina on hell levels
-	if ( spawnArgs.GetBool( "no_stamina" ) ) {
-		pm_stamina.SetFloat( 0.0f );
-	}
 
 	// load script
 	scriptname = gameLocal.GetMapName();
@@ -89,12 +80,10 @@ idWorldspawn::Restore
 void idWorldspawn::Restore( idRestoreGame *savefile ) {
 	assert( gameLocal.world == this );
 
-	g_gravity.SetFloat( spawnArgs.GetFloat( "gravity", va( "%f", DEFAULT_GRAVITY ) ) );
-
-	// disable stamina on hell levels
-	if ( spawnArgs.GetBool( "no_stamina" ) ) {
-		pm_stamina.SetFloat( 0.0f );
-	}
+// RAVEN BEGIN
+// bdube: gravity change
+	g_gravity.SetFloat( spawnArgs.GetFloat( "gravity", va( "%f", DEFAULT_GRAVITY) ) );
+// RAVEN END
 }
 
 /*

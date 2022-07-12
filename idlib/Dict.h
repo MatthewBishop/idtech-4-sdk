@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __DICT_H__
 #define __DICT_H__
@@ -37,6 +35,13 @@ private:
 	const idPoolStr *	value;
 };
 
+// RAVEN BEGIN
+// jsinger: added to allow support for serialization/deserialization of binary decls
+#ifdef RV_BINARYDECLS
+#include "../serialization/SerialOutputStream.h"
+#include "../serialization/SerialInputStream.h"
+#endif
+// RAVEN END
 class idDict {
 public:
 						idDict( void );
@@ -74,7 +79,7 @@ public:
 	void				SetVec4( const char *key, const idVec4 &val );
 	void				SetAngles( const char *key, const idAngles &val );
 	void				SetMatrix( const char *key, const idMat3 &val );
-
+	
 						// these return default values of 0.0, 0 and false
 	const char *		GetString( const char *key, const char *defaultString = "" ) const;
 	float				GetFloat( const char *key, const char *defaultString = "0" ) const;
@@ -111,10 +116,19 @@ public:
 						// lastMatch can be used to do additional searches past the first match.
 	const idKeyValue *	MatchPrefix( const char *prefix, const idKeyValue *lastMatch = NULL ) const;
 						// randomly chooses one of the key/value pairs with the given key prefix and returns it's value
-	const char *		RandomPrefix( const char *prefix, idRandom &random ) const;
+// RAVEN BEGIN
+// abahr: added default value param
+	const char *		RandomPrefix( const char *prefix, idRandom &random, const char* defaultValue = "" ) const;
+// RAVEN END
 
 	void				WriteToFileHandle( idFile *f ) const;
 	void				ReadFromFileHandle( idFile *f );
+
+// RAVEN BEGIN
+// nrausch: write/read to memory
+	int					WriteToMemory( void *mem, int maxSize ) const;
+	void				ReadFromMemory( void *mem, int size );
+// RAVEN END
 
 						// returns a unique checksum for this dictionary's content
 	int					Checksum( void ) const;
@@ -126,10 +140,29 @@ public:
 	static void			ListKeys_f( const idCmdArgs &args );
 	static void			ListValues_f( const idCmdArgs &args );
 
+// RAVEN BEGIN
+// jsinger: added to allow support for serialization/deserialization of binary decls
+#ifdef RV_BINARYDECLS
+	void				Write( SerialOutputStream &stream ) const;
+	idDict( SerialInputStream &stream );
+#endif
+// RAVEN END
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+	// Set the heap used for all allocations
+	void				SetAllocatorHeap ( rvHeap* heap )
+	{
+		args.SetAllocatorHeap(heap);
+		argHash.SetAllocatorHeap(heap);
+	}
+#endif
+// RAVEN END
+
 private:
 	idList<idKeyValue>	args;
 	idHashIndex			argHash;
-
 	static idStrPool	globalKeys;
 	static idStrPool	globalValues;
 };

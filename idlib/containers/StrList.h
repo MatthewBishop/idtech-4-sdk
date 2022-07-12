@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __STRLIST_H__
 #define __STRLIST_H__
@@ -123,6 +121,25 @@ ID_INLINE size_t idStrList::Size( void ) const {
 	return s;
 }
 
+/*
+================
+idStrList::RemoveDuplicates
+================
+*/
+template<>
+ID_INLINE void idStrList::RemoveDuplicates( void ) {
+	int	i, j;
+
+	for( i = 0; i < Num() - 1; i++ ) {
+		for( j = i + 1; j < Num(); ) {
+			if( ( *this )[i] == ( *this )[j] ) {
+				RemoveIndex( j );
+			} else {
+				j++;
+			}
+		}
+	}
+}
 /*
 ===============================================================================
 

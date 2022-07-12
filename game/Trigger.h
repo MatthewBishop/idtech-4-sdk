@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __GAME_TRIGGER_H__
 #define __GAME_TRIGGER_H__
@@ -33,12 +31,19 @@ public:
 	virtual void		Disable( void );
 
 protected:
-	void				CallScript( void ) const;
+// RAVEN BEGIN
+// abahr: removed const from function
+	void				CallScript( idEntity* scriptEntity );
+// RAVEN END
 
 	void				Event_Enable( void );
 	void				Event_Disable( void );
 
-	const function_t *	scriptFunction;
+// RAVEN BEGIN
+// abahr: changed to allow parms to be passed
+	idList<rvScriptFuncUtility> scriptFunctions;
+	//const function_t *	scriptFunction;
+// RAVEN END
 };
 
 
@@ -71,10 +76,17 @@ private:
 	int					removeItem;
 	bool				touchClient;
 	bool				touchOther;
+	bool				touchVehicle;
 	bool				triggerFirst;
 	bool				triggerWithSelf;
 
 	bool				CheckFacing( idEntity *activator );
+
+// RAVEN BEGIN
+// kfuller: want trigger_relays entities to be able to respond to earthquakes
+	void				Event_EarthQuake				(float requiresLOS);
+// RAVEN END
+
 	void				TriggerAction( idEntity *activator );
 	void				Event_TriggerAction( idEntity *activator );
 	void				Event_Trigger( idEntity *activator );
@@ -204,6 +216,11 @@ private:
 	float				delay;
 	int					nextTime;
 
+// RAVEN BEGIN
+// kfuller: added playeronly
+	bool				playerOnly;
+// RAVEN END
+
 	void				Event_Touch( idEntity *other, trace_t *trace );
 	void				Event_Toggle( idEntity *activator );
 };
@@ -255,6 +272,7 @@ public:
 
 private:
 	idClipModel *		clipModel;
+	int					filterTeam;
 
 	void				Event_Trigger( idEntity *activator );
 };

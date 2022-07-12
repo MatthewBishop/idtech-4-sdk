@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../idlib/precompiled.h"
 #pragma hdrstop
@@ -320,7 +318,10 @@ int idAF::EntitiesTouchingAF( afTouch_t touchList[ MAX_GENTITIES ] ) const {
 	}
 
 	numTouching = 0;
-	numClipModels = gameLocal.clip.ClipModelsTouchingBounds( physicsObj.GetAbsBounds(), -1, clipModels, MAX_GENTITIES );
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+	numClipModels = gameLocal.ClipModelsTouchingBounds( self, physicsObj.GetAbsBounds(), -1, clipModels, MAX_GENTITIES );
+// RAVEN END
 
 	for ( i = 0; i < jointMods.Num(); i++ ) {
 		body = physicsObj.GetBody( jointMods[i].bodyId );
@@ -339,8 +340,10 @@ int idAF::EntitiesTouchingAF( afTouch_t touchList[ MAX_GENTITIES ] ) const {
 			if ( !body->GetClipModel()->GetAbsBounds().IntersectsBounds( cm->GetAbsBounds() ) ) {
 				continue;
 			}
-
-			if ( gameLocal.clip.ContentsModel( body->GetWorldOrigin(), body->GetClipModel(), body->GetWorldAxis(), -1, cm->Handle(), cm->GetOrigin(), cm->GetAxis() ) ) {
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+			if ( gameLocal.ContentsModel( self, body->GetWorldOrigin(), body->GetClipModel(), body->GetWorldAxis(), -1, cm->GetCollisionModel(), cm->GetOrigin(), cm->GetAxis() ) ) {
+// RAVEN END
 				touchList[ numTouching ].touchedByBody = body;
 				touchList[ numTouching ].touchedClipModel = cm;
 				touchList[ numTouching ].touchedEnt  = cm->GetEntity();
@@ -516,6 +519,7 @@ bool idAF::LoadBody( const idDeclAF_Body *fb, const idJointMat *joints ) {
 			assert( 0 );
 			break;
 	}
+
 	trm.GetMassProperties( 1.0f, mass, centerOfMass, inertiaTensor );
 	trm.Translate( -centerOfMass );
 	origin += centerOfMass * axis;
@@ -526,7 +530,7 @@ bool idAF::LoadBody( const idDeclAF_Body *fb, const idJointMat *joints ) {
 		if ( !clip->IsEqual( trm ) ) {
 			clip = new idClipModel( trm );
 			clip->SetContents( fb->contents );
-			clip->Link( gameLocal.clip, self, 0, origin, axis );
+			clip->Link( self, 0, origin, axis );
 			body->SetClipModel( clip );
 		}
 		clip->SetContents( fb->contents );
@@ -538,7 +542,7 @@ bool idAF::LoadBody( const idDeclAF_Body *fb, const idJointMat *joints ) {
 	else {
 		clip = new idClipModel( trm );
 		clip->SetContents( fb->contents );
-		clip->Link( gameLocal.clip, self, 0, origin, axis );
+		clip->Link( self, 0, origin, axis );
 		body = new idAFBody( fb->name, clip, fb->density );
 		if ( fb->inertiaScale != mat3_identity ) {
 			body->SetDensity( fb->density, fb->inertiaScale );
@@ -578,9 +582,14 @@ bool idAF::LoadBody( const idDeclAF_Body *fb, const idJointMat *joints ) {
 	animator->GetJointList( fb->containedJoints, jointList );
 	for( i = 0; i < jointList.Num(); i++ ) {
 		if ( jointBody[ jointList[ i ] ] != -1 ) {
-			gameLocal.Warning( "%s: joint '%s' is already contained by body '%s'",
-						name.c_str(), animator->GetJointName( (jointHandle_t)jointList[i] ),
-							physicsObj.GetBody( jointBody[ jointList[ i ] ] )->GetName().c_str() );
+
+// RAVEN BEGIN
+// kfuller: better load time warning for joints contained by multiple bodies
+			gameLocal.Warning( "%s: body '%s': joint '%s' is already contained by body '%s'", 
+						name.c_str(), fb->name.c_str(),
+						animator->GetJointName( (jointHandle_t)jointList[i] ),
+						physicsObj.GetBody( jointBody[ jointList[ i ] ] )->GetName().c_str() );
+// RAVEN END
 		}
 		jointBody[ jointList[ i ] ] = id;
 	}
@@ -765,7 +774,10 @@ static bool GetJointTransform( void *model, const idJointMat *frame, const char 
 idAF::Load
 ================
 */
-bool idAF::Load( idEntity *ent, const char *fileName ) {
+// RAVEN BEGIN
+// ddynerman: purge constraints/joints before loading a new one
+bool idAF::Load( idEntity *ent, const char *fileName, bool purgeAF /* = false */ ) {
+// RAVEN END
 	int i, j;
 	const idDeclAF *file;
 	const idDeclModelDef *modelDef;
@@ -836,6 +848,10 @@ bool idAF::Load( idEntity *ent, const char *fileName ) {
 	physicsObj.SetSuspendTolerance( file->noMoveTime, file->noMoveTranslation, file->noMoveRotation );
 	physicsObj.SetSuspendTime( file->minMoveTime, file->maxMoveTime );
 	physicsObj.SetSelfCollision( file->selfCollision );
+// RAVEN BEGIN
+// rjohnson: fast AF eval to skip some things that are not needed for specific circumstances
+	physicsObj.SetFastEval( file->fastEval );
+// RAVEN END
 
 	// clear the list with transforms from joints to bodies
 	jointMods.SetNum( 0, false );
@@ -846,35 +862,51 @@ bool idAF::Load( idEntity *ent, const char *fileName ) {
 		jointBody[i] = -1;
 	}
 
+// RAVEN BEGIN
+// ddynerman: purge constraints/joints before loading a new one
 	// delete any bodies in the physicsObj that are no longer in the idDeclAF
-	for ( i = 0; i < physicsObj.GetNumBodies(); i++ ) {
-		idAFBody *body = physicsObj.GetBody( i );
-		for ( j = 0; j < file->bodies.Num(); j++ ) {
-			if ( file->bodies[j]->name.Icmp( body->GetName() ) == 0 ) {
-				break;
-			}
-		}
-		if ( j >= file->bodies.Num() ) {
+	if( purgeAF ) {
+		for ( i = 0; i < physicsObj.GetNumBodies(); i++ ) {
 			physicsObj.DeleteBody( i );
 			i--;
+		}
+	} else {
+		for ( i = 0; i < physicsObj.GetNumBodies(); i++ ) {
+			idAFBody *body = physicsObj.GetBody( i );
+			for ( j = 0; j < file->bodies.Num(); j++ ) {
+				if ( file->bodies[j]->name.Icmp( body->GetName() ) == 0 ) {
+					break;
+				}
+			}
+			if ( j >= file->bodies.Num() ) {
+				physicsObj.DeleteBody( i );
+				i--;
+			}
 		}
 	}
 
 	// delete any constraints in the physicsObj that are no longer in the idDeclAF
-	for ( i = 0; i < physicsObj.GetNumConstraints(); i++ ) {
-		idAFConstraint *constraint = physicsObj.GetConstraint( i );
-		for ( j = 0; j < file->constraints.Num(); j++ ) {
-			if ( file->constraints[j]->name.Icmp( constraint->GetName() ) == 0 &&
-					file->constraints[j]->type == constraint->GetType() ) {
-				break;
-			}
-		}
-		if ( j >= file->constraints.Num() ) {
+	if( purgeAF ) {
+		for ( i = 0; i < physicsObj.GetNumConstraints(); i++ ) {
 			physicsObj.DeleteConstraint( i );
 			i--;
 		}
+	} else {
+		for ( i = 0; i < physicsObj.GetNumConstraints(); i++ ) {
+			idAFConstraint *constraint = physicsObj.GetConstraint( i );
+			for ( j = 0; j < file->constraints.Num(); j++ ) {
+				if ( file->constraints[j]->name.Icmp( constraint->GetName() ) == 0 &&
+					file->constraints[j]->type == constraint->GetType() ) {
+						break;
+					}
+			}
+			if ( j >= file->constraints.Num() ) {
+				physicsObj.DeleteConstraint( i );
+				i--;
+			}
+		}
 	}
-
+// RAVEN END
 	// load bodies from the file
 	for ( i = 0; i < file->bodies.Num(); i++ ) {
 		LoadBody( file->bodies[i], joints );
@@ -902,6 +934,8 @@ bool idAF::Load( idEntity *ent, const char *fileName ) {
 	physicsObj.DisableClip();
 
 	isLoaded = true;
+	
+	poseTime = -1;
 
 	return true;
 }
@@ -922,6 +956,7 @@ void idAF::Start( void ) {
 	self->SetPhysics( &physicsObj );
 	// start the articulated figure physics simulation
 	physicsObj.EnableClip();
+
 	physicsObj.Activate();
 	isActive = true;
 }
@@ -950,7 +985,10 @@ bool idAF::TestSolid( void ) const {
 
 	for ( i = 0; i < physicsObj.GetNumBodies(); i++ ) {
 		body = physicsObj.GetBody( i );
-		if ( gameLocal.clip.Translation( trace, body->GetWorldOrigin(), body->GetWorldOrigin(), body->GetClipModel(), body->GetWorldAxis(), body->GetClipMask(), self ) ) {
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+		if ( gameLocal.Translation( self, trace, body->GetWorldOrigin(), body->GetWorldOrigin(), body->GetClipModel(), body->GetWorldAxis(), body->GetClipMask(), self ) ) {
+// RAVEN END
 			float depth = idMath::Fabs( trace.c.point * trace.c.normal - trace.c.dist );
 
 			body->SetWorldOrigin( body->GetWorldOrigin() + trace.c.normal * ( depth + 8.0f ) );
@@ -970,7 +1008,6 @@ idAF::StartFromCurrentPose
 ================
 */
 void idAF::StartFromCurrentPose( int inheritVelocityTime ) {
-
 	if ( !IsLoaded() ) {
 		return;
 	}
@@ -1145,6 +1182,11 @@ void idAF::AddBindConstraints( void ) {
 
 	const idDict &args = self->spawnArgs;
 
+// RAVEN BEGIN
+// kfuller: I want joint friction as a spawn arg
+	idToken	jointFriction;
+// RAVEN END
+
 	// get the render position
 	origin = physicsObj.GetOrigin( 0 );
 	axis = physicsObj.GetAxis( 0 );
@@ -1187,6 +1229,13 @@ void idAF::AddBindConstraints( void ) {
 
 			animator->GetJointTransform( joint, gameLocal.time, origin, axis );
 			c->SetAnchor( renderOrigin + origin * renderAxis );
+
+// RAVEN BEGIN
+// kfuller: I want joint friction as a spawn arg
+			if (lexer.ReadToken(&jointFriction)) {
+				c->SetFriction(jointFriction.GetFloatValue());
+			}
+// RAVEN END
 		}
 		else if ( type.Icmp( "universal" ) == 0 ) {
 			idAFConstraint_UniversalJoint *c;
@@ -1202,7 +1251,50 @@ void idAF::AddBindConstraints( void ) {
 			animator->GetJointTransform( joint, gameLocal.time, origin, axis );
 			c->SetAnchor( renderOrigin + origin * renderAxis );
 			c->SetShafts( idVec3( 0, 0, 1 ), idVec3( 0, 0, -1 ) );
+
+// RAVEN BEGIN
+// kfuller: I want joint friction as a spawn arg
+			if (lexer.ReadToken(&jointFriction)) {
+				c->SetFriction(jointFriction.GetFloatValue());
+			}
+// RAVEN END
 		}
+		else if (type.Icmp( "hinge" ) == 0 )
+		{
+			idAFConstraint_Hinge *c;
+			c = new idAFConstraint_Hinge( name, body, NULL );
+			physicsObj.AddConstraint( c );
+			lexer.ReadToken( &jointName );
+
+			jointHandle_t joint = animator->GetJointHandle( jointName );
+			if ( joint == INVALID_JOINT )
+			{
+				gameLocal.Warning( "idAF::AddBindConstraints: joint '%s' not found\n", jointName.c_str() );
+			}
+			animator->GetJointTransform( joint, gameLocal.time, origin, axis );
+			c->SetAnchor( renderOrigin + origin * renderAxis );
+			c->SetAxis(renderAxis[1]);
+			c->SetNoLimit();
+			if (lexer.ReadToken(&jointFriction))
+			{
+				float	frictionValue = 0;
+
+				sscanf(jointFriction.c_str(), "%f", &frictionValue);
+				c->SetFriction(frictionValue);
+			}
+			idToken		hingeAxis;
+			if (lexer.ReadToken(&hingeAxis))
+			{
+				int		hingeAxisValue = 1;
+
+				sscanf(hingeAxis.c_str(), "%d", &hingeAxisValue);
+				if (hingeAxisValue >= 0 && hingeAxisValue <= 2)
+				{
+					c->SetAxis(renderAxis[hingeAxisValue]);
+				}
+			}
+		}
+// RAVEN END
 		else {
 			gameLocal.Warning( "idAF::AddBindConstraints: unknown constraint type '%s' on entity '%s'", type.c_str(), self->name.c_str() );
 		}

@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __GAME_MOVER_H__
 #define __GAME_MOVER_H__
@@ -8,6 +6,27 @@ extern const idEventDef EV_TeamBlocked;
 extern const idEventDef EV_PartBlocked;
 extern const idEventDef EV_ReachedPos;
 extern const idEventDef EV_ReachedAng;
+
+// RAVEN BEGIN
+// bdube: more externs
+extern const idEventDef EV_Door_Lock;
+extern const idEventDef EV_Door_IsLocked;
+// abahr:
+extern const idEventDef EV_GetSplineEntity;
+extern const idEventDef EV_MoveAlongVector;
+extern const idEventDef EV_Door_Open;
+extern const idEventDef EV_Door_Close;
+extern const idEventDef EV_Door_IsOpen;
+extern const idEventDef EV_Move;
+extern const idEventDef EV_RotateOnce;
+// twhitaker:
+extern const idEventDef EV_Speed;
+extern const idEventDef EV_IsActive;
+extern const idEventDef EV_IsMoving;
+
+// mekberg: spline sampling
+#define SPLINE_SAMPLE_RATE	60.0f
+// RAVEN END
 
 /*
 ===============================================================================
@@ -22,8 +41,14 @@ public:
 	CLASS_PROTOTYPE( idMover );
 
 							idMover( void );
+							~idMover( void );
 
 	void					Spawn( void );
+
+// RAVEN BEGIN
+// mekberg: added
+	void					Think( void );
+// RAVEN END
 
 	void					Save( idSaveGame *savefile ) const;
 	void					Restore( idRestoreGame *savefile );
@@ -37,6 +62,11 @@ public:
 	virtual void			Show( void );
 
 	void					SetPortalState( bool open );
+
+// RAVEN BEGIN
+// mekberg: sounds for splines
+	void					UpdateSplineStage ( void );
+// RAVEN END
 
 protected:
 	typedef enum {
@@ -106,6 +136,9 @@ protected:
 	virtual void			BeginRotation( idThread *thread, bool stopwhendone );
 	moveState_t				move;
 
+	rvStateThread			splineStateThread;
+	float					damage;
+
 private:
 	rotationState_t			rot;
 
@@ -121,13 +154,28 @@ private:
 	int						acceltime;
 	bool					stopRotation;
 	bool					useSplineAngles;
+	bool					attenuate;
+	bool					useIdleSound;
 	idEntityPtr<idEntity>	splineEnt;
 	moverCommand_t			lastCommand;
-	float					damage;
 
 	qhandle_t				areaPortal;		// 0 = no portal
 
+// mekberg: attenution and sound additions
+	float					maxAttenuation;
+	float					attenuationScale;
+	idVec3					lastOrigin;
+	int						lastTime;
+	int						splineStartTime;
+// RAVEN END
+
 	idList< idEntityPtr<idEntity> >	guiTargets;
+
+// RAVEN BEGIN
+// abahr:
+	bool					GetPhysicsToVisualTransform( idVec3 &origin, idMat3 &axis );
+	void					MoveAlongVector( const idVec3& vec );
+// RAVEN END
 
 	void					VectorForDir( float dir, idVec3 &vec );
 	idCurve_Spline<idVec3> *GetSpline( idEntity *splineEntity ) const;
@@ -156,6 +204,10 @@ private:
 	void					Event_Sway( float speed, float phase, idAngles &depth );
 	void					Event_SetAccelSound( const char *sound );
 	void					Event_SetDecelSound( const char *sound );
+// RAVEN BEGIN
+// cnicholson: added stop sound support
+	void					Event_SetStoppedSound( const char *sound );
+// RAVEN END
 	void					Event_SetMoveSound( const char *sound );
 	void					Event_FindGuiTargets( void );
 	void					Event_InitGuiTargets( void );
@@ -165,9 +217,23 @@ private:
 	void					Event_StartSpline( idEntity *splineEntity );
 	void					Event_StopSpline( void );
 	void					Event_Activate( idEntity *activator );
-	void					Event_PostRestore( int start, int total, int accel, int decel, bool useSplineAng );
+// RAVEN BEGIN
+	void					Event_PostRestoreExt( int start, int total, int accel, int decel, bool useSplineAng );
+// RAVEN END
 	void					Event_IsMoving( void );
 	void					Event_IsRotating( void );
+// RAVEN BEGIN
+// abahr:
+	void					Event_GetSplineEntity();
+	void					Event_MoveAlongVector( const idVec3& vec );
+
+// mekberg: spline states
+	CLASS_STATES_PROTOTYPE ( idMover );
+
+	stateResult_t			State_Accel( const stateParms_t& parms );
+	stateResult_t			State_Linear( const stateParms_t& parms );
+	stateResult_t			State_Decel( const stateParms_t& parms );
+// RAVEN END
 };
 
 class idSplinePath : public idEntity {
@@ -175,8 +241,53 @@ public:
 	CLASS_PROTOTYPE( idSplinePath );
 
 							idSplinePath();
+							~idSplinePath();
 
 	void					Spawn( void );
+
+// RAVEN BEGIN
+// abahr: so we can ignore these if needed
+	void					Toggle() { SetActive(!active); }
+	void					Activate() { SetActive(true); }
+	void					Deactivate() { SetActive(false); }
+
+	bool					IsActive() const { return active; }
+
+	int						SortTargets();
+	int						SortBackwardsTargets();
+	int						SortTargets( idList< idEntityPtr<idEntity> >& list );
+	void					RemoveNullTargets( void );
+	void					ActivateTargets( idEntity *activator ) const;
+
+	void					RemoveNullTargets( idList< idEntityPtr<idEntity> >& list );
+	void					ActivateTargets( idEntity *activator, const idList< idEntityPtr<idEntity> >& list ) const;
+
+	void					Save( idSaveGame *savefile ) const;
+	void					Restore( idRestoreGame *savefile );
+
+	idList< idEntityPtr<idEntity> >	backwardPathTargets;
+
+// mekberg: spline sampling
+	float					GetSampledTime ( float distance ) const;
+
+protected:
+	void					SetActive( bool activate ) { active = activate; }
+	virtual void			FindTargets();
+
+	void					Event_Toggle( idEntity* activator ) { Toggle(); }
+	void					Event_IsActive();
+
+// mekberg: spline sampling
+	void					SampleSpline ( void );
+
+protected:
+	bool					active;
+
+// mekberg: sample splines.
+	float*					sampledTimes;
+	float					sampledSpeed;
+	int						numSamples;
+// RAVEN END
 };
 
 
@@ -197,9 +308,8 @@ public:
 	void					Save( idSaveGame *savefile ) const;
 	void					Restore( idRestoreGame *savefile );
 
-	virtual bool			HandleSingleGuiCommand( idEntity *entityGui, idLexer *src );
-	void					Event_GotoFloor( int floor );
-	floorInfo_s *			GetFloorInfo( int floor );
+	virtual bool			HandleSingleGuiCommand	( idEntity *entityGui, idLexer *src );
+	floorInfo_s *			GetFloorInfo			( int floor );
 
 protected:
 	virtual void			DoneMoving( void );
@@ -207,6 +317,15 @@ protected:
 	void					SpawnTrigger( const idVec3 &pos );
 	void					GetLocalTriggerPosition();
 	void					Event_Touch( idEntity *other, trace_t *trace );
+
+// RAVEN BEGIN
+// bdube: added
+	void					SetAASAreaState	 ( bool enable );
+	void					InitStatusGui	 ( idUserInterface* gui );
+	void					UpdateStatusGui	 ( idUserInterface* gui );
+	void					UpdateStatusGuis ( void );
+	void					UpdateFloorInfo	 ( void );
+// RAVEN END
 
 private:
 	typedef enum {
@@ -221,6 +340,7 @@ private:
 	int						pendingFloor;
 	int						lastFloor;
 	bool					controlsDisabled;
+//	bool					waitingForPlayerFollowers;
 	float					returnTime;
 	int						returnFloor;
 	int						lastTouchTime;
@@ -233,10 +353,11 @@ private:
 	void					DisableAllDoors( void );
 	void					EnableProperDoors( void );
 
-	void					Event_TeamBlocked( idEntity *blockedEntity, idEntity *blockingEntity );
-	void					Event_Activate( idEntity *activator );
-	void					Event_PostFloorArrival();
-
+	void					Event_TeamBlocked		( idEntity *blockedEntity, idEntity *blockingEntity );
+	void					Event_Activate			( idEntity *activator );
+	void					Event_PostFloorArrival	( void );
+	void					Event_GotoFloor			( int floor );
+	void					Event_UpdateFloorInfo	( void );
 };
 
 
@@ -310,6 +431,7 @@ protected:
 	int						stateStartTime;
 	idStr					team;
 	bool					enabled;
+	bool					deferedOpen;
 	int						move_thread;
 	int						updateStatus;		// 1 = lock behaviour, 2 = open close status
 	idStrList				buddies;
@@ -330,7 +452,7 @@ protected:
 	void					Event_SetCallback( void );
 	void					Event_ReturnToPos1( void );
 	void					Event_Use_BinaryMover( idEntity *activator );
-	virtual void			Event_Reached_BinaryMover( void );
+	void					Event_Reached_BinaryMover( void );
 	void					Event_MatchActivateTeam( moverState_t newstate, int time );
 	void					Event_Enable( void );
 	void					Event_Disable( void );
@@ -369,6 +491,13 @@ public:
 	void					Open( void );
 	void					SetCompanion( idDoor *door );
 
+// RAVEN BEGIN
+// abahr:
+	bool					IsClosed( void ) const { return moverState == MOVER_POS1; }
+	void					SetDoorFrameController( idEntity* controller );
+	virtual void			ActivateTargets( idEntity *activator ) const;
+// RAVEN END
+
 private:
 	float					triggersize;
 	bool					crusher;
@@ -386,12 +515,17 @@ private:
 	int						normalAxisIndex;		// door faces X or Y for spectator teleports
 	idDoor *				companionDoor;
 
+// RAVEN BEGIN
+// abahr: so we can route calls through a tramGate
+	idEntityPtr<idEntity>	doorFrameController;
+// RAVEN END
+
 	void					SetAASAreaState( bool closed );
 
 	void					GetLocalTriggerPosition( const idClipModel *trigger );
 	void					CalcTriggerBounds( float size, idBounds &bounds );
 
-	virtual void			Event_Reached_BinaryMover( void );
+	void					Event_Reached_BinaryMover( void );
 	void					Event_TeamBlocked( idEntity *blockedEntity, idEntity *blockingEntity );
 	void					Event_PartBlocked( idEntity *blockingEntity );
 	void					Event_Touch( idEntity *other, trace_t *trace );
@@ -407,6 +541,11 @@ private:
 	void					Event_SpectatorTouch( idEntity *other, trace_t *trace );
 	void					Event_OpenPortal( void );
 	void					Event_ClosePortal( void );
+
+// RAVEN BEGIN
+// abahr:
+	void					Event_ReturnToPos1( void );
+// RAVEN END
 };
 
 class idPlat : public idMover_Binary {
@@ -452,6 +591,7 @@ public:
 	CLASS_PROTOTYPE( idMover_Periodic );
 
 							idMover_Periodic( void );
+							~idMover_Periodic( void );
 
 	void					Spawn( void );
 	
@@ -508,6 +648,7 @@ public:
 	void					Spawn( void );
 
 private:
+
 };
 
 class idRiser : public idMover_Periodic {
@@ -521,5 +662,46 @@ public:
 private:
 	void					Event_Activate( idEntity *activator );
 };
+
+// RAVEN BEGIN
+// bdube: conveyor belts
+class rvConveyor : public idEntity {
+public:
+	CLASS_PROTOTYPE( rvConveyor );
+
+							rvConveyor ( void );
+
+	void					Spawn( void );
+	void					Think ( void );
+	
+	void					Save( idSaveGame *savefile ) const;
+	void					Restore( idRestoreGame *savefile );
+private:
+
+	idVec3					moveDir;
+	float					moveSpeed;
+	
+	void					Event_FindTargets	 ( void );
+};
+
+// nrausch: 
+class rvPusher : public idMover {
+public:
+	CLASS_PROTOTYPE( rvPusher );
+
+	rvPusher( void );
+	~rvPusher( void );
+
+	virtual void Spawn( void );
+	virtual void Think ( void );
+
+private:
+	jointHandle_t bindJointHandle;
+	idEntity *parent;
+	idVec3 pusherOrigin;
+	idMat3 pusherAxis;
+};
+
+// RAVEN END
 
 #endif /* !__GAME_MOVER_H__ */

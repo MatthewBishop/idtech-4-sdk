@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../precompiled.h"
 #pragma hdrstop
@@ -135,19 +133,162 @@ idAngles idMat3::ToAngles( void ) const {
 	}
 
 	theta = -asin( sp );
-	cp = cos( theta );
+	cp = idMath::Cos( theta );
 
-	if ( cp > 8192.0f * idMath::FLT_EPSILON ) {
+// RAVEN BEGIN
+// jscott: renamed to prevent name clash
+	if ( cp > 8192.0f * idMath::FLOAT_EPSILON ) {
+// RAVEN END
 		angles.pitch	= RAD2DEG( theta );
-		angles.yaw		= RAD2DEG( atan2( mat[ 0 ][ 1 ], mat[ 0 ][ 0 ] ) );
-		angles.roll		= RAD2DEG( atan2( mat[ 1 ][ 2 ], mat[ 2 ][ 2 ] ) );
+		angles.yaw		= RAD2DEG( idMath::ATan( mat[ 0 ][ 1 ], mat[ 0 ][ 0 ] ) );
+		angles.roll		= RAD2DEG( idMath::ATan( mat[ 1 ][ 2 ], mat[ 2 ][ 2 ] ) );
 	} else {
 		angles.pitch	= RAD2DEG( theta );
-		angles.yaw		= RAD2DEG( -atan2( mat[ 1 ][ 0 ], mat[ 1 ][ 1 ] ) );
+		angles.yaw		= RAD2DEG( -idMath::ATan( mat[ 1 ][ 0 ], mat[ 1 ][ 1 ] ) );
 		angles.roll		= 0;
 	}
 	return angles;
 }
+
+// RAVEN BEGIN
+
+// idMat3::RotateAbsolute -- rotates around world x, y, or z
+void idMat3::RotateAbsolute(int whichAxis, float howManyDegrees)
+{
+	idMat3	rotation;
+
+// RAVEN BEGIN
+	float	sinVal, cosVal;
+
+	idMath::SinCos( DEG2RAD( howManyDegrees), sinVal, cosVal );
+// RAVEN END
+
+	rotation.Identity();
+	switch(whichAxis)
+	{
+	case 0:	// x-axis
+		rotation[1][1] = cosVal;
+		rotation[1][2] = sinVal;
+		rotation[2][1] = -sinVal;
+		rotation[2][2] = cosVal;
+		break;
+	case 1:	// y-axis
+		rotation[0][0] = cosVal;
+		rotation[0][2] = -sinVal;
+		rotation[2][0] = sinVal;
+		rotation[2][2] = cosVal;
+		break;
+	case 2:	// z-axis
+		rotation[0][0] = cosVal;
+		rotation[0][1] = sinVal;
+		rotation[1][0] = -sinVal;
+		rotation[1][1] = cosVal;
+		break;
+	default:
+		assert(!"idMat3::RotateAbsolute -- valid axis numbers are 0, 1, and 2");
+		return;
+	}
+	*this *= rotation;
+}
+
+// idMat3::RotateRelative -- rotates around the fwd, left, or up vector of the matrix
+void idMat3::RotateRelative(int whichAxis, float howManyDegrees)
+{
+	idMat3	rotation;
+
+// RAVEN BEGIN
+	float	sinVal, cosVal;
+
+	idMath::SinCos( DEG2RAD( howManyDegrees), sinVal, cosVal );
+// RAVEN END
+
+	rotation.Identity();
+	switch(whichAxis)
+	{
+	case 0:	// x-axis
+		rotation[1][1] = cosVal;
+		rotation[1][2] = sinVal;
+		rotation[2][1] = -sinVal;
+		rotation[2][2] = cosVal;
+		break;
+	case 1:	// y-axis
+		rotation[0][0] = cosVal;
+		rotation[0][2] = -sinVal;
+		rotation[2][0] = sinVal;
+		rotation[2][2] = cosVal;
+		break;
+	case 2:	// z-axis
+		rotation[0][0] = cosVal;
+		rotation[0][1] = sinVal;
+		rotation[1][0] = -sinVal;
+		rotation[1][1] = cosVal;
+		break;
+	default:
+		assert(!"idMat3::RotateRelative -- valid axis numbers are 0, 1, and 2");
+		return;
+	}
+	*this = rotation * (*this);
+}
+
+// idMat3::RotateArbitrary -- rotates around the given unit vector
+void idMat3::RotateArbitrary(const idVec3 &rotAxis, float howManyDegrees)
+{
+// RAVEN BEGIN
+	float	sinVal, cosVal;
+
+	idMath::SinCos( DEG2RAD( howManyDegrees), sinVal, cosVal );
+// RAVEN END
+
+	float	d = idMath::Sqrt(rotAxis[1]*rotAxis[1] + rotAxis[2]*rotAxis[2]);
+
+	// if the rotation axis turns out to be one of the world axes, just do a RotateAbsolute on it
+	if (rotAxis.Compare(idVec3(1, 0, 0)))
+	{
+		RotateAbsolute(0, howManyDegrees);
+		return;
+	}
+	if (rotAxis.Compare(idVec3(-1, 0, 0)))
+	{
+		RotateAbsolute(0, -howManyDegrees);
+		return;
+	}
+	if (rotAxis.Compare(idVec3(0, 1, 0)))
+	{
+		RotateAbsolute(1, howManyDegrees);
+		return;
+	}
+	if (rotAxis.Compare(idVec3(0, -1, 0)))
+	{
+		RotateAbsolute(1, -howManyDegrees);
+		return;
+	}
+	if (rotAxis.Compare(idVec3(0, 0, 1)))
+	{
+		RotateAbsolute(2, howManyDegrees);
+		return;
+	}
+	if (rotAxis.Compare(idVec3(0, 0, -1)))
+	{
+		RotateAbsolute(2, -howManyDegrees);
+		return;
+	}
+
+	
+	idMat3	rotationX(1, 0, 0, 0, rotAxis[2]/d, rotAxis[1]/d, 0, -rotAxis[1]/d, rotAxis[2]/d);
+	idMat3	rotationY(d, 0, rotAxis[0], 0, 1, 0, -rotAxis[0], 0, d);
+	idMat3	rotationZ(cosVal, sinVal, 0, -sinVal, cosVal, 0, 0, 0, 1);
+	idMat3	rotationXinv = rotationX.Inverse();
+	idMat3	rotationYinv = rotationY.Inverse();
+	idMat3	tempMat;
+
+	tempMat = rotationYinv * rotationXinv;
+	tempMat = rotationZ * tempMat;
+	tempMat = rotationY * tempMat;
+	tempMat = rotationX * tempMat;
+	*this = *this * tempMat;
+}
+
+// RAVEN END
 
 /*
 ============
@@ -2910,8 +3051,11 @@ const char *idMat6::ToString( int precision ) const {
 //
 //===============================================================
 
-float	idMatX::temp[MATX_MAX_TEMP+4];
-float *	idMatX::tempPtr = (float *) ( ( (int) idMatX::temp + 15 ) & ~15 );
+// RAVEN BEGIN
+// jscott: avoid pointer hackery pokery and use the compiler
+float	idMatX::tempPtr[MATX_MAX_TEMP];
+//float *	idMatX::tempPtr = (float *) ( ( (int) idMatX::temp + 15 ) & ~15 );
+// RAVEN END
 int		idMatX::tempIndex = 0;
 
 
@@ -2924,7 +3068,9 @@ void idMatX::ChangeSize( int rows, int columns, bool makeZero ) {
 	int alloc = ( rows * columns + 3 ) & ~3;
 	if ( alloc > alloced && alloced != -1 ) {
 		float *oldMat = mat;
-		mat = (float *) Mem_Alloc16( alloc * sizeof( float ) );
+// RAVEN BEGIN
+		mat = (float *) Mem_Alloc16( alloc * sizeof( float ), MA_MATH );
+// RAVEN END
 		if ( makeZero ) {
 			memset( mat, 0, alloc * sizeof( float ) );
 		}
@@ -5171,7 +5317,10 @@ void idMatX::SVD_Solve( idVecX &x, const idVecX &b, const idVecX &w, const idMat
 
 	for ( i = 0; i < numColumns; i++ ) {
 		sum = 0.0f;
-		if ( w[i] >= idMath::FLT_EPSILON ) {
+// RAVEN BEGIN
+// jscott: renamed to prevent name clash
+		if ( w[i] >= idMath::FLOAT_EPSILON ) {
+// RAVEN END
 			for ( j = 0; j < numRows; j++ ) {
 				sum += (*this)[j][i] * b[j];
 			}
@@ -5207,7 +5356,10 @@ void idMatX::SVD_Inverse( idMatX &inv, const idVecX &w, const idMatX &V ) const 
 	// V * [diag(1/w[i])]
 	for ( i = 0; i < numRows; i++ ) {
 		wi = w[i];
-		wi = ( wi < idMath::FLT_EPSILON ) ? 0.0f : 1.0f / wi;
+// RAVEN BEGIN
+// jscott: renamed to prevent name clash
+		wi = ( wi < idMath::FLOAT_EPSILON ) ? 0.0f : 1.0f / wi;
+// RAVEN END
 		for ( j = 0; j < numColumns; j++ ) {
 			V2[j][i] *= wi;
 		}
@@ -5240,7 +5392,10 @@ void idMatX::SVD_MultiplyFactors( idMatX &m, const idVecX &w, const idMatX &V ) 
 
 	for ( r = 0; r < numRows; r++ ) {
 		// calculate row of matrix
-		if ( w[r] >= idMath::FLT_EPSILON ) {
+// RAVEN BEGIN
+// jscott: renamed to prevent name clash
+		if ( w[r] >= idMath::FLOAT_EPSILON ) {
+// RAVEN END
 			for ( i = 0; i < V.GetNumRows(); i++ ) {
 				sum = 0.0f;
 				for ( j = 0; j < numColumns; j++ ) {
@@ -5365,8 +5520,12 @@ idMatX::Cholesky_UpdateRowColumn
 ============
 */
 bool idMatX::Cholesky_UpdateRowColumn( const idVecX &v, int r ) {
+
 	int i, j;
-	double sum;
+// RAVEN BEGIN
+// jscott: VC7.1 fix
+	float sum;
+// RAVEN END
 	float *original, *y;
 	idVecX addSub;
 
@@ -5380,7 +5539,10 @@ bool idMatX::Cholesky_UpdateRowColumn( const idVecX &v, int r ) {
 
 		if ( numColumns == 1 ) {
 			sum = (*this)[0][0];
-			sum = sum * sum + v[0];
+// RAVEN BEGIN
+// jscott: VC7.1 fix
+			sum = ( sum * sum ) + v[0];
+// RAVEN END
 			if ( sum <= 0.0f ) {
 				return false;
 			}
@@ -5528,7 +5690,6 @@ bool idMatX::Cholesky_UpdateRowColumn( const idVecX &v, int r ) {
 	}
 
 #endif
-
 	return true;
 }
 

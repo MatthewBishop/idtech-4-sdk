@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../idlib/precompiled.h"
 #pragma hdrstop
@@ -46,6 +44,7 @@ void idIK::Save( idSaveGame *savefile ) const {
 	savefile->WriteBool( ik_activate );
 	savefile->WriteObject( self );
 	savefile->WriteString( animator != NULL && animator->GetAnim( modifiedAnim ) ? animator->GetAnim( modifiedAnim )->Name() : "" );
+	//savefile->WriteInt( modifiedAnim );  // Recomputed during restore, do not save
 	savefile->WriteVec3( modelOffset );
 }
 
@@ -61,6 +60,7 @@ void idIK::Restore( idRestoreGame *savefile ) {
 	savefile->ReadBool( ik_activate );
 	savefile->ReadObject( reinterpret_cast<idClass *&>( self ) );
 	savefile->ReadString( anim );
+	//savefile->ReadInt( modifiedAnim );	// This is defined below
 	savefile->ReadVec3( modelOffset );
 
 	if ( self ) {
@@ -506,7 +506,7 @@ idIK_Walk::Evaluate
 ================
 */
 void idIK_Walk::Evaluate( void ) {
-	int i, newPivotFoot;
+	int i, newPivotFoot = 0;
 	float modelHeight, jointHeight, lowestHeight, floorHeights[MAX_LEGS];
 	float shift, smallestShift, newHeight, step, newPivotYaw, height, largestAnkleHeight;
 	idVec3 modelOrigin, normal, hipDir, kneeDir, start, end, jointOrigins[MAX_LEGS];
@@ -571,7 +571,10 @@ void idIK_Walk::Evaluate( void ) {
 
 		start = jointOrigins[i] + normal * footUpTrace;
 		end = jointOrigins[i] - normal * footDownTrace;
-		gameLocal.clip.Translation( results, start, end, footModel, mat3_identity, CONTENTS_SOLID|CONTENTS_IKCLIP, self );
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+		gameLocal.Translation( self, results, start, end, footModel, mat3_identity, CONTENTS_SOLID|CONTENTS_IKCLIP, self );
+// RAVEN END
 		floorHeights[i] = results.endpos * normal;
 
 		if ( ik_debug.GetBool() && footModel ) {
@@ -592,7 +595,10 @@ void idIK_Walk::Evaluate( void ) {
 	bool onPlat = false;
 	for ( i = 0; i < phys->GetNumContacts(); i++ ) {
 		idEntity *ent = gameLocal.entities[ phys->GetContact( i ).entityNum ];
-		if ( ent != NULL && ent->IsType( idPlat::Type ) ) {
+// RAVEN BEGIN
+// jnewquist: Use accessor for static class type 
+		if ( ent != NULL && ent->IsType( idPlat::GetClassType() ) ) {
+// RAVEN END
 			onPlat = true;
 			break;
 		}
@@ -643,7 +649,10 @@ void idIK_Walk::Evaluate( void ) {
 	if ( minWaistFloorDist > 0.0f && waistOffset * normal < 0.0f ) {
 		start = waistOrigin;
 		end = waistOrigin + waistOffset - normal * minWaistFloorDist;
-		gameLocal.clip.Translation( results, start, end, footModel, modelAxis, CONTENTS_SOLID|CONTENTS_IKCLIP, self );
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+		gameLocal.Translation( self, results, start, end, footModel, modelAxis, CONTENTS_SOLID|CONTENTS_IKCLIP, self );
+// RAVEN END
 		height = ( waistOrigin + waistOffset - results.endpos ) * normal;
 		if ( height < minWaistFloorDist ) {
 			waistOffset += ( minWaistFloorDist - height ) * normal;
@@ -994,7 +1003,10 @@ void idIK_Reach::Evaluate( void ) {
 		handOrigin = modelOrigin + handOrigin * modelAxis;
 
 		// get first collision going from shoulder to hand
-		gameLocal.clip.TracePoint( trace, shoulderOrigin, handOrigin, CONTENTS_SOLID, self );
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+		gameLocal.TracePoint( self, trace, shoulderOrigin, handOrigin, CONTENTS_SOLID, self );
+// RAVEN END
 		handOrigin = trace.endpos;
 
 		// get the IK bend direction

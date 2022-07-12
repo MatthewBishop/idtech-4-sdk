@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __STR_H__
 #define __STR_H__
@@ -30,7 +28,11 @@
 #define vsnprintf		use_idStr_vsnPrintf
 #define _vsnprintf		use_idStr_vsnPrintf
 
+#ifdef _XENON
+class __declspec(align(16)) idVec4;
+#else
 class idVec4;
+#endif
 
 #ifndef FILE_HASH_SIZE
 #define FILE_HASH_SIZE		1024
@@ -48,6 +50,10 @@ const int C_COLOR_MAGENTA			= '6';
 const int C_COLOR_WHITE				= '7';
 const int C_COLOR_GRAY				= '8';
 const int C_COLOR_BLACK				= '9';
+// RAVEN BEGIN
+// bdube: added
+const int C_COLOR_CONSOLE			= ':';
+// RAVEN END
 
 // color escape string
 #define S_COLOR_DEFAULT				"^0"
@@ -60,6 +66,28 @@ const int C_COLOR_BLACK				= '9';
 #define S_COLOR_WHITE				"^7"
 #define S_COLOR_GRAY				"^8"
 #define S_COLOR_BLACK				"^9"
+// RAVEN BEGIN
+// bdube: added
+#define S_COLOR_CONSOLE				"^:"
+// ddynerman: team colors
+#define S_COLOR_MARINE				"^c683"
+#define S_COLOR_STROGG				"^c950"
+#define S_COLOR_ALERT				"^c920"
+// ddynerman: MP icons
+#define I_VOICE_ENABLED				"^ivce"
+#define I_VOICE_DISABLED			"^ivcd"
+#define I_FRIEND_ENABLED			"^ifde"
+#define I_FRIEND_DISABLED			"^ifdd"
+#define I_FLAG_MARINE				"^iflm"
+#define I_FLAG_STROGG				"^ifls"
+// shouchard:  server browser stuff
+#define I_SERVER_DEDICATED			"^ids0"
+#define I_SERVER_DEDICATED_PB		"^idsp"
+#define I_SERVER_LOCKED				"^isl0"
+#define I_SERVER_FAVORITE			"^isf0"
+const int VA_BUF_LEN = 16384;
+const int VA_NUM_BUFS = 8;
+// RAVEN END
 
 // make idStr a multiple of 16 bytes long
 // don't make too large to keep memory requirements to a minimum
@@ -70,6 +98,16 @@ typedef enum {
 	MEASURE_SIZE = 0,
 	MEASURE_BANDWIDTH
 } Measure_t;
+
+// RAVEN BEGIN
+// bdube: string escape codes
+#define S_ESCAPE_UNKNOWN			BIT(0)
+#define S_ESCAPE_COLOR				BIT(1)
+#define S_ESCAPE_COLORINDEX			BIT(2)
+#define S_ESCAPE_ICON				BIT(3)
+#define S_ESCAPE_COMMAND			BIT(4)
+#define	S_ESCAPE_ALL				( S_ESCAPE_COLOR | S_ESCAPE_COLORINDEX | S_ESCAPE_ICON | S_ESCAPE_COMMAND )
+// RAVEN END
 
 class idStr {
 
@@ -136,7 +174,10 @@ public:
 	int					IcmpPrefix( const char *text ) const;
 
 						// case insensitive compare ignoring color
-	int					IcmpNoColor( const char *text ) const;
+// RAVEN BEGIN
+// bdube: changed to escapes
+	int					IcmpNoEscape( const char *text ) const;
+// RAVEN END
 
 						// compares paths and makes sure folders come first
 	int					IcmpPath( const char *text ) const;
@@ -157,14 +198,16 @@ public:
 	void				ToLower( void );
 	void				ToUpper( void );
 	bool				IsNumeric( void ) const;
-	bool				IsColor( void ) const;
 	bool				HasLower( void ) const;
 	bool				HasUpper( void ) const;
-	int					LengthWithoutColors( void ) const;
-	idStr &				RemoveColors( void );
+// RAVEN BEGIN
+// bdube: escapes
+	int					IsEscape( int* type = NULL ) const;
+	int					LengthWithoutEscapes ( void ) const;	
+	idStr &				RemoveEscapes ( int escapes = S_ESCAPE_ALL );
+// RAVEN END
 	void				CapLength( int );
 	void				Fill( const char ch, int newlen );
-
 	int					Find( const char c, int start = 0, int end = -1 ) const;
 	int					Find( const char *text, bool casesensitive = true, int start = 0, int end = -1 ) const;
 	bool				Filter( const char *filter, bool casesensitive = true ) const;
@@ -184,12 +227,28 @@ public:
 	void				Strip( const char c );							// strip char from front and end as many times as the char occurs
 	void				Strip( const char *string );					// strip string from front and end as many times as the string occurs
 	void				StripTrailingWhitespace( void );				// strip trailing white space characters
+// RAVEN BEGIN
+	void				StripUntil( const char c );						// strip until this character is reached or there is no string left
+// RAVEN END
 	idStr &				StripQuotes( void );							// strip quotes around string
-	void				Replace( const char *old, const char *nw );
+// RAVEN BEGIN
+// scork: added replacement-count return
+	int					Replace( const char *old, const char *nw );
+// RAVEN END
+
 
 	// file name methods
 	int					FileNameHash( void ) const;						// hash key for the filename (skips extension)
 	idStr &				BackSlashesToSlashes( void );					// convert slashes
+// RAVEN BEGIN
+// jscott:
+	idStr &				SlashesToBackSlashes( void );					// convert slashes
+// nmckenzie: char swapping routine
+	bool				HasChar( const char check );
+	bool				HasChars( const char *check );
+	idStr &				ReplaceChar( const char from, const char to );
+	idStr &				ReplaceChars( const char *from, const char to );
+// RAVEN END
 	idStr &				SetFileExtension( const char *extension );		// set the given file extension
 	idStr &				StripFileExtension( void );						// remove any file extension
 	idStr &				StripAbsoluteFileExtension( void );				// remove any file extension looking from front (useful if there are multiple .'s)
@@ -203,31 +262,49 @@ public:
 	void				ExtractFileBase( idStr &dest ) const;			// copy the filename minus the extension to another string
 	void				ExtractFileExtension( idStr &dest ) const;		// copy the file extension to another string
 	bool				CheckExtension( const char *ext );
+	void				ScrubFileName( void );							// Turns a bad file name into a good one or your money back
+
+// RAVEN BEGIN
+// jscott: like the declManager version, but globally accessable
+	void				MakeNameCanonical( void );
+	void				EnsurePrintable( void );
+// RAVEN END
+
+// RAVEN BEGIN
+// abahr
+	void				Split( idList<idStr>& list, const char delimiter = ',', const char groupDelimiter = '\''  );
+// RAVEN END
 
 	// char * methods to replace library functions
 	static int			Length( const char *s );
 	static char *		ToLower( char *s );
 	static char *		ToUpper( char *s );
 	static bool			IsNumeric( const char *s );
-	static bool			IsColor( const char *s );
 	static bool			HasLower( const char *s );
 	static bool			HasUpper( const char *s );
-	static int			LengthWithoutColors( const char *s );
-	static char *		RemoveColors( char *s );
+// RAVEN BEGIN
+// bdube: escape codes
+	static int			IsEscape( const char *s, int* type = NULL );
+	static int			LengthWithoutEscapes ( const char *s );	
+	static char *		RemoveEscapes ( char *s, int escapes = S_ESCAPE_ALL );
+// RAVEN END
 	static int			Cmp( const char *s1, const char *s2 );
 	static int			Cmpn( const char *s1, const char *s2, int n );
 	static int			Icmp( const char *s1, const char *s2 );
 	static int			Icmpn( const char *s1, const char *s2, int n );
-	static int			IcmpNoColor( const char *s1, const char *s2 );
+// RAVEN BEGIN
+// bdube: escapes
+	static int			IcmpNoEscape( const char *s1, const char *s2 );
+// RAVEN END
 	static int			IcmpPath( const char *s1, const char *s2 );			// compares paths and makes sure folders come first
 	static int			IcmpnPath( const char *s1, const char *s2, int n );	// compares paths and makes sure folders come first
 	static void			Append( char *dest, int size, const char *src );
 	static void			Copynz( char *dest, const char *src, int destsize );
-	static int			snPrintf( char *dest, int size, const char *fmt, ... );
+	static int			snPrintf( char *dest, int size, const char *fmt, ... ) id_attribute((format(printf,3,4)));
 	static int			vsnPrintf( char *dest, int size, const char *fmt, va_list argptr );
 	static int			FindChar( const char *str, const char c, int start = 0, int end = -1 );
 	static int			FindText( const char *str, const char *text, bool casesensitive = true, int start = 0, int end = -1 );
-	static bool			Filter( const char *filter, const char *name, bool casesensitive = true );
+	static bool			Filter( const char *filter, const char *name, bool casesensitive );
 	static void			StripMediaName( const char *name, idStr &mediaName );
 	static bool			CheckExtension( const char *name, const char *ext );
 	static const char *	FloatArrayToString( const float *array, const int length, const int precision );
@@ -239,15 +316,15 @@ public:
 	static int			IHash( const char *string, int length );		// case insensitive
 
 	// character methods
-	static char			ToLower( char c );
-	static char			ToUpper( char c );
-	static bool			CharIsPrintable( int c );
-	static bool			CharIsLower( int c );
-	static bool			CharIsUpper( int c );
-	static bool			CharIsAlpha( int c );
-	static bool			CharIsNumeric( int c );
-	static bool			CharIsNewLine( char c );
-	static bool			CharIsTab( char c );
+	static char			ToLower( byte c );
+	static char			ToUpper( byte c );
+	static bool			CharIsPrintable( byte c );
+	static bool			CharIsLower( byte c );
+	static bool			CharIsUpper( byte c );
+	static bool			CharIsAlpha( byte c );
+	static bool			CharIsNumeric( byte c );
+	static bool			CharIsNewLine( byte c );
+	static bool			CharIsTab( byte c );
 	static int			ColorIndex( int c );
 	static idVec4 &		ColorForIndex( int i );
 
@@ -267,6 +344,11 @@ public:
 	static void			PurgeMemory( void );
 	static void			ShowMemoryUsage_f( const idCmdArgs &args );
 
+	int					DynamicMemoryUsed() const;
+	static idStr		FormatNumber( int number );
+
+	static void			Split( const char* source, idList<idStr>& list, const char delimiter = ',', const char groupDelimiter = '\''  );
+
 protected:
 	int					len;
 	char *				data;
@@ -275,10 +357,21 @@ protected:
 
 	void				Init( void );										// initialize string using base buffer
 	void				EnsureAlloced( int amount, bool keepold = true );	// ensure string data buffer is large anough
+
+// RAVEN BEGIN
+public:
+	static const bool	printableCharacter[256];
+	static const char	upperCaseCharacter[256];
+	static const char	lowerCaseCharacter[256];
+// RAVEN END
 };
 
-char *					va( const char *fmt, ... );
+char *					va( const char *fmt, ... ) id_attribute((format(printf,1,2)));
 
+// RAVEN BEGIN
+// abahr
+char*					fe( int errorId );
+// RAVEN END
 
 ID_INLINE void idStr::EnsureAlloced( int amount, bool keepold ) {
 	if ( amount > alloced ) {
@@ -291,7 +384,7 @@ ID_INLINE void idStr::Init( void ) {
 	alloced = STR_ALLOC_BASE;
 	data = baseBuffer;
 	data[ 0 ] = '\0';
-#ifdef ID_DEBUG_UNINITIALIZED_MEMORY
+#ifdef ID_DEBUG_MEMORY
 	memset( baseBuffer, 0, sizeof( baseBuffer ) );
 #endif
 }
@@ -634,10 +727,13 @@ ID_INLINE int idStr::IcmpPrefix( const char *text ) const {
 	return idStr::Icmpn( data, text, strlen( text ) );
 }
 
-ID_INLINE int idStr::IcmpNoColor( const char *text ) const {
+// RAVEN BEGIN
+// bdube: escapes
+ID_INLINE int idStr::IcmpNoEscape( const char *text ) const {
 	assert( text );
-	return idStr::IcmpNoColor( data, text );
+	return idStr::IcmpNoEscape( data, text );
 }
+// RAVEN END
 
 ID_INLINE int idStr::IcmpPath( const char *text ) const {
 	assert( text );
@@ -771,26 +867,22 @@ ID_INLINE void idStr::Insert( const char *text, int index ) {
 
 ID_INLINE void idStr::ToLower( void ) {
 	for (int i = 0; data[i]; i++ ) {
-		if ( CharIsUpper( data[i] ) ) {
-			data[i] += ( 'a' - 'A' );
-		}
+// RAVEN BEGIN
+		data[i] = ToLower( data[i] );
+// RAVEN END
 	}
 }
 
 ID_INLINE void idStr::ToUpper( void ) {
 	for (int i = 0; data[i]; i++ ) {
-		if ( CharIsLower( data[i] ) ) {
-			data[i] -= ( 'a' - 'A' );
-		}
+// RAVEN BEGIN
+		data[i] = ToUpper( data[i] );
+// RAVEN END
 	}
 }
 
 ID_INLINE bool idStr::IsNumeric( void ) const {
 	return idStr::IsNumeric( data );
-}
-
-ID_INLINE bool idStr::IsColor( void ) const {
-	return idStr::IsColor( data );
 }
 
 ID_INLINE bool idStr::HasLower( void ) const {
@@ -801,15 +893,18 @@ ID_INLINE bool idStr::HasUpper( void ) const {
 	return idStr::HasUpper( data );
 }
 
-ID_INLINE idStr &idStr::RemoveColors( void ) {
-	idStr::RemoveColors( data );
-	len = Length( data );
+ID_INLINE int idStr::IsEscape( int* type ) const {
+	return idStr::IsEscape( data, type );
+}
+ID_INLINE idStr &idStr::RemoveEscapes ( int escapes ) {
+	idStr::RemoveEscapes( data, escapes );
+	len = Length( c_str() );
 	return *this;
 }
-
-ID_INLINE int idStr::LengthWithoutColors( void ) const {
-	return idStr::LengthWithoutColors( data );
+ID_INLINE int idStr::LengthWithoutEscapes( void ) const {
+	return idStr::LengthWithoutEscapes( data );
 }
+// RAVEN END
 
 ID_INLINE void idStr::CapLength( int newlen ) {
 	if ( len <= newlen ) {
@@ -889,18 +984,18 @@ ID_INLINE int idStr::Length( const char *s ) {
 
 ID_INLINE char *idStr::ToLower( char *s ) {
 	for ( int i = 0; s[i]; i++ ) {
-		if ( CharIsUpper( s[i] ) ) {
-			s[i] += ( 'a' - 'A' );
-		}
+// RAVEN BEGIN
+		s[i] = ToLower( s[i] );
+// RAVEN END
 	}
 	return s;
 }
 
 ID_INLINE char *idStr::ToUpper( char *s ) {
 	for ( int i = 0; s[i]; i++ ) {
-		if ( CharIsLower( s[i] ) ) {
-			s[i] -= ( 'a' - 'A' );
-		}
+// RAVEN BEGIN
+		s[i] = ToUpper( s[i] );
+// RAVEN END
 	}
 	return s;
 }
@@ -937,59 +1032,65 @@ ID_INLINE int idStr::IHash( const char *string, int length ) {
 	return hash;
 }
 
-ID_INLINE bool idStr::IsColor( const char *s ) {
-	return ( s[0] == C_COLOR_ESCAPE && s[1] != '\0' && s[1] != ' ' );
-}
-
-ID_INLINE char idStr::ToLower( char c ) {
-	if ( c <= 'Z' && c >= 'A' ) {
-		return ( c + ( 'a' - 'A' ) );
+ID_INLINE char idStr::ToLower( byte c ) {
+// RAVEN BEGIN
+	if( lowerCaseCharacter[c] ) {
+		return lowerCaseCharacter[c];
 	}
+// RAVEN END
 	return c;
 }
 
-ID_INLINE char idStr::ToUpper( char c ) {
-	if ( c >= 'a' && c <= 'z' ) {
-		return ( c - ( 'a' - 'A' ) );
+ID_INLINE char idStr::ToUpper( byte c ) {
+// RAVEN BEGIN
+	if( upperCaseCharacter[c] ) {
+		return upperCaseCharacter[c];
 	}
+// RAVEN END
 	return c;
 }
 
-ID_INLINE bool idStr::CharIsPrintable( int c ) {
-	// test for regular ascii and western European high-ascii chars
-	return ( c >= 0x20 && c <= 0x7E ) || ( c >= 0xA1 && c <= 0xFF );
+ID_INLINE bool idStr::CharIsPrintable( byte c ) {
+// RAVEN BEGIN
+	return printableCharacter[c];
+// RAVEN END
 }
 
-ID_INLINE bool idStr::CharIsLower( int c ) {
-	// test for regular ascii and western European high-ascii chars
-	return ( c >= 'a' && c <= 'z' ) || ( c >= 0xE0 && c <= 0xFF );
+ID_INLINE bool idStr::CharIsLower( byte c ) {
+// RAVEN BEGIN
+	return !!lowerCaseCharacter[c] && ( lowerCaseCharacter[c] == c );
+// RAVEN END
 }
 
-ID_INLINE bool idStr::CharIsUpper( int c ) {
-	// test for regular ascii and western European high-ascii chars
-	return ( c <= 'Z' && c >= 'A' ) || ( c >= 0xC0 && c <= 0xDF );
+ID_INLINE bool idStr::CharIsUpper( byte c ) {
+// RAVEN BEGIN
+	return !!upperCaseCharacter[c] && ( upperCaseCharacter[c] == c );
+// RAVEN END
 }
 
-ID_INLINE bool idStr::CharIsAlpha( int c ) {
+ID_INLINE bool idStr::CharIsAlpha( byte c ) {
 	// test for regular ascii and western European high-ascii chars
-	return ( ( c >= 'a' && c <= 'z' ) || ( c >= 'A' && c <= 'Z' ) ||
-			 ( c >= 0xC0 && c <= 0xFF ) );
+	return !!upperCaseCharacter[c];
 }
 
-ID_INLINE bool idStr::CharIsNumeric( int c ) {
+ID_INLINE bool idStr::CharIsNumeric( byte c ) {
 	return ( c <= '9' && c >= '0' );
 }
 
-ID_INLINE bool idStr::CharIsNewLine( char c ) {
+ID_INLINE bool idStr::CharIsNewLine( byte c ) {
 	return ( c == '\n' || c == '\r' || c == '\v' );
 }
 
-ID_INLINE bool idStr::CharIsTab( char c ) {
+ID_INLINE bool idStr::CharIsTab( byte c ) {
 	return ( c == '\t' );
 }
 
 ID_INLINE int idStr::ColorIndex( int c ) {
 	return ( c & 15 );
+}
+
+ID_INLINE int idStr::DynamicMemoryUsed() const {
+	return ( data == baseBuffer ) ? 0 : alloced;
 }
 
 #endif /* !__STR_H__ */

@@ -1,10 +1,8 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../precompiled.h"
 #pragma hdrstop
 
-#include "Simd_Generic.h"
+#include "Simd_generic.h"
 
 
 //===============================================================
@@ -35,7 +33,8 @@ idSIMD_Generic::Add
   dst[i] = constant + src[i];
 ============
 */
-void VPCALL idSIMD_Generic::Add( float *dst, const float constant, const float *src, const int count ) {
+void VPCALL idSIMD_Generic::Add( float * RESTRICT dst, const float constant, const float * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD Add constant");
 #define OPER(X) dst[(X)] = src[(X)] + constant;
 	UNROLL4(OPER)
 #undef OPER
@@ -48,7 +47,8 @@ idSIMD_Generic::Add
   dst[i] = src0[i] + src1[i];
 ============
 */
-void VPCALL idSIMD_Generic::Add( float *dst, const float *src0, const float *src1, const int count ) {
+void VPCALL idSIMD_Generic::Add( float * RESTRICT dst, const float * RESTRICT src0, const float * RESTRICT src1, const int count ) {
+	TIME_THIS_SCOPE("SIMD Add array");
 #define OPER(X) dst[(X)] = src0[(X)] + src1[(X)];
 	UNROLL4(OPER)
 #undef OPER
@@ -61,7 +61,8 @@ idSIMD_Generic::Sub
   dst[i] = constant - src[i];
 ============
 */
-void VPCALL idSIMD_Generic::Sub( float *dst, const float constant, const float *src, const int count ) {
+void VPCALL idSIMD_Generic::Sub( float * RESTRICT dst, const float constant, const float * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD Sub constant");
 	double c = constant;
 #define OPER(X) dst[(X)] = c - src[(X)];
 	UNROLL4(OPER)
@@ -75,7 +76,8 @@ idSIMD_Generic::Sub
   dst[i] = src0[i] - src1[i];
 ============
 */
-void VPCALL idSIMD_Generic::Sub( float *dst, const float *src0, const float *src1, const int count ) {
+void VPCALL idSIMD_Generic::Sub( float * RESTRICT dst, const float * RESTRICT src0, const float * RESTRICT src1, const int count ) {
+	TIME_THIS_SCOPE("SIMD Sub array");
 #define OPER(X) dst[(X)] = src0[(X)] - src1[(X)];
 	UNROLL4(OPER)
 #undef OPER
@@ -88,7 +90,8 @@ idSIMD_Generic::Mul
   dst[i] = constant * src[i];
 ============
 */
-void VPCALL idSIMD_Generic::Mul( float *dst, const float constant, const float *src0, const int count) {
+void VPCALL idSIMD_Generic::Mul( float * RESTRICT dst, const float constant, const float * RESTRICT src0, const int count) {
+	TIME_THIS_SCOPE("SIMD Mul constant");
 	double c = constant;
 #define OPER(X) (dst[(X)] = (c * src0[(X)]))
 	UNROLL4(OPER)
@@ -102,7 +105,8 @@ idSIMD_Generic::Mul
   dst[i] = src0[i] * src1[i];
 ============
 */
-void VPCALL idSIMD_Generic::Mul( float *dst, const float *src0, const float *src1, const int count ) {
+void VPCALL idSIMD_Generic::Mul( float * RESTRICT dst, const float * RESTRICT src0, const float * RESTRICT src1, const int count ) {
+	TIME_THIS_SCOPE("SIMD Mul array");
 #define OPER(X) (dst[(X)] = src0[(X)] * src1[(X)])
 	UNROLL4(OPER)
 #undef OPER
@@ -115,7 +119,8 @@ idSIMD_Generic::Div
   dst[i] = constant / divisor[i];
 ============
 */
-void VPCALL idSIMD_Generic::Div( float *dst, const float constant, const float *divisor, const int count ) {
+void VPCALL idSIMD_Generic::Div( float * RESTRICT dst, const float constant, const float * RESTRICT divisor, const int count ) {
+	TIME_THIS_SCOPE("SIMD Div constant");
 	double c = constant;
 #define OPER(X) (dst[(X)] = (c / divisor[(X)]))
 	UNROLL4(OPER)
@@ -129,7 +134,8 @@ idSIMD_Generic::Div
   dst[i] = src0[i] / src1[i];
 ============
 */
-void VPCALL idSIMD_Generic::Div( float *dst, const float *src0, const float *src1, const int count ) {
+void VPCALL idSIMD_Generic::Div( float * RESTRICT dst, const float * RESTRICT src0, const float * RESTRICT src1, const int count ) {
+	TIME_THIS_SCOPE("SIMD Div array");
 #define OPER(X) (dst[(X)] = src0[(X)] / src1[(X)])
 	UNROLL4(OPER)
 #undef OPER
@@ -142,7 +148,8 @@ idSIMD_Generic::MulAdd
   dst[i] += constant * src[i];
 ============
 */
-void VPCALL idSIMD_Generic::MulAdd( float *dst, const float constant, const float *src, const int count ) {
+void VPCALL idSIMD_Generic::MulAdd( float * RESTRICT dst, const float constant, const float * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD MulAdd constant");
 	double c = constant;
 #define OPER(X) (dst[(X)] += c * src[(X)])
 	UNROLL4(OPER)
@@ -156,7 +163,8 @@ idSIMD_Generic::MulAdd
   dst[i] += src0[i] * src1[i];
 ============
 */
-void VPCALL idSIMD_Generic::MulAdd( float *dst, const float *src0, const float *src1, const int count ) {
+void VPCALL idSIMD_Generic::MulAdd( float * RESTRICT dst, const float * RESTRICT src0, const float * RESTRICT src1, const int count ) {
+	TIME_THIS_SCOPE("SIMD MulAdd array");
 #define OPER(X) (dst[(X)] += src0[(X)] * src1[(X)])
 	UNROLL4(OPER)
 #undef OPER
@@ -169,7 +177,8 @@ idSIMD_Generic::MulSub
   dst[i] -= constant * src[i];
 ============
 */
-void VPCALL idSIMD_Generic::MulSub( float *dst, const float constant, const float *src, const int count ) {
+void VPCALL idSIMD_Generic::MulSub( float * RESTRICT dst, const float constant, const float * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD MulSub constant");
 	double c = constant;
 #define OPER(X) (dst[(X)] -= c * src[(X)])
 	UNROLL4(OPER)
@@ -183,7 +192,8 @@ idSIMD_Generic::MulSub
   dst[i] -= src0[i] * src1[i];
 ============
 */
-void VPCALL idSIMD_Generic::MulSub( float *dst, const float *src0, const float *src1, const int count ) {
+void VPCALL idSIMD_Generic::MulSub( float * RESTRICT dst, const float * RESTRICT src0, const float * RESTRICT src1, const int count ) {
+	TIME_THIS_SCOPE("SIMD MulSub array");
 #define OPER(X) (dst[(X)] -= src0[(X)] * src1[(X)])
 	UNROLL4(OPER)
 #undef OPER
@@ -196,7 +206,8 @@ idSIMD_Generic::Dot
   dst[i] = constant * src[i];
 ============
 */
-void VPCALL idSIMD_Generic::Dot( float *dst, const idVec3 &constant, const idVec3 *src, const int count ) {
+void VPCALL idSIMD_Generic::Dot( float * RESTRICT dst, const idVec3 &constant, const idVec3 * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD Dot idVec3-idVec3");
 #define OPER(X) dst[(X)] = constant * src[(X)];
 	UNROLL1(OPER)
 #undef OPER
@@ -209,7 +220,8 @@ idSIMD_Generic::Dot
   dst[i] = constant * src[i].Normal() + src[i][3];
 ============
 */
-void VPCALL idSIMD_Generic::Dot( float *dst, const idVec3 &constant, const idPlane *src, const int count ) {
+void VPCALL idSIMD_Generic::Dot( float * RESTRICT dst, const idVec3 &constant, const idPlane * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD Dot idVec3-idPlane");
 #define OPER(X) dst[(X)] = constant * src[(X)].Normal() + src[(X)][3];
 	UNROLL1(OPER)
 #undef OPER
@@ -222,7 +234,8 @@ idSIMD_Generic::Dot
   dst[i] = constant * src[i].xyz;
 ============
 */
-void VPCALL idSIMD_Generic::Dot( float *dst, const idVec3 &constant, const idDrawVert *src, const int count ) {
+void VPCALL idSIMD_Generic::Dot( float * RESTRICT dst, const idVec3 &constant, const idDrawVert * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD Dot idVec3-idDrawVert");
 #define OPER(X) dst[(X)] = constant * src[(X)].xyz;
 	UNROLL1(OPER)
 #undef OPER
@@ -235,7 +248,8 @@ idSIMD_Generic::Dot
   dst[i] = constant.Normal() * src[i] + constant[3];
 ============
 */
-void VPCALL idSIMD_Generic::Dot( float *dst, const idPlane &constant, const idVec3 *src, const int count ) {
+void VPCALL idSIMD_Generic::Dot( float * RESTRICT dst, const idPlane &constant, const idVec3 * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD Dot idPlane-idVec3");
 #define OPER(X) dst[(X)] = constant.Normal() * src[(X)] + constant[3];
 	UNROLL1(OPER)
 #undef OPER
@@ -248,7 +262,8 @@ idSIMD_Generic::Dot
   dst[i] = constant.Normal() * src[i].Normal() + constant[3] * src[i][3];
 ============
 */
-void VPCALL idSIMD_Generic::Dot( float *dst, const idPlane &constant, const idPlane *src, const int count ) {
+void VPCALL idSIMD_Generic::Dot( float * RESTRICT dst, const idPlane &constant, const idPlane * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD Dot idPlane-idPlane");
 #define OPER(X) dst[(X)] = constant.Normal() * src[(X)].Normal() + constant[3] * src[(X)][3];
 	UNROLL1(OPER)
 #undef OPER
@@ -261,7 +276,8 @@ idSIMD_Generic::Dot
   dst[i] = constant.Normal() * src[i].xyz + constant[3];
 ============
 */
-void VPCALL idSIMD_Generic::Dot( float *dst, const idPlane &constant, const idDrawVert *src, const int count ) {
+void VPCALL idSIMD_Generic::Dot( float * RESTRICT dst, const idPlane &constant, const idDrawVert * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD Dot idPlane-idDrawVert");
 #define OPER(X) dst[(X)] = constant.Normal() * src[(X)].xyz + constant[3];
 	UNROLL1(OPER)
 #undef OPER
@@ -274,7 +290,8 @@ idSIMD_Generic::Dot
   dst[i] = src0[i] * src1[i];
 ============
 */
-void VPCALL idSIMD_Generic::Dot( float *dst, const idVec3 *src0, const idVec3 *src1, const int count ) {
+void VPCALL idSIMD_Generic::Dot( float * RESTRICT dst, const idVec3 * RESTRICT src0, const idVec3 * RESTRICT src1, const int count ) {
+	TIME_THIS_SCOPE("SIMD Dot idVec3[]-idVec3[]");
 #define OPER(X) dst[(X)] = src0[(X)] * src1[(X)];
 	UNROLL1(OPER)
 #undef OPER
@@ -287,7 +304,8 @@ idSIMD_Generic::Dot
   dot = src1[0] * src2[0] + src1[1] * src2[1] + src1[2] * src2[2] + ...
 ============
 */
-void VPCALL idSIMD_Generic::Dot( float &dot, const float *src1, const float *src2, const int count ) {
+void VPCALL idSIMD_Generic::Dot( float &dot, const float * RESTRICT src1, const float * RESTRICT src2, const int count ) {
+	TIME_THIS_SCOPE("SIMD Dot float-float");
 #if 1
 
 	switch( count ) {
@@ -359,7 +377,8 @@ idSIMD_Generic::CmpGT
   dst[i] = src0[i] > constant;
 ============
 */
-void VPCALL idSIMD_Generic::CmpGT( byte *dst, const float *src0, const float constant, const int count ) {
+void VPCALL idSIMD_Generic::CmpGT( byte * RESTRICT dst, const float * RESTRICT src0, const float constant, const int count ) {
+	TIME_THIS_SCOPE("SIMD CmpGT");
 #define OPER(X) dst[(X)] = src0[(X)] > constant;
 	UNROLL4(OPER)
 #undef OPER
@@ -372,7 +391,8 @@ idSIMD_Generic::CmpGT
   dst[i] |= ( src0[i] > constant ) << bitNum;
 ============
 */
-void VPCALL idSIMD_Generic::CmpGT( byte *dst, const byte bitNum, const float *src0, const float constant, const int count ) {
+void VPCALL idSIMD_Generic::CmpGT( byte * RESTRICT dst, const byte bitNum, const float * RESTRICT src0, const float constant, const int count ) {
+	TIME_THIS_SCOPE("SIMD CmpGT bitNum");
 #define OPER(X) dst[(X)] |= ( src0[(X)] > constant ) << bitNum;
 	UNROLL4(OPER)
 #undef OPER
@@ -385,7 +405,8 @@ idSIMD_Generic::CmpGE
   dst[i] = src0[i] >= constant;
 ============
 */
-void VPCALL idSIMD_Generic::CmpGE( byte *dst, const float *src0, const float constant, const int count ) {
+void VPCALL idSIMD_Generic::CmpGE( byte * RESTRICT dst, const float * RESTRICT src0, const float constant, const int count ) {
+	TIME_THIS_SCOPE("SIMD CmpGE float-float");
 #define OPER(X) dst[(X)] = src0[(X)] >= constant;
 	UNROLL4(OPER)
 #undef OPER
@@ -398,7 +419,8 @@ idSIMD_Generic::CmpGE
   dst[i] |= ( src0[i] >= constant ) << bitNum;
 ============
 */
-void VPCALL idSIMD_Generic::CmpGE( byte *dst, const byte bitNum, const float *src0, const float constant, const int count ) {
+void VPCALL idSIMD_Generic::CmpGE( byte * RESTRICT dst, const byte bitNum, const float * RESTRICT src0, const float constant, const int count ) {
+	TIME_THIS_SCOPE("SIMD CmpGE bitNum");
 #define OPER(X) dst[(X)] |= ( src0[(X)] >= constant ) << bitNum;
 	UNROLL4(OPER)
 #undef OPER
@@ -411,7 +433,8 @@ idSIMD_Generic::CmpLT
   dst[i] = src0[i] < constant;
 ============
 */
-void VPCALL idSIMD_Generic::CmpLT( byte *dst, const float *src0, const float constant, const int count ) {
+void VPCALL idSIMD_Generic::CmpLT( byte * RESTRICT dst, const float * RESTRICT src0, const float constant, const int count ) {
+	TIME_THIS_SCOPE("SIMD CmpLT");
 #define OPER(X) dst[(X)] = src0[(X)] < constant;
 	UNROLL4(OPER)
 #undef OPER
@@ -424,7 +447,8 @@ idSIMD_Generic::CmpLT
   dst[i] |= ( src0[i] < constant ) << bitNum;
 ============
 */
-void VPCALL idSIMD_Generic::CmpLT( byte *dst, const byte bitNum, const float *src0, const float constant, const int count ) {
+void VPCALL idSIMD_Generic::CmpLT( byte * RESTRICT dst, const byte bitNum, const float * RESTRICT src0, const float constant, const int count ) {
+	TIME_THIS_SCOPE("SIMD CmpLT bitNum");
 #define OPER(X) dst[(X)] |= ( src0[(X)] < constant ) << bitNum;
 	UNROLL4(OPER)
 #undef OPER
@@ -437,7 +461,8 @@ idSIMD_Generic::CmpLE
   dst[i] = src0[i] <= constant;
 ============
 */
-void VPCALL idSIMD_Generic::CmpLE( byte *dst, const float *src0, const float constant, const int count ) {
+void VPCALL idSIMD_Generic::CmpLE( byte * RESTRICT dst, const float * RESTRICT src0, const float constant, const int count ) {
+	TIME_THIS_SCOPE("SIMD CmpLE");
 #define OPER(X) dst[(X)] = src0[(X)] <= constant;
 	UNROLL4(OPER)
 #undef OPER
@@ -450,7 +475,8 @@ idSIMD_Generic::CmpLE
   dst[i] |= ( src0[i] <= constant ) << bitNum;
 ============
 */
-void VPCALL idSIMD_Generic::CmpLE( byte *dst, const byte bitNum, const float *src0, const float constant, const int count ) {
+void VPCALL idSIMD_Generic::CmpLE( byte * RESTRICT dst, const byte bitNum, const float * RESTRICT src0, const float constant, const int count ) {
+	TIME_THIS_SCOPE("SIMD CmpLE bitNum");
 #define OPER(X) dst[(X)] |= ( src0[(X)] <= constant ) << bitNum;
 	UNROLL4(OPER)
 #undef OPER
@@ -461,7 +487,8 @@ void VPCALL idSIMD_Generic::CmpLE( byte *dst, const byte bitNum, const float *sr
 idSIMD_Generic::MinMax
 ============
 */
-void VPCALL idSIMD_Generic::MinMax( float &min, float &max, const float *src, const int count ) {
+void VPCALL idSIMD_Generic::MinMax( float &min, float &max, const float * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD MinMax float");
 	min = idMath::INFINITY; max = -idMath::INFINITY;
 #define OPER(X) if ( src[(X)] < min ) {min = src[(X)];} if ( src[(X)] > max ) {max = src[(X)];}
 	UNROLL1(OPER)
@@ -473,7 +500,8 @@ void VPCALL idSIMD_Generic::MinMax( float &min, float &max, const float *src, co
 idSIMD_Generic::MinMax
 ============
 */
-void VPCALL idSIMD_Generic::MinMax( idVec2 &min, idVec2 &max, const idVec2 *src, const int count ) {
+void VPCALL idSIMD_Generic::MinMax( idVec2 &min, idVec2 &max, const idVec2 * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD MinMax idVec2");
 	min[0] = min[1] = idMath::INFINITY; max[0] = max[1] = -idMath::INFINITY;
 #define OPER(X) const idVec2 &v = src[(X)]; if ( v[0] < min[0] ) { min[0] = v[0]; } if ( v[0] > max[0] ) { max[0] = v[0]; } if ( v[1] < min[1] ) { min[1] = v[1]; } if ( v[1] > max[1] ) { max[1] = v[1]; }
 	UNROLL1(OPER)
@@ -485,7 +513,8 @@ void VPCALL idSIMD_Generic::MinMax( idVec2 &min, idVec2 &max, const idVec2 *src,
 idSIMD_Generic::MinMax
 ============
 */
-void VPCALL idSIMD_Generic::MinMax( idVec3 &min, idVec3 &max, const idVec3 *src, const int count ) {
+void VPCALL idSIMD_Generic::MinMax( idVec3 &min, idVec3 &max, const idVec3 * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD MinMax idVec3");
 	min[0] = min[1] = min[2] = idMath::INFINITY; max[0] = max[1] = max[2] = -idMath::INFINITY;
 #define OPER(X) const idVec3 &v = src[(X)]; if ( v[0] < min[0] ) { min[0] = v[0]; } if ( v[0] > max[0] ) { max[0] = v[0]; } if ( v[1] < min[1] ) { min[1] = v[1]; } if ( v[1] > max[1] ) { max[1] = v[1]; } if ( v[2] < min[2] ) { min[2] = v[2]; } if ( v[2] > max[2] ) { max[2] = v[2]; }
 	UNROLL1(OPER)
@@ -497,7 +526,8 @@ void VPCALL idSIMD_Generic::MinMax( idVec3 &min, idVec3 &max, const idVec3 *src,
 idSIMD_Generic::MinMax
 ============
 */
-void VPCALL idSIMD_Generic::MinMax( idVec3 &min, idVec3 &max, const idDrawVert *src, const int count ) {
+void VPCALL idSIMD_Generic::MinMax( idVec3 &min, idVec3 &max, const idDrawVert * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD MinMax idDrawVert");
 	min[0] = min[1] = min[2] = idMath::INFINITY; max[0] = max[1] = max[2] = -idMath::INFINITY;
 #define OPER(X) const idVec3 &v = src[(X)].xyz; if ( v[0] < min[0] ) { min[0] = v[0]; } if ( v[0] > max[0] ) { max[0] = v[0]; } if ( v[1] < min[1] ) { min[1] = v[1]; } if ( v[1] > max[1] ) { max[1] = v[1]; } if ( v[2] < min[2] ) { min[2] = v[2]; } if ( v[2] > max[2] ) { max[2] = v[2]; }
 	UNROLL1(OPER)
@@ -509,7 +539,8 @@ void VPCALL idSIMD_Generic::MinMax( idVec3 &min, idVec3 &max, const idDrawVert *
 idSIMD_Generic::MinMax
 ============
 */
-void VPCALL idSIMD_Generic::MinMax( idVec3 &min, idVec3 &max, const idDrawVert *src, const int *indexes, const int count ) {
+void VPCALL idSIMD_Generic::MinMax( idVec3 &min, idVec3 &max, const idDrawVert * RESTRICT src, const int *indexes, const int count ) {
+	TIME_THIS_SCOPE("SIMD MinMax idDrawVert indexed");
 	min[0] = min[1] = min[2] = idMath::INFINITY; max[0] = max[1] = max[2] = -idMath::INFINITY;
 #define OPER(X) const idVec3 &v = src[indexes[(X)]].xyz; if ( v[0] < min[0] ) { min[0] = v[0]; } if ( v[0] > max[0] ) { max[0] = v[0]; } if ( v[1] < min[1] ) { min[1] = v[1]; } if ( v[1] > max[1] ) { max[1] = v[1]; } if ( v[2] < min[2] ) { min[2] = v[2]; } if ( v[2] > max[2] ) { max[2] = v[2]; }
 	UNROLL1(OPER)
@@ -521,7 +552,8 @@ void VPCALL idSIMD_Generic::MinMax( idVec3 &min, idVec3 &max, const idDrawVert *
 idSIMD_Generic::Clamp
 ============
 */
-void VPCALL idSIMD_Generic::Clamp( float *dst, const float *src, const float min, const float max, const int count ) {
+void VPCALL idSIMD_Generic::Clamp( float * RESTRICT dst, const float * RESTRICT src, const float min, const float max, const int count ) {
+	TIME_THIS_SCOPE("SIMD Clamp");
 #define OPER(X) dst[(X)] = src[(X)] < min ? min : src[(X)] > max ? max : src[(X)];
 	UNROLL1(OPER)
 #undef OPER
@@ -532,7 +564,8 @@ void VPCALL idSIMD_Generic::Clamp( float *dst, const float *src, const float min
 idSIMD_Generic::ClampMin
 ============
 */
-void VPCALL idSIMD_Generic::ClampMin( float *dst, const float *src, const float min, const int count ) {
+void VPCALL idSIMD_Generic::ClampMin( float * RESTRICT dst, const float * RESTRICT src, const float min, const int count ) {
+	TIME_THIS_SCOPE("SIMD ClampMin");
 #define OPER(X) dst[(X)] = src[(X)] < min ? min : src[(X)];
 	UNROLL1(OPER)
 #undef OPER
@@ -543,7 +576,8 @@ void VPCALL idSIMD_Generic::ClampMin( float *dst, const float *src, const float 
 idSIMD_Generic::ClampMax
 ============
 */
-void VPCALL idSIMD_Generic::ClampMax( float *dst, const float *src, const float max, const int count ) {
+void VPCALL idSIMD_Generic::ClampMax( float * RESTRICT dst, const float * RESTRICT src, const float max, const int count ) {
+	TIME_THIS_SCOPE("SIMD ClampMax");
 #define OPER(X) dst[(X)] = src[(X)] > max ? max : src[(X)];
 	UNROLL1(OPER)
 #undef OPER
@@ -554,7 +588,8 @@ void VPCALL idSIMD_Generic::ClampMax( float *dst, const float *src, const float 
 idSIMD_Generic::Memcpy
 ================
 */
-void VPCALL idSIMD_Generic::Memcpy( void *dst, const void *src, const int count ) {
+void VPCALL idSIMD_Generic::Memcpy( void * RESTRICT dst, const void * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD Memcpy");
 	memcpy( dst, src, count );
 }
 
@@ -563,7 +598,8 @@ void VPCALL idSIMD_Generic::Memcpy( void *dst, const void *src, const int count 
 idSIMD_Generic::Memset
 ================
 */
-void VPCALL idSIMD_Generic::Memset( void *dst, const int val, const int count ) {
+void VPCALL idSIMD_Generic::Memset( void * RESTRICT dst, const int val, const int count ) {
+	TIME_THIS_SCOPE("SIMD Memset");
 	memset( dst, val, count );
 }
 
@@ -572,7 +608,8 @@ void VPCALL idSIMD_Generic::Memset( void *dst, const int val, const int count ) 
 idSIMD_Generic::Zero16
 ============
 */
-void VPCALL idSIMD_Generic::Zero16( float *dst, const int count ) {
+void VPCALL idSIMD_Generic::Zero16( float * RESTRICT dst, const int count ) {
+	TIME_THIS_SCOPE("SIMD Zero16");
 	memset( dst, 0, count * sizeof( float ) );
 }
 
@@ -581,8 +618,9 @@ void VPCALL idSIMD_Generic::Zero16( float *dst, const int count ) {
 idSIMD_Generic::Negate16
 ============
 */
-void VPCALL idSIMD_Generic::Negate16( float *dst, const int count ) {
-	unsigned int *ptr = reinterpret_cast<unsigned int *>(dst);
+void VPCALL idSIMD_Generic::Negate16( float * RESTRICT dst, const int count ) {
+	TIME_THIS_SCOPE("SIMD Negate16");
+	unsigned int * RESTRICT ptr = reinterpret_cast<unsigned int * RESTRICT >(dst);
 #define OPER(X) ptr[(X)] ^= ( 1 << 31 )		// IEEE 32 bits float sign bit
 	UNROLL1(OPER)
 #undef OPER
@@ -593,7 +631,8 @@ void VPCALL idSIMD_Generic::Negate16( float *dst, const int count ) {
 idSIMD_Generic::Copy16
 ============
 */
-void VPCALL idSIMD_Generic::Copy16( float *dst, const float *src, const int count ) {
+void VPCALL idSIMD_Generic::Copy16( float * RESTRICT dst, const float * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD Copy16");
 #define OPER(X) dst[(X)] = src[(X)]
 	UNROLL1(OPER)
 #undef OPER
@@ -604,7 +643,8 @@ void VPCALL idSIMD_Generic::Copy16( float *dst, const float *src, const int coun
 idSIMD_Generic::Add16
 ============
 */
-void VPCALL idSIMD_Generic::Add16( float *dst, const float *src1, const float *src2, const int count ) {
+void VPCALL idSIMD_Generic::Add16( float * RESTRICT dst, const float * RESTRICT src1, const float * RESTRICT src2, const int count ) {
+	TIME_THIS_SCOPE("SIMD Add16");
 #define OPER(X) dst[(X)] = src1[(X)] + src2[(X)]
 	UNROLL1(OPER)
 #undef OPER
@@ -615,7 +655,8 @@ void VPCALL idSIMD_Generic::Add16( float *dst, const float *src1, const float *s
 idSIMD_Generic::Sub16
 ============
 */
-void VPCALL idSIMD_Generic::Sub16( float *dst, const float *src1, const float *src2, const int count ) {
+void VPCALL idSIMD_Generic::Sub16( float * RESTRICT dst, const float * RESTRICT src1, const float * RESTRICT src2, const int count ) {
+	TIME_THIS_SCOPE("SIMD Sub16");
 #define OPER(X) dst[(X)] = src1[(X)] - src2[(X)]
 	UNROLL1(OPER)
 #undef OPER
@@ -626,7 +667,8 @@ void VPCALL idSIMD_Generic::Sub16( float *dst, const float *src1, const float *s
 idSIMD_Generic::Mul16
 ============
 */
-void VPCALL idSIMD_Generic::Mul16( float *dst, const float *src1, const float constant, const int count ) {
+void VPCALL idSIMD_Generic::Mul16( float * RESTRICT dst, const float * RESTRICT src1, const float constant, const int count ) {
+	TIME_THIS_SCOPE("SIMD Mul16");
 #define OPER(X) dst[(X)] = src1[(X)] * constant
 	UNROLL1(OPER)
 #undef OPER
@@ -637,7 +679,8 @@ void VPCALL idSIMD_Generic::Mul16( float *dst, const float *src1, const float co
 idSIMD_Generic::AddAssign16
 ============
 */
-void VPCALL idSIMD_Generic::AddAssign16( float *dst, const float *src, const int count ) {
+void VPCALL idSIMD_Generic::AddAssign16( float * RESTRICT dst, const float * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD AddAssign16");
 #define OPER(X) dst[(X)] += src[(X)]
 	UNROLL1(OPER)
 #undef OPER
@@ -648,7 +691,8 @@ void VPCALL idSIMD_Generic::AddAssign16( float *dst, const float *src, const int
 idSIMD_Generic::SubAssign16
 ============
 */
-void VPCALL idSIMD_Generic::SubAssign16( float *dst, const float *src, const int count ) {
+void VPCALL idSIMD_Generic::SubAssign16( float * RESTRICT dst, const float * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD SubAssign16");
 #define OPER(X) dst[(X)] -= src[(X)]
 	UNROLL1(OPER)
 #undef OPER
@@ -659,7 +703,8 @@ void VPCALL idSIMD_Generic::SubAssign16( float *dst, const float *src, const int
 idSIMD_Generic::MulAssign16
 ============
 */
-void VPCALL idSIMD_Generic::MulAssign16( float *dst, const float constant, const int count ) {
+void VPCALL idSIMD_Generic::MulAssign16( float * RESTRICT dst, const float constant, const int count ) {
+	TIME_THIS_SCOPE("SIMD MulAssign16");
 #define OPER(X) dst[(X)] *= constant
 	UNROLL1(OPER)
 #undef OPER
@@ -671,9 +716,10 @@ idSIMD_Generic::MatX_MultiplyVecX
 ============
 */
 void VPCALL idSIMD_Generic::MatX_MultiplyVecX( idVecX &dst, const idMatX &mat, const idVecX &vec ) {
+	TIME_THIS_SCOPE("SIMD MatX_MultiplyVecX");
 	int i, j, numRows;
-	const float *mPtr, *vPtr;
-	float *dstPtr;
+	const float * RESTRICT mPtr, * RESTRICT vPtr;
+	float * RESTRICT dstPtr;
 
 	assert( vec.GetSize() >= mat.GetNumColumns() );
 	assert( dst.GetSize() >= mat.GetNumRows() );
@@ -742,9 +788,10 @@ idSIMD_Generic::MatX_MultiplyAddVecX
 ============
 */
 void VPCALL idSIMD_Generic::MatX_MultiplyAddVecX( idVecX &dst, const idMatX &mat, const idVecX &vec ) {
+	TIME_THIS_SCOPE("SIMD MatX_MultiplyAddVecX");
 	int i, j, numRows;
-	const float *mPtr, *vPtr;
-	float *dstPtr;
+	const float * RESTRICT mPtr, * RESTRICT vPtr;
+	float * RESTRICT dstPtr;
 
 	assert( vec.GetSize() >= mat.GetNumColumns() );
 	assert( dst.GetSize() >= mat.GetNumRows() );
@@ -813,9 +860,10 @@ idSIMD_Generic::MatX_MultiplySubVecX
 ============
 */
 void VPCALL idSIMD_Generic::MatX_MultiplySubVecX( idVecX &dst, const idMatX &mat, const idVecX &vec ) {
+	TIME_THIS_SCOPE("SIMD MatX_MultiplySubVecX");
 	int i, j, numRows;
-	const float *mPtr, *vPtr;
-	float *dstPtr;
+	const float * RESTRICT mPtr, * RESTRICT vPtr;
+	float * RESTRICT dstPtr;
 
 	assert( vec.GetSize() >= mat.GetNumColumns() );
 	assert( dst.GetSize() >= mat.GetNumRows() );
@@ -884,9 +932,10 @@ idSIMD_Generic::MatX_TransposeMultiplyVecX
 ============
 */
 void VPCALL idSIMD_Generic::MatX_TransposeMultiplyVecX( idVecX &dst, const idMatX &mat, const idVecX &vec ) {
+	TIME_THIS_SCOPE("SIMD MatX_TransposeMultiplyVecX");
 	int i, j, numColumns;
-	const float *mPtr, *vPtr;
-	float *dstPtr;
+	const float * RESTRICT mPtr, * RESTRICT vPtr;
+	float * RESTRICT dstPtr;
 
 	assert( vec.GetSize() >= mat.GetNumRows() );
 	assert( dst.GetSize() >= mat.GetNumColumns() );
@@ -956,9 +1005,10 @@ idSIMD_Generic::MatX_TransposeMultiplyAddVecX
 ============
 */
 void VPCALL idSIMD_Generic::MatX_TransposeMultiplyAddVecX( idVecX &dst, const idMatX &mat, const idVecX &vec ) {
+	TIME_THIS_SCOPE("SIMD MatX_TransposeMultiplyAddVecX");
 	int i, j, numColumns;
-	const float *mPtr, *vPtr;
-	float *dstPtr;
+	const float * RESTRICT mPtr, * RESTRICT vPtr;
+	float * RESTRICT dstPtr;
 
 	assert( vec.GetSize() >= mat.GetNumRows() );
 	assert( dst.GetSize() >= mat.GetNumColumns() );
@@ -1028,9 +1078,10 @@ idSIMD_Generic::MatX_TransposeMultiplySubVecX
 ============
 */
 void VPCALL idSIMD_Generic::MatX_TransposeMultiplySubVecX( idVecX &dst, const idMatX &mat, const idVecX &vec ) {
+	TIME_THIS_SCOPE("SIMD MatX_TransposeMultiplySubVecX");
 	int i, numColumns;
-	const float *mPtr, *vPtr;
-	float *dstPtr;
+	const float * RESTRICT mPtr, * RESTRICT vPtr;
+	float * RESTRICT dstPtr;
 
 	assert( vec.GetSize() >= mat.GetNumRows() );
 	assert( dst.GetSize() >= mat.GetNumColumns() );
@@ -1109,9 +1160,10 @@ idSIMD_Generic::MatX_MultiplyMatX
 ============
 */
 void VPCALL idSIMD_Generic::MatX_MultiplyMatX( idMatX &dst, const idMatX &m1, const idMatX &m2 ) {
+	TIME_THIS_SCOPE("SIMD MatX_MultiplyMatX");
 	int i, j, k, l, n;
-	float *dstPtr;
-	const float *m1Ptr, *m2Ptr;
+	float * RESTRICT dstPtr;
+	const float * RESTRICT m1Ptr, * RESTRICT m2Ptr;
 	double sum;
 
 	assert( m1.GetNumColumns() == m2.GetNumRows() );
@@ -1454,9 +1506,10 @@ idSIMD_Generic::MatX_TransposeMultiplyMatX
 ============
 */
 void VPCALL idSIMD_Generic::MatX_TransposeMultiplyMatX( idMatX &dst, const idMatX &m1, const idMatX &m2 ) {
+	TIME_THIS_SCOPE("SIMD MatX_TransposeMultiplyMatX");
 	int i, j, k, l, n;
-	float *dstPtr;
-	const float *m1Ptr, *m2Ptr;
+	float * RESTRICT dstPtr;
+	const float * RESTRICT m1Ptr, * RESTRICT m2Ptr;
 	double sum;
 
 	assert( m1.GetNumRows() == m2.GetNumRows() );
@@ -1695,11 +1748,12 @@ idSIMD_Generic::MatX_LowerTriangularSolve
   x == b is allowed
 ============
 */
-void VPCALL idSIMD_Generic::MatX_LowerTriangularSolve( const idMatX &L, float *x, const float *b, const int n, int skip ) {
+void VPCALL idSIMD_Generic::MatX_LowerTriangularSolve( const idMatX &L, float * RESTRICT x, const float * RESTRICT b, const int n, int skip ) {
+	TIME_THIS_SCOPE("SIMD MatX_LowerTriangularSolve");
 #if 1
 
 	int nc;
-	const float *lptr;
+	const float * RESTRICT lptr;
 
 	if ( skip >= n ) {
 		return;
@@ -1802,7 +1856,7 @@ void VPCALL idSIMD_Generic::MatX_LowerTriangularSolve( const idMatX &L, float *x
 #else
 
 	int i, j;
-	const float *lptr;
+	const float * RESTRICT lptr;
 	double sum;
 
 	for ( i = skip; i < n; i++ ) {
@@ -1826,11 +1880,12 @@ idSIMD_Generic::MatX_LowerTriangularSolveTranspose
   x == b is allowed
 ============
 */
-void VPCALL idSIMD_Generic::MatX_LowerTriangularSolveTranspose( const idMatX &L, float *x, const float *b, const int n ) {
+void VPCALL idSIMD_Generic::MatX_LowerTriangularSolveTranspose( const idMatX &L, float * RESTRICT x, const float * RESTRICT b, const int n ) {
+	TIME_THIS_SCOPE("SIMD MatX_LowerTriangularSolveTranspose");
 #if 1
 
 	int nc;
-	const float *lptr;
+	const float * RESTRICT lptr;
 
 	lptr = L.ToFloatPtr();
 	nc = L.GetNumColumns();
@@ -1888,7 +1943,7 @@ void VPCALL idSIMD_Generic::MatX_LowerTriangularSolveTranspose( const idMatX &L,
 
 	int i, j;
 	register double s0, s1, s2, s3;
-	float *xptr;
+	float * RESTRICT xptr;
 
 	lptr = L.ToFloatPtr() + n * nc + n - 4;
 	xptr = x + n;
@@ -1947,7 +2002,7 @@ void VPCALL idSIMD_Generic::MatX_LowerTriangularSolveTranspose( const idMatX &L,
 #else
 
 	int i, j, nc;
-	const float *ptr;
+	const float * RESTRICT ptr;
 	double sum;
 
 	nc = L.GetNumColumns();
@@ -1972,14 +2027,15 @@ idSIMD_Generic::MatX_LDLTFactor
 ============
 */
 bool VPCALL idSIMD_Generic::MatX_LDLTFactor( idMatX &mat, idVecX &invDiag, const int n ) {
+	TIME_THIS_SCOPE("SIMD MatX_LDLTFactor");
 #if 1
 
 	int i, j, k, nc;
-	float *v, *diag, *mptr;
+	float * RESTRICT v, * RESTRICT diag, * RESTRICT mptr;
 	double s0, s1, s2, s3, sum, d;
 
-	v = (float *) _alloca16( n * sizeof( float ) );
-	diag = (float *) _alloca16( n * sizeof( float ) );
+	v = (float * RESTRICT ) _alloca16( n * sizeof( float ) );
+	diag = (float * RESTRICT ) _alloca16( n * sizeof( float ) );
 
 	nc = mat.GetNumColumns();
 
@@ -2152,10 +2208,10 @@ bool VPCALL idSIMD_Generic::MatX_LDLTFactor( idMatX &mat, idVecX &invDiag, const
 #else
 
 	int i, j, k, nc;
-	float *v, *ptr, *diagPtr;
+	float * RESTRICT v, * RESTRICT ptr, * RESTRICT diagPtr;
 	double d, sum;
 
-	v = (float *) _alloca16( n * sizeof( float ) );
+	v = (float * RESTRICT ) _alloca16( n * sizeof( float ) );
 	nc = mat.GetNumColumns();
 
 	for ( i = 0; i < n; i++ ) {
@@ -2202,22 +2258,17 @@ bool VPCALL idSIMD_Generic::MatX_LDLTFactor( idMatX &mat, idVecX &invDiag, const
 idSIMD_Generic::BlendJoints
 ============
 */
-void VPCALL idSIMD_Generic::BlendJoints( idJointQuat *joints, const idJointQuat *blendJoints, const float lerp, const int *index, const int numJoints ) {
-	int i;
-
-	for ( i = 0; i < numJoints; i++ ) {
-		int j = index[i];
-		joints[j].q.Slerp( joints[j].q, blendJoints[j].q, lerp );
-		joints[j].t.Lerp( joints[j].t, blendJoints[j].t, lerp );
-	}
-}
+// RAVEN BEGIN
+// jsinger: BlendJoints() moved to be inline for xenon
+// RAVEN END
 
 /*
 ============
 idSIMD_Generic::ConvertJointQuatsToJointMats
 ============
 */
-void VPCALL idSIMD_Generic::ConvertJointQuatsToJointMats( idJointMat *jointMats, const idJointQuat *jointQuats, const int numJoints ) {
+void VPCALL idSIMD_Generic::ConvertJointQuatsToJointMats( idJointMat * RESTRICT jointMats, const idJointQuat * RESTRICT jointQuats, const int numJoints ) {
+	TIME_THIS_SCOPE("SIMD ConvertJointQuatsToJointMats");
 	int i;
 
 	for ( i = 0; i < numJoints; i++ ) {
@@ -2231,7 +2282,8 @@ void VPCALL idSIMD_Generic::ConvertJointQuatsToJointMats( idJointMat *jointMats,
 idSIMD_Generic::ConvertJointMatsToJointQuats
 ============
 */
-void VPCALL idSIMD_Generic::ConvertJointMatsToJointQuats( idJointQuat *jointQuats, const idJointMat *jointMats, const int numJoints ) {
+void VPCALL idSIMD_Generic::ConvertJointMatsToJointQuats( idJointQuat * RESTRICT jointQuats, const idJointMat * RESTRICT jointMats, const int numJoints ) {
+	TIME_THIS_SCOPE("SIMD ConvertJointMatsToJointQuats");
 	int i;
 
 	for ( i = 0; i < numJoints; i++ ) {
@@ -2244,7 +2296,8 @@ void VPCALL idSIMD_Generic::ConvertJointMatsToJointQuats( idJointQuat *jointQuat
 idSIMD_Generic::TransformJoints
 ============
 */
-void VPCALL idSIMD_Generic::TransformJoints( idJointMat *jointMats, const int *parents, const int firstJoint, const int lastJoint ) {
+void VPCALL idSIMD_Generic::TransformJoints( idJointMat * RESTRICT jointMats, const int * RESTRICT parents, const int firstJoint, const int lastJoint ) {
+	TIME_THIS_SCOPE("SIMD TransformJoints");
 	int i;
 
 	for( i = firstJoint; i <= lastJoint; i++ ) {
@@ -2258,7 +2311,8 @@ void VPCALL idSIMD_Generic::TransformJoints( idJointMat *jointMats, const int *p
 idSIMD_Generic::UntransformJoints
 ============
 */
-void VPCALL idSIMD_Generic::UntransformJoints( idJointMat *jointMats, const int *parents, const int firstJoint, const int lastJoint ) {
+void VPCALL idSIMD_Generic::UntransformJoints( idJointMat * RESTRICT jointMats, const int * RESTRICT parents, const int firstJoint, const int lastJoint ) {
+	TIME_THIS_SCOPE("SIMD UntransformJoints");
 	int i;
 
 	for( i = lastJoint; i >= firstJoint; i-- ) {
@@ -2269,24 +2323,117 @@ void VPCALL idSIMD_Generic::UntransformJoints( idJointMat *jointMats, const int 
 
 /*
 ============
-idSIMD_Generic::TransformVerts
+idSIMD_Generic::MultiplyJoints
 ============
 */
-void VPCALL idSIMD_Generic::TransformVerts( idDrawVert *verts, const int numVerts, const idJointMat *joints, const idVec4 *weights, const int *index, int numWeights ) {
-	int i, j;
-	const byte *jointsPtr = (byte *)joints;
+void VPCALL idSIMD_Generic::MultiplyJoints( idJointMat * RESTRICT result, const idJointMat * RESTRICT joints1, const idJointMat * RESTRICT joints2, const int numJoints ) {
+	TIME_THIS_SCOPE("SIMD MultiplyJoints");
+	int i;
 
-	for( j = i = 0; i < numVerts; i++ ) {
+	for ( i = 0; i < numJoints; i++ ) {
+		idJointMat::Multiply( result[i], joints1[i], joints2[i] );
+	}
+}
+
+
+/*
+============
+idBounds_AddPoint
+============
+*/
+ID_INLINE void idBounds_AddPoint( idBounds &b, const idVec3 &v ) {
+	float p = ( b[0].x + v.x ) * 0.5f;
+	b[0].x = p - fabs( b[0].x - p );
+	float q = ( b[0].y + v.y ) * 0.5f;
+	b[0].y = q - fabs( b[0].y - q );
+	float r = ( b[0].z + v.z ) * 0.5f;
+	b[0].z = r - fabs( b[0].z - r );
+	float s = ( b[1].x + v.x ) * 0.5f;
+	b[1].x = s + fabs( b[1].x - s );
+	float t = ( b[1].y + v.y ) * 0.5f;
+	b[1].y = t + fabs( b[1].y - t );
+	float u = ( b[1].z + v.z ) * 0.5f;
+	b[1].z = u + fabs( b[1].z - u );
+}
+
+/*
+============
+idSIMD_Generic::TransformVertsNew
+============
+*/
+void VPCALL idSIMD_Generic::TransformVertsNew( idDrawVert * RESTRICT verts, const int numVerts, idBounds &bounds, const idJointMat * RESTRICT joints, const idVec4 * RESTRICT base, const jointWeight_t * RESTRICT weights, int numWeights ) {
+	TIME_THIS_SCOPE("SIMD TransformVertsNew");
+	int i, j;
+	const byte * RESTRICT jointsPtr = (byte * RESTRICT )joints;
+
+	bounds.Zero();
+	for( j = 0, i = 0; i < numVerts; i++, j++ ) {
 		idVec3 v;
 
-		v = ( *(idJointMat *) ( jointsPtr + index[j*2+0] ) ) * weights[j];
-		while( index[j*2+1] == 0 ) {
+		v = ( *(idJointMat *) ( jointsPtr + weights[j].jointMatOffset ) ) * base[j];
+		while( weights[j].nextVertexOffset != JOINTWEIGHT_SIZE ) {
 			j++;
-			v += ( *(idJointMat *) ( jointsPtr + index[j*2+0] ) ) * weights[j];
+			v += ( *(idJointMat *) ( jointsPtr + weights[j].jointMatOffset ) ) * base[j];
 		}
-		j++;
 
 		verts[i].xyz = v;
+
+		idBounds_AddPoint( bounds, v );
+	}
+}
+
+/*
+============
+idSIMD_Generic::TransformVertsAndTangents
+============
+*/
+void VPCALL idSIMD_Generic::TransformVertsAndTangents( idDrawVert * RESTRICT verts, const int numVerts, idBounds &bounds, const idJointMat * RESTRICT joints, const idVec4 * RESTRICT base, const jointWeight_t * RESTRICT weights, const int numWeights ) {
+	TIME_THIS_SCOPE("SIMD TransformVertsAndTangents");
+	int i, j;
+	const byte * RESTRICT jointsPtr = (byte * RESTRICT )joints;
+
+	bounds.Zero();
+	for( j = i = 0; i < numVerts; i++, j++ ) {
+		idJointMat mat;
+
+		idJointMat::Mul( mat, *(idJointMat *) ( jointsPtr + weights[j].jointMatOffset ), weights[j].weight );
+		while( weights[j].nextVertexOffset != JOINTWEIGHT_SIZE ) {
+			j++;
+			idJointMat::Mad( mat, *(idJointMat *) ( jointsPtr + weights[j].jointMatOffset ), weights[j].weight );
+		}
+
+		verts[i].xyz = mat * base[i*4+0];
+		verts[i].normal = mat * base[i*4+1];
+		verts[i].tangents[0] = mat * base[i*4+2];
+		verts[i].tangents[1] = mat * base[i*4+3];
+
+		idBounds_AddPoint( bounds, verts[i].xyz );
+	}
+}
+
+/*
+============
+idSIMD_Generic::TransformVertsAndTangentsFast
+============
+*/
+void VPCALL idSIMD_Generic::TransformVertsAndTangentsFast( idDrawVert * RESTRICT verts, const int numVerts, idBounds &bounds, const idJointMat * RESTRICT joints, const idVec4 * RESTRICT base, const jointWeight_t * RESTRICT weights, const int numWeights ) {
+	TIME_THIS_SCOPE("SIMD TransformVertsAndTangentsFast");
+	int i;
+	const byte * RESTRICT jointsPtr = (byte * RESTRICT )joints;
+	const byte * RESTRICT weightsPtr = (byte * RESTRICT )weights;
+
+	bounds.Zero();
+	for( i = 0; i < numVerts; i++ ) {
+		const idJointMat &mat = *(idJointMat *) ( jointsPtr + ((jointWeight_t *)weightsPtr)->jointMatOffset );
+
+		weightsPtr += ((jointWeight_t *)weightsPtr)->nextVertexOffset;
+
+		verts[i].xyz = mat * base[i*4+0];
+		verts[i].normal = mat * base[i*4+1];
+		verts[i].tangents[0] = mat * base[i*4+2];
+		verts[i].tangents[1] = mat * base[i*4+3];
+
+		idBounds_AddPoint( bounds, verts[i].xyz );
 	}
 }
 
@@ -2295,7 +2442,8 @@ void VPCALL idSIMD_Generic::TransformVerts( idDrawVert *verts, const int numVert
 idSIMD_Generic::TracePointCull
 ============
 */
-void VPCALL idSIMD_Generic::TracePointCull( byte *cullBits, byte &totalOr, const float radius, const idPlane *planes, const idDrawVert *verts, const int numVerts ) {
+void VPCALL idSIMD_Generic::TracePointCull( byte * RESTRICT cullBits, byte &totalOr, const float radius, const idPlane * RESTRICT planes, const idDrawVert * RESTRICT verts, const int numVerts ) {
+	TIME_THIS_SCOPE("idSIMD_Generic::TracePointCull idDrawVert");
 	int i;
 	byte tOr;
 
@@ -2343,7 +2491,8 @@ void VPCALL idSIMD_Generic::TracePointCull( byte *cullBits, byte &totalOr, const
 idSIMD_Generic::DecalPointCull
 ============
 */
-void VPCALL idSIMD_Generic::DecalPointCull( byte *cullBits, const idPlane *planes, const idDrawVert *verts, const int numVerts ) {
+void VPCALL idSIMD_Generic::DecalPointCull( byte * RESTRICT cullBits, const idPlane * RESTRICT planes, const idDrawVert * RESTRICT verts, const int numVerts ) {
+	TIME_THIS_SCOPE("SIMD DecalPointCull");
 	int i;
 
 	for ( i = 0; i < numVerts; i++ ) {
@@ -2374,7 +2523,8 @@ void VPCALL idSIMD_Generic::DecalPointCull( byte *cullBits, const idPlane *plane
 idSIMD_Generic::OverlayPointCull
 ============
 */
-void VPCALL idSIMD_Generic::OverlayPointCull( byte *cullBits, idVec2 *texCoords, const idPlane *planes, const idDrawVert *verts, const int numVerts ) {
+void VPCALL idSIMD_Generic::OverlayPointCull( byte * RESTRICT cullBits, idVec2 * RESTRICT texCoords, const idPlane * RESTRICT planes, const idDrawVert * RESTRICT verts, const int numVerts ) {
+	TIME_THIS_SCOPE("SIMD OverlayPointCull");
 	int i;
 
 	for ( i = 0; i < numVerts; i++ ) {
@@ -2403,11 +2553,12 @@ idSIMD_Generic::DeriveTriPlanes
 	Derives a plane equation for each triangle.
 ============
 */
-void VPCALL idSIMD_Generic::DeriveTriPlanes( idPlane *planes, const idDrawVert *verts, const int numVerts, const int *indexes, const int numIndexes ) {
+void VPCALL idSIMD_Generic::DeriveTriPlanes( idPlane * RESTRICT planes, const idDrawVert * RESTRICT verts, const int numVerts, const int * RESTRICT indexes, const int numIndexes ) {
+	TIME_THIS_SCOPE("SIMD DeriveTriPlanes idDrawVert");
 	int i;
 
 	for ( i = 0; i < numIndexes; i += 3 ) {
-		const idDrawVert *a, *b, *c;
+		const idDrawVert * RESTRICT a, * RESTRICT b, * RESTRICT c;
 		float d0[3], d1[3], f;
 		idVec3 n;
 
@@ -2449,15 +2600,16 @@ idSIMD_Generic::DeriveTangents
 	In the process the triangle planes are calculated as well.
 ============
 */
-void VPCALL idSIMD_Generic::DeriveTangents( idPlane *planes, idDrawVert *verts, const int numVerts, const int *indexes, const int numIndexes ) {
+void VPCALL idSIMD_Generic::DeriveTangents( idPlane * RESTRICT planes, idDrawVert * RESTRICT verts, const int numVerts, const int * RESTRICT indexes, const int numIndexes ) {
+	TIME_THIS_SCOPE("SIMD DeriveTangents");
 	int i;
 
-	bool *used = (bool *)_alloca16( numVerts * sizeof( used[0] ) );
+	bool * RESTRICT used = (bool * RESTRICT )_alloca16( numVerts * sizeof( used[0] ) );
 	memset( used, 0, numVerts * sizeof( used[0] ) );
 
-	idPlane *planesPtr = planes;
+	idPlane * RESTRICT planesPtr = planes;
 	for ( i = 0; i < numIndexes; i += 3 ) {
-		idDrawVert *a, *b, *c;
+		idDrawVert * RESTRICT a, * RESTRICT b, * RESTRICT c;
 		unsigned long signBit;
 		float d0[5], d1[5], f, area;
 		idVec3 n, t0, t1;
@@ -2570,11 +2722,12 @@ idSIMD_Generic::DeriveUnsmoothedTangents
 */
 #define DERIVE_UNSMOOTHED_BITANGENT
 
-void VPCALL idSIMD_Generic::DeriveUnsmoothedTangents( idDrawVert *verts, const dominantTri_s *dominantTris, const int numVerts ) {
+void VPCALL idSIMD_Generic::DeriveUnsmoothedTangents( idDrawVert * RESTRICT verts, const dominantTri_s * RESTRICT dominantTris, const int numVerts ) {
+	TIME_THIS_SCOPE("SIMD DeriveUnsmoothedTangents");
 	int i;
 
 	for ( i = 0; i < numVerts; i++ ) {
-		idDrawVert *a, *b, *c;
+		idDrawVert * RESTRICT a, * RESTRICT b, * RESTRICT c;
 		float d0, d1, d2, d3, d4;
 		float d5, d6, d7, d8, d9;
 		float s0, s1, s2;
@@ -2644,7 +2797,8 @@ idSIMD_Generic::NormalizeTangents
 	tangent vectors onto the plane orthogonal to the vertex normal.
 ============
 */
-void VPCALL idSIMD_Generic::NormalizeTangents( idDrawVert *verts, const int numVerts ) {
+void VPCALL idSIMD_Generic::NormalizeTangents( idDrawVert * RESTRICT verts, const int numVerts ) {
+	TIME_THIS_SCOPE("SIMD NormalizeTangents");
 
 	for ( int i = 0; i < numVerts; i++ ) {
 		idVec3 &v = verts[i].normal;
@@ -2672,9 +2826,10 @@ idSIMD_Generic::CreateTextureSpaceLightVectors
 	The light vectors are only calculated for the vertices referenced by the indexes.
 ============
 */
-void VPCALL idSIMD_Generic::CreateTextureSpaceLightVectors( idVec3 *lightVectors, const idVec3 &lightOrigin, const idDrawVert *verts, const int numVerts, const int *indexes, const int numIndexes ) {
+void VPCALL idSIMD_Generic::CreateTextureSpaceLightVectors( idVec3 * RESTRICT lightVectors, const idVec3 &lightOrigin, const idDrawVert * RESTRICT verts, const int numVerts, const int * RESTRICT indexes, const int numIndexes ) {
+	TIME_THIS_SCOPE("SIMD CreateTextureSpaceLightVectors");
 
-	bool *used = (bool *)_alloca16( numVerts * sizeof( used[0] ) );
+	bool * RESTRICT used = (bool * RESTRICT )_alloca16( numVerts * sizeof( used[0] ) );
 	memset( used, 0, numVerts * sizeof( used[0] ) );
 
 	for ( int i = numIndexes - 1; i >= 0; i-- ) {
@@ -2686,7 +2841,7 @@ void VPCALL idSIMD_Generic::CreateTextureSpaceLightVectors( idVec3 *lightVectors
 			continue;
 		}
 
-		const idDrawVert *v = &verts[i];
+		const idDrawVert * RESTRICT v = &verts[i];
 
 		idVec3 lightDir = lightOrigin - v->xyz;
 
@@ -2706,9 +2861,10 @@ idSIMD_Generic::CreateSpecularTextureCoords
 	The texture coordinates are only calculated for the vertices referenced by the indexes.
 ============
 */
-void VPCALL idSIMD_Generic::CreateSpecularTextureCoords( idVec4 *texCoords, const idVec3 &lightOrigin, const idVec3 &viewOrigin, const idDrawVert *verts, const int numVerts, const int *indexes, const int numIndexes ) {
+void VPCALL idSIMD_Generic::CreateSpecularTextureCoords( idVec4 * RESTRICT texCoords, const idVec3 &lightOrigin, const idVec3 &viewOrigin, const idDrawVert * RESTRICT verts, const int numVerts, const int * RESTRICT indexes, const int numIndexes ) {
+	TIME_THIS_SCOPE("SIMD CreateSpecularTextureCoords");
 
-	bool *used = (bool *)_alloca16( numVerts * sizeof( used[0] ) );
+	bool * RESTRICT used = (bool * RESTRICT )_alloca16( numVerts * sizeof( used[0] ) );
 	memset( used, 0, numVerts * sizeof( used[0] ) );
 
 	for ( int i = numIndexes - 1; i >= 0; i-- ) {
@@ -2720,7 +2876,7 @@ void VPCALL idSIMD_Generic::CreateSpecularTextureCoords( idVec4 *texCoords, cons
 			continue;
 		}
 
-		const idDrawVert *v = &verts[i];
+		const idDrawVert * RESTRICT v = &verts[i];
 
 		idVec3 lightDir = lightOrigin - v->xyz;
 		idVec3 viewDir = viewOrigin - v->xyz;
@@ -2751,14 +2907,15 @@ void VPCALL idSIMD_Generic::CreateSpecularTextureCoords( idVec4 *texCoords, cons
 idSIMD_Generic::CreateShadowCache
 ============
 */
-int VPCALL idSIMD_Generic::CreateShadowCache( idVec4 *vertexCache, int *vertRemap, const idVec3 &lightOrigin, const idDrawVert *verts, const int numVerts ) {
+int VPCALL idSIMD_Generic::CreateShadowCache( idVec4 * RESTRICT vertexCache, int * RESTRICT vertRemap, const idVec3 &lightOrigin, const idDrawVert * RESTRICT verts, const int numVerts ) {
+	TIME_THIS_SCOPE("SIMD CreateShadowCache");
 	int outVerts = 0;
 
 	for ( int i = 0; i < numVerts; i++ ) {
 		if ( vertRemap[i] ) {
 			continue;
 		}
-		const float *v = verts[i].xyz.ToFloatPtr();
+		const float * RESTRICT v = verts[i].xyz.ToFloatPtr();
 		vertexCache[outVerts+0][0] = v[0];
 		vertexCache[outVerts+0][1] = v[1];
 		vertexCache[outVerts+0][2] = v[2];
@@ -2782,9 +2939,10 @@ int VPCALL idSIMD_Generic::CreateShadowCache( idVec4 *vertexCache, int *vertRema
 idSIMD_Generic::CreateVertexProgramShadowCache
 ============
 */
-int VPCALL idSIMD_Generic::CreateVertexProgramShadowCache( idVec4 *vertexCache, const idDrawVert *verts, const int numVerts ) {
+int VPCALL idSIMD_Generic::CreateVertexProgramShadowCache( idVec4 * RESTRICT vertexCache, const idDrawVert * RESTRICT verts, const int numVerts ) {
+	TIME_THIS_SCOPE("SIMD CreateVertexProgramShadowCache");
 	for ( int i = 0; i < numVerts; i++ ) {
-		const float *v = verts[i].xyz.ToFloatPtr();
+		const float * RESTRICT v = verts[i].xyz.ToFloatPtr();
 		vertexCache[i*2+0][0] = v[0];
 		vertexCache[i*2+1][0] = v[0];
 		vertexCache[i*2+0][1] = v[1];
@@ -2799,12 +2957,126 @@ int VPCALL idSIMD_Generic::CreateVertexProgramShadowCache( idVec4 *vertexCache, 
 
 /*
 ============
+idSIMD_Generic::ShadowVolume_CountFacing
+============
+*/
+int VPCALL idSIMD_Generic::ShadowVolume_CountFacing( const byte * RESTRICT facing, const int numFaces ) {
+	TIME_THIS_SCOPE("SIMD ShadowVolume_CountFacing");
+	int i, n;
+
+	n = 0;
+	for ( i = 0; i < numFaces; i++ ) {
+		n += facing[i];
+	}
+	return n;
+}
+
+/*
+============
+idSIMD_Generic::ShadowVolume_CountFacingCull
+============
+*/
+int VPCALL idSIMD_Generic::ShadowVolume_CountFacingCull( byte * RESTRICT facing, const int numFaces, const int * RESTRICT indexes, const byte * RESTRICT cull ) {
+	TIME_THIS_SCOPE("SIMD ShadowVolume_CountFacingCull");
+	int i, n;
+
+	n = 0;
+	for ( i = 0; i < numFaces; i++ ) {
+		if ( !facing[i] ) {
+			int	i1 = indexes[0];
+			int	i2 = indexes[1];
+			int	i3 = indexes[2];
+			if ( cull[i1] & cull[i2] & cull[i3] ) {
+				facing[i] = 1;
+				n++;
+			}
+		} else {
+			n++;
+		}
+		indexes += 3;
+	}
+	return n;
+}
+
+/*
+============
+idSIMD_Generic::ShadowVolume_CreateSilTriangles
+============
+*/
+int VPCALL idSIMD_Generic::ShadowVolume_CreateSilTriangles( int * RESTRICT shadowIndexes, const byte * RESTRICT facing, const silEdge_s * RESTRICT silEdges, const int numSilEdges ) {
+	TIME_THIS_SCOPE("SIMD ShadowVolume_CreateSilTriangles");
+	int i;
+	const silEdge_t * RESTRICT sil;
+	int * RESTRICT si;
+
+	si = shadowIndexes;
+	for ( sil = ( silEdge_t * RESTRICT )silEdges, i = numSilEdges; i > 0; i--, sil++ ) {
+
+		int f1 = facing[sil->p1];
+		int f2 = facing[sil->p2];
+
+		if ( !( f1 ^ f2 ) ) {
+			continue;
+		}
+
+		int v1 = sil->v1 << 1;
+		int v2 = sil->v2 << 1;
+
+		// set the two triangle winding orders based on facing
+		// without using a poorly-predictable branch
+
+		si[0] = v1;
+		si[1] = v2 ^ f1;
+		si[2] = v2 ^ f2;
+		si[3] = v1 ^ f2;
+		si[4] = v1 ^ f1;
+		si[5] = v2 ^ 1;
+
+		si += 6;
+	}
+	return si - shadowIndexes;
+}
+
+/*
+============
+idSIMD_Generic::ShadowVolume_CreateCapTriangles
+============
+*/
+int VPCALL idSIMD_Generic::ShadowVolume_CreateCapTriangles( int * RESTRICT shadowIndexes, const byte * RESTRICT facing, const int * RESTRICT indexes, const int numIndexes ) {
+	TIME_THIS_SCOPE("SIMD ShadowVolume_CreateCapTriangles");
+	int i, j;
+	int * RESTRICT si;
+
+	si = shadowIndexes;
+	for ( i = 0, j = 0; i < numIndexes; i += 3, j++ ) {
+		if ( facing[j] ) {
+			continue;
+		}
+
+		int i0 = indexes[i+0] << 1;
+		si[2] = i0;
+		si[3] = i0 ^ 1;
+		int i1 = indexes[i+1] << 1;
+		si[1] = i1;
+		si[4] = i1 ^ 1;
+		int i2 = indexes[i+2] << 1;
+		si[0] = i2;
+		si[5] = i2 ^ 1;
+
+		si += 6;
+	}
+	return si - shadowIndexes;
+}
+
+/*
+============
 idSIMD_Generic::UpSamplePCMTo44kHz
 
   Duplicate samples for 44kHz output.
 ============
 */
-void idSIMD_Generic::UpSamplePCMTo44kHz( float *dest, const short *src, const int numSamples, const int kHz, const int numChannels ) {
+void idSIMD_Generic::UpSamplePCMTo44kHz( float * RESTRICT dest, const short * RESTRICT src, const int numSamples, const int kHz, const int numChannels ) {
+	TIME_THIS_SCOPE("SIMD UpSamplePCMTo44kHz");
 	if ( kHz == 11025 ) {
 		if ( numChannels == 1 ) {
 			for ( int i = 0; i < numSamples; i++ ) {
@@ -2843,7 +3115,8 @@ idSIMD_Generic::UpSampleOGGTo44kHz
   Duplicate samples for 44kHz output.
 ============
 */
-void idSIMD_Generic::UpSampleOGGTo44kHz( float *dest, const float * const *ogg, const int numSamples, const int kHz, const int numChannels ) {
+void idSIMD_Generic::UpSampleOGGTo44kHz( float * RESTRICT dest, const float * const * RESTRICT ogg, const int numSamples, const int kHz, const int numChannels ) {
+	TIME_THIS_SCOPE("SIMD UpSampleOGGTo44kHz");
 	if ( kHz == 11025 ) {
 		if ( numChannels == 1 ) {
 			for ( int i = 0; i < numSamples; i++ ) {
@@ -2887,7 +3160,8 @@ void idSIMD_Generic::UpSampleOGGTo44kHz( float *dest, const float * const *ogg, 
 idSIMD_Generic::MixSoundTwoSpeakerMono
 ============
 */
-void VPCALL idSIMD_Generic::MixSoundTwoSpeakerMono( float *mixBuffer, const float *samples, const int numSamples, const float lastV[2], const float currentV[2] ) {
+void VPCALL idSIMD_Generic::MixSoundTwoSpeakerMono( float * RESTRICT mixBuffer, const float * RESTRICT samples, const int numSamples, const float lastV[2], const float currentV[2] ) {
+	TIME_THIS_SCOPE("SIMD MixSoundTwoSpeakerMono");
 	float sL = lastV[0];
 	float sR = lastV[1];
 	float incL = ( currentV[0] - lastV[0] ) / MIXBUFFER_SAMPLES;
@@ -2908,7 +3182,8 @@ void VPCALL idSIMD_Generic::MixSoundTwoSpeakerMono( float *mixBuffer, const floa
 idSIMD_Generic::MixSoundTwoSpeakerStereo
 ============
 */
-void VPCALL idSIMD_Generic::MixSoundTwoSpeakerStereo( float *mixBuffer, const float *samples, const int numSamples, const float lastV[2], const float currentV[2] ) {
+void VPCALL idSIMD_Generic::MixSoundTwoSpeakerStereo( float * RESTRICT mixBuffer, const float * RESTRICT samples, const int numSamples, const float lastV[2], const float currentV[2] ) {
+	TIME_THIS_SCOPE("SIMD MixSoundTwoSpeakerStereo");
 	float sL = lastV[0];
 	float sR = lastV[1];
 	float incL = ( currentV[0] - lastV[0] ) / MIXBUFFER_SAMPLES;
@@ -2929,7 +3204,8 @@ void VPCALL idSIMD_Generic::MixSoundTwoSpeakerStereo( float *mixBuffer, const fl
 idSIMD_Generic::MixSoundSixSpeakerMono
 ============
 */
-void VPCALL idSIMD_Generic::MixSoundSixSpeakerMono( float *mixBuffer, const float *samples, const int numSamples, const float lastV[6], const float currentV[6] ) {
+void VPCALL idSIMD_Generic::MixSoundSixSpeakerMono( float * RESTRICT mixBuffer, const float * RESTRICT samples, const int numSamples, const float lastV[6], const float currentV[6] ) {
+	TIME_THIS_SCOPE("SIMD MixSoundSixSpeakerMono");
 	float sL0 = lastV[0];
 	float sL1 = lastV[1];
 	float sL2 = lastV[2];
@@ -2967,7 +3243,8 @@ void VPCALL idSIMD_Generic::MixSoundSixSpeakerMono( float *mixBuffer, const floa
 idSIMD_Generic::MixSoundSixSpeakerStereo
 ============
 */
-void VPCALL idSIMD_Generic::MixSoundSixSpeakerStereo( float *mixBuffer, const float *samples, const int numSamples, const float lastV[6], const float currentV[6] ) {
+void VPCALL idSIMD_Generic::MixSoundSixSpeakerStereo( float * RESTRICT mixBuffer, const float * RESTRICT samples, const int numSamples, const float lastV[6], const float currentV[6] ) {
+	TIME_THIS_SCOPE("SIMD MixSoundSixSpeakerStereo");
 	float sL0 = lastV[0];
 	float sL1 = lastV[1];
 	float sL2 = lastV[2];
@@ -3005,7 +3282,8 @@ void VPCALL idSIMD_Generic::MixSoundSixSpeakerStereo( float *mixBuffer, const fl
 idSIMD_Generic::MixedSoundToSamples
 ============
 */
-void VPCALL idSIMD_Generic::MixedSoundToSamples( short *samples, const float *mixBuffer, const int numSamples ) {
+void VPCALL idSIMD_Generic::MixedSoundToSamples( short * RESTRICT samples, const float * RESTRICT mixBuffer, const int numSamples ) {
+	TIME_THIS_SCOPE("SIMD MixedSoundToSamples");
 
 	for ( int i = 0; i < numSamples; i++ ) {
 		if ( mixBuffer[i] <= -32768.0f ) {
@@ -3017,3 +3295,448 @@ void VPCALL idSIMD_Generic::MixedSoundToSamples( short *samples, const float *mi
 		}
 	}
 }
+
+// RAVEN BEGIN
+// dluetscher: added support for operations on idSilTraceVerts and idJointMats
+#ifdef _MD5R_SUPPORT
+/*
+============
+idSIMD_Generic::JointMat_MultiplyMats
+// dluetscher: added support for concatenating matrices from two idJointMat arrays, based on the given palette mapping, 
+//			   storing the resulting transform palette in an array of 4x4 matrices, 
+//			   stored in row-major array ordering, with translation in last column (column-major matrix)
+//
+//				For example the following matrix: Xx Yx Zx Tx
+//												  Xy Yy Zx Ty
+//												  Xz Yz Zz Tz
+//												  0  0  0  1
+//
+//				is stored in the resulting order: Xx Yx Zx Tx  Xy Yy Zx Ty  Xz Yz Zz Tz  0  0  0  1
+============
+*/
+void VPCALL idSIMD_Generic::JointMat_MultiplyMats( float * RESTRICT destMats, 
+														   const idJointMat * RESTRICT src1Mats, 
+														   const idJointMat * RESTRICT src2Mats, 
+														   int * RESTRICT transformPalette, 
+														   int transformCount ) {
+	TIME_THIS_SCOPE("SIMD JointMat_MultiplyMats");
+	float * RESTRICT destPtr;
+	const float * RESTRICT src1Ptr, * RESTRICT src2Ptr;
+	int curTransform, matOffset;
+
+	for ( curTransform = 0; curTransform < transformCount; curTransform++ ) {
+
+		matOffset = transformPalette[ curTransform ];
+
+		src1Ptr = src1Mats[matOffset].ToFloatPtr();
+		src2Ptr = src2Mats[matOffset].ToFloatPtr();
+		destPtr = destMats + (curTransform << 4);
+
+		destPtr[0 * 4 + 0] = src1Ptr[0 * 4 + 0] * src2Ptr[0 * 4 + 0] + src1Ptr[1 * 4 + 0] * src2Ptr[0 * 4 + 1] + src1Ptr[2 * 4 + 0] * src2Ptr[0 * 4 + 2];
+		destPtr[1 * 4 + 0] = src1Ptr[0 * 4 + 0] * src2Ptr[1 * 4 + 0] + src1Ptr[1 * 4 + 0] * src2Ptr[1 * 4 + 1] + src1Ptr[2 * 4 + 0] * src2Ptr[1 * 4 + 2];
+		destPtr[2 * 4 + 0] = src1Ptr[0 * 4 + 0] * src2Ptr[2 * 4 + 0] + src1Ptr[1 * 4 + 0] * src2Ptr[2 * 4 + 1] + src1Ptr[2 * 4 + 0] * src2Ptr[2 * 4 + 2];
+		destPtr[3 * 4 + 0] = 0.f;
+
+		destPtr[0 * 4 + 1] = src1Ptr[0 * 4 + 1] * src2Ptr[0 * 4 + 0] + src1Ptr[1 * 4 + 1] * src2Ptr[0 * 4 + 1] + src1Ptr[2 * 4 + 1] * src2Ptr[0 * 4 + 2];
+		destPtr[1 * 4 + 1] = src1Ptr[0 * 4 + 1] * src2Ptr[1 * 4 + 0] + src1Ptr[1 * 4 + 1] * src2Ptr[1 * 4 + 1] + src1Ptr[2 * 4 + 1] * src2Ptr[1 * 4 + 2];
+		destPtr[2 * 4 + 1] = src1Ptr[0 * 4 + 1] * src2Ptr[2 * 4 + 0] + src1Ptr[1 * 4 + 1] * src2Ptr[2 * 4 + 1] + src1Ptr[2 * 4 + 1] * src2Ptr[2 * 4 + 2];
+		destPtr[3 * 4 + 1] = 0.f;
+		
+		destPtr[0 * 4 + 2] = src1Ptr[0 * 4 + 2] * src2Ptr[0 * 4 + 0] + src1Ptr[1 * 4 + 2] * src2Ptr[0 * 4 + 1] + src1Ptr[2 * 4 + 2] * src2Ptr[0 * 4 + 2];
+		destPtr[1 * 4 + 2] = src1Ptr[0 * 4 + 2] * src2Ptr[1 * 4 + 0] + src1Ptr[1 * 4 + 2] * src2Ptr[1 * 4 + 1] + src1Ptr[2 * 4 + 2] * src2Ptr[1 * 4 + 2];
+		destPtr[2 * 4 + 2] = src1Ptr[0 * 4 + 2] * src2Ptr[2 * 4 + 0] + src1Ptr[1 * 4 + 2] * src2Ptr[2 * 4 + 1] + src1Ptr[2 * 4 + 2] * src2Ptr[2 * 4 + 2];
+		destPtr[3 * 4 + 2] = 0.f;
+		
+		destPtr[0 * 4 + 3] = src1Ptr[0 * 4 + 3] * src2Ptr[0 * 4 + 0] + src1Ptr[1 * 4 + 3] * src2Ptr[0 * 4 + 1] + src1Ptr[2 * 4 + 3] * src2Ptr[0 * 4 + 2];
+		destPtr[1 * 4 + 3] = src1Ptr[0 * 4 + 3] * src2Ptr[1 * 4 + 0] + src1Ptr[1 * 4 + 3] * src2Ptr[1 * 4 + 1] + src1Ptr[2 * 4 + 3] * src2Ptr[1 * 4 + 2];
+		destPtr[2 * 4 + 3] = src1Ptr[0 * 4 + 3] * src2Ptr[2 * 4 + 0] + src1Ptr[1 * 4 + 3] * src2Ptr[2 * 4 + 1] + src1Ptr[2 * 4 + 3] * src2Ptr[2 * 4 + 2];
+		destPtr[3 * 4 + 3] = 1.f;
+
+		destPtr[0 * 4 + 3] += src2Ptr[0 * 4 + 3];
+		destPtr[1 * 4 + 3] += src2Ptr[1 * 4 + 3];
+		destPtr[2 * 4 + 3] += src2Ptr[2 * 4 + 3];
+	}
+}
+#endif
+// RAVEN END
+
+// RAVEN BEGIN
+// dluetscher: added TransformVertsMinMax to transform an array of index-weighted vertices into 
+//			   an array of idSilTraceVerts, while simulatenously calculating the bounds
+#ifdef _MD5R_SUPPORT
+void VPCALL idSIMD_Generic::TransformVertsMinMax4Bone( rvSilTraceVertT * RESTRICT silTraceVertOutputData, 
+													   idVec3 &min, idVec3 &max, 
+													   byte * RESTRICT vertexInputData, 
+													   int vertStride, int numVerts, 
+													   float * RESTRICT skinToModelTransforms ) {
+	TIME_THIS_SCOPE("SIMD TransformVertsMinMax4Bone");
+	float curMin[3], curMax[3];
+	float * RESTRICT curTransform, * RESTRICT vertexPos, * RESTRICT blendWeights, * RESTRICT transformedPos;
+	byte * RESTRICT vertexOutputData, * RESTRICT blendIndices, * RESTRICT endVertexInputData;
+
+	curMin[0] = FLT_MAX;
+	curMin[1] = FLT_MAX;
+	curMin[2] = FLT_MAX;
+
+	curMax[0] = -FLT_MAX;
+	curMax[1] = -FLT_MAX;
+	curMax[2] = -FLT_MAX;
+
+	vertexOutputData = (byte* RESTRICT ) silTraceVertOutputData;
+	endVertexInputData = vertexInputData + vertStride*numVerts;
+	do 
+	{
+		vertexPos = (float * RESTRICT ) vertexInputData;
+		blendIndices = vertexInputData + sizeof(float)*3;
+		blendWeights = (float * RESTRICT ) (vertexInputData + sizeof(float)*3 + sizeof(byte)*4);
+		transformedPos = (float * RESTRICT ) vertexOutputData;
+		
+		curTransform = skinToModelTransforms + ((dword) blendIndices[0] << 4);
+		transformedPos[0] = blendWeights[0]*(vertexPos[0]*curTransform[0] + vertexPos[1]*curTransform[1] + vertexPos[2]*curTransform[2] + curTransform[3]);
+		transformedPos[1] = blendWeights[0]*(vertexPos[0]*curTransform[4] + vertexPos[1]*curTransform[5] + vertexPos[2]*curTransform[6] + curTransform[7]);
+		transformedPos[2] = blendWeights[0]*(vertexPos[0]*curTransform[8] + vertexPos[1]*curTransform[9] + vertexPos[2]*curTransform[10] + curTransform[11]);
+		
+		curTransform = skinToModelTransforms + ((dword) blendIndices[1] << 4);
+		transformedPos[0] += blendWeights[1]*(vertexPos[0]*curTransform[0] + vertexPos[1]*curTransform[1] + vertexPos[2]*curTransform[2] + curTransform[3]);
+		transformedPos[1] += blendWeights[1]*(vertexPos[0]*curTransform[4] + vertexPos[1]*curTransform[5] + vertexPos[2]*curTransform[6] + curTransform[7]);
+		transformedPos[2] += blendWeights[1]*(vertexPos[0]*curTransform[8] + vertexPos[1]*curTransform[9] + vertexPos[2]*curTransform[10] + curTransform[11]);
+		
+		curTransform = skinToModelTransforms + ((dword) blendIndices[2] << 4);
+		transformedPos[0] += blendWeights[2]*(vertexPos[0]*curTransform[0] + vertexPos[1]*curTransform[1] + vertexPos[2]*curTransform[2] + curTransform[3]);
+		transformedPos[1] += blendWeights[2]*(vertexPos[0]*curTransform[4] + vertexPos[1]*curTransform[5] + vertexPos[2]*curTransform[6] + curTransform[7]);
+		transformedPos[2] += blendWeights[2]*(vertexPos[0]*curTransform[8] + vertexPos[1]*curTransform[9] + vertexPos[2]*curTransform[10] + curTransform[11]);
+
+		curTransform = skinToModelTransforms + ((dword) blendIndices[3] << 4);
+		transformedPos[0] += blendWeights[3]*(vertexPos[0]*curTransform[0] + vertexPos[1]*curTransform[1] + vertexPos[2]*curTransform[2] + curTransform[3]);
+		transformedPos[1] += blendWeights[3]*(vertexPos[0]*curTransform[4] + vertexPos[1]*curTransform[5] + vertexPos[2]*curTransform[6] + curTransform[7]);
+		transformedPos[2] += blendWeights[3]*(vertexPos[0]*curTransform[8] + vertexPos[1]*curTransform[9] + vertexPos[2]*curTransform[10] + curTransform[11]);
+
+		curMin[0] = transformedPos[0] < curMin[0] ? transformedPos[0] : curMin[0];
+		curMin[1] = transformedPos[1] < curMin[1] ? transformedPos[1] : curMin[1];
+		curMin[2] = transformedPos[2] < curMin[2] ? transformedPos[2] : curMin[2];
+																	 	
+		curMax[0] = transformedPos[0] > curMax[0] ? transformedPos[0] : curMax[0];
+		curMax[1] = transformedPos[1] > curMax[1] ? transformedPos[1] : curMax[1];
+		curMax[2] = transformedPos[2] > curMax[2] ? transformedPos[2] : curMax[2];
+
+		vertexInputData += vertStride;
+		vertexOutputData += sizeof(rvSilTraceVertT);
+		
+	} 
+	while ( vertexInputData < endVertexInputData );
+
+	min.x = curMin[0];
+	min.y = curMin[1];
+	min.z = curMin[2];
+
+	max.x = curMax[0];
+	max.y = curMax[1];
+	max.z = curMax[2];
+}
+
+void VPCALL idSIMD_Generic::TransformVertsMinMax1Bone( rvSilTraceVertT * RESTRICT silTraceVertOutputData, 
+													   idVec3 &min, idVec3 &max, 
+													   byte * RESTRICT vertexInputData, 
+													   int vertStride, int numVerts, 
+													   float * RESTRICT skinToModelTransforms ) {
+	TIME_THIS_SCOPE("SIMD TransformVertsMinMax1Bone");
+	float curMin[3], curMax[3];
+	float * RESTRICT curTransform, * RESTRICT vertexPos, * RESTRICT transformedPos;
+	byte * RESTRICT vertexOutputData, * RESTRICT blendIndices, * RESTRICT endVertexInputData;
+
+	curMin[0] = FLT_MAX;
+	curMin[1] = FLT_MAX;
+	curMin[2] = FLT_MAX;
+
+	curMax[0] = -FLT_MAX;
+	curMax[1] = -FLT_MAX;
+	curMax[2] = -FLT_MAX;
+
+	vertexOutputData = (byte* RESTRICT ) silTraceVertOutputData;
+	endVertexInputData = vertexInputData + vertStride*numVerts;
+	do 
+	{
+		vertexPos = (float * RESTRICT ) vertexInputData;
+		blendIndices = vertexInputData + sizeof(float)*3;
+		transformedPos = (float * RESTRICT ) vertexOutputData;
+		
+		curTransform = skinToModelTransforms + ((dword) blendIndices[0] << 4);
+		transformedPos[0] = (vertexPos[0]*curTransform[0] + vertexPos[1]*curTransform[1] + vertexPos[2]*curTransform[2] + curTransform[3]);
+		transformedPos[1] = (vertexPos[0]*curTransform[4] + vertexPos[1]*curTransform[5] + vertexPos[2]*curTransform[6] + curTransform[7]);
+		transformedPos[2] = (vertexPos[0]*curTransform[8] + vertexPos[1]*curTransform[9] + vertexPos[2]*curTransform[10] + curTransform[11]);
+
+		curMin[0] = transformedPos[0] < curMin[0] ? transformedPos[0] : curMin[0];
+		curMin[1] = transformedPos[1] < curMin[1] ? transformedPos[1] : curMin[1];
+		curMin[2] = transformedPos[2] < curMin[2] ? transformedPos[2] : curMin[2];
+																	 	
+		curMax[0] = transformedPos[0] > curMax[0] ? transformedPos[0] : curMax[0];
+		curMax[1] = transformedPos[1] > curMax[1] ? transformedPos[1] : curMax[1];
+		curMax[2] = transformedPos[2] > curMax[2] ? transformedPos[2] : curMax[2];
+
+		vertexInputData += vertStride;
+		vertexOutputData += sizeof(rvSilTraceVertT);
+		
+	} 
+	while ( vertexInputData < endVertexInputData );
+
+	min.x = curMin[0];
+	min.y = curMin[1];
+	min.z = curMin[2];
+
+	max.x = curMax[0];
+	max.y = curMax[1];
+	max.z = curMax[2];
+}
+
+/*
+============
+idSIMD_Generic::Dot
+
+  dst[i] = constant * src[i].xyz;
+============
+*/
+void VPCALL idSIMD_Generic::Dot( float * RESTRICT dst, const idVec3 &constant, const rvSilTraceVertT * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD Dot idVec3-rvSilTraceVertT");
+#define OPER(X) dst[(X)] = constant * src[(X)].xyzw.ToVec3();
+	UNROLL1(OPER)
+#undef OPER
+}
+
+/*
+============
+idSIMD_Generic::Dot
+
+  dst[i] = constant.Normal() * src[i].xyz + constant[3];
+============
+*/
+void VPCALL idSIMD_Generic::Dot( float * RESTRICT dst, const idPlane &constant, const rvSilTraceVertT * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD Dot idPlane-rvSilTraceVertT");
+#define OPER(X) dst[(X)] = constant.Normal() * src[(X)].xyzw.ToVec3() + constant[3];
+	UNROLL1(OPER)
+#undef OPER
+}
+
+/*
+============
+idSIMD_Generic::TracePointCull
+============
+*/
+void VPCALL idSIMD_Generic::TracePointCull( byte * RESTRICT cullBits, byte &totalOr, const float radius, const idPlane * RESTRICT planes, const rvSilTraceVertT * RESTRICT verts, const int numVerts ) {
+	TIME_THIS_SCOPE("SIMD TracePointCull");
+
+	int i;
+	byte tOr;
+
+	tOr = 0;
+
+	for ( i = 0; i < numVerts; i++ ) {
+		byte bits;
+		float d0, d1, d2, d3, t;
+		const idVec3 &v = verts[i].xyzw.ToVec3();
+
+		d0 = planes[0].Distance( v );
+		d1 = planes[1].Distance( v );
+		d2 = planes[2].Distance( v );
+		d3 = planes[3].Distance( v );
+
+		t = d0 + radius;
+		bits  = FLOATSIGNBITSET( t ) << 0;
+		t = d1 + radius;
+		bits |= FLOATSIGNBITSET( t ) << 1;
+		t = d2 + radius;
+		bits |= FLOATSIGNBITSET( t ) << 2;
+		t = d3 + radius;
+		bits |= FLOATSIGNBITSET( t ) << 3;
+
+		t = d0 - radius;
+		bits |= FLOATSIGNBITSET( t ) << 4;
+		t = d1 - radius;
+		bits |= FLOATSIGNBITSET( t ) << 5;
+		t = d2 - radius;
+		bits |= FLOATSIGNBITSET( t ) << 6;
+		t = d3 - radius;
+		bits |= FLOATSIGNBITSET( t ) << 7;
+
+		bits ^= 0x0F;		// flip lower four bits
+
+		tOr |= bits;
+		cullBits[i] = bits;
+	}
+
+	totalOr = tOr;
+}
+
+/*
+============
+idSIMD_Generic::DecalPointCull
+============
+*/
+void VPCALL idSIMD_Generic::DecalPointCull( byte * RESTRICT cullBits, const idPlane * RESTRICT planes, const rvSilTraceVertT * RESTRICT verts, const int numVerts ) {
+	TIME_THIS_SCOPE("SIMD DecalPointCull");
+	int i;
+
+	for ( i = 0; i < numVerts; i++ ) {
+		byte bits;
+		float d0, d1, d2, d3, d4, d5;
+		const idVec3 &v = verts[i].xyzw.ToVec3();
+
+		d0 = planes[0].Distance( v );
+		d1 = planes[1].Distance( v );
+		d2 = planes[2].Distance( v );
+		d3 = planes[3].Distance( v );
+		d4 = planes[4].Distance( v );
+		d5 = planes[5].Distance( v );
+
+		bits  = FLOATSIGNBITSET( d0 ) << 0;
+		bits |= FLOATSIGNBITSET( d1 ) << 1;
+		bits |= FLOATSIGNBITSET( d2 ) << 2;
+		bits |= FLOATSIGNBITSET( d3 ) << 3;
+		bits |= FLOATSIGNBITSET( d4 ) << 4;
+		bits |= FLOATSIGNBITSET( d5 ) << 5;
+
+		cullBits[i] = bits ^ 0x3F;		// flip lower 6 bits
+	}
+}
+
+/*
+============
+idSIMD_Generic::OverlayPointCull
+============
+*/
+void VPCALL idSIMD_Generic::OverlayPointCull( byte * RESTRICT cullBits, idVec2 * RESTRICT texCoords, const idPlane * RESTRICT planes, const rvSilTraceVertT * RESTRICT verts, const int numVerts ) {
+	TIME_THIS_SCOPE("SIMD OverlayPointCull");
+	int i;
+
+	for ( i = 0; i < numVerts; i++ ) {
+		byte bits;
+		float d0, d1;
+		const idVec3 &v = verts[i].xyzw.ToVec3();
+
+		texCoords[i][0] = d0 = planes[0].Distance( v );
+		texCoords[i][1] = d1 = planes[1].Distance( v );
+
+		bits  = FLOATSIGNBITSET( d0 ) << 0;
+		d0 = 1.0f - d0;
+		bits |= FLOATSIGNBITSET( d1 ) << 1;
+		d1 = 1.0f - d1;
+		bits |= FLOATSIGNBITSET( d0 ) << 2;
+		bits |= FLOATSIGNBITSET( d1 ) << 3;
+
+		cullBits[i] = bits;
+	}
+}
+
+/*
+============
+idSIMD_Generic::DeriveTriPlanes
+
+	Derives a plane equation for each triangle.
+============
+*/
+void VPCALL idSIMD_Generic::DeriveTriPlanes( idPlane * RESTRICT planes, const rvSilTraceVertT * RESTRICT verts, const int numVerts, const int * RESTRICT indexes, const int numIndexes ) {
+	TIME_THIS_SCOPE("SIMD DeriveTriPlanes rvSilTraceVertT-int");
+	int i;
+
+	for ( i = 0; i < numIndexes; i += 3 ) {
+		const rvSilTraceVertT * RESTRICT a, * RESTRICT b, * RESTRICT c;
+		float d0[3], d1[3], f;
+		idVec3 n;
+
+		a = verts + indexes[i + 0];
+		b = verts + indexes[i + 1];
+		c = verts + indexes[i + 2];
+
+		d0[0] = b->xyzw[0] - a->xyzw[0];
+		d0[1] = b->xyzw[1] - a->xyzw[1];
+		d0[2] = b->xyzw[2] - a->xyzw[2];
+
+		d1[0] = c->xyzw[0] - a->xyzw[0];
+		d1[1] = c->xyzw[1] - a->xyzw[1];
+		d1[2] = c->xyzw[2] - a->xyzw[2];
+
+		n[0] = d1[1] * d0[2] - d1[2] * d0[1];
+		n[1] = d1[2] * d0[0] - d1[0] * d0[2];
+		n[2] = d1[0] * d0[1] - d1[1] * d0[0];
+
+		f = idMath::RSqrt( n.x * n.x + n.y * n.y + n.z * n.z );
+
+		n.x *= f;
+		n.y *= f;
+		n.z *= f;
+
+		planes->SetNormal( n );
+		planes->FitThroughPoint( a->xyzw.ToVec3() );
+		planes++;
+	}
+}
+
+/*
+============
+idSIMD_Generic::DeriveTriPlanes
+
+	Derives a plane equation for each triangle.
+============
+*/
+void VPCALL idSIMD_Generic::DeriveTriPlanes( idPlane * RESTRICT planes, const rvSilTraceVertT * RESTRICT verts, const int numVerts, const unsigned short * RESTRICT indexes, const int numIndexes ) {
+	TIME_THIS_SCOPE("SIMD DeriveTriPlanes rvSilTraceVertT-ushort");
+	int i;
+
+	for ( i = 0; i < numIndexes; i += 3 ) {
+		const rvSilTraceVertT * RESTRICT a, * RESTRICT b, * RESTRICT c;
+		float d0[3], d1[3], f;
+		idVec3 n;
+
+		a = verts + indexes[i + 0];
+		b = verts + indexes[i + 1];
+		c = verts + indexes[i + 2];
+
+		d0[0] = b->xyzw[0] - a->xyzw[0];
+		d0[1] = b->xyzw[1] - a->xyzw[1];
+		d0[2] = b->xyzw[2] - a->xyzw[2];
+
+		d1[0] = c->xyzw[0] - a->xyzw[0];
+		d1[1] = c->xyzw[1] - a->xyzw[1];
+		d1[2] = c->xyzw[2] - a->xyzw[2];
+
+		n[0] = d1[1] * d0[2] - d1[2] * d0[1];
+		n[1] = d1[2] * d0[0] - d1[0] * d0[2];
+		n[2] = d1[0] * d0[1] - d1[1] * d0[0];
+
+		f = idMath::RSqrt( n.x * n.x + n.y * n.y + n.z * n.z );
+
+		n.x *= f;
+		n.y *= f;
+		n.z *= f;
+
+		planes->SetNormal( n );
+		planes->FitThroughPoint( a->xyzw.ToVec3() );
+		planes++;
+	}
+}
+
+/*
+============
+idSIMD_Generic::MinMax
+============
+*/
+void VPCALL idSIMD_Generic::MinMax( idVec3 &min, idVec3 &max, const rvSilTraceVertT * RESTRICT src, const int count ) {
+	TIME_THIS_SCOPE("SIMD MinMax rvSilTraceVertT");
+	min[0] = min[1] = min[2] = idMath::INFINITY; max[0] = max[1] = max[2] = -idMath::INFINITY;
+#define OPER(X) const idVec3 &v = src[(X)].xyzw.ToVec3(); if ( v[0] < min[0] ) { min[0] = v[0]; } if ( v[0] > max[0] ) { max[0] = v[0]; } if ( v[1] < min[1] ) { min[1] = v[1]; } if ( v[1] > max[1] ) { max[1] = v[1]; } if ( v[2] < min[2] ) { min[2] = v[2]; } if ( v[2] > max[2] ) { max[2] = v[2]; }
+	UNROLL1(OPER)
+#undef OPER
+}
+
+/*
+============
+idSIMD_Generic::MinMax
+============
+*/
+void VPCALL idSIMD_Generic::MinMax( idVec3 &min, idVec3 &max, const rvSilTraceVertT * RESTRICT src, const int * RESTRICT indexes, const int count ) {
+	TIME_THIS_SCOPE("SIMD MinMax rvSilTraceVertT indexed");
+	min[0] = min[1] = min[2] = idMath::INFINITY; max[0] = max[1] = max[2] = -idMath::INFINITY;
+#define OPER(X) const idVec3 &v = src[indexes[(X)]].xyzw.ToVec3(); if ( v[0] < min[0] ) { min[0] = v[0]; } if ( v[0] > max[0] ) { max[0] = v[0]; } if ( v[1] < min[1] ) { min[1] = v[1]; } if ( v[1] > max[1] ) { max[1] = v[1]; } if ( v[2] < min[2] ) { min[2] = v[2]; } if ( v[2] > max[2] ) { max[2] = v[2]; }
+	UNROLL1(OPER)
+#undef OPER
+}
+#endif	// #ifdef _MD5R_SUPPORT

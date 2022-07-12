@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __BV_SPHERE_H__
 #define __BV_SPHERE_H__

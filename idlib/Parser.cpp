@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "precompiled.h"
 #pragma hdrstop
@@ -18,7 +16,10 @@ idParser::SetBaseFolder
 ================
 */
 void idParser::SetBaseFolder( const char *path) {
-	idLexer::SetBaseFolder(path);
+// RAVEN BEGIN
+// jsinger: changed to be Lexer instead of idLexer so that we have the ability to read binary files
+	Lexer::SetBaseFolder(path);
+// RAVEN END
 }
 
 /*
@@ -47,7 +48,7 @@ int idParser::RemoveGlobalDefine( const char *name ) {
 	define_t *d, *prev;
 
 	for ( prev = NULL, d = idParser::globaldefines; d; prev = d, d = d->next ) {
-		if ( !strcmp( d->name, name ) ) {
+		if ( !idStr::Cmp( d->name, name ) ) {
 			break;
 		}
 	}
@@ -158,7 +159,7 @@ define_t *idParser::FindHashedDefine( define_t **definehash, const char *name ) 
 
 	hash = PC_NameHash(name);
 	for ( d = definehash[hash]; d; d = d->hashnext ) {
-		if ( !strcmp(d->name, name) ) {
+		if ( !idStr::Cmp(d->name, name) ) {
 			return d;
 		}
 	}
@@ -174,7 +175,7 @@ define_t *idParser::FindDefine( define_t *defines, const char *name ) {
 	define_t *d;
 
 	for ( d = defines; d; d = d->next ) {
-		if ( !strcmp(d->name, name) ) {
+		if ( !idStr::Cmp(d->name, name) ) {
 			return d;
 		}
 	}
@@ -208,8 +209,10 @@ idParser::CopyDefine
 define_t *idParser::CopyDefine( define_t *define ) {
 	define_t *newdefine;
 	idToken *token, *newtoken, *lasttoken;
-
-	newdefine = (define_t *) Mem_Alloc(sizeof(define_t) + strlen(define->name) + 1);
+//RAVEN BEGIN
+//amccarthy: Added memory allocation tag
+	newdefine = (define_t *) Mem_Alloc(sizeof(define_t) + strlen(define->name) + 1, MA_PARSER);
+//RAVEN END
 	//copy the define name
 	newdefine->name = (char *) newdefine + sizeof(define_t);
 	strcpy(newdefine->name, define->name);
@@ -327,7 +330,10 @@ idParser::PushIndent
 void idParser::PushIndent( int type, int skip ) {
 	indent_t *indent;
 
-	indent = (indent_t *) Mem_Alloc(sizeof(indent_t));
+//RAVEN BEGIN
+//amccarthy: Added memory allocation tag
+	indent = (indent_t *) Mem_Alloc(sizeof(indent_t),MA_PARSER);
+//RAVEN END
 	indent->type = type;
 	indent->script = idParser::scriptstack;
 	indent->skip = (skip != 0);
@@ -612,7 +618,10 @@ void idParser::AddBuiltinDefines( void ) {
 	};
 
 	for (i = 0; builtin[i].string; i++) {
-		define = (define_t *) Mem_Alloc(sizeof(define_t) + strlen(builtin[i].string) + 1);
+//RAVEN BEGIN
+//amccarthy: Added memory allocation tag
+		define = (define_t *) Mem_Alloc(sizeof(define_t) + strlen(builtin[i].string) + 1,MA_PARSER);
+//RAVEN END
 		define->name = (char *) define + sizeof(define_t);
 		strcpy(define->name, builtin[i].string);
 		define->flags = DEFINE_FIXED;
@@ -926,7 +935,13 @@ int idParser::Directive_include( void ) {
 		// try relative to the current file
 		path = scriptstack->GetFileName();
 		path.StripFilename();
-		path += "/";
+// RAVEN BEGIN
+// jscott: avoid the leading slash
+		if( path.Length() )
+		{
+			path += "/";
+		}
+// RAVEN END
 		path += token;
 		if ( !script->LoadFile( path, OSPath ) ) {
 			// try absolute path
@@ -1006,7 +1021,7 @@ int idParser::Directive_undef( void ) {
 
 	hash = PC_NameHash( token.c_str() );
 	for (lastdefine = NULL, define = idParser::definehash[hash]; define; define = define->hashnext) {
-		if (!strcmp(define->name, token.c_str()))
+		if (!idStr::Cmp(define->name, token.c_str()))
 		{
 			if (define->flags & DEFINE_FIXED) {
 				idParser::Warning( "can't undef '%s'", token.c_str() );
@@ -1061,7 +1076,10 @@ int idParser::Directive_define( void ) {
 		define = FindHashedDefine(idParser::definehash, token.c_str());
 	}
 	// allocate define
-	define = (define_t *) Mem_ClearedAlloc(sizeof(define_t) + token.Length() + 1);
+//RAVEN BEGIN
+//amccarthy: Added memory allocation tag
+	define = (define_t *) Mem_ClearedAlloc(sizeof(define_t) + token.Length() + 1, MA_PARSER);
+//RAVEN END
 	define->name = (char *) define + sizeof(define_t);
 	strcpy(define->name, token.c_str());
 	// add the define to the source
@@ -1123,7 +1141,7 @@ int idParser::Directive_define( void ) {
 	do
 	{
 		t = new idToken(token);
-		if ( t->type == TT_NAME && !strcmp( t->c_str(), define->name ) ) {
+		if ( t->type == TT_NAME && !idStr::Cmp( t->c_str(), define->name ) ) {
 			t->flags |= TOKEN_FL_RECURSIVE_DEFINE;
 			idParser::Warning( "recursive define (removed recursion)" );
 		}
@@ -2901,7 +2919,9 @@ void idParser::SetIncludePath( const char *path ) {
 	// add trailing path seperator
 	if (idParser::includepath[idParser::includepath.Length()-1] != '\\' &&
 		idParser::includepath[idParser::includepath.Length()-1] != '/') {
-		idParser::includepath += PATHSEPERATOR_STR;
+// RAVEN BEGIN
+		idParser::includepath += "/";
+// RAVEN END
 	}
 }
 
@@ -2967,7 +2987,10 @@ int idParser::LoadFile( const char *filename, bool OSPath ) {
 
 	if ( !idParser::definehash ) {
 		idParser::defines = NULL;
-		idParser::definehash = (define_t **) Mem_ClearedAlloc( DEFINEHASHSIZE * sizeof(define_t *) );
+//RAVEN BEGIN
+//amccarthy: Added memory allocation tag
+		idParser::definehash = (define_t **) Mem_ClearedAlloc( DEFINEHASHSIZE * sizeof(define_t *), MA_PARSER );
+//RAVEN END
 		idParser::AddGlobalDefinesToSource();
 	}
 	return true;
@@ -3002,7 +3025,10 @@ int idParser::LoadMemory(const char *ptr, int length, const char *name ) {
 
 	if ( !idParser::definehash ) {
 		idParser::defines = NULL;
-		idParser::definehash = (define_t **) Mem_ClearedAlloc( DEFINEHASHSIZE * sizeof(define_t *) );
+//RAVEN BEGIN
+//amccarthy: Added memory allocation tag
+		idParser::definehash = (define_t **) Mem_ClearedAlloc( DEFINEHASHSIZE * sizeof(define_t *), MA_PARSER );
+//RAVEN END
 		idParser::AddGlobalDefinesToSource();
 	}
 	return true;
@@ -3092,7 +3118,7 @@ int idParser::GetPunctuationId( const char *p ) {
 	}
 
 	for (i = 0; idParser::punctuations[i].p; i++) {
-		if ( !strcmp(idParser::punctuations[i].p, p) ) {
+		if ( !idStr::Cmp(idParser::punctuations[i].p, p) ) {
 			return idParser::punctuations[i].n;
 		}
 	}
@@ -3115,6 +3141,11 @@ idParser::idParser() {
 	this->defines = NULL;
 	this->tokens = NULL;
 	this->marker_p = NULL;
+
+// RAVEN BEGIN
+// bdube: added members	
+	marker_p = NULL;
+// RAVEN END
 }
 
 /*
@@ -3133,6 +3164,11 @@ idParser::idParser( int flags ) {
 	this->defines = NULL;
 	this->tokens = NULL;
 	this->marker_p = NULL;
+
+// RAVEN BEGIN
+// bdube: added members	
+	marker_p = NULL;
+// RAVEN END
 }
 
 /*

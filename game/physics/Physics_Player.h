@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __PHYSICS_PLAYER_H__
 #define __PHYSICS_PLAYER_H__
@@ -37,11 +35,19 @@ typedef struct playerPState_s {
 	idVec3					origin;
 	idVec3					velocity;
 	idVec3					localOrigin;
-	idVec3					pushVelocity;
+	idVec3					pushVelocity;	
+// RAVEN BEGIN
+// bdube: added
+	idVec3					lastPushVelocity;
+// RAVEN END	
 	float					stepUp;
 	int						movementType;
 	int						movementFlags;
 	int						movementTime;
+// RAVEN BEGIN
+// bdube: crouch slide 
+	int						crouchSlideTime;
+// RAVEN END
 } playerPState_t;
 
 class idPhysics_Player : public idPhysics_Actor {
@@ -105,6 +111,12 @@ public:	// common physics interface
 	void					WriteToSnapshot( idBitMsgDelta &msg ) const;
 	void					ReadFromSnapshot( const idBitMsgDelta &msg );
 
+// RAVEN BEGIN
+// kfuller: Added
+	bool					IsNoclip ( void ) const;
+	bool					IsDead ( void ) const;
+// RAVEN END
+
 private:
 	// player physics state
 	playerPState_t			current;
@@ -157,7 +169,10 @@ private:
 	void					SpectatorMove( void );
 	void					LadderMove( void );
 	void					CorrectAllSolid( trace_t &trace, int contents );
-	void					CheckGround( void );
+// RAVEN BEGIN
+// MrE: check stuck
+	void					CheckGround( bool checkStuck );
+// RAVEN END
 	void					CheckDuck( void );
 	void					CheckLadder( void );
 	bool					CheckJump( void );
@@ -166,5 +181,13 @@ private:
 	void					DropTimers( void );
 	void					MovePlayer( int msec );
 };
+
+ID_INLINE bool idPhysics_Player::IsNoclip ( void ) const {
+	return current.movementType == PM_NOCLIP;
+}
+
+ID_INLINE bool idPhysics_Player::IsDead ( void ) const {
+	return current.movementType == PM_DEAD;
+}
 
 #endif /* !__PHYSICS_PLAYER_H__ */

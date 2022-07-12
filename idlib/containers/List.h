@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __LIST_H__
 #define __LIST_H__
@@ -71,6 +69,12 @@ public:
 	int				NumAllocated( void ) const;							// returns number of elements allocated for
 	void			SetGranularity( int newgranularity );				// set new granularity
 	int				GetGranularity( void ) const;						// get the current granularity
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+	void			SetAllocatorHeap ( rvHeap* heap );					// set the heap used for all allocations
+#endif
+// RAVEN END
 
 	size_t			Allocated( void ) const;							// returns total size of allocated memory
 	size_t			Size( void ) const;									// returns total size of allocated memory including size of list type
@@ -106,11 +110,34 @@ public:
 	void			Swap( idList<type> &other );						// swap the contents of the lists
 	void			DeleteContents( bool clear );						// delete the contents of the list
 
+//RAVENBEGIN
+// cdr : added Heap & Stack & Sort functionality
+	int				FindBinary ( const type & key, cmp_t *compare = ( cmp_t * )&idListSortCompare<type> ) const;
+	void			StackAdd( const type & obj );						// add to the stack
+	void			StackPop( void );									// remove from the stack
+	type &			StackTop( void );									// get the top element of the stack
+	void			HeapAdd( const type & obj );						// add to the heap, and resort
+	void			HeapPop( void );									// pop off the top of the heap & resort
+// abahr:
+	int				TypeSize() const { return sizeof(type); }
+	void			RemoveNull();
+	void			RemoveContents( bool clear );
+// ddynerman: range remove
+	bool			RemoveRange( int low, int high );
+	void			RemoveDuplicates( void );
+//RAVEN END
+
 private:
 	int				num;
 	int				size;
 	int				granularity;
 	type *			list;
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+	rvHeap*			allocatorHeap;
+#endif
+// RAVEN END
 };
 
 /*
@@ -125,6 +152,12 @@ ID_INLINE idList<type>::idList( int newgranularity ) {
 	list		= NULL;
 	granularity	= newgranularity;
 	Clear();
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+	allocatorHeap = 0;
+#endif
+// RAVEN END
 }
 
 /*
@@ -348,18 +381,44 @@ ID_INLINE void idList<type>::Resize( int newsize ) {
 		// not changing the size, so just exit
 		return;
 	}
-
+	
 	temp	= list;
 	size	= newsize;
 	if ( size < num ) {
 		num = size;
 	}
 
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT_CONTAINERS)
+	bool ok=false;
+	if(allocatorHeap)
+	{
+		RV_PUSH_HEAP_PTR(allocatorHeap);
+		ok=true;
+	}
+	else
+	{
+		ok=rvPushHeapContainingMemory(this);
+	}
+#endif
+// RAVEN END
+
 	// copy the old list into our new one
 	list = new type[ size ];
 	for( i = 0; i < num; i++ ) {
 		list[ i ] = temp[ i ];
 	}
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT_CONTAINERS)
+	if(ok)
+	{
+		RV_POP_HEAP();
+	}
+#endif
+// RAVEN END
 
 	// delete the old list if it exists
 	if ( temp ) {
@@ -398,10 +457,28 @@ ID_INLINE void idList<type>::Resize( int newsize, int newgranularity ) {
 	}
 
 	// copy the old list into our new one
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT_CONTAINERS)
+	bool ok=rvPushHeapContainingMemory(this);
+#endif
+// RAVEN END
+
 	list = new type[ size ];
 	for( i = 0; i < num; i++ ) {
 		list[ i ] = temp[ i ];
 	}
+	
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT_CONTAINERS)
+	if(ok)
+	{
+		RV_POP_HEAP();
+	}
+#endif
+// RAVEN END
 
 	// delete the old list if it exists
 	if ( temp ) {
@@ -515,12 +592,29 @@ ID_INLINE idList<type> &idList<type>::operator=( const idList<type> &other ) {
 	granularity	= other.granularity;
 
 	if ( size ) {
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT_CONTAINERS)
+		bool ok=rvPushHeapContainingMemory(this);
+#endif
+// RAVEN END
+
 		list = new type[ size ];
 		for( i = 0; i < num; i++ ) {
 			list[ i ] = other.list[ i ];
 		}
-	}
 
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT_CONTAINERS)
+		if(ok)
+		{
+			RV_POP_HEAP();
+		}
+#endif
+// RAVEN END
+	}
 	return *this;
 }
 
@@ -921,5 +1015,236 @@ ID_INLINE void idList<type>::Swap( idList<type> &other ) {
 	idSwap( granularity, other.granularity );
 	idSwap( list, other.list );
 }
+
+
+
+//RAVENBEGIN
+// cdr : added Heap & Stack & Binary Search functionality
+
+/*
+================
+idList<type>::FindBinary
+
+Assumes the list is sorted and does a binary search for the given key
+
+================
+*/
+template< class type >
+ID_INLINE int idList<type>::FindBinary ( const type & key, cmp_t *compare ) const {
+
+	typedef int cmp_c(const void *, const void *);
+	cmp_c *vCompare = (cmp_c *)compare;
+
+	type* found = (type*) bsearch( ( void * )( &key ), ( void * )list, ( size_t )num, sizeof( type ), vCompare );
+	if (found)
+	{
+		return IndexOf(found);
+	}
+	return -1;
+}
+
+
+/*
+================
+idList<type>::StackAdd
+
+Adds a value to the list as if the list was a stack
+
+================
+*/
+template< class type >
+ID_INLINE void idList<type>::StackAdd( const type & obj ) {
+	Append( obj );
+}
+
+/*
+================
+idList<type>::StackPop
+
+Removes a value to the list as if the list was a stack
+
+================
+*/
+template< class type >
+ID_INLINE void idList<type>::StackPop( void ) {
+#if 0
+	assert(num>0);
+	if (num<=0)
+	{
+		return;
+	}
+
+// RAVEN BEGIN
+// jsinger: Without this, this container will leak any dynamically allocated members from
+//          contained class instances
+// TTimo: that would cause a double destructor when the list is deleted in Clear()
+	list[num].~type();
+// RAVEN END
+	num--;
+#else
+	RemoveIndex( num - 1 );
+#endif
+}
+
+template< class type >
+ID_INLINE type& idList<type>::StackTop( void ){
+	assert( num > 0 );
+	return list[ num-1 ];
+}
+
+/*
+================
+idList<type>::HeapAdd
+
+Adds a value to the list as if the list was a heap by doing a bubble swap sort
+First it appends the object, then swaps up the heap at successive parent positions
+as needed
+
+Complexity: O[n log n]
+================
+*/
+template< class type >
+ID_INLINE void idList<type>::HeapAdd( const type & obj ) {
+
+	int pos = Append( obj );
+
+	while (pos && list[((pos-1)/2)]<list[pos])
+	{
+		idSwap(list[((pos-1)/2)], list[pos]);
+		pos = ((pos-1)/2);
+	}
+}
+
+/*
+================
+idList<type>::HeapPop
+
+Removes the top element from the heap and 
+First swaps the top element of the heap with the lowest
+element, destroys the lowest element (wich was the top),
+and then sorts the new top element down the heap as
+needed
+
+Complexity: O[n log n]
+================
+*/
+template< class type >
+ID_INLINE void idList<type>::HeapPop( void ) {
+
+	assert(num>0);
+	if (num<=0)
+	{
+		return;
+	}
+
+	idSwap(list[0], list[num-1]);
+	num--;
+
+	int pos = 0;
+
+	int largestChild = pos;
+	if (((2*pos)+1)<num)
+	{
+		if (((2*pos)+2)<num)
+		{
+			largestChild = ( (list[((2*pos)+2)] < list[((2*pos)+1)]) ? (((2*pos)+1)) : (((2*pos)+2)) );
+		}
+		largestChild = ((2*pos)+1);
+	}
+
+	while (largestChild!=pos && list[pos]<list[largestChild])
+	{
+		idSwap(list[largestChild], list[pos]);
+		pos = largestChild;
+
+		largestChild = pos;
+		if (((2*pos)+1)<num)
+		{
+			if (((2*pos)+2)<num)
+			{
+				largestChild = ( (list[((2*pos)+2)] < list[((2*pos)+1)]) ? (((2*pos)+1)) : (((2*pos)+2)) );
+			}
+			largestChild = ((2*pos)+1);
+		}
+	}
+}
+
+/*
+================
+idList<type>::RemoveNull
+================
+*/
+template< class type >
+ID_INLINE void idList<type>::RemoveNull() {
+	for( int ix = Num() - 1; ix >= 0; --ix ) {
+		if( !list[ix] ) {
+			RemoveIndex( ix );
+		}
+	}
+}
+
+/*
+================
+idList<type>::RemoveContents
+================
+*/
+template< class type >
+ID_INLINE void idList<type>::RemoveContents( bool clear ) {
+	RemoveNull();
+
+	for( int ix = Num() - 1; ix >= 0; --ix ) {
+		list[ ix ]->PostEventMS( &EV_Remove, 0 );
+		list[ ix ] = NULL;
+	}
+
+	if ( clear ) {
+		Clear();
+	} else {
+		memset( list, 0, Allocated() );
+	}
+}
+
+/*
+================
+idList<type>::RemoveRange
+
+Removes the specified range of elements [low, high]
+Only copies down the array once.
+================
+*/
+template< class type >
+ID_INLINE bool idList<type>::RemoveRange( int low, int high ) {
+	int i;
+
+	assert( list != NULL );
+	assert( low >= 0 );
+	assert( high < num );
+	assert( low <= high );
+
+	if ( ( low < 0 ) || ( high >= num ) || ( low > high ) ) {
+		return false;
+	}
+
+	int range = (high - low) + 1;
+	num -= range;
+	for( i = low; i < num; i++ ) {
+		list[ i ] = list[ i + range ];
+	}
+
+	return true;
+}
+//RAVEN END
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+template< class type >
+void idList<type>::SetAllocatorHeap ( rvHeap* heap )
+{
+	assert(heap);
+	allocatorHeap = heap;
+}
+#endif
+// RAVEN END
 
 #endif /* !__LIST_H__ */

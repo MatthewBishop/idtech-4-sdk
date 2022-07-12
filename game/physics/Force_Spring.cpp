@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../../idlib/precompiled.h"
 #pragma hdrstop
@@ -138,3 +136,28 @@ void idForce_Spring::RemovePhysics( const idPhysics *phys ) {
 		physics2 = NULL;
 	}
 }
+
+/*
+================
+idForce_Spring::Save
+================
+*/
+void idForce_Spring::Save( idSaveGame *savefile ) const {
+	savefile->WriteFloat ( Kstretch );
+	savefile->WriteFloat ( Kcompress );
+	savefile->WriteFloat ( damping );
+	savefile->WriteFloat ( restLength );
+}
+
+/*
+================
+idForce_Spring::Restore
+================
+*/
+void idForce_Spring::Restore( idRestoreGame *savefile ) {
+	savefile->ReadFloat ( Kstretch );
+	savefile->ReadFloat ( Kcompress );
+	savefile->ReadFloat ( damping );
+	savefile->ReadFloat ( restLength );
+}
+

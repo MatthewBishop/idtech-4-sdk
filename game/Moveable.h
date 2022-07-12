@@ -1,5 +1,7 @@
-// Copyright (C) 2004 Id Software, Inc.
+// RAVEN BEGIN
+// bdube: note that this file is no longer merged with Doom3 updates
 //
+// MERGE_DATE 06/02/2004
 
 #ifndef __GAME_MOVEABLE_H__
 #define __GAME_MOVEABLE_H__
@@ -15,7 +17,7 @@
 extern const idEventDef EV_BecomeNonSolid;
 extern const idEventDef EV_IsAtRest;
 
-class idMoveable : public idEntity {
+class idMoveable : public idDamagable {
 public:
 	CLASS_PROTOTYPE( idMoveable );
 
@@ -35,26 +37,30 @@ public:
 	bool					AllowStep( void ) const;
 	void					EnableDamage( bool enable, float duration );
 	virtual bool			Collide( const trace_t &collision, const idVec3 &velocity );
+	virtual void			Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &dir, const char *damageDefName, const float damageScale, const int location );
 	virtual void			Killed( idEntity *inflictor, idEntity *attacker, int damage, const idVec3 &dir, int location );
 	virtual void			WriteToSnapshot( idBitMsgDelta &msg ) const;
 	virtual void			ReadFromSnapshot( const idBitMsgDelta &msg );
 
+	virtual void			AddDamageEffect( const trace_t &collision, const idVec3 &velocity, const char *damageDefName, idEntity* inflictor );
+
 protected:
+
 	idPhysics_RigidBody		physicsObj;				// physics object
 	idStr					brokenModel;			// model set when health drops down to or below zero
 	idStr					damage;					// if > 0 apply damage to hit entities
-	idStr					fxCollide;				// fx system to start when collides with something
 	int						nextCollideFxTime;		// next time it is ok to spawn collision fx
 	float					minDamageVelocity;		// minimum velocity before moveable applies damage
 	float					maxDamageVelocity;		// velocity at which the maximum damage is applied
 	idCurve_Spline<idVec3> *initialSpline;			// initial spline path the moveable follows
 	idVec3					initialSplineDir;		// initial relative direction along the spline path
-	bool					explode;				// entity explodes when health drops down to or below zero
 	bool					unbindOnDeath;			// unbind from master when health drops down to or below zero
 	bool					allowStep;				// allow monsters to step on the object
 	bool					canDamage;				// only apply damage when this is set
-	int						nextDamageTime;			// next time the movable can hurt the player
-	int						nextSoundTime;			// next time the moveable can make a sound
+
+	idEntityPtr<idEntity>	lastAttacker;
+
+	virtual void			ExecuteStage	( void );
 
 	const idMaterial *		GetRenderModelMaterial( void ) const;
 	void					BecomeNonSolid( void );
@@ -65,7 +71,9 @@ protected:
 	void					Event_BecomeNonSolid( void );
 	void					Event_SetOwnerFromSpawnArgs( void );
 	void					Event_IsAtRest( void );
-	void					Event_EnableDamage( float enable );
+	void					Event_CanDamage ( float enable );
+	void					Event_SetHealth ( float newHealth );
+	void					Event_RadiusDamage( idEntity *attacker, const char* splash );
 };
 
 
@@ -133,33 +141,30 @@ public:
 
 	virtual void			WriteToSnapshot( idBitMsgDelta &msg ) const;
 	virtual void			ReadFromSnapshot( const idBitMsgDelta &msg );
-	virtual bool			ClientReceiveEvent( int event, int time, const idBitMsg &msg );
-
-	enum {
-		EVENT_EXPLODE = idEntity::EVENT_MAXEVENTS,
-		EVENT_MAXEVENTS
-	};
 
 private:
 	typedef enum {
 		NORMAL = 0,
 		BURNING,
 		BURNEXPIRED,
-		EXPLODING
+		EXPLODING,
+		EXPLODED
 	} explode_state_t;
 	explode_state_t			state;
 
 	idVec3					spawnOrigin;
 	idMat3					spawnAxis;
-	qhandle_t				particleModelDefHandle;
-	qhandle_t				lightDefHandle;
-	renderEntity_t			particleRenderEntity;
+	qhandle_t				ipsHandle;
+	qhandle_t				lightHandle;
+	renderEntity_t			ipsEntity;
 	renderLight_t			light;
-	int						particleTime;
+	int						ipsTime;
 	int						lightTime;
 	float					time;
 
-	void					AddParticles( const char *name, bool burn );
+	int						explodeFinishTime;
+
+	void					AddIPS( const char *name, bool burn );
 	void					AddLight( const char *name , bool burn );
 	void					ExplodingEffects( void );
 
@@ -170,3 +175,5 @@ private:
 };
 
 #endif /* !__GAME_MOVEABLE_H__ */
+
+// RAVEN END

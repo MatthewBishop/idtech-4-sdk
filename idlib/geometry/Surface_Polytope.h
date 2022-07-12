@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __SURFACE_POLYTOPE_H__
 #define __SURFACE_POLYTOPE_H__

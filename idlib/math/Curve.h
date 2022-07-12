@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __MATH_CURVE_H__
 #define __MATH_CURVE_H__
@@ -28,6 +26,11 @@ public:
 
 	virtual bool		IsDone( const float time ) const;
 
+// RAVEN BEGIN
+// jscott: added
+	void				SetGranularity( int gran ) { times.SetGranularity( gran ); values.SetGranularity( gran ); }
+// RAVEN END
+
 	int					GetNumValues( void ) const { return values.Num(); }
 	void				SetValue( const int index, const type &value ) { values[index] = value; changed = true; }
 	type				GetValue( const int index ) const { return values[index]; }
@@ -42,6 +45,11 @@ public:
 	void				SetConstantSpeed( const float totalTime );
 	void				ShiftTime( const float deltaTime );
 	void				Translate( const type &translation );
+
+// RAVEN BEGIN
+// ddynerman: spline joining
+	virtual bool		Weld( idCurve<type>* c ) const;
+// RAVEN END
 
 protected:
 	idList<float>		times;			// knots
@@ -306,7 +314,10 @@ idCurve::SetConstantSpeed
 */
 template< class type >
 ID_INLINE void idCurve<type>::SetConstantSpeed( const float totalTime ) {
-	int i, j;
+// RAVEN BEGIN
+// bdube: fixed warning
+	int i;
+// RAVEN END
 	float *length, totalLength, scale, t;
 
 	length = (float *) _alloca16( values.Num() * sizeof( float ) );
@@ -439,6 +450,21 @@ ID_INLINE float idCurve<type>::TimeForIndex( const int index ) const {
 	}
 	return times[index];
 }
+
+// RAVEN BEGIN
+// ddynerman: spline welding
+/*
+====================
+idCurve::Weld
+
+  Weld splines, implementation specific - parent version does nothing
+====================
+*/
+template< class type >
+ID_INLINE bool idCurve<type>::Weld( idCurve<type>* c ) const {
+	return false;
+}
+// RAVEN END
 
 
 /*
@@ -910,7 +936,10 @@ public:
 	virtual boundary_t	GetBoundaryType( void ) const { return boundaryType; }
 
 	virtual void		SetCloseTime( const float t ) { closeTime = t; changed = true; }
-	virtual float		GetCloseTime( void ) { return boundaryType == BT_CLOSED ? closeTime : 0.0f; }
+// RAVEN BEGIN
+// jsinger: changed to be const so that we can call it during binary serialization
+	virtual float		GetCloseTime( void ) const { return boundaryType == BT_CLOSED ? closeTime : 0.0f; }
+// RAVEN END
 
 protected:
 	boundary_t			boundaryType;
@@ -948,7 +977,7 @@ ID_INLINE type idCurve_Spline<type>::ValueForIndex( const int index ) const {
 			return values[ values.Num() + index % values.Num() ];
 		}
 		else {
-			return values[0] + index * ( values[1] - values[0] );
+			return values[0] + (float)index * ( values[1] - values[0] );
 		}
 	}
 	else if ( index > n ) {
@@ -956,7 +985,7 @@ ID_INLINE type idCurve_Spline<type>::ValueForIndex( const int index ) const {
 			return values[ index % values.Num() ];
 		}
 		else {
-			return values[n] + ( index - n ) * ( values[n] - values[n-1] );
+			return values[n] + (float)( index - n ) * ( values[n] - values[n-1] );
 		}
 	}
 	return values[index];
@@ -2114,6 +2143,10 @@ public:
 	virtual type		GetCurrentValue( const float time ) const;
 	virtual type		GetCurrentFirstDerivative( const float time ) const;
 	virtual type		GetCurrentSecondDerivative( const float time ) const;
+// RAVEN BEGIN
+// ddynerman: spline welding
+	virtual bool		Weld( idCurve<type>* c ) const;
+// RAVEN END
 
 protected:
 	void				Basis( const int index, const int order, const float t, float *bvals ) const;
@@ -2282,6 +2315,39 @@ ID_INLINE void idCurve_NonUniformBSpline<type>::BasisSecondDerivative( const int
 	bvals[i] *= (float) ( order - 1) / ( TimeForIndex( index + i + (order-1) - 2 ) - TimeForIndex( index + i - 2 ) );
 }
 
+// RAVEN BEGIN
+// ddynerman: spline welding
+/*
+====================
+idCurve_NonUniformBSpline::Weld
+
+  Attach two B-Splines together
+====================
+*/
+template< class type >
+ID_INLINE bool idCurve_NonUniformBSpline<type>::Weld( idCurve<type>* c ) const {
+	idCurve_NonUniformBSpline<type>* spline = dynamic_cast<idCurve_NonUniformBSpline<type>*>(c);
+	
+	if( spline == NULL ) {
+		return false;
+	}
+
+	type refLine = values[ values.Num() - 1 ] - values[ values.Num() - 2 ];
+	float length = (spline->values[ 0 ] - spline->values[ 1 ]).Length();
+
+	bool valuesChanged = spline->values[ 0 ] != values[ values.Num() - 1 ];
+	spline->values[ 0 ] = values[ values.Num() - 1 ];
+
+	type deltaPos = ~refLine * length;
+	type newValue = spline->values[ 0 ] + deltaPos;
+	
+	valuesChanged = (spline->values[ 1 ] != newValue) || valuesChanged;
+
+	spline->values[ 1 ] = newValue;
+
+	return valuesChanged;
+}
+// RAVEN END
 
 /*
 ===============================================================================

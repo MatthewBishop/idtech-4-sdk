@@ -1,6 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
-
 #include "precompiled.h"
 #pragma hdrstop
 
@@ -36,13 +33,14 @@ idBitMsg::idBitMsg() {
 idBitMsg::CheckOverflow
 ================
 */
-bool idBitMsg::CheckOverflow( int length ) {
-	if ( GetRemainingSpace() < length ) {
+bool idBitMsg::CheckOverflow( int numBits ) {
+	assert( numBits >= 0 );
+	if ( numBits > GetRemainingWriteBits() ) {
 		if ( !allowOverflow ) {
 			idLib::common->FatalError( "idBitMsg: overflow without allowOverflow set" );
 		}
-		if ( length > maxSize ) {
-			idLib::common->FatalError( "idBitMsg: %i is > full message size", length );
+		if ( numBits > ( maxSize << 3 ) ) {
+			idLib::common->FatalError( "idBitMsg: %i bits is > full message size", numBits );
 		}
 		idLib::common->Printf( "idBitMsg: overflow\n" );
 		BeginWriting();
@@ -68,7 +66,7 @@ byte *idBitMsg::GetByteSpace( int length ) {
 	WriteByteAlign();
 
 	// check for overflow
-	CheckOverflow( length );
+	CheckOverflow( length << 3 );
 
 	ptr = writeData + curSize;
 	curSize += length;
@@ -95,11 +93,6 @@ void idBitMsg::WriteBits( int value, int numBits ) {
 		idLib::common->FatalError( "idBitMsg::WriteBits: bad numBits %i", numBits );
 	}
 
-	// check for msg overflow
-	if ( CheckOverflow( ( numBits + writeBit ) >> 3 ) ) {
-		return;
-	}
-
 	// check for value overflows
 	if ( numBits != 32 ) {
 		if ( numBits > 0 ) {
@@ -117,8 +110,14 @@ void idBitMsg::WriteBits( int value, int numBits ) {
 			}
 		}
 	}
+
 	if ( numBits < 0 ) {
 		numBits = -numBits;
+	}
+
+	// check for msg overflow
+	if ( CheckOverflow( numBits ) ) {
+		return;
 	}
 
 	// write the bits
@@ -144,34 +143,20 @@ void idBitMsg::WriteBits( int value, int numBits ) {
 idBitMsg::WriteString
 ================
 */
-void idBitMsg::WriteString( const char *s, int maxLength, bool make7Bit ) {
+void idBitMsg::WriteString( const char *s, int maxLength ) {
 	if ( !s ) {
 		WriteData( "", 1 );
 	} else {
-		int i, l;
+		int l;
 		byte *dataPtr;
-		const byte *bytePtr;
 
 		l = idStr::Length( s );
 		if ( maxLength >= 0 && l >= maxLength ) {
 			l = maxLength - 1;
 		}
 		dataPtr = GetByteSpace( l + 1 );
-		bytePtr = reinterpret_cast<const byte *>(s);
-		if ( make7Bit ) {
-			for ( i = 0; i < l; i++ ) {
-				if ( bytePtr[i] > 127 ) {
-					dataPtr[i] = '.';
-				} else {
-					dataPtr[i] = bytePtr[i];
-				}
-			}
-		} else {
-			for ( i = 0; i < l; i++ ) {
-				dataPtr[i] = bytePtr[i];
-			}
-		}
-		dataPtr[i] = '\0';
+		memcpy( dataPtr, s, l );
+		dataPtr[l] = '\0';
 	}
 }
 
@@ -348,11 +333,6 @@ int idBitMsg::ReadBits( int numBits ) const {
 		idLib::common->FatalError( "idBitMsg::ReadBits: bad numBits %i", numBits );
 	}
 
-	// check for overflow
-	if ( ( ( ( curSize - readCount + 1 ) << 3 ) - readBit ) < numBits ) {
-		return -1;
-	}
-
 	value = 0;
 	valueBits = 0;
 
@@ -363,13 +343,18 @@ int idBitMsg::ReadBits( int numBits ) const {
 		sgn = false;
 	}
 
+	// check for overflow
+	if ( numBits > GetRemainingReadBits() ) {
+		return -1;
+	}
+
 	while ( valueBits < numBits ) {
 		if ( readBit == 0 ) {
 			readCount++;
 		}
 		get = 8 - readBit;
 		if ( get > (numBits - valueBits) ) {
-			get = (numBits - valueBits);
+			get = numBits - valueBits;
 		}
 		fraction = readData[readCount - 1];
 		fraction >>= readBit;
@@ -435,7 +420,7 @@ int idBitMsg::ReadData( void *data, int length ) const {
 
 	if ( readCount + length > curSize ) {
 		if ( data ) {
-			memcpy( data, readData + readCount, GetRemaingData() );
+			memcpy( data, readData + readCount, GetRemainingData() );
 		}
 		readCount = curSize;
 	} else {
@@ -570,11 +555,11 @@ int idBitMsg::DirToBits( const idVec3 &dir, int numBits ) {
 	bias = 0.5f / max;
 
 	bits = FLOATSIGNBITSET( dir.x ) << ( numBits * 3 - 1 );
-	bits |= ( (int) ( ( idMath::Fabs( dir.x ) + bias ) * max ) ) << ( numBits * 2 );
+	bits |= ( idMath::Ftoi( ( idMath::Fabs( dir.x ) + bias ) * max ) ) << ( numBits * 2 );
 	bits |= FLOATSIGNBITSET( dir.y ) << ( numBits * 2 - 1 );
-	bits |= ( (int) ( ( idMath::Fabs( dir.y ) + bias ) * max ) ) << ( numBits * 1 );
+	bits |= ( idMath::Ftoi( ( idMath::Fabs( dir.y ) + bias ) * max ) ) << ( numBits * 1 );
 	bits |= FLOATSIGNBITSET( dir.z ) << ( numBits * 1 - 1 );
-	bits |= ( (int) ( ( idMath::Fabs( dir.z ) + bias ) * max ) ) << ( numBits * 0 );
+	bits |= ( idMath::Ftoi( ( idMath::Fabs( dir.z ) + bias ) * max ) ) << ( numBits * 0 );
 	return bits;
 }
 
@@ -920,7 +905,7 @@ void idBitMsgDelta::ReadData( void *data, int length ) const {
 	} else {
 		char baseData[MAX_DATA_BUFFER];
 		assert( length < sizeof( baseData ) );
-		base->ReadData( baseData, sizeof( baseData ) );
+		base->ReadData( baseData, length );
 		if ( !readDelta || readDelta->ReadBits( 1 ) == 0 ) {
 			memcpy( data, baseData, length );
 		} else {
@@ -1037,4 +1022,276 @@ int idBitMsgDelta::ReadDeltaLongCounter( int oldValue ) const {
 		newBase->WriteBits( value, 32 );
 	}
 	return value;
+}
+
+/*
+===========================================================================
+idMsgQueue
+===========================================================================
+*/
+
+/*
+===============
+idMsgQueue::idMsgQueue
+===============
+*/
+idMsgQueue::idMsgQueue( void ) {
+	Init( 0 );
+}
+
+/*
+===============
+idMsgQueue::Init
+===============
+*/
+void idMsgQueue::Init( int sequence ) {
+	first = last = sequence;
+	startIndex = endIndex = 0;
+}
+
+/*
+===============
+idMsgQueue::Add
+===============
+*/
+bool idMsgQueue::Add( const byte *data, const int size, bool sequencing ) {
+	if ( GetSpaceLeft() < size + 8 ) {
+		return false;
+	}
+
+	assert( size );
+
+	WriteShort( size );
+	if ( sequencing ) {
+		WriteLong( last );
+	}
+	last++;
+	WriteData( data, size );
+	return true;
+}
+
+/*
+===============
+idMsgQueue::Get
+===============
+*/
+// RAVEN BEGIN
+// rjohnson: added check for data overflow
+bool idMsgQueue::Get( byte *data, int dataSize, int &size, bool sequencing ) {
+// RAVEN END
+	if ( sequencing ? ( first == last ) : ( startIndex == endIndex ) ) {
+		size = 0;
+		return false;
+	}
+	int sequence;
+	size = ReadShort();
+// RAVEN BEGIN
+// rjohnson: added check for data overflow
+	if ( data && size > dataSize ) {
+		common->Error( "idMsgQueue::Get  buffer size of %d < get size of %d", dataSize, size );
+	}
+// RAVEN END
+
+	if ( sequencing ) {
+		sequence = ReadLong();
+		assert( sequence == first );
+	}
+	ReadData( data, size );
+	first++;
+	return true;
+}
+
+/*
+===============
+idMsgQueue::GetTotalSize
+===============
+*/
+int idMsgQueue::GetTotalSize( void ) const {
+	if ( startIndex <= endIndex ) {
+		return ( endIndex - startIndex );
+	} else {
+		return ( sizeof( buffer ) - startIndex + endIndex );
+	}
+}
+
+/*
+===============
+idMsgQueue::GetSpaceLeft
+===============
+*/
+int idMsgQueue::GetSpaceLeft( void ) const {
+	if ( startIndex <= endIndex ) {
+		return sizeof( buffer ) - ( endIndex - startIndex ) - 1;
+	} else {
+		return ( startIndex - endIndex ) - 1;
+	}
+}
+
+/*
+===============
+idMsgQueue::CopyToBuffer
+===============
+*/
+void idMsgQueue::CopyToBuffer( byte *buf ) const {
+	if ( startIndex <= endIndex ) {
+// RAVEN BEGIN
+// JSinger: Changed to call optimized memcpy
+		SIMDProcessor->Memcpy( buf, buffer + startIndex, endIndex - startIndex );
+// RAVEN END
+	} else {
+// RAVEN BEGIN
+// JSinger: Changed to call optimized memcpy
+		SIMDProcessor->Memcpy( buf, buffer + startIndex, sizeof( buffer ) - startIndex );
+		SIMDProcessor->Memcpy( buf + sizeof( buffer ) - startIndex, buffer, endIndex );
+// RAVEN END
+	}
+}
+
+/*
+===============
+idMsgQueue::WriteByte
+===============
+*/
+void idMsgQueue::WriteByte( byte b ) {
+	buffer[endIndex] = b;
+	endIndex = ( endIndex + 1 ) & ( MAX_MSG_QUEUE_SIZE - 1 );
+}
+
+/*
+===============
+idMsgQueue::ReadByte
+===============
+*/
+byte idMsgQueue::ReadByte( void ) {
+	byte b = buffer[startIndex];
+	startIndex = ( startIndex + 1 ) & ( MAX_MSG_QUEUE_SIZE - 1 );
+	return b;
+}
+
+/*
+===============
+idMsgQueue::WriteShort
+===============
+*/
+void idMsgQueue::WriteShort( int s ) {
+	WriteByte( ( s >>  0 ) & 255 );
+	WriteByte( ( s >>  8 ) & 255 );
+}
+
+/*
+===============
+idMsgQueue::ReadShort
+===============
+*/
+int idMsgQueue::ReadShort( void ) {
+// RAVEN BEGIN
+// ddynerman: removed side-effecting bitwise or
+	byte l = ReadByte();
+	byte h = ReadByte();
+	return l | ( h << 8 );
+// RAVEN LOW
+}
+
+/*
+===============
+idMsgQueue::WriteLong
+===============
+*/
+void idMsgQueue::WriteLong( int l ) {
+	WriteByte( ( l >>  0 ) & 255 );
+	WriteByte( ( l >>  8 ) & 255 );
+	WriteByte( ( l >> 16 ) & 255 );
+	WriteByte( ( l >> 24 ) & 255 );
+}
+
+/*
+===============
+idMsgQueue::ReadLong
+===============
+*/
+int idMsgQueue::ReadLong( void ) {
+// RAVEN BEGIN
+// ddynerman: removed side-effecting bitwise or
+	byte ll = ReadByte();
+	byte lh = ReadByte();
+	byte hl = ReadByte();
+	byte hh = ReadByte();
+	return ll | ( lh << 8 ) | ( hl << 16 ) | ( hh << 24 );
+// RAVEN END
+}
+
+/*
+===============
+idMsgQueue::WriteData
+===============
+*/
+void idMsgQueue::WriteData( const byte *data, const int size ) {
+	for ( int i = 0; i < size; i++ ) {
+		WriteByte( data[i] );
+	}
+}
+
+/*
+===============
+idMsgQueue::ReadData
+===============
+*/
+void idMsgQueue::ReadData( byte *data, const int size ) {
+	if ( data ) {
+		for ( int i = 0; i < size; i++ ) {
+			data[i] = ReadByte();
+		}
+	} else {
+		for ( int i = 0; i < size; i++ ) {
+			ReadByte();
+		}
+	}
+}
+
+/*
+===============
+idMsgQueue::FlushTo
+===============
+*/
+void idMsgQueue::FlushTo( idBitMsg &msg ) {
+	msg.WriteShort( GetTotalSize() );
+	assert( startIndex == 0 );
+	msg.WriteData( buffer + startIndex, endIndex - startIndex );
+	Init( 0 );
+}
+
+/*
+===============
+idMsgQueue::ReadFrom
+===============
+*/
+void idMsgQueue::ReadFrom( const idBitMsg &msg ) {
+	Init( 0 );
+	endIndex = msg.ReadShort();
+	msg.ReadData( buffer, endIndex );
+}
+
+/*
+===============
+idMsgQueue::Save
+===============
+*/
+void idMsgQueue::Save( idFile *file ) const {
+	file->WriteInt( first );
+	file->WriteInt( last );
+	file->WriteInt( startIndex );
+	file->WriteInt( endIndex );
+	file->Write( buffer + startIndex, endIndex - startIndex );
+}
+/*
+===============
+idMsgQueue::Restore
+===============
+*/
+void idMsgQueue::Restore( idFile *file ) {
+	file->ReadInt( first );
+	file->ReadInt( last );
+	file->ReadInt( startIndex );
+	file->ReadInt( endIndex );
+	file->Read( buffer + startIndex, endIndex - startIndex );
 }

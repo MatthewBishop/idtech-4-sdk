@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __SCRIPT_THREAD_H__
 #define __SCRIPT_THREAD_H__
@@ -48,6 +46,13 @@ extern const idEventDef EV_Thread_FadeIn;
 extern const idEventDef EV_Thread_FadeOut;
 extern const idEventDef EV_Thread_FadeTo;
 extern const idEventDef EV_Thread_Restart;
+extern const idEventDef EV_Thread_SetMatSort;
+
+// RAVEN BEGIN
+// rjohnson: new blur special effect
+extern const idEventDef EV_Thread_SetSpecialEffect;
+extern const idEventDef EV_Thread_SetSpecialEffectParm;
+// RAVEN END
 
 class idThread : public idClass {
 private:
@@ -159,6 +164,43 @@ private:
 	void						Event_DrawText( const char *text, const idVec3 &origin, float scale, const idVec3 &color, const int align, const float lifetime );
 	void						Event_InfluenceActive( void );
 
+// RAVEN BEGIN
+// kfuller: added
+	void						Event_SetSpawnVector( const char *key, idVec3 &vec );
+	void						Event_GetArcSine( float sinValue );
+	void						Event_GetArcCosine( float cosValue );
+	void						Event_ClearSignalAllThreads( int signal, idEntity *ent );
+	void						Event_VecRotate(idVec3 &vecToBeRotated, idVec3 &rotateHowMuch);
+	void						Event_IsStringEmpty( const char *checkString );
+	void						Event_AnnounceToAI( const char *announcement);
+	void						Event_ChangeCrossings(const char *originalType, const char *newType);
+
+// abahr: so we can fake having pure script objects
+	void						Event_ReferenceScriptObjectProxy( const char* scriptObjectName );
+	void						Event_ReleaseScriptObjectProxy( const char* proxyName );
+	void						Event_ClampFloat( float min, float max, float val );
+	void						Event_MinFloat( float val1, float val2 );
+	void						Event_MaxFloat( float val1, float val2 );
+	void						Event_StrFind( idStr& sourceStr, idStr& subStr );
+	void						Event_RandomInt( float range ) const;
+
+// rjohnson: new blur special effect
+	void						Event_SetSpecialEffect( int Effect, int Enabled );
+	void						Event_SetSpecialEffectParm( int Effect, int Parm, float Value );
+
+// nmckenzie: string signaling
+	void						Event_PlayWorldEffect( const char *effectName, idVec3 &org, idVec3 &angle );
+// asalmon: achievements for Xenon
+	void						Event_AwardAchievement( const char *name);
+// twhitaker: ceil, floor and intVal
+	void						Event_GetCeil( float val );
+	void						Event_GetFloor( float val );
+	void						Event_ToInt( float val );
+// jdischler: send named event string to specified gui
+	void						Event_SendNamedEvent( int guiEnum, const char *namedEvent );
+	void						Event_SetMatSort( const char *name, const char *val ) const;
+// RAVEN END
+
 public:							
 								CLASS_PROTOTYPE( idThread );
 								
@@ -190,12 +232,26 @@ public:
 								// NOTE: If this is called from within a event called by this thread, the function arguments will be invalid after calling this function.
 	void						CallFunction( idEntity *obj, const function_t *func, bool clearStack );
 
+// RAVEN BEGIN
+// bgeisler: added way to list functions
+	void						ListStates(void);
+
+// abahr: added helper functions for pushing parms onto stack
+	void						ClearStack();
+	void						PushInt( int value );
+	void						PushFloat( float value );
+	void						PushVec3( const idVec3& value );
+	void						PushEntity( const idEntity* ent );
+	void						PushString( const char* str );
+	void						PushBool( bool value );
+// RAVEN END
+
 	void						DisplayInfo();
 	static idThread				*GetThread( int num );
 	static void					ListThreads_f( const idCmdArgs &args );
 	static void					Restart( void );
 	static void					ObjectMoveDone( int threadnum, idEntity *obj );
-								
+									
 	static idList<idThread*>&	GetThreads ( void );
 	
 	bool						IsDoneProcessing ( void );
@@ -235,7 +291,10 @@ public:
 	static void					ReturnFloat( float value );
 	static void					ReturnInt( int value );
 	static void					ReturnVector( idVec3 const &vec );
-	static void					ReturnEntity( idEntity *ent );
+// RAVEN BEGIN
+// abahr: added const
+	static void					ReturnEntity( const idEntity *ent );
+// RAVEN END
 };
 
 /*

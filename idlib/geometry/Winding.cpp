@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../precompiled.h"
 #pragma hdrstop
@@ -18,6 +16,11 @@ idWinding::ReAllocate
 */
 bool idWinding::ReAllocate( int n, bool keep ) {
 	idVec5 *oldP;
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+	RV_PUSH_HEAP_MEM_AUTO(p0,this);
+// RAVEN END
 
 	oldP = p;
 	n = (n+3) & ~3;	// align up to multiple of four
@@ -124,6 +127,11 @@ int idWinding::Split( const idPlane &plane, const float epsilon, idWinding **fro
 	}
 
 	maxpts = numPoints+4;	// cant use counts[0]+2 because of fp grouping errors
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+	RV_PUSH_HEAP_MEM_AUTO(p0,this);
+// RAVEN END
 
 	*front = f = new idWinding(maxpts);
 	*back = b = new idWinding(maxpts);
@@ -439,6 +447,11 @@ idWinding::Copy
 idWinding *idWinding::Copy( void ) const {
 	idWinding *w;
 
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+	RV_PUSH_HEAP_MEM_AUTO(p0,this);
+// RAVEN END
+
 	w = new idWinding( numPoints );
 	w->numPoints = numPoints;
 	memcpy( w->p, p, numPoints * sizeof(p[0]) );
@@ -453,6 +466,11 @@ idWinding::Reverse
 idWinding *idWinding::Reverse( void ) const {
 	idWinding *w;
 	int i;
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+	RV_PUSH_HEAP_MEM_AUTO(p0,this);
+// RAVEN END
 
 	w = new idWinding( numPoints );
 	w->numPoints = numPoints;
@@ -622,6 +640,30 @@ idVec3 idWinding::GetCenter( void ) const {
 	center *= ( 1.0f / numPoints );
 	return center;
 }
+
+// RAVEN BEGIN
+// scork: Splash Damage's light-resize code
+/*
+=============
+idWinding::GetNormal
+=============
+*/
+idVec3 idWinding::GetNormal( void ) const {
+	idVec3 v1, v2, center, normal;
+
+	if ( numPoints < 3 ) {
+		normal.Zero();
+		return normal;
+	}
+
+	center = GetCenter();
+	v1 = p[0].ToVec3() - center;
+	v2 = p[1].ToVec3() - center;
+	normal = v2.Cross( v1 );
+	normal.Normalize();
+	return normal;
+}
+// RAVEN END
 
 /*
 =============
@@ -1049,6 +1091,12 @@ idWinding *idWinding::TryMerge( const idWinding &w, const idVec3 &planenormal, i
 	//
 	// build the new polygon
 	//
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+	RV_PUSH_HEAP_MEM_AUTO(p0,this);
+// RAVEN END
+
 	newf = new idWinding( f1->numPoints + f2->numPoints );
 	
 	// copy first polygon

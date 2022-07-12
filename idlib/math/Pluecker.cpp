@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../precompiled.h"
 #pragma hdrstop
@@ -44,9 +42,9 @@ float idPluecker::Distance3DSqr( const idPluecker &a ) const {
 	if ( dir[0] == 0.0f && dir[1] == 0.0f && dir[2] == 0.0f ) {
 		return -1.0f;	// FIXME: implement for parallel lines
 	}
-	d = a.p[4] * ( p[2]*dir[1] - -p[5]*dir[0]) +
-		a.p[5] * ( p[2]*dir[2] -  p[4]*dir[0]) +
-		a.p[2] * (-p[5]*dir[2] -  p[4]*dir[1]);
+	d = a.p[4] * (  p[2] * dir[1] - -p[5] * dir[0] ) +
+		a.p[5] * (  p[2] * dir[2] -  p[4] * dir[0] ) +
+		a.p[2] * ( -p[5] * dir[2] -  p[4] * dir[1] );
 	s = PermutedInnerProduct( a ) / d;
 	return ( dir * dir ) * ( s * s );
 }

@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __FORCE_FIELD_H__
 #define __FORCE_FIELD_H__
@@ -51,6 +49,13 @@ public:
 						// clip model describing the extents of the force field
 	void				SetClipModel( idClipModel *clipModel );
 
+// RAVEN BEGIN
+// ddynerman: owner information
+	void				SetOwner( idEntity* ent );
+// bdube: added last apply time	
+	int					GetLastApplyTime( void ) const;
+// RAVEN END
+
 public: // common force interface
 	virtual void		Evaluate( int time );
 
@@ -64,6 +69,24 @@ private:
 	bool				playerOnly;
 	bool				monsterOnly;
 	idClipModel *		clipModel;
+
+// RAVEN BEGIN
+// bdube: added last apply time	
+	int					lastApplyTime;
+	idEntity*			owner;
+// RAVEN END
 };
+
+// RAVEN BEGIN
+// bdube: added last apply time	
+ID_INLINE int idForce_Field::GetLastApplyTime ( void ) const {
+	return lastApplyTime;
+}
+
+// ddynerman: owner information
+ID_INLINE void idForce_Field::SetOwner( idEntity* ent ) {
+	owner = ent;
+}
+// RAVEN END
 
 #endif /* !__FORCE_FIELD_H__ */

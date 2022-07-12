@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../../idlib/precompiled.h"
 #pragma hdrstop
@@ -216,6 +214,26 @@ idAFConstraint::Save
 */
 void idAFConstraint::Save( idSaveGame *saveFile ) const {
 	saveFile->WriteInt( type );
+	saveFile->WriteString ( name );		// cnicholson: Added unsaved var
+	// TOSAVE: idAFBody *				body1;		
+	// TOSAVE: idAFBody *				body2;		
+	// TOSAVE: idPhysics_AF *			physics;	
+
+	// TOSAVE: idMatX					J1, J2;
+	// TOSAVE: idVecX					c1, c2;		
+	// TOSAVE: idVecX					lo, hi, e;	
+	// TOSAVE: idAFConstraint *			boxConstraint;
+	for (int i=0; i<6; ++i) {			// cnicholson: Added unsaved var
+        saveFile->WriteInt ( boxIndex[i] );
+	}
+
+	// TOSAVE: idMatX					invI;
+	// TOSAVE: idMatX					J;
+	// TOSAVE: idVecX					s;
+	// TOSAVE: idVecX					lm;
+	saveFile->WriteInt ( firstIndex );  // cnicholson: Added unsaved var
+	
+	saveFile->Write( &fl, sizeof( fl ));// cnicholson: Added unsaved var
 }
 
 /*
@@ -227,6 +245,16 @@ void idAFConstraint::Restore( idRestoreGame *saveFile ) {
 	constraintType_t t;
 	saveFile->ReadInt( (int &)t );
 	assert( t == type );
+
+	saveFile->ReadString ( name );		// cnicholson: Added unrestored var
+
+	for (int i=0; i<6; ++i) {
+        saveFile->ReadInt ( boxIndex[i] );
+	}
+
+	saveFile->ReadInt ( firstIndex );	// cnicholson: Added unsaved var
+
+	saveFile->Read( &fl, sizeof( fl )); // cnicholson: Added unsaved var
 }
 
 
@@ -755,12 +783,35 @@ void idAFConstraint_BallAndSocketJoint::Save( idSaveGame *saveFile ) const {
 	saveFile->WriteVec3( anchor1 );
 	saveFile->WriteVec3( anchor2 );
 	saveFile->WriteFloat( friction );
-	if ( coneLimit ) {
-		coneLimit->Save( saveFile );
-	}
-	if ( pyramidLimit ) {
-		pyramidLimit->Save( saveFile );
-	}
+// cnicholson: Changed saving to use bools to check if restore is needed
+	//if ( coneLimit ) {
+	//	saveFile->WriteBool( true );
+	//	coneLimit->Save( saveFile );
+	//} else {
+	//	saveFile->WriteBool( false );
+	//}
+
+	//if ( pyramidLimit ) {
+	//	saveFile->WriteBool( true );
+	//	pyramidLimit->Save( saveFile );
+	//} else {
+	//	saveFile->WriteBool( false );
+	//}
+
+	//if ( fc ) {
+	//	saveFile->WriteBool( true );
+	//	fc->Save( saveFile );
+	//} else {
+	//	saveFile->WriteBool( false );
+	//}
+	//if ( coneLimit ) {
+	//	coneLimit->Save( saveFile );		// cnicholson: Bad way to save and restore
+	//}
+	//if ( pyramidLimit ) {
+	//	pyramidLimit->Save( saveFile );
+	//}
+
+	// TOSAVE: idAFConstraint_BallAndSocketJointFriction *fc;
 }
 
 /*
@@ -773,12 +824,42 @@ void idAFConstraint_BallAndSocketJoint::Restore( idRestoreGame *saveFile ) {
 	saveFile->ReadVec3( anchor1 );
 	saveFile->ReadVec3( anchor2 );
 	saveFile->ReadFloat( friction );
-	if ( coneLimit ) {
-		coneLimit->Restore( saveFile );
-	}
-	if ( pyramidLimit ) {
-		pyramidLimit->Restore( saveFile );
-	}
+
+	// cnicholson: Used bools to save/restore these pointers, old way = bad
+	//bool b;
+	//saveFile->ReadBool( b );
+	//if ( b ) {
+	//	if ( !coneLimit ) {
+	//		coneLimit = new idAFConstraint_ConeLimit;
+	//	}
+	//	coneLimit->SetPhysics( physics );
+	//	coneLimit->Restore( saveFile );
+	//}
+
+	//saveFile->ReadBool( b );
+	//if ( b ) {
+	//	if ( !pyramidLimit ) {
+	//		pyramidLimit = new idAFConstraint_PyramidLimit;
+	//	}
+	//	pyramidLimit->SetPhysics( physics );
+	//	pyramidLimit->Restore( saveFile );
+	//}
+
+	//saveFile->ReadBool( b );
+	//if ( b ) {
+	//	if ( !fc ) {
+	//		fc = new idAFConstraint_BallAndSocketJointFriction;
+	//	}
+	//	fc->SetPhysics( physics );
+	//	fc->Restore( saveFile );
+	//}
+
+	//if ( coneLimit ) {
+	//	coneLimit->Restore( saveFile );
+	//}
+	//if ( pyramidLimit ) {
+	//	pyramidLimit->Restore( saveFile );
+	//}
 }
 
 
@@ -1330,12 +1411,37 @@ void idAFConstraint_UniversalJoint::Save( idSaveGame *saveFile ) const {
 	saveFile->WriteVec3( axis1 );
 	saveFile->WriteVec3( axis2 );
 	saveFile->WriteFloat( friction );
-	if ( coneLimit ) {
-		coneLimit->Save( saveFile );
-	}
-	if ( pyramidLimit ) {
-		pyramidLimit->Save( saveFile );
-	}
+
+	// cnicholson: Changed saving to use bools to check if restore is needed
+	//if ( coneLimit ) {
+	//	saveFile->WriteBool( true );
+	//	coneLimit->Save( saveFile );
+	//} else {
+	//	saveFile->WriteBool( false );
+	//}
+
+	//if ( pyramidLimit ) {
+	//	saveFile->WriteBool( true );
+	//	pyramidLimit->Save( saveFile );
+	//} else {
+	//	saveFile->WriteBool( false );
+	//}
+
+	//if ( fc ) {
+	//	saveFile->WriteBool( true );
+	//	fc->Save( saveFile );
+	//} else {
+	//	saveFile->WriteBool( false );
+	//}
+
+	//if ( coneLimit ) {
+	//	coneLimit->Save( saveFile );
+	//}
+	//if ( pyramidLimit ) {
+	//	pyramidLimit->Save( saveFile );
+	//}
+
+	// TOSAVE: idAFConstraint_UniversalJointFriction *fc;
 }
 
 /*
@@ -1352,12 +1458,42 @@ void idAFConstraint_UniversalJoint::Restore( idRestoreGame *saveFile ) {
 	saveFile->ReadVec3( axis1 );
 	saveFile->ReadVec3( axis2 );
 	saveFile->ReadFloat( friction );
-	if ( coneLimit ) {
-		coneLimit->Restore( saveFile );
-	}
-	if ( pyramidLimit ) {
-		pyramidLimit->Restore( saveFile );
-	}
+
+// cnicholson: Used bools to save/restore these pointers, old way = bad
+	//bool b;
+	//saveFile->ReadBool( b );
+	//if ( b ) {
+	//	if ( !coneLimit ) {
+	//		coneLimit = new idAFConstraint_ConeLimit;
+	//	}
+	//	coneLimit->SetPhysics( physics );
+	//	coneLimit->Restore( saveFile );
+	//}
+
+	//saveFile->ReadBool( b );
+	//if ( b ) {
+	//	if ( !pyramidLimit ) {
+	//		pyramidLimit = new idAFConstraint_PyramidLimit;
+	//	}
+	//	pyramidLimit->SetPhysics( physics );
+	//	pyramidLimit->Restore( saveFile );
+	//}
+
+	//saveFile->ReadBool( b );
+	//if ( b ) {
+	//	if ( !fc ) {
+	//		fc = new idAFConstraint_UniversalJointFriction;
+	//	}
+	//	fc->SetPhysics( physics );
+	//	fc->Restore( saveFile );
+	//}
+
+	//if ( coneLimit ) {
+	//	coneLimit->Restore( saveFile );
+	//}
+	//if ( pyramidLimit ) {
+	//	pyramidLimit->Restore( saveFile );
+	//}
 }
 
 
@@ -2127,9 +2263,17 @@ idAFConstraint_HingeSteering::Save
 ================
 */
 void idAFConstraint_HingeSteering::Save( idSaveGame *saveFile ) const {
+
 	saveFile->WriteFloat(steerAngle);
 	saveFile->WriteFloat(steerSpeed);
 	saveFile->WriteFloat(epsilon);
+
+	//if ( hinge ) {								// cnicholson: Added unsaved var (doesnt work)
+	//	saveFile->WriteBool( true );
+	//	hinge->Save( saveFile );
+	//} else {
+	//	saveFile->WriteBool( false );
+	//}
 }
 
 /*
@@ -2138,9 +2282,24 @@ idAFConstraint_HingeSteering::Restore
 ================
 */
 void idAFConstraint_HingeSteering::Restore( idRestoreGame *saveFile ) {
+
 	saveFile->ReadFloat(steerAngle);
 	saveFile->ReadFloat(steerSpeed);
 	saveFile->ReadFloat(epsilon);
+
+// cnicholson: Added unrestored var (doesnt work)
+	//bool b;
+
+	//saveFile->ReadBool( b );
+	//if ( b ) {
+	//	if ( !hinge ) {
+	//		hinge = new idAFConstraint_Hinge;
+	//	}
+	//	hinge->SetSteerAngle( steerAngle );
+	//	hinge->SetSteerSpeed( steerSpeed );
+	//	hinge->SetLimitEpsilon( epsilon );
+	//	hinge->Restore( saveFile );
+	//}
 }
 
 /*
@@ -3346,9 +3505,9 @@ void idAFConstraint_ConeLimit::Setup( idAFBody *b1, idAFBody *b2, const idVec3 &
 	this->coneAnchor = coneAnchor;
 	this->body1Axis = body1Axis;
 	this->body1Axis.Normalize();
-	this->cosAngle = (float) cos( DEG2RAD( coneAngle * 0.5f ) );
-	this->sinHalfAngle = (float) sin( DEG2RAD( coneAngle * 0.25f ) );
-	this->cosHalfAngle = (float) cos( DEG2RAD( coneAngle * 0.25f ) );
+	this->cosAngle = idMath::Cos( DEG2RAD( coneAngle * 0.5f ) );
+	this->sinHalfAngle = idMath::Sin( DEG2RAD( coneAngle * 0.25f ) );
+	this->cosHalfAngle = idMath::Cos( DEG2RAD( coneAngle * 0.25f ) );
 }
 
 /*
@@ -3519,7 +3678,7 @@ void idAFConstraint_ConeLimit::DebugDraw( void ) {
 	z = anchor + ax * size * cosAngle;
 	start = x + z;
 	for ( a = 0.0f; a < 360.0f; a += 45.0f ) {
-		end = x * (float) cos( DEG2RAD(a + 45.0f) ) + y * (float) sin( DEG2RAD(a + 45.0f) ) + z;
+		end = x * idMath::Cos( DEG2RAD(a + 45.0f) ) + y * idMath::Sin( DEG2RAD(a + 45.0f) ) + z;
 		gameRenderWorld->DebugLine( colorMagenta, anchor, start );
 		gameRenderWorld->DebugLine( colorMagenta, start, end );
 		start = end;
@@ -3598,12 +3757,12 @@ void idAFConstraint_PyramidLimit::Setup( idAFBody *b1, idAFBody *b2, const idVec
 	// pyramid top
 	this->pyramidAnchor = pyramidAnchor;
 	// angles
-	cosAngle[0] = (float) cos( DEG2RAD( pyramidAngle1 * 0.5f ) );
-	cosAngle[1] = (float) cos( DEG2RAD( pyramidAngle2 * 0.5f ) );
-	sinHalfAngle[0] = (float) sin( DEG2RAD( pyramidAngle1 * 0.25f ) );
-	sinHalfAngle[1] = (float) sin( DEG2RAD( pyramidAngle2 * 0.25f ) );
-	cosHalfAngle[0] = (float) cos( DEG2RAD( pyramidAngle1 * 0.25f ) );
-	cosHalfAngle[1] = (float) cos( DEG2RAD( pyramidAngle2 * 0.25f ) );
+	cosAngle[0] = idMath::Cos( DEG2RAD( pyramidAngle1 * 0.5f ) );
+	cosAngle[1] = idMath::Cos( DEG2RAD( pyramidAngle2 * 0.5f ) );
+	sinHalfAngle[0] = idMath::Sin( DEG2RAD( pyramidAngle1 * 0.25f ) );
+	sinHalfAngle[1] = idMath::Sin( DEG2RAD( pyramidAngle2 * 0.25f ) );
+	cosHalfAngle[0] = idMath::Cos( DEG2RAD( pyramidAngle1 * 0.25f ) );
+	cosHalfAngle[1] = idMath::Cos( DEG2RAD( pyramidAngle2 * 0.25f ) );
 
 	this->body1Axis = body1Axis;
 }
@@ -4133,6 +4292,21 @@ idAFBody::Save
 ================
 */
 void idAFBody::Save( idSaveGame *saveFile ) {
+
+	saveFile->WriteString( name );		// cniciholson: Added Unsaved Var
+	//if ( parent ) {
+	//	saveFile->WriteBool( true );
+	//	parent->Save( savefile );		// cniciholson: Added Unsaved Var
+	//}
+	//else {
+	//	saveFile->WriteBool( false );
+	//}
+	// TOSAVE: idList<idAFBody *>		children
+	// TOSAVE: idClipModel *			clipModel
+	// TOSAVE: idAFConstraint *			primaryConstraint
+	// TOSAVE: idList<idAFConstraint *> constraints
+	// TOSAVE: idAFTree *				tree;
+
 	saveFile->WriteFloat( linearFriction );
 	saveFile->WriteFloat( angularFriction );
 	saveFile->WriteFloat( contactFriction );
@@ -4149,12 +4323,48 @@ void idAFBody::Save( idSaveGame *saveFile ) {
 	saveFile->WriteMat3( inertiaTensor );
 	saveFile->WriteMat3( inverseInertiaTensor );
 
+	//saveFile->WriteVec3( state[0].worldOrigin );	// cnicholson: Added unsaved var state[0]
+	//saveFile->WriteMat3( state[0].worldAxis );
+	//saveFile->WriteVec6( state[0].spatialVelocity );
+	//saveFile->WriteVec6( state[0].externalForce );
+	//
+	//saveFile->WriteVec3( state[1].worldOrigin );	// cnicholson: Added unsaved var state[1]
+	//saveFile->WriteMat3( state[1].worldAxis );
+	//saveFile->WriteVec6( state[1].spatialVelocity );
+	//saveFile->WriteVec6( state[1].externalForce );
+
 	saveFile->WriteVec3( current->worldOrigin );
 	saveFile->WriteMat3( current->worldAxis );
 	saveFile->WriteVec6( current->spatialVelocity );
 	saveFile->WriteVec6( current->externalForce );
+
+	//saveFile->WriteVec3( next->worldOrigin );		// cnicholson: Added unsaved var next->
+	//saveFile->WriteMat3( next->worldAxis );
+	//saveFile->WriteVec6( next->spatialVelocity );
+	//saveFile->WriteVec6( next->externalForce );
+	//
+	//saveFile->WriteVec3( saved.worldOrigin );		// cnicholson: Added unsaved var saved
+	//saveFile->WriteMat3( saved.worldAxis );
+	//saveFile->WriteVec6( saved.spatialVelocity );
+	//saveFile->WriteVec6( saved.externalForce );
+
 	saveFile->WriteVec3( atRestOrigin );
 	saveFile->WriteMat3( atRestAxis );
+
+	// TOSAVE: idMatX					inverseWorldSpatialInerti
+	// TOSAVE: idMatX					I, invI;				
+	// TOSAVE: idMatX					J;						
+	// TOSAVE: idVecX					s;						
+	// TOSAVE: idVecX					totalForce;				
+	// TOSAVE: idVecX					auxForce;				
+	// TOSAVE: idVecX					acceleration;			
+	// TOSAVE: float *					response;				
+	// TOSAVE: int *					responseIndex;
+	saveFile->WriteInt( numResponses );				// cnicholson: Added unsaved var
+	saveFile->WriteInt( maxAuxiliaryIndex );		// cnicholson: Added unsaved var
+	saveFile->WriteInt( maxSubTreeAuxiliaryIndex );	// cnicholson: Added unsaved var
+
+	saveFile->Write( &fl, sizeof( fl ) );			// cnicholson: Added unsaved var
 }
 
 /*
@@ -4163,6 +4373,15 @@ idAFBody::Restore
 ================
 */
 void idAFBody::Restore( idRestoreGame *saveFile ) {
+
+	saveFile->ReadString( name );		// cniciholson: Added Unrestored Var
+	// TORESTORE: idList<idAFBody *>		parent
+	// TORESTORE: idList<idAFBody *>		children
+	// TORESTORE: idClipModel *			clipModel
+	// TORESTORE: idAFConstraint *			primaryConstraint
+	// TORESTORE: idList<idAFConstraint *> constraints
+	// TORESTORE: idAFTree *				tree;
+
 	saveFile->ReadFloat( linearFriction );
 	saveFile->ReadFloat( angularFriction );
 	saveFile->ReadFloat( contactFriction );
@@ -4179,14 +4398,49 @@ void idAFBody::Restore( idRestoreGame *saveFile ) {
 	saveFile->ReadMat3( inertiaTensor );
 	saveFile->ReadMat3( inverseInertiaTensor );
 
+	//saveFile->ReadVec3( state[0].worldOrigin );	// cnicholson: Added unrestored var state[0]
+	//saveFile->ReadMat3( state[0].worldAxis );
+	//saveFile->ReadVec6( state[0].spatialVelocity );
+	//saveFile->ReadVec6( state[0].externalForce );
+
+	//saveFile->ReadVec3( state[1].worldOrigin );	// cnicholson: Added unrestored var state[0]
+	//saveFile->ReadMat3( state[1].worldAxis );
+	//saveFile->ReadVec6( state[1].spatialVelocity );
+	//saveFile->ReadVec6( state[1].externalForce );
+
 	saveFile->ReadVec3( current->worldOrigin );
 	saveFile->ReadMat3( current->worldAxis );
 	saveFile->ReadVec6( current->spatialVelocity );
 	saveFile->ReadVec6( current->externalForce );
+
+	//saveFile->ReadVec3( next->worldOrigin );		// cnicholson: Added unrestored var next->
+	//saveFile->ReadMat3( next->worldAxis );
+	//saveFile->ReadVec6( next->spatialVelocity );
+	//saveFile->ReadVec6( next->externalForce );
+
+	//saveFile->ReadVec3( saved.worldOrigin );		// cnicholson: Added unrestored var saved
+	//saveFile->ReadMat3( saved.worldAxis );
+	//saveFile->ReadVec6( saved.spatialVelocity );
+	//saveFile->ReadVec6( saved.externalForce );
+
 	saveFile->ReadVec3( atRestOrigin );
 	saveFile->ReadMat3( atRestAxis );
-}
 
+	// TORESTORE: idMatX					inverseWorldSpatialInerti
+	// TORESTORE: idMatX					I, invI;
+	// TORESTORE: idMatX					J;
+	// TORESTORE: idVecX					s;
+	// TORESTORE: idVecX					totalForce;
+	// TORESTORE: idVecX					auxForce;
+	// TORESTORE: idVecX					acceleration;
+	// TORESTORE: float *					response;
+	// TORESTORE: int *						responseIndex;
+	saveFile->ReadInt( numResponses );				// cnicholson: Added unrestored var
+	saveFile->ReadInt( maxAuxiliaryIndex );			// cnicholson: Added unrestored var
+	saveFile->ReadInt( maxSubTreeAuxiliaryIndex );	// cnicholson: Added unrestored var
+
+	saveFile->Read( &fl, sizeof( fl ) );			// cnicholson: Added unrestored var
+}
 
 
 //===============================================================
@@ -4215,6 +4469,11 @@ void idAFTree::Factor( void ) const {
 		body = sortedBodies[i];
 
 		if ( body->children.Num() ) {
+
+// RAVEN BEGIN
+// jscott: fixed warning
+			child = NULL;
+// RAVEN END
 
 			for ( j = 0; j < body->children.Num(); j++ ) {
 
@@ -5278,14 +5537,20 @@ void idPhysics_AF::CheckForCollisions( float timeStep ) {
 	for ( i = 0; i < bodies.Num(); i++ ) {
 		body = bodies[i];
 
-		if ( body->clipMask != 0 ) {
+// RAVEN BEGIN
+// rjohnson: fast AF eval to skip some things that are not needed for specific circumstances
+		if ( body->clipMask != 0 && !fastEval ) {
+// RAVEN END
 
 			passEntity = SetupCollisionForBody( body );
 
 #ifdef TEST_COLLISION_DETECTION
 			bool startsolid = false;
-			if ( gameLocal.clip.Contents( body->current->worldOrigin, body->clipModel,
+// RAVEN BEGIN
+// ddynerman: multiple collision worlds
+			if ( gameLocal.Contents( self, body->current->worldOrigin, body->clipModel,
 															body->current->worldAxis, body->clipMask, passEntity ) ) {
+// RAVEN END
 				startsolid = true;
 			}
 #endif
@@ -5295,9 +5560,11 @@ void idPhysics_AF::CheckForCollisions( float timeStep ) {
 			rotation.SetOrigin( body->current->worldOrigin );
 
 			// if there was a collision
-			if ( gameLocal.clip.Motion( collision, body->current->worldOrigin, body->next->worldOrigin, rotation,
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+			if ( gameLocal.Motion( self, collision, body->current->worldOrigin, body->next->worldOrigin, rotation,
 										body->clipModel, body->current->worldAxis, body->clipMask, passEntity ) ) {
-
+// RAVEN END
 				// set the next state to the state at the moment of impact
 				body->next->worldOrigin = collision.endpos;
 				body->next->worldAxis = collision.endAxis;
@@ -5310,8 +5577,11 @@ void idPhysics_AF::CheckForCollisions( float timeStep ) {
 			}
 
 #ifdef TEST_COLLISION_DETECTION
-			if ( gameLocal.clip.Contents( body->next->worldOrigin, body->clipModel,
-														body->next->worldAxis, body->clipMask, passEntity ) ) {
+// RAVEN BEGIN
+// ddynerman: multiple collision worlds
+			if ( gameLocal.Contents( self, body->next->worldOrigin, body->clipModel,
+													body->next->worldAxis, body->clipMask, passEntity ) ) {
+// RAVEN END
 				if ( !startsolid ) {
 					int bah = 1;
 				}
@@ -5319,7 +5589,10 @@ void idPhysics_AF::CheckForCollisions( float timeStep ) {
 #endif
 		}
 
-		body->clipModel->Link( gameLocal.clip, self, body->clipModel->GetId(), body->next->worldOrigin, body->next->worldAxis );
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+		body->clipModel->Link( self, body->clipModel->GetId(), body->next->worldOrigin, body->next->worldAxis );
+// RAVEN END
 	}
 }
 
@@ -5351,7 +5624,10 @@ bool idPhysics_AF::EvaluateContacts( void ) {
 	for ( i = 0; i < bodies.Num(); i++ ) {
 		body = bodies[i];
 
-		if ( body->clipMask == 0 ) {
+// RAVEN BEGIN
+// rjohnson: fast AF eval to skip some things that are not needed for specific circumstances
+		if ( body->clipMask == 0 || fastEval ) {
+// RAVEN END
 			continue;
 		}
 
@@ -5361,10 +5637,11 @@ bool idPhysics_AF::EvaluateContacts( void ) {
 		dir.SubVec6(0) = body->current->spatialVelocity + current.lastTimeStep * dir.SubVec6(0);
 		dir.SubVec3(0).Normalize();
 		dir.SubVec3(1).Normalize();
-
-		numContacts = gameLocal.clip.Contacts( contactInfo, 10, body->current->worldOrigin, dir.SubVec6(0), 2.0f, //CONTACT_EPSILON,
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+		numContacts = gameLocal.Contacts( self, contactInfo, 10, body->current->worldOrigin, dir.SubVec6(0), 2.0f, //CONTACT_EPSILON,
 						body->clipModel, body->current->worldAxis, body->clipMask, passEntity );
-
+// RAVEN END
 #if 1
 		// merge nearby contacts between the same bodies
 		// and assure there are at most three planar contacts between any pair of bodies
@@ -5524,7 +5801,10 @@ void idPhysics_AF::UpdateClipModels( void ) {
 
 	for ( i = 0; i < bodies.Num(); i++ ) {
 		body = bodies[i];
-		body->clipModel->Link( gameLocal.clip, self, body->clipModel->GetId(), body->current->worldOrigin, body->current->worldAxis );
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+		body->clipModel->Link( self, body->clipModel->GetId(), body->current->worldOrigin, body->current->worldAxis );
+// RAVEN END
 	}
 }
 
@@ -6090,8 +6370,16 @@ bool idPhysics_AF::Evaluate( int timeStepMSec, int endTimeMSec ) {
 	current.pushVelocity.Zero();
 
 	if ( IsOutsideWorld() ) {
-		gameLocal.Warning( "articulated figure moved outside world bounds for entity '%s' type '%s' at (%s)",
+// RAVEN BEGIN
+// kfuller: warnings shouldn't crash the game
+		if ( bodies.Num() && bodies[0] && bodies[0]->current && self ) {
+			gameLocal.Warning( "articulated figure moved outside world bounds for entity '%s' type '%s' at (%s)",
 							self->name.c_str(), self->GetType()->classname, bodies[0]->current->worldOrigin.ToString(0) );
+		} else {
+			gameLocal.Warning( "articulated figure moved outside world bounds for entity '%s' type '%s' -- no body",
+							self->name.c_str(), self->GetType()->classname );
+		}
+// RAVEN END
 		Rest();
 	}
 
@@ -6193,14 +6481,14 @@ void idPhysics_AF::DebugDraw( void ) {
 				cvarSystem->SetCVarString( "cm_drawColor", colorCyan.ToString( 0 ) );
 				constrainedBody1 = constraint->body1;
 				if ( constrainedBody1 ) {
-					collisionModelManager->DrawModel( constrainedBody1->clipModel->Handle(), constrainedBody1->clipModel->GetOrigin(),
-											constrainedBody1->clipModel->GetAxis(), vec3_origin, 0.0f );
+					collisionModelManager->DrawModel( constrainedBody1->clipModel->GetCollisionModel(), constrainedBody1->clipModel->GetOrigin(),
+											constrainedBody1->clipModel->GetAxis(), vec3_origin, mat3_identity, 0.0f );
 				}
 				cvarSystem->SetCVarString( "cm_drawColor", colorBlue.ToString( 0 ) );
 				constrainedBody2 = constraint->body2;
 				if ( constrainedBody2 ) {
-					collisionModelManager->DrawModel( constrainedBody2->clipModel->Handle(), constrainedBody2->clipModel->GetOrigin(),
-											constrainedBody2->clipModel->GetAxis(), vec3_origin, 0.0f );
+					collisionModelManager->DrawModel( constrainedBody2->clipModel->GetCollisionModel(), constrainedBody2->clipModel->GetOrigin(),
+											constrainedBody2->clipModel->GetAxis(), vec3_origin, mat3_identity, 0.0f );
 				}
 				cvarSystem->SetCVarString( "cm_drawColor", colorRed.ToString( 0 ) );
 			}
@@ -6211,8 +6499,8 @@ void idPhysics_AF::DebugDraw( void ) {
 		highlightBody = GetBody( af_highlightBody.GetString() );
 		if ( highlightBody ) {
 			cvarSystem->SetCVarString( "cm_drawColor", colorYellow.ToString( 0 ) );
-			collisionModelManager->DrawModel( highlightBody->clipModel->Handle(), highlightBody->clipModel->GetOrigin(),
-									highlightBody->clipModel->GetAxis(), vec3_origin, 0.0f );
+			collisionModelManager->DrawModel( highlightBody->clipModel->GetCollisionModel(), highlightBody->clipModel->GetOrigin(),
+									highlightBody->clipModel->GetAxis(), vec3_origin, mat3_identity, 0.0f );
 			cvarSystem->SetCVarString( "cm_drawColor", colorRed.ToString( 0 ) );
 		}
 	}
@@ -6226,8 +6514,8 @@ void idPhysics_AF::DebugDraw( void ) {
 			if ( body == highlightBody ) {
 				continue;
 			}
-			collisionModelManager->DrawModel( body->clipModel->Handle(), body->clipModel->GetOrigin(),
-										body->clipModel->GetAxis(), vec3_origin, 0.0f );
+			collisionModelManager->DrawModel( body->clipModel->GetCollisionModel(), body->clipModel->GetOrigin(),
+										body->clipModel->GetAxis(), vec3_origin, mat3_identity, 0.0f );
 			//DrawTraceModelSilhouette( gameLocal.GetLocalPlayer()->GetEyePosition(), body->clipModel );
 		}
 	}
@@ -6325,7 +6613,10 @@ idPhysics_AF::idPhysics_AF( void ) {
 
 	memset( &current, 0, sizeof( current ) );
 	current.atRest = -1;
-	current.lastTimeStep = USERCMD_MSEC;
+// RAVEN BEGIN
+// bdube: use GetMSec access rather than USERCMD_TIME
+	current.lastTimeStep = gameLocal.GetMSec();
+// RAVEN END
 	saved = current;
 
 	linearFriction = 0.005f;
@@ -6367,6 +6658,11 @@ idPhysics_AF::idPhysics_AF( void ) {
 	noImpact = false;
 	worldConstraintsLocked = false;
 	forcePushable = false;
+
+// RAVEN BEGIN
+// rjohnson: fast AF eval to skip some things that are not needed for specific circumstances
+	fastEval = false;
+// RAVEN END
 
 #ifdef AF_TIMINGS
 	lastTimerReset = 0;
@@ -6439,9 +6735,7 @@ void idPhysics_AF::Save( idSaveGame *saveFile ) const {
 
 	// the articulated figure structure is handled by the owner
 
-	idPhysics_AF_SavePState( saveFile, current );
-	idPhysics_AF_SavePState( saveFile, saved );
-
+	// TOSAVE: idList<idAFTree *>		trees;
 	saveFile->WriteInt( bodies.Num() );
 	for ( i = 0; i < bodies.Num(); i++ ) {
 		bodies[i]->Save( saveFile );
@@ -6457,6 +6751,13 @@ void idPhysics_AF::Save( idSaveGame *saveFile ) const {
 	for ( i = 0; i < constraints.Num(); i++ ) {
 		constraints[i]->Save( saveFile );
 	}
+
+	// TOSAVE: idList<idAFConstraint *>primaryConstraints;				
+	// TOSAVE: idList<idAFConstraint *>auxiliaryConstraints;			
+	// TOSAVE: idList<idAFConstraint *>frameConstraints;				
+	// TOSAVE: idList<idAFConstraint_Contact *>contactConstraints;		
+	// TOSAVE: idList<int>				contactBodies;					
+	// TOSAVE: idList<AFCollision_t>	collisions;						
 
 	saveFile->WriteBool( changedAF );
 
@@ -6499,6 +6800,17 @@ void idPhysics_AF::Save( idSaveGame *saveFile ) const {
 	saveFile->WriteBool( noImpact );
 	saveFile->WriteBool( worldConstraintsLocked );
 	saveFile->WriteBool( forcePushable );
+
+// RAVEN BEGIN
+// rjohnson: fast AF eval to skip some things that are not needed for specific circumstances
+	saveFile->WriteBool( fastEval );
+// RAVEN END
+
+	idPhysics_AF_SavePState( saveFile, current );
+	idPhysics_AF_SavePState( saveFile, saved );
+
+	// TOSAVE: idAFBody *				masterBody;		
+	// TOSAVE: idLCP *					lcp;			
 }
 
 /*
@@ -6511,9 +6823,6 @@ void idPhysics_AF::Restore( idRestoreGame *saveFile ) {
 	bool hasMaster;
 
 	// the articulated figure structure should have already been restored
-
-	idPhysics_AF_RestorePState( saveFile, current );
-	idPhysics_AF_RestorePState( saveFile, saved );
 
 	saveFile->ReadInt( num );
 	assert( num == bodies.Num() );
@@ -6573,6 +6882,14 @@ void idPhysics_AF::Restore( idRestoreGame *saveFile ) {
 	saveFile->ReadBool( noImpact );
 	saveFile->ReadBool( worldConstraintsLocked );
 	saveFile->ReadBool( forcePushable );
+
+// RAVEN BEGIN
+// rjohnson: fast AF eval to skip some things that are not needed for specific circumstances
+	saveFile->ReadBool( fastEval );
+// RAVEN END
+
+	idPhysics_AF_RestorePState( saveFile, current );
+	idPhysics_AF_RestorePState( saveFile, saved );
 
 	changedAF = true;
 
@@ -7196,7 +7513,10 @@ void idPhysics_AF::SaveState( void ) {
 	saved = current;
 
 	for ( i = 0; i < bodies.Num(); i++ ) {
-		memcpy( &bodies[i]->saved, bodies[i]->current, sizeof( AFBodyPState_t ) );
+// RAVEN BEGIN
+// JSinger: Changed to call optimized memcpy
+		SIMDProcessor->Memcpy( &bodies[i]->saved, bodies[i]->current, sizeof( AFBodyPState_t ) );
+// RAVEN END
 	}
 }
 
@@ -7406,13 +7726,16 @@ void idPhysics_AF::ClipTranslation( trace_t &results, const idVec3 &translation,
 
 		if ( body->clipModel->IsTraceModel() ) {
 			if ( model ) {
-				gameLocal.clip.TranslationModel( bodyResults, body->current->worldOrigin, body->current->worldOrigin + translation,
+// RAVEN BEGIN
+// ddynerman: multiple collision worlds
+				gameLocal.TranslationModel( self, bodyResults, body->current->worldOrigin, body->current->worldOrigin + translation,
 									body->clipModel, body->current->worldAxis, body->clipMask,
-										model->Handle(), model->GetOrigin(), model->GetAxis() );
+										model->GetCollisionModel(), model->GetOrigin(), model->GetAxis() );
 			}
 			else {
-				gameLocal.clip.Translation( bodyResults, body->current->worldOrigin, body->current->worldOrigin + translation,
+				gameLocal.Translation( self, bodyResults, body->current->worldOrigin, body->current->worldOrigin + translation,
 									body->clipModel, body->current->worldAxis, body->clipMask, self );
+// RAVEN END
 			}
 			if ( bodyResults.fraction < results.fraction ) {
 				results = bodyResults;
@@ -7442,13 +7765,16 @@ void idPhysics_AF::ClipRotation( trace_t &results, const idRotation &rotation, c
 
 		if ( body->clipModel->IsTraceModel() ) {
 			if ( model ) {
-				gameLocal.clip.RotationModel( bodyResults, body->current->worldOrigin, rotation,
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+				gameLocal.RotationModel( self, bodyResults, body->current->worldOrigin, rotation,
 									body->clipModel, body->current->worldAxis, body->clipMask,
-										model->Handle(), model->GetOrigin(), model->GetAxis() );
+										model->GetCollisionModel(), model->GetOrigin(), model->GetAxis() );
 			}
 			else {
-				gameLocal.clip.Rotation( bodyResults, body->current->worldOrigin, rotation,
+				gameLocal.Rotation( self, bodyResults, body->current->worldOrigin, rotation,
 									body->clipModel, body->current->worldAxis, body->clipMask, self );
+// RAVEN END
 			}
 			if ( bodyResults.fraction < results.fraction ) {
 				results = bodyResults;
@@ -7477,13 +7803,16 @@ int idPhysics_AF::ClipContents( const idClipModel *model ) const {
 
 		if ( body->clipModel->IsTraceModel() ) {
 			if ( model ) {
-				contents |= gameLocal.clip.ContentsModel( body->current->worldOrigin,
+// RAVEN BEGIN
+// ddynerman: multiple collision worlds
+				contents |= gameLocal.ContentsModel( self, body->current->worldOrigin,
 									body->clipModel, body->current->worldAxis, -1,
-										model->Handle(), model->GetOrigin(), model->GetAxis() );
+										model->GetCollisionModel(), model->GetOrigin(), model->GetAxis() );
 			}
 			else {
-				contents |= gameLocal.clip.Contents( body->current->worldOrigin,
+				contents |= gameLocal.Contents( self, body->current->worldOrigin,
 									body->clipModel, body->current->worldAxis, -1, NULL );
+// RAVEN END
 			}
 		}
 	}
@@ -7689,6 +8018,7 @@ void idPhysics_AF::ReadFromSnapshot( const idBitMsgDelta &msg ) {
 	int i, num;
 	idCQuat quat;
 
+	// TODO: Check that this conditional write to delta message is OK
 	current.atRest = msg.ReadLong();
 	current.noMoveTime = msg.ReadFloat();
 	current.activateTime = msg.ReadFloat();

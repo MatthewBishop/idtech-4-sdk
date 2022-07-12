@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __MATH_RANDOM_H__
 #define __MATH_RANDOM_H__

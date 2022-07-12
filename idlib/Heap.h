@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __HEAP_H__
 #define __HEAP_H__
@@ -16,6 +14,96 @@
 ===============================================================================
 */
 
+// RAVEN BEGIN
+// jsinger: attempt to eliminate cross-DLL allocation issues
+#ifdef RV_UNIFIED_ALLOCATOR
+class Memory
+{
+public:
+	static void *Allocate(size_t size)
+	{
+		if(mAllocator)
+		{
+			return mAllocator(size);
+		}
+		else
+		{
+#ifndef _LOAD_DLL
+			// allocations from the exe are safe no matter what, but allocations from a DLL through
+			// this path will be unsafe, so we warn about them.  Adding a breakpoint here will allow
+			// allow locating of the specific offending allocation
+			Error("Unprotected allocations are not allowed.  Make sure you've initialized Memory before allocating dynamic memory");
+#endif
+			return malloc(size);
+		}
+	}
+
+	static void Free(void *ptr)
+	{
+		if(mDeallocator)
+		{
+			mDeallocator(ptr);
+		}
+		else
+		{
+#ifndef _LOAD_DLL
+			// allocations from the exe are safe no matter what, but allocations from a DLL through
+			// this path will be unsafe, so we warn about them.  Adding a breakpoint here will allow
+			// allow locating of the specific offending allocation
+			Error("Unprotected allocations are not allowed.  Make sure you've initialized Memory before allocating dynamic memory");
+#endif
+			return free(ptr);
+		}
+	}
+
+	static size_t MSize(void *ptr)
+	{
+		if(mMSize)
+		{
+			return mMSize(ptr);
+		}
+		else
+		{
+#ifndef _LOAD_DLL
+			// allocations from the exe are safe no matter what, but allocations from a DLL through
+			// this path will be unsafe, so we warn about them.  Adding a breakpoint here will allow
+			// allow locating of the specific offending allocation
+			Error("Unprotected allocations are not allowed.  Make sure you've initialized Memory before allocating dynamic memory");
+#endif
+			return _msize(ptr);
+		}
+	}
+
+	static void InitAllocator(void *(*allocator)(size_t size), void (*deallocator)(void *), size_t (*msize)(void *ptr))
+	{
+		// check for errors prior to initialization
+		if(!sOK)
+		{
+			Error("Unprotected allocation in DLL detected prior to initialization of memory system");
+		}
+
+		mAllocator = allocator;
+		mDeallocator = deallocator;
+		mMSize = msize;
+	}
+
+	static void DeinitAllocator()
+	{
+		mAllocator = NULL;
+		mDeallocator = NULL;
+		mMSize = NULL;
+	}
+
+	static void Error(const char *errStr);
+
+private:
+	static void *(*mAllocator)(size_t size);
+	static void (*mDeallocator)(void *ptr);
+	static size_t (*mMSize)(void *ptr);
+	static bool sOK;
+};
+#endif
+// RAVEN END
 
 typedef struct {
 	int		num;
@@ -24,6 +112,51 @@ typedef struct {
 	int		totalSize;
 } memoryStats_t;
 
+// RAVEN BEGIN
+// amccarthy:  tags for memory allocation tracking.  When updating this list please update the
+// list of discriptions in Heap.cpp as well.
+typedef enum {
+	MA_NONE = 0,	
+	
+	MA_OPNEW,
+	MA_DEFAULT,
+	MA_LEXER,
+	MA_PARSER,
+	MA_AAS,
+	MA_CLASS,
+	MA_SCRIPT,
+	MA_CM,
+	MA_CVAR,
+	MA_DECL,
+	MA_FILESYS,
+	MA_IMAGES,
+	MA_MATERIAL,
+	MA_MODEL,
+	MA_FONT,
+	MA_RENDER,
+	MA_VERTEX,
+	MA_SOUND,
+	MA_WINDOW,
+	MA_EVENT,
+	MA_MATH,
+	MA_ANIM,
+	MA_DYNAMICBLOCK,
+	MA_STRING,
+	MA_GUI,
+	MA_EFFECT,
+	MA_ENTITY,
+	MA_PHYSICS,
+	MA_AI,
+	MA_NETWORK,
+
+	MA_DO_NOT_USE,		// neither of the two remaining enumerated values should be used (no use of MA_DO_NOT_USE prevents the second dword in a memory block from getting the value 0xFFFFFFFF)
+	MA_MAX				// <- this enumerated value is a count and cannot exceed 32 (5 bits are used to encode tag within memory block with rvHeap.cpp)
+} Mem_Alloc_Types_t;
+
+#if defined(_DEBUG) || defined(_RV_MEM_SYS_SUPPORT)
+const char *GetMemAllocStats(int tag, int &num, int &size, int &peak);
+#endif
+// RAVEN END
 
 void		Mem_Init( void );
 void		Mem_Shutdown( void );
@@ -35,68 +168,109 @@ void		Mem_Dump_f( const class idCmdArgs &args );
 void		Mem_DumpCompressed_f( const class idCmdArgs &args );
 void		Mem_AllocDefragBlock( void );
 
+// RAVEN BEGIN
+// amccarthy command for printing tagged mem_alloc info
+void		Mem_ShowMemAlloc_f( const idCmdArgs &args );
+
+// jnewquist: Add Mem_Size to query memory allocation size
+int			Mem_Size( void *ptr );
+
+// jnewquist: memory tag stack for new/delete
+#if (defined(_DEBUG) || defined(_RV_MEM_SYS_SUPPORT)) && !defined(ENABLE_INTEL_SMP)
+class MemScopedTag {
+	byte mTag;
+	MemScopedTag *mPrev;
+	static MemScopedTag *mTop;
+public:
+	MemScopedTag( byte tag ) {
+		mTag = tag;
+		mPrev = mTop;
+		mTop = this;
+	}
+	~MemScopedTag() {
+		assert( mTop != NULL );
+		mTop = mTop->mPrev;
+	}
+	void SetTag( byte tag ) {
+		mTag = tag;
+	}
+	static byte GetTopTag( void ) {
+		if ( mTop ) {
+			return mTop->mTag;
+		} else {
+			return MA_OPNEW;
+		}
+	}
+};
+#define MemScopedTag_GetTopTag() MemScopedTag::GetTopTag()
+#define MEM_SCOPED_TAG(var, tag) MemScopedTag var(tag)
+#define MEM_SCOPED_TAG_SET(var, tag) var.SetTag(tag)
+#else
+#define MemScopedTag_GetTopTag() MA_OPNEW
+#define MEM_SCOPED_TAG(var, tag)
+#define MEM_SCOPED_TAG_SET(var, tag)
+#endif
+
+// RAVEN END
 
 #ifndef ID_DEBUG_MEMORY
 
-void *		Mem_Alloc( const int size );
-void *		Mem_ClearedAlloc( const int size );
+// RAVEN BEGIN
+// amccarthy: added tags from memory allocation tracking.
+void *		Mem_Alloc( const int size, byte tag = MA_DEFAULT );
+void *		Mem_ClearedAlloc( const int size, byte tag = MA_DEFAULT );
 void		Mem_Free( void *ptr );
 char *		Mem_CopyString( const char *in );
-void *		Mem_Alloc16( const int size );
+void *		Mem_Alloc16( const int size, byte tag=MA_DEFAULT );
 void		Mem_Free16( void *ptr );
 
-#ifdef ID_REDIRECT_NEWDELETE
+// jscott: standardised stack allocation
+inline void *Mem_StackAlloc( const int size ) { return( _alloca( size ) ); }
 
-__inline void *operator new( size_t s ) {
-	return Mem_Alloc( s );
-}
-__inline void operator delete( void *p ) {
-	Mem_Free( p );
-}
-__inline void *operator new[]( size_t s ) {
-	return Mem_Alloc( s );
-}
-__inline void operator delete[]( void *p ) {
-	Mem_Free( p );
-}
+// RAVEN BEGIN
+// dluetscher: moved the inline new/delete operators to sys_local.cpp and Game_local.cpp so that
+//			   Tools.dll will link.
+#if defined(_XBOX) || defined(ID_REDIRECT_NEWDELETE) || defined(_RV_MEM_SYS_SUPPORT)
+
+void *operator new( size_t s );
+void operator delete( void *p );
+void *operator new[]( size_t s );
+void operator delete[]( void *p );
+// RAVEN END
 
 #endif
+// RAVEN END
 
 #else /* ID_DEBUG_MEMORY */
 
-void *		Mem_Alloc( const int size, const char *fileName, const int lineNumber );
-void *		Mem_ClearedAlloc( const int size, const char *fileName, const int lineNumber );
+// RAVEN BEGIN
+// amccarthy: added tags from memory allocation tracking.
+void *		Mem_Alloc( const int size, const char *fileName, const int lineNumber, byte tag = MA_DEFAULT );
+void *		Mem_ClearedAlloc( const int size, const char *fileName, const int lineNumber, byte tag = MA_DEFAULT );
 void		Mem_Free( void *ptr, const char *fileName, const int lineNumber );
 char *		Mem_CopyString( const char *in, const char *fileName, const int lineNumber );
-void *		Mem_Alloc16( const int size, const char *fileName, const int lineNumber );
+void *		Mem_Alloc16( const int size, const char *fileName, const int lineNumber, byte tag = MA_DEFAULT);
 void		Mem_Free16( void *ptr, const char *fileName, const int lineNumber );
 
-#ifdef ID_REDIRECT_NEWDELETE
 
-__inline void *operator new( size_t s, int t1, int t2, char *fileName, int lineNumber ) {
-	return Mem_Alloc( s, fileName, lineNumber );
-}
-__inline void operator delete( void *p, int t1, int t2, char *fileName, int lineNumber ) {
-	Mem_Free( p, fileName, lineNumber );
-}
-__inline void *operator new[]( size_t s, int t1, int t2, char *fileName, int lineNumber ) {
-	return Mem_Alloc( s, fileName, lineNumber );
-}
-__inline void operator delete[]( void *p, int t1, int t2, char *fileName, int lineNumber ) {
-	Mem_Free( p, fileName, lineNumber );
-}
-__inline void *operator new( size_t s ) {
-	return Mem_Alloc( s, "", 0 );
-}
-__inline void operator delete( void *p ) {
-	Mem_Free( p, "", 0 );
-}
-__inline void *operator new[]( size_t s ) {
-	return Mem_Alloc( s, "", 0 );
-}
-__inline void operator delete[]( void *p ) {
-	Mem_Free( p, "", 0 );
-}
+// jscott: standardised stack allocation
+inline void *Mem_StackAlloc( const int size ) { return( _alloca( size ) ); }
+
+// RAVEN BEGIN
+// dluetscher: moved the inline new/delete operators to sys_local.cpp and Game_local.cpp so that
+//			   the Tools.dll will link.
+#if defined(_XBOX) || defined(ID_REDIRECT_NEWDELETE) || defined(_RV_MEM_SYS_SUPPORT)
+
+void *operator new( size_t s, int t1, int t2, char *fileName, int lineNumber );
+void operator delete( void *p, int t1, int t2, char *fileName, int lineNumber );
+void *operator new[]( size_t s, int t1, int t2, char *fileName, int lineNumber );
+void operator delete[]( void *p, int t1, int t2, char *fileName, int lineNumber );
+
+void *operator new( size_t s );
+void operator delete( void *p );
+void *operator new[]( size_t s );
+void operator delete[]( void *p );
+// RAVEN END
 
 #define ID_DEBUG_NEW						new( 0, 0, __FILE__, __LINE__ )
 #undef new
@@ -104,13 +278,13 @@ __inline void operator delete[]( void *p ) {
 
 #endif
 
-#define		Mem_Alloc( size )				Mem_Alloc( size, __FILE__, __LINE__ )
-#define		Mem_ClearedAlloc( size )		Mem_ClearedAlloc( size, __FILE__, __LINE__ )
+#define		Mem_Alloc( size, tag )				Mem_Alloc( size, __FILE__, __LINE__ )
+#define		Mem_ClearedAlloc( size, tag )		Mem_ClearedAlloc( size, __FILE__, __LINE__ )
 #define		Mem_Free( ptr )					Mem_Free( ptr, __FILE__, __LINE__ )
 #define		Mem_CopyString( s )				Mem_CopyString( s, __FILE__, __LINE__ )
-#define		Mem_Alloc16( size )				Mem_Alloc16( size, __FILE__, __LINE__ )
+#define		Mem_Alloc16( size, tag )				Mem_Alloc16( size, __FILE__, __LINE__ )
 #define		Mem_Free16( ptr )				Mem_Free16( ptr, __FILE__, __LINE__ )
-
+// RAVEN END
 #endif /* ID_DEBUG_MEMORY */
 
 
@@ -125,7 +299,9 @@ __inline void operator delete[]( void *p ) {
 ===============================================================================
 */
 
-template<class type, int blockSize>
+// RAVEN BEGIN
+// jnewquist: Mark memory tags for idBlockAlloc
+template<class type, int blockSize, byte memoryTag>
 class idBlockAlloc {
 public:
 							idBlockAlloc( void );
@@ -139,6 +315,11 @@ public:
 	int						GetTotalCount( void ) const { return total; }
 	int						GetAllocCount( void ) const { return active; }
 	int						GetFreeCount( void ) const { return total - active; }
+
+// RAVEN BEGIN
+// jscott: get the amount of memory used
+	size_t					Allocated( void ) const { return( total * sizeof( type ) ); }
+// RAVEN END
 
 private:
 	typedef struct element_s {
@@ -156,21 +337,22 @@ private:
 	int						active;
 };
 
-template<class type, int blockSize>
-idBlockAlloc<type,blockSize>::idBlockAlloc( void ) {
+template<class type, int blockSize, byte memoryTag>
+idBlockAlloc<type,blockSize,memoryTag>::idBlockAlloc( void ) {
 	blocks = NULL;
 	free = NULL;
 	total = active = 0;
 }
 
-template<class type, int blockSize>
-idBlockAlloc<type,blockSize>::~idBlockAlloc( void ) {
+template<class type, int blockSize, byte memoryTag>
+idBlockAlloc<type,blockSize,memoryTag>::~idBlockAlloc( void ) {
 	Shutdown();
 }
 
-template<class type, int blockSize>
-type *idBlockAlloc<type,blockSize>::Alloc( void ) {
+template<class type, int blockSize, byte memoryTag>
+type *idBlockAlloc<type,blockSize,memoryTag>::Alloc( void ) {
 	if ( !free ) {
+		MEM_SCOPED_TAG(tag, memoryTag);
 		block_t *block = new block_t;
 		block->next = blocks;
 		blocks = block;
@@ -187,16 +369,16 @@ type *idBlockAlloc<type,blockSize>::Alloc( void ) {
 	return &element->t;
 }
 
-template<class type, int blockSize>
-void idBlockAlloc<type,blockSize>::Free( type *t ) {
+template<class type, int blockSize, byte memoryTag>
+void idBlockAlloc<type,blockSize,memoryTag>::Free( type *t ) {
 	element_t *element = (element_t *)( ( (unsigned char *) t ) - ( (int) &((element_t *)0)->t ) );
 	element->next = free;
 	free = element;
 	active--;
 }
 
-template<class type, int blockSize>
-void idBlockAlloc<type,blockSize>::Shutdown( void ) {
+template<class type, int blockSize, byte memoryTag>
+void idBlockAlloc<type,blockSize,memoryTag>::Shutdown( void ) {
 	while( blocks ) {
 		block_t *block = blocks;
 		blocks = blocks->next;
@@ -206,6 +388,7 @@ void idBlockAlloc<type,blockSize>::Shutdown( void ) {
 	free = NULL;
 	total = active = 0;
 }
+// RAVEN END
 
 /*
 ==============================================================================
@@ -219,7 +402,7 @@ void idBlockAlloc<type,blockSize>::Shutdown( void ) {
 ==============================================================================
 */
 
-template<class type, int baseBlockSize, int minBlockSize>
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
 class idDynamicAlloc {
 public:
 									idDynamicAlloc( void );
@@ -255,57 +438,67 @@ private:
 	void							Clear( void );
 };
 
-template<class type, int baseBlockSize, int minBlockSize>
-idDynamicAlloc<type, baseBlockSize, minBlockSize>::idDynamicAlloc( void ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+idDynamicAlloc<type, baseBlockSize, minBlockSize, memoryTag>::idDynamicAlloc( void ) {
 	Clear();
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-idDynamicAlloc<type, baseBlockSize, minBlockSize>::~idDynamicAlloc( void ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+idDynamicAlloc<type, baseBlockSize, minBlockSize, memoryTag>::~idDynamicAlloc( void ) {
 	Shutdown();
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-void idDynamicAlloc<type, baseBlockSize, minBlockSize>::Init( void ) {
-	freeTree.Init();
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+void idDynamicAlloc<type, baseBlockSize, minBlockSize, memoryTag>::Init( void ) {
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-void idDynamicAlloc<type, baseBlockSize, minBlockSize>::Shutdown( void ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+void idDynamicAlloc<type, baseBlockSize, minBlockSize, memoryTag>::Shutdown( void ) {
 	Clear();
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-type *idDynamicAlloc<type, baseBlockSize, minBlockSize>::Alloc( const int num ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+type *idDynamicAlloc<type, baseBlockSize, minBlockSize, memoryTag>::Alloc( const int num ) {
 	numAllocs++;
 	if ( num <= 0 ) {
 		return NULL;
 	}
 	numUsedBlocks++;
 	usedBlockMemory += num * sizeof( type );
-	return Mem_Alloc16( num * sizeof( type ) );
+// RAVEN BEGIN
+// jscott: to make it build
+// mwhitlock: to make it build on Xenon
+	return (type *) ( (byte *) Mem_Alloc16( num * sizeof( type ), memoryTag ) );
+// RAVEN BEGIN
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-type *idDynamicAlloc<type, baseBlockSize, minBlockSize>::Resize( type *ptr, const int num ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+type *idDynamicAlloc<type, baseBlockSize, minBlockSize, memoryTag>::Resize( type *ptr, const int num ) {
 
 	numResizes++;
 
-	if ( ptr == NULL ) {
-		return Alloc( num );
-	}
-
+// RAVEN BEGIN
+// jnewquist: provide a real implementation of resize
 	if ( num <= 0 ) {
 		Free( ptr );
 		return NULL;
 	}
 
-	assert( 0 );
-	return ptr;
+	type *newptr = Alloc( num );
+
+	if ( ptr != NULL ) {
+		const int oldSize = Mem_Size(ptr);
+		const int newSize = num*sizeof(type);
+		SIMDProcessor->Memcpy( newptr, ptr, (newSize<oldSize)?newSize:oldSize );
+		Free(ptr);
+	}
+
+	return newptr;
+// RAVEN END
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-void idDynamicAlloc<type, baseBlockSize, minBlockSize>::Free( type *ptr ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+void idDynamicAlloc<type, baseBlockSize, minBlockSize, memoryTag>::Free( type *ptr ) {
 	numFrees++;
 	if ( ptr == NULL ) {
 		return;
@@ -313,13 +506,13 @@ void idDynamicAlloc<type, baseBlockSize, minBlockSize>::Free( type *ptr ) {
 	Mem_Free16( ptr );
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-const char *idDynamicAlloc<type, baseBlockSize, minBlockSize>::CheckMemory( const type *ptr ) const {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+const char *idDynamicAlloc<type, baseBlockSize, minBlockSize, memoryTag>::CheckMemory( const type *ptr ) const {
 	return NULL;
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-void idDynamicAlloc<type, baseBlockSize, minBlockSize>::Clear( void ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+void idDynamicAlloc<type, baseBlockSize, minBlockSize, memoryTag>::Clear( void ) {
 	numUsedBlocks = 0;
 	usedBlockMemory = 0;
 	numAllocs = 0;
@@ -341,7 +534,17 @@ void idDynamicAlloc<type, baseBlockSize, minBlockSize>::Clear( void ) {
 
 #include "containers/BTree.h"
 
+// RAVEN BEGIN
+// jnewquist: Fast sanity checking of idDynamicBlockAlloc
+//#ifdef _DEBUG
 //#define DYNAMIC_BLOCK_ALLOC_CHECK
+// FIXME: doesn't compile right on OSX when enabled. investigate
+#ifndef MACOS_X
+#define DYNAMIC_BLOCK_ALLOC_FASTCHECK
+#endif
+#define DYNAMIC_BLOCK_ALLOC_CHECK_IS_FATAL
+//#endif
+// RAVEN END
 
 template<class type>
 class idDynamicBlock {
@@ -351,7 +554,10 @@ public:
 	void							SetSize( int s, bool isBaseBlock ) { size = isBaseBlock ? -s : s; }
 	bool							IsBaseBlock( void ) const { return ( size < 0 ); }
 
-#ifdef DYNAMIC_BLOCK_ALLOC_CHECK
+// RAVEN BEGIN
+// jnewquist: Fast sanity checking of idDynamicBlockAlloc
+#if defined(DYNAMIC_BLOCK_ALLOC_CHECK) || defined(DYNAMIC_BLOCK_ALLOC_FASTCHECK)
+// RAVEN END
 	int								id[3];
 	void *							allocator;
 #endif
@@ -362,7 +568,7 @@ public:
 	idBTreeNode<idDynamicBlock<type>,int> *node;			// node in the B-Tree with free blocks
 };
 
-template<class type, int baseBlockSize, int minBlockSize>
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
 class idDynamicBlockAlloc {
 public:
 									idDynamicBlockAlloc( void );
@@ -394,7 +600,10 @@ private:
 	bool							allowAllocs;			// allow base block allocations
 	bool							lockMemory;				// lock memory so it cannot get swapped out
 
-#ifdef DYNAMIC_BLOCK_ALLOC_CHECK
+// RAVEN BEGIN
+// jnewquist: Fast sanity checking of idDynamicBlockAlloc
+#if defined(DYNAMIC_BLOCK_ALLOC_CHECK) || defined(DYNAMIC_BLOCK_ALLOC_FASTCHECK)
+// RAVEN END
 	int								blockId[3];
 #endif
 
@@ -416,25 +625,33 @@ private:
 	void							LinkFreeInternal( idDynamicBlock<type> *block );
 	void							UnlinkFreeInternal( idDynamicBlock<type> *block );
 	void							CheckMemory( void ) const;
+// RAVEN BEGIN
+// jnewquist: Fast sanity checking of idDynamicBlockAlloc
+	const char *					CheckMemory( const idDynamicBlock<type> *block ) const;
+// RAVEN END
 };
 
-template<class type, int baseBlockSize, int minBlockSize>
-idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::idDynamicBlockAlloc( void ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::idDynamicBlockAlloc( void ) {
 	Clear();
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::~idDynamicBlockAlloc( void ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::~idDynamicBlockAlloc( void ) {
 	Shutdown();
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::Init( void ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::Init( void ) {
+// RAVEN BEGIN
+// jnewquist: Tag scope and callees to track allocations using "new".
+	MEM_SCOPED_TAG(tag,memoryTag);
+// RAVEN END
 	freeTree.Init();
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::Shutdown( void ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::Shutdown( void ) {
 	idDynamicBlock<type> *block;
 
 	for ( block = firstBlock; block != NULL; block = block->next ) {
@@ -457,16 +674,23 @@ void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::Shutdown( void ) {
 	Clear();
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::SetFixedBlocks( int numBlocks ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::SetFixedBlocks( int numBlocks ) {
+	int i;
 	idDynamicBlock<type> *block;
 
-	for ( int i = numBaseBlocks; i < numBlocks; i++ ) {
-		block = ( idDynamicBlock<type> * ) Mem_Alloc16( baseBlockSize );
+	for ( i = numBaseBlocks; i < numBlocks; i++ ) {
+//RAVEN BEGIN
+//amccarthy: Added allocation tag
+		block = ( idDynamicBlock<type> * ) Mem_Alloc16( baseBlockSize, memoryTag );
+//RAVEN END
 		if ( lockMemory ) {
 			idLib::sys->LockMemory( block, baseBlockSize );
 		}
-#ifdef DYNAMIC_BLOCK_ALLOC_CHECK
+// RAVEN BEGIN
+// jnewquist: Fast sanity checking of idDynamicBlockAlloc
+#if defined(DYNAMIC_BLOCK_ALLOC_CHECK) || defined(DYNAMIC_BLOCK_ALLOC_FASTCHECK)
+// RAVEN END
 		memcpy( block->id, blockId, sizeof( block->id ) );
 		block->allocator = (void*)this;
 #endif
@@ -490,13 +714,13 @@ void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::SetFixedBlocks( int
 	allowAllocs = false;
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::SetLockMemory( bool lock ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::SetLockMemory( bool lock ) {
 	lockMemory = lock;
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::FreeEmptyBaseBlocks( void ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::FreeEmptyBaseBlocks( void ) {
 	idDynamicBlock<type> *block, *next;
 
 	for ( block = firstBlock; block != NULL; block = next ) {
@@ -528,8 +752,8 @@ void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::FreeEmptyBaseBlocks
 #endif
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-int idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::GetNumEmptyBaseBlocks( void ) const {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+int idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::GetNumEmptyBaseBlocks( void ) const {
 	int numEmptyBaseBlocks;
 	idDynamicBlock<type> *block;
 
@@ -542,8 +766,8 @@ int idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::GetNumEmptyBaseBlock
 	return numEmptyBaseBlocks;
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-type *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::Alloc( const int num ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+type *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::Alloc( const int num ) {
 	idDynamicBlock<type> *block;
 
 	numAllocs++;
@@ -571,8 +795,8 @@ type *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::Alloc( const int n
 	return block->GetMemory();
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-type *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::Resize( type *ptr, const int num ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+type *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::Resize( type *ptr, const int num ) {
 
 	numResizes++;
 
@@ -603,8 +827,8 @@ type *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::Resize( type *ptr,
 	return block->GetMemory();
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::Free( type *ptr ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::Free( type *ptr ) {
 
 	numFrees++;
 
@@ -624,27 +848,27 @@ void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::Free( type *ptr ) {
 #endif
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-const char *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::CheckMemory( const type *ptr ) const {
-	idDynamicBlock<type> *block;
-
-	if ( ptr == NULL ) {
-		return NULL;
-	}
-
-	block = ( idDynamicBlock<type> * ) ( ( (byte *) ptr ) - (int)sizeof( idDynamicBlock<type> ) );
-
+// RAVEN BEGIN
+// jnewquist: Fast sanity checking of idDynamicBlockAlloc
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+const char *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::CheckMemory( const idDynamicBlock<type> *block ) const {
 	if ( block->node != NULL ) {
 		return "memory has been freed";
 	}
 
-#ifdef DYNAMIC_BLOCK_ALLOC_CHECK
+#if defined(DYNAMIC_BLOCK_ALLOC_CHECK) || defined(DYNAMIC_BLOCK_ALLOC_FASTCHECK)
+// RAVEN END
 	if ( block->id[0] != 0x11111111 || block->id[1] != 0x22222222 || block->id[2] != 0x33333333 ) {
 		return "memory has invalid id";
 	}
+// RAVEN BEGIN
+// jsinger: attempt to eliminate cross-DLL allocation issues
+#ifndef RV_UNIFIED_ALLOCATOR
 	if ( block->allocator != (void*)this ) {
 		return "memory was allocated with different allocator";
 	}
+#endif // RV_UNIFIED_ALLOCATOR
+// RAVEN END
 #endif
 
 	/* base blocks can be larger than baseBlockSize which can cause this code to fail
@@ -664,8 +888,23 @@ const char *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::CheckMemory(
 	return NULL;
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::Clear( void ) {
+// RAVEN BEGIN
+// jnewquist: Fast sanity checking of idDynamicBlockAlloc
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+const char *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::CheckMemory( const type *ptr ) const {
+	idDynamicBlock<type> *block;
+
+	if ( ptr == NULL ) {
+		return NULL;
+	}
+
+	block = ( idDynamicBlock<type> * ) ( ( (byte *) ptr ) - (int)sizeof( idDynamicBlock<type> ) );
+	return CheckMemory( block );
+}
+// RAVEN END
+
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::Clear( void ) {
 	firstBlock = lastBlock = NULL;
 	allowAllocs = true;
 	lockMemory = false;
@@ -679,15 +918,18 @@ void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::Clear( void ) {
 	numResizes = 0;
 	numFrees = 0;
 
-#ifdef DYNAMIC_BLOCK_ALLOC_CHECK
+// RAVEN BEGIN
+// jnewquist: Fast sanity checking of idDynamicBlockAlloc
+#if defined(DYNAMIC_BLOCK_ALLOC_CHECK) || defined(DYNAMIC_BLOCK_ALLOC_FASTCHECK)
+// RAVEN END
 	blockId[0] = 0x11111111;
 	blockId[1] = 0x22222222;
 	blockId[2] = 0x33333333;
 #endif
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-idDynamicBlock<type> *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::AllocInternal( const int num ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+idDynamicBlock<type> *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::AllocInternal( const int num ) {
 	idDynamicBlock<type> *block;
 	int alignedBytes = ( num * sizeof( type ) + 15 ) & ~15;
 
@@ -696,11 +938,17 @@ idDynamicBlock<type> *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::Al
 		UnlinkFreeInternal( block );
 	} else if ( allowAllocs ) {
 		int allocSize = Max( baseBlockSize, alignedBytes + (int)sizeof( idDynamicBlock<type> ) );
-		block = ( idDynamicBlock<type> * ) Mem_Alloc16( allocSize );
+//RAVEN BEGIN
+//amccarthy: Added allocation tag
+		block = ( idDynamicBlock<type> * ) Mem_Alloc16( allocSize, memoryTag );
+//RAVEN END
 		if ( lockMemory ) {
 			idLib::sys->LockMemory( block, baseBlockSize );
 		}
-#ifdef DYNAMIC_BLOCK_ALLOC_CHECK
+// RAVEN BEGIN
+// jnewquist: Fast sanity checking of idDynamicBlockAlloc
+#if defined(DYNAMIC_BLOCK_ALLOC_CHECK) || defined(DYNAMIC_BLOCK_ALLOC_FASTCHECK)
+// RAVEN END
 		memcpy( block->id, blockId, sizeof( block->id ) );
 		block->allocator = (void*)this;
 #endif
@@ -722,12 +970,26 @@ idDynamicBlock<type> *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::Al
 	return block;
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-idDynamicBlock<type> *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::ResizeInternal( idDynamicBlock<type> *block, const int num ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+idDynamicBlock<type> *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::ResizeInternal( idDynamicBlock<type> *block, const int num ) {
 	int alignedBytes = ( num * sizeof( type ) + 15 ) & ~15;
 
-#ifdef DYNAMIC_BLOCK_ALLOC_CHECK
+// RAVEN BEGIN
+// jnewquist: Fast sanity checking of idDynamicBlockAlloc
+#if defined(DYNAMIC_BLOCK_ALLOC_CHECK) || defined(DYNAMIC_BLOCK_ALLOC_FASTCHECK)
+#if defined(DYNAMIC_BLOCK_ALLOC_CHECK_IS_FATAL)
+	const char *chkstr = CheckMemory( block );
+	if ( chkstr ) {
+		throw idException( chkstr );
+	}
+#endif
+// jsinger: attempt to eliminate cross-DLL allocation issues
+#ifdef RV_UNIFIED_ALLOCATOR
+	assert( block->id[0] == 0x11111111 && block->id[1] == 0x22222222 && block->id[2] == 0x33333333); // && block->allocator == (void*)this );
+#else
 	assert( block->id[0] == 0x11111111 && block->id[1] == 0x22222222 && block->id[2] == 0x33333333 && block->allocator == (void*)this );
+#endif
+// RAVEN END
 #endif
 
 	// if the new size is larger
@@ -767,7 +1029,10 @@ idDynamicBlock<type> *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::Re
 	idDynamicBlock<type> *newBlock;
 
 	newBlock = ( idDynamicBlock<type> * ) ( ( (byte *) block ) + (int)sizeof( idDynamicBlock<type> ) + alignedBytes );
-#ifdef DYNAMIC_BLOCK_ALLOC_CHECK
+// RAVEN BEGIN
+// jnewquist: Fast sanity checking of idDynamicBlockAlloc
+#if defined(DYNAMIC_BLOCK_ALLOC_CHECK) || defined(DYNAMIC_BLOCK_ALLOC_FASTCHECK)
+// RAVEN END
 	memcpy( newBlock->id, blockId, sizeof( newBlock->id ) );
 	newBlock->allocator = (void*)this;
 #endif
@@ -788,13 +1053,27 @@ idDynamicBlock<type> *idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::Re
 	return block;
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::FreeInternal( idDynamicBlock<type> *block ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::FreeInternal( idDynamicBlock<type> *block ) {
 
 	assert( block->node == NULL );
 
-#ifdef DYNAMIC_BLOCK_ALLOC_CHECK
+// RAVEN BEGIN
+// jnewquist: Fast sanity checking of idDynamicBlockAlloc
+#if defined(DYNAMIC_BLOCK_ALLOC_CHECK) || defined(DYNAMIC_BLOCK_ALLOC_FASTCHECK)
+#if defined(DYNAMIC_BLOCK_ALLOC_CHECK_IS_FATAL)
+	const char *chkstr = CheckMemory( block );
+	if ( chkstr ) {
+		throw idException( chkstr );
+	}
+#endif
+// jsinger: attempt to eliminate cross-DLL allocation issues
+#ifdef RV_UNIFIED_ALLOCATOR
+	assert( block->id[0] == 0x11111111 && block->id[1] == 0x22222222 && block->id[2] == 0x33333333 );//&& block->allocator == (void*)this );
+#else
 	assert( block->id[0] == 0x11111111 && block->id[1] == 0x22222222 && block->id[2] == 0x33333333 && block->allocator == (void*)this );
+#endif // RV_UNIFIED_ALLOCATOR
+// RAVEN END
 #endif
 
 	// try to merge with a next free block
@@ -827,26 +1106,45 @@ void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::FreeInternal( idDyn
 	}
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-ID_INLINE void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::LinkFreeInternal( idDynamicBlock<type> *block ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+ID_INLINE void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::LinkFreeInternal( idDynamicBlock<type> *block ) {
 	block->node = freeTree.Add( block, block->GetSize() );
 	numFreeBlocks++;
 	freeBlockMemory += block->GetSize();
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-ID_INLINE void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::UnlinkFreeInternal( idDynamicBlock<type> *block ) {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+ID_INLINE void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::UnlinkFreeInternal( idDynamicBlock<type> *block ) {
 	freeTree.Remove( block->node );
 	block->node = NULL;
 	numFreeBlocks--;
 	freeBlockMemory -= block->GetSize();
 }
 
-template<class type, int baseBlockSize, int minBlockSize>
-void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize>::CheckMemory( void ) const {
+template<class type, int baseBlockSize, int minBlockSize, byte memoryTag>
+void idDynamicBlockAlloc<type, baseBlockSize, minBlockSize, memoryTag>::CheckMemory( void ) const {
 	idDynamicBlock<type> *block;
 
 	for ( block = firstBlock; block != NULL; block = block->next ) {
+
+// RAVEN BEGIN
+// jnewquist: Fast sanity checking of idDynamicBlockAlloc
+#if defined(DYNAMIC_BLOCK_ALLOC_CHECK) || defined(DYNAMIC_BLOCK_ALLOC_FASTCHECK)
+#if defined(DYNAMIC_BLOCK_ALLOC_CHECK_IS_FATAL)
+		const char *chkstr = CheckMemory( block );
+		if ( chkstr ) {
+			throw idException( chkstr );
+		}
+#endif
+// jsinger: attempt to eliminate cross-DLL allocation issues
+#ifdef RV_UNIFIED_ALLOCATOR
+		assert( block->id[0] == 0x11111111 && block->id[1] == 0x22222222 && block->id[2] == 0x33333333); // && block->allocator == (void*)this );
+#else
+		assert( block->id[0] == 0x11111111 && block->id[1] == 0x22222222 && block->id[2] == 0x33333333 && block->allocator == (void*)this );
+#endif
+// RAVEN END
+#endif
+
 		// make sure the block is properly linked
 		if ( block->prev == NULL ) {
 			assert( firstBlock == block );

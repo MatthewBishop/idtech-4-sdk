@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __HIERARCHY_H__
 #define __HIERARCHY_H__

@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __PHYSICS_PARAMETRIC_H__
 #define __PHYSICS_PARAMETRIC_H__
@@ -66,6 +64,14 @@ public:
 	void					GetLocalAngles( idAngles &curAngles ) const;
 
 	void					GetAngles( idAngles &curAngles ) const;
+
+// RAVEN BEGIN
+// abahr: a method for hiding gimblelock
+	void					SetAxisOffset( const idMat3& offset ) { axisOffset = offset; useAxisOffset = true; }
+	const idMat3&			GetAxisOffset() const { return axisOffset; }
+	idMat3&					GetAxisOffset() { return axisOffset; }
+	bool					UseAxisOffset() const { return useAxisOffset; }
+// RAVEN END
 
 public:	// common physics interface
 	void					SetClipModel( idClipModel *model, float density, int id = 0, bool freeOld = true );
@@ -142,6 +148,12 @@ private:
 	// master
 	bool					hasMaster;
 	bool					isOrientated;
+
+// RAVEN BEGIN
+// abahr: a method for hiding gimblelock
+	bool					useAxisOffset;
+	idMat3					axisOffset;
+// RAVEN END
 
 private:
 	bool					TestIfAtRest( void ) const;

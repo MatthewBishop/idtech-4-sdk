@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __GAME_SOUND_H__
 #define __GAME_SOUND_H__
@@ -45,7 +43,16 @@ private:
 	void			Event_Timer( void );
 	void			Event_On( void );
 	void			Event_Off( void );
+
 	void			DoSound( bool play );
+// RAVEN BEGIN
+// jshepard: Allow speakers to target lights and tie them to the speaker's ref sound
+	void			SetTargetSoundHandles( void );
+// abahr
+	virtual void	FindTargets();
+	bool			GetPhysicsToSoundTransform( idVec3 &origin, idMat3 &axis );
+// RAVEN END
+
 };
 
 #endif /* !__GAME_SOUND_H__ */

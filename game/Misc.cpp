@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 /*
 
 Various utility objects and functions.
@@ -10,6 +8,14 @@ Various utility objects and functions.
 #pragma hdrstop
 
 #include "Game_local.h"
+
+// RAVEN BEGIN
+// nmckenzie: added ai
+#if !defined(__GAME_PROJECTILE_H__)
+	#include "Projectile.h"
+#endif
+#include "ai/AI.h"
+// RAVEN END
 
 /*
 ===============================================================================
@@ -34,6 +40,7 @@ idSpawnableEntity::Spawn
 void idSpawnableEntity::Spawn() {
 	// this just holds dict information
 }
+
 
 /*
 ===============================================================================
@@ -66,6 +73,30 @@ idPlayerStart::Spawn
 */
 void idPlayerStart::Spawn( void ) {
 	teleportStage = 0;
+
+	//HACK: begin "show spawn point" hack for RJ
+	/*if( !spawnArgs.GetInt("text") )	{
+		gameLocal.Warning("texting up spawn point '%s'", GetName());
+		idDict		args;
+		idEntity*	textEntity;
+		idVec3		newOrigin;
+
+		newOrigin = GetPhysics()->GetOrigin();
+		newOrigin.z += 64;
+
+		args.SetVector ( "origin", newOrigin );
+		args.Set ( "text", GetName() );
+		args.SetBool ( "playerOriented", 1 );
+		args.SetBool ( "force", 1 );
+		args.Set ( "target", GetName() );
+		args.Set ( "classname", "text" );
+
+		gameLocal.SpawnEntityDef ( args, &textEntity );
+
+		//mark the spawn point so it doesn't do this again
+		spawnArgs.SetInt("text", 1);
+
+	}*/
 }
 
 /*
@@ -98,7 +129,10 @@ bool idPlayerStart::ClientReceiveEvent( int event, int time, const idBitMsg &msg
 		case EVENT_TELEPORTPLAYER: {
 			entityNumber = msg.ReadBits( GENTITYNUM_BITS );
 			idPlayer *player = static_cast<idPlayer *>( gameLocal.entities[entityNumber] );
-			if ( player != NULL && player->IsType( idPlayer::Type ) ) {
+// RAVEN BEGIN
+// jnewquist: Use accessor for static class type 
+			if ( player != NULL && player->IsType( idPlayer::GetClassType() ) ) {
+// RAVEN END
 				Event_TeleportPlayer( player );
 			}
 			return true;
@@ -107,7 +141,8 @@ bool idPlayerStart::ClientReceiveEvent( int event, int time, const idBitMsg &msg
 			return idEntity::ClientReceiveEvent( event, time, msg );
 		}
 	}
-	return false;
+//unreachable
+//	return false;
 }
 
 /*
@@ -124,13 +159,13 @@ void idPlayerStart::Event_TeleportStage( idPlayer *player ) {
 			player->playerView.Flash( colorWhite, 125 );
 			player->SetInfluenceLevel( INFLUENCE_LEVEL3 );
 			player->SetInfluenceView( spawnArgs.GetString( "mtr_teleportFx" ), NULL, 0.0f, NULL );
-			gameSoundWorld->FadeSoundClasses( 0, -20.0f, teleportDelay );
+			soundSystem->FadeSoundClasses( SOUNDWORLD_GAME, 0, -20.0f, teleportDelay );
 			player->StartSound( "snd_teleport_start", SND_CHANNEL_BODY2, 0, false, NULL );
 			teleportStage++;
 			PostEventSec( &EV_TeleportStage, teleportDelay, player );
 			break;
 		case 1:
-			gameSoundWorld->FadeSoundClasses( 0, 0.0f, 0.25f );
+			soundSystem->FadeSoundClasses( SOUNDWORLD_GAME, 0, 0.0f, 0.25f );
 			teleportStage++;
 			PostEventSec( &EV_TeleportStage, 0.25f, player );
 			break;
@@ -152,7 +187,7 @@ idPlayerStart::TeleportPlayer
 ================
 */
 void idPlayerStart::TeleportPlayer( idPlayer *player ) {
-	float pushVel = spawnArgs.GetFloat( "push", "300" );
+	float pushVel = spawnArgs.GetFloat( "push", "50000" );
 	float f = spawnArgs.GetFloat( "visualEffect", "0" );
 	const char *viewName = spawnArgs.GetString( "visualView", "" );
 	idEntity *ent = viewName ? gameLocal.FindEntity( viewName ) : NULL;
@@ -173,9 +208,28 @@ void idPlayerStart::TeleportPlayer( idPlayer *player ) {
 
 		// multiplayer hijacked this entity, so only push the player in multiplayer
 		if ( gameLocal.isMultiplayer ) {
-			player->GetPhysics()->SetLinearVelocity( GetPhysics()->GetAxis()[0] * pushVel );
+			//direct teleport, play effect & sound
+			player->StartSound( "snd_teleport_enter", SND_CHANNEL_ANY, 0, false, NULL );
+			gameLocal.PlayEffect( player->spawnArgs, "fx_teleport", player->GetPhysics()->GetOrigin(), idVec3(0,0,1).ToMat3(), false, vec3_origin );
+			//push
+			idVec3 impulse( pushVel, 0, 0 );
+			impulse *= GetPhysics( )->GetAxis ( );
+			player->ApplyImpulse( gameLocal.world, 0, player->GetPhysics( )->GetOrigin( ), impulse );
 		}
 	}
+}
+
+/*
+===============
+idPlayerStart::Teleport
+For non-players
+================
+*/
+void idPlayerStart::Teleport( idEntity* other ) {
+	other->SetOrigin( GetPhysics()->GetOrigin() );
+	idVec3 vel = other->GetPhysics()->GetLinearVelocity();
+	vel *= GetPhysics()->GetAxis();
+	other->GetPhysics()->SetLinearVelocity( vel );
 }
 
 /*
@@ -186,10 +240,14 @@ idPlayerStart::Event_TeleportPlayer
 void idPlayerStart::Event_TeleportPlayer( idEntity *activator ) {
 	idPlayer *player;
 
-	if ( activator->IsType( idPlayer::Type ) ) {
+// RAVEN BEGIN
+// jnewquist: Use accessor for static class type 
+	if ( activator->IsType( idPlayer::GetClassType() ) ) {
+// RAVEN END
 		player = static_cast<idPlayer*>( activator );
 	} else {
-		player = gameLocal.GetLocalPlayer();
+		player = NULL;
+		Teleport( activator );
 	}
 	if ( player ) {
 		if ( spawnArgs.GetBool( "visualFx" ) ) {
@@ -206,7 +264,7 @@ void idPlayerStart::Event_TeleportPlayer( idEntity *activator ) {
 				msg.Init( msgBuf, sizeof( msgBuf ) );
 				msg.BeginWriting();
 				msg.WriteBits( player->entityNumber, GENTITYNUM_BITS );
-				ServerSendEvent( EVENT_TELEPORTPLAYER, &msg, false, -1 );
+				ServerSendInstanceEvent( EVENT_TELEPORTPLAYER, &msg, false, -1 );
 			}
 
 			TeleportPlayer( player );
@@ -259,8 +317,25 @@ void idActivator::Spawn( void ) {
 	spawnArgs.GetBool( "stay_on", "0", stay_on );
 	spawnArgs.GetBool( "start_off", "0", start_off );
 
-	GetPhysics()->SetClipBox( idBounds( vec3_origin ).Expand( 4 ), 1.0f );
+// RAVEN BEGIN
+// bdube: optional clip model on activators
+	const char	*temp;
+	if ( spawnArgs.GetString( "clipmodel", "", &temp ) ) {
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+		RV_PUSH_HEAP_MEM(this);
+// RAVEN END
+		GetPhysics()->SetClipModel( new idClipModel(temp), 1.0f );
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+		RV_POP_HEAP();
+// RAVEN END
+	} else {
+		GetPhysics()->SetClipBox( idBounds( vec3_origin ).Expand( 4 ), 1.0f );
+	}
+
 	GetPhysics()->SetContents( 0 );
+// RAVEN END
 
 	if ( !start_off ) {
 		BecomeActive( TH_THINK );
@@ -307,7 +382,7 @@ idPathCorner
 */
 
 CLASS_DECLARATION( idEntity, idPathCorner )
-	EVENT( AI_RandomPath,		idPathCorner::Event_RandomPath )
+//	EVENT( AI_RandomPath,		idPathCorner::Event_RandomPath )
 END_CLASS
 
 /*
@@ -389,6 +464,11 @@ void idPathCorner::Event_RandomPath( void ) {
 */
 
 const idEventDef EV_RestoreDamagable( "<RestoreDamagable>" );
+// RAVEN BEGIN
+// kfuller: spawn other things
+const idEventDef EV_SpawnForcefield( "<SpawnForcefield>" );
+const idEventDef EV_SpawnTriggerHurt( "<SpawnTriggerHurt>" );
+// RAVEN END
 
 CLASS_DECLARATION( idEntity, idDamagable )
 	EVENT( EV_Activate,			idDamagable::Event_BecomeBroken )
@@ -403,6 +483,7 @@ idDamagable::idDamagable
 idDamagable::idDamagable( void ) {
 	count = 0;
 	nextTriggerTime = 0;
+	invincibleTime = 0;
 }
 
 /*
@@ -411,6 +492,20 @@ idDamagable::Save
 ================
 */
 void idDamagable::Save( idSaveGame *savefile ) const {
+
+	savefile->WriteInt( invincibleTime );
+
+	savefile->WriteInt( stage );
+	savefile->WriteInt( stageNext );
+	
+	// cnicholson: Don't save the stageDict, its setup in the restore
+	
+	savefile->WriteInt( stageEndTime );
+	savefile->WriteInt( stageEndHealth );
+	savefile->WriteInt( stageEndSpeed );
+	savefile->WriteBool( stageEndOnGround );
+	savefile->WriteBool( activateStageOnTrigger );
+
 	savefile->WriteInt( count );
 	savefile->WriteInt( nextTriggerTime );
 }
@@ -421,8 +516,29 @@ idDamagable::Restore
 ================
 */
 void idDamagable::Restore( idRestoreGame *savefile ) {
+
+	const char* stageName;
+	
+	savefile->ReadInt( invincibleTime );
+
+	savefile->ReadInt( stage );
+	savefile->ReadInt( stageNext );
+	savefile->ReadInt( stageEndTime );
+	savefile->ReadInt( stageEndHealth );
+	savefile->ReadInt( stageEndSpeed );
+	savefile->ReadBool( stageEndOnGround );
+	savefile->ReadBool( activateStageOnTrigger );
+
 	savefile->ReadInt( count );
 	savefile->ReadInt( nextTriggerTime );
+	
+
+	// Get the stage name, if there is none then there are no more stages
+	stageDict = NULL;
+	if ( spawnArgs.GetString ( va( "def_stage%d", stage ), "", &stageName ) && stageName ) {
+
+		stageDict = gameLocal.FindEntityDefDict ( stageName, false );
+	}
 }
 
 /*
@@ -431,10 +547,31 @@ idDamagable::Spawn
 ================
 */
 void idDamagable::Spawn( void ) {
-	idStr broken;
+	idStr	broken;
+	bool	keepContents;
+
+// RAVEN BEGIN
+// abahr: stage stuff
+	stage				= 0;
+	stageNext			= 1;
+	stageDict			= NULL;
+	stageEndTime		= 0;
+	stageEndHealth		= 9999;
+	stageEndSpeed		= 0;
+//jshepard:
+	stageEndOnGround    = false;
+// RAVEN END
 
 	health = spawnArgs.GetInt( "health", "5" );
-	spawnArgs.GetInt( "count", "1", count );	
+
+// RAVEN BEGIN
+// abahr: stage stuff
+   stageEndHealth = health - 1;
+	activateStageOnTrigger = spawnArgs.GetBool("activateOnTrigger");
+// RAVEN END
+
+	spawnArgs.GetInt( "count", "1", count );
+	invincibleTime = gameLocal.GetTime() + SEC2MS( spawnArgs.GetFloat( "invincibleTime", "0" ) );
 	nextTriggerTime = 0;
 	
 	// make sure the model gets cached
@@ -443,8 +580,18 @@ void idDamagable::Spawn( void ) {
 		gameLocal.Error( "idDamagable '%s' at (%s): cannot load broken model '%s'", name.c_str(), GetPhysics()->GetOrigin().ToString(0), broken.c_str() );
 	}
 
-	fl.takedamage = true;
-	GetPhysics()->SetContents( CONTENTS_SOLID );
+// RAVEN BEGIN
+// bdube: turn take damage off if it has no health
+	fl.takedamage = health > 0 ? true : false;
+// RAVEN END
+
+	keepContents = spawnArgs.GetBool( "KeepContents" );
+
+	if ( keepContents ) {
+		// do nothing, keep the contents from the model
+	} else {
+		GetPhysics()->SetContents( CONTENTS_SOLID );
+	}
 }
 
 /*
@@ -511,6 +658,49 @@ void idDamagable::BecomeBroken( idEntity *activator ) {
 }
 
 /*
+============
+idMoveable::Damage
+============
+*/
+// RAVEN BEGIN
+// abahr
+void idDamagable::Damage( idEntity *inflictor, idEntity *attacker, const idVec3 &dir, const char *damageDefName, const float damageScale, const int location ) {
+
+	if ( invincibleTime > gameLocal.GetTime() )	{
+		return;
+	}
+
+	// If there is a damage filter we need to check to see if the damage def meets the requirement
+	const char* damageFilter;
+	if ( spawnArgs.GetString ( "damage_filter", "", &damageFilter ) && *damageFilter ) {
+		const idDict *damageDef = gameLocal.FindEntityDefDict( damageDefName, false );
+		if ( !damageDef ) {
+			gameLocal.Error( "Unknown damageDef '%s'\n", damageDefName );
+		}
+		// If the filter isnt matched then ignore it
+		if ( !damageDef->GetBool ( va("filter_%s", damageFilter ) ) ) {
+			return;
+		}
+	}
+	if ( spawnArgs.GetBool( "nosplash", "0" ) ) {
+		//ignore splash damage
+		const idDict *damageDef = gameLocal.FindEntityDefDict( damageDefName, false );
+		if ( !damageDef ) {
+			gameLocal.Error( "Unknown damageDef '%s'\n", damageDefName );
+		}
+		//if it has radius, then it's splash damage and ignore it
+		if ( damageDef->GetFloat ( "radius", "0" ) ) {
+			return;
+		}
+	}
+	
+	idEntity::Damage ( inflictor, attacker, dir, damageDefName, damageScale, location );
+	
+	// Force a stage update so impact effects will be correct
+	UpdateStage();
+}
+
+/*
 ================
 idDamagable::Killed
 ================
@@ -526,11 +716,222 @@ void idDamagable::Killed( idEntity *inflictor, idEntity *attacker, int damage, c
 
 /*
 ================
+idDamagable::UpdateStage
+================
+*/
+void idDamagable::UpdateStage ( void ) {
+	
+	// If there is a stage to go to then see if its time to do that
+ 	if ( stage != stageNext ) {
+		int	 oldstage;
+
+		// Check to see if the stage is complete
+		oldstage = stage;
+		while ( health < stageEndHealth || (stageEndTime != 0 && gameLocal.time > stageEndTime ) || (stageEndOnGround && GetPhysics()->HasGroundContacts()) || activateStageOnTrigger ) {
+			stage = stageNext;
+			
+			//this only needs to happen once
+			activateStageOnTrigger = false;
+
+			// Get the stage name, if there is none then there are no more stages
+			const char* stageName;
+			if ( !spawnArgs.GetString ( va("def_stage%d", stage ), "", &stageName ) || !stageName ) {
+				stage = 0;
+				break;
+			}
+
+			// Get the stage dictionary
+			stageDict = gameLocal.FindEntityDefDict ( stageName, false );
+			if ( !stageDict ) {
+				gameLocal.Warning ( "could not find stage '%s' for moveable '%s'", stageName, name.c_str() );
+				stage = 0;
+				break;
+			}
+
+			// Get the end conditions of the stage
+			stageEndHealth = stageDict->GetInt ( "end_health", "-9999" );
+
+			stageEndOnGround = stageDict->GetBool( "end_onGround" );
+
+			// Timed?			
+			stageEndTime = SEC2MS ( GetStageFloat ( "end_time" ) );
+			if ( stageEndTime > 0 ) {
+				stageEndTime += gameLocal.time;			
+			}		
+			
+			// Set the next stage to move to when end conditions met
+			stageNext = stage + 1;
+
+			// Execute the new stage
+			ExecuteStage ( );
+		}
+	}	
+}
+
+/*
+================
+idDamagable::ExecuteStage
+================
+*/
+void idDamagable::ExecuteStage ( void ) {
+	const idKeyValue* kv;
+	bool			  remove;
+	
+	// Remove the entity this frame?
+	remove = stageDict->GetBool ( "remove" );
+	
+	// Targets?
+	if ( stageDict->GetBool( "triggerTargets" ) ) {
+		ActivateTargets( this );
+	}
+
+	// Unbind targets
+	if ( stageDict->GetBool( "unbindTargets" ) ) {
+		UnbindTargets( this );
+	}
+
+	// Stop current looping effects
+	StopAllEffects ( );
+
+	// Play all effects (if they start with "fx_loop" then also loop them
+	for ( kv = stageDict->MatchPrefix ( "fx_" ); kv; kv = stageDict->MatchPrefix("fx_",kv) ) {
+		if ( !kv->GetKey().Icmpn ( "fx_loop", 7 ) ) {
+			if ( !remove ) {
+				PlayEffect ( gameLocal.GetEffect ( *stageDict, kv->GetKey() ), 
+							 renderEntity.origin + GetStageVector ( va("offset_%s", kv->GetKey().c_str() ) ), 
+							 GetStageVector ( va("dir_%s", kv->GetKey().c_str() ), "1 0 0" ).ToMat3() * renderEntity.axis, 
+							 true );
+			}
+		} else {
+			gameLocal.PlayEffect ( gameLocal.GetEffect ( *stageDict, "fx_explode" ), 
+								   GetPhysics()->GetOrigin() + GetStageVector ( va("offset_%s", kv->GetKey().c_str() ) ) * GetPhysics()->GetAxis(), 
+								   GetStageVector ( va("dir_%s", kv->GetKey().c_str() ), "1 0 0" ).ToMat3() );
+		}
+	}
+
+	// Kick off debris
+	for ( kv = stageDict->MatchPrefix ( "def_debris" ); kv; kv = stageDict->MatchPrefix("def_debris",kv) ) {		
+		const idDict* args = gameLocal.FindEntityDefDict ( kv->GetValue(), false );
+		if ( !args ) {
+			continue;
+		}
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+		RV_PUSH_HEAP_MEM(this);
+// RAVEN END
+		rvClientMoveable* cent = new rvClientMoveable;
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+		RV_POP_HEAP();
+// RAVEN END
+		cent->SetOrigin ( GetPhysics()->GetOrigin() + GetStageVector ( va("offset_%s", kv->GetKey().c_str()) ) * GetPhysics()->GetAxis() );
+		cent->SetAxis ( GetPhysics()->GetAxis ( ) );
+		cent->Spawn ( args );
+		
+		idVec3 vel;
+		vel = GetStageVector ( va("vel_%s", kv->GetKey().c_str()) ) * GetPhysics()->GetAxis();
+		vel += GetPhysics()->GetLinearVelocity ( );
+		cent->GetPhysics()->SetLinearVelocity ( vel );
+		cent->PostEventMS ( &CL_FadeOut, 2500, 2500 );
+	}
+
+    // Apply force to all objects nearby
+	float fPush;
+	stageDict->GetFloat("radiusPush","0",fPush);
+	if (fPush > 0)	{
+		gameLocal.RadiusPush( GetPhysics()->GetOrigin(), 128, fPush, this, this, 1.0f, true );
+	}
+	
+	// Remove the entity now?
+	if ( remove ) {
+		Hide ( );
+		PostEventMS ( &EV_Remove, 0 );
+		return;
+	} 
+	
+	// Switch model?
+	const char* model;
+	if ( stageDict->GetString ( "model", "", &model ) && *model ) {			
+		SetModel( model );
+	}
+
+	// Skin?
+	const char* skin;
+	if ( stageDict->GetString ( "skin", "", &skin ) && *skin ) {
+		renderEntity.customSkin = declManager->FindSkin ( skin, false );
+	}
+	
+	// Velocities
+	idVec3 vel;
+	vel  = GetStageVector ( "vel_world" );
+	vel += (GetStageVector ( "vel_local" ) * GetPhysics()->GetAxis() );
+	vel += GetPhysics()->GetLinearVelocity ( );	
+	GetPhysics()->SetLinearVelocity ( vel );
+		
+	// Enable thinking to ensure stages are run
+	BecomeActive ( TH_THINK );
+}
+
+/*
+================
+idDamagable::GetStageVector
+================
+*/
+idVec3 idDamagable::GetStageVector ( const char* key, const char* defaultString ) const {
+	idVec3 mins;
+	if ( stageDict->GetVector ( va("%s_min", key ), "", mins ) ) {
+		idVec3 maxs;
+		stageDict->GetVector ( va("%s_max", key), mins.ToString(), maxs );
+		return mins + (maxs - mins) * gameLocal.random.RandomFloat ( );
+	}
+	
+	return stageDict->GetVector ( key, defaultString );
+}
+
+/*
+================
+idDamagable::GetStageFloat
+================
+*/
+float idDamagable::GetStageFloat	( const char* key, const char* defaultString ) const {
+	float minValue;
+	if ( stageDict->GetFloat ( va("%s_min", key ), "", minValue ) ) {
+		float maxValue;
+		stageDict->GetFloat ( va("%s_max", key), va("%g",minValue), maxValue );
+		return minValue + (maxValue - minValue) * gameLocal.random.CRandomFloat ( );
+	}
+	
+	return stageDict->GetFloat ( key, defaultString );
+}
+
+/*
+================
+idDamagable::GetStageInt
+================
+*/
+int idDamagable::GetStageInt	( const char* key, const char* defaultString ) const {
+	int minValue;
+	if ( stageDict->GetInt ( va("%s_min", key ), "", minValue ) ) {
+		int maxValue;
+		stageDict->GetInt ( va("%s_max", key), va("%d",minValue), maxValue );
+		return minValue + (maxValue - minValue) * gameLocal.random.CRandomFloat ( );
+	}
+	
+	return stageDict->GetInt ( key, defaultString );
+}
+
+/*
+================
 idDamagable::Event_BecomeBroken
 ================
 */
 void idDamagable::Event_BecomeBroken( idEntity *activator ) {
 	BecomeBroken( activator );
+
+// RAVEN BEGIN
+// bdube: start stages
+	UpdateStage ( );
+// RAVEN END
 }
 
 /*
@@ -623,14 +1024,14 @@ void idSpring::Think( void ) {
 		spring.Evaluate( gameLocal.time );
 
 		start = p1;
-		if ( ent1->GetPhysics() ) {
+		if ( ent1 && ent1->GetPhysics() ) {
 			axis = ent1->GetPhysics()->GetAxis();
 			origin = ent1->GetPhysics()->GetOrigin();
 			start = origin + start * axis;
 		}
 
 		end = p2;
-		if ( ent2->GetPhysics() ) {
+		if ( ent2 && ent2->GetPhysics() ) {
 			axis = ent2->GetPhysics()->GetAxis();
 			origin = ent2->GetPhysics()->GetOrigin();
 			end = origin + p2 * axis;
@@ -697,6 +1098,33 @@ void idSpring::Spawn( void ) {
 	ent1 = ent2 = NULL;
 
 	PostEventMS( &EV_PostSpawn, 0 );
+}
+
+/*
+================
+idSpring::Save
+================
+*/
+void idSpring::Save( idSaveGame *savefile ) const {
+	savefile->WriteInt ( id1 );
+	savefile->WriteInt ( id2 );
+	savefile->WriteVec3 ( p1 );
+	savefile->WriteVec3 ( p2 );
+	spring.Save ( savefile );
+}
+
+/*
+================
+idSpring::Restore
+================
+*/
+void idSpring::Restore( idRestoreGame *savefile ) {
+	savefile->ReadInt ( id1 );
+	savefile->ReadInt ( id2 );
+	savefile->ReadVec3 ( p1 );
+	savefile->ReadVec3 ( p2 );
+	spring.Restore ( savefile );
+	Event_LinkSpring ( );	
 }
 
 /*
@@ -792,8 +1220,16 @@ void idForceField::Spawn( void ) {
 	forceField.SetMonsterOnly( spawnArgs.GetBool( "monsterOnly", "0" ) );
 
 	// set the collision model on the force field
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+	RV_PUSH_HEAP_MEM(this);
+// RAVEN END
 	forceField.SetClipModel( new idClipModel( GetPhysics()->GetClipModel() ) );
-
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+	RV_POP_HEAP();
+// RAVEN END
+	forceField.SetOwner( this );
 	// remove the collision model from the physics object
 	GetPhysics()->SetClipModel( NULL, 1.0f );
 
@@ -838,6 +1274,148 @@ void idForceField::Event_FindTargets( void ) {
 	}
 }
 
+// RAVEN BEGIN
+// bdube: jump pads
+
+/*
+===============================================================================
+
+  idForceField
+	
+===============================================================================
+*/
+
+const int JUMPPAD_EFFECT_DELAY	= 100;
+
+CLASS_DECLARATION( idForceField, rvJumpPad )
+	EVENT( EV_FindTargets,	rvJumpPad::Event_FindTargets )
+END_CLASS
+
+/*
+================
+rvJumpPad::rvJumpPad
+================
+*/
+rvJumpPad::rvJumpPad ( void ) {
+	lastEffectTime = -1;
+}
+
+/*
+================
+rvJumpPad::Think
+================
+*/
+void rvJumpPad::Think( void ) {
+	if ( thinkFlags & TH_THINK ) {
+		// evaluate force
+		forceField.Evaluate( gameLocal.time );
+		
+		// If force has been applied to an entity and jump pad effect hasnt been played for a bit
+		// then play it now.
+		if ( forceField.GetLastApplyTime ( ) - lastEffectTime > JUMPPAD_EFFECT_DELAY ) {
+			// start locally
+			StartSound( "snd_jump", SND_CHANNEL_ITEM, 0, false, NULL );
+			if ( spawnArgs.GetString( "fx_jump" )[ 0 ] ) {
+				PlayEffect( "fx_jump", renderEntity.origin, effectAxis, false, vec3_origin, false );
+			}
+
+			// send through unreliable
+			if ( gameLocal.isServer ) {
+				idBitMsg	msg;
+				byte		msgBuf[ MAX_GAME_MESSAGE_SIZE ];
+
+				msg.Init( msgBuf, sizeof( msgBuf ) );
+				msg.WriteByte( GAME_UNRELIABLE_MESSAGE_EVENT );
+				msg.WriteBits( gameLocal.GetSpawnId( this ), 32 );
+				msg.WriteByte( EVENT_JUMPFX );
+				gameLocal.SendUnreliableMessagePVS( msg, this, gameLocal.pvs.GetPVSArea( renderEntity.origin ) );
+			}
+			
+			lastEffectTime = forceField.GetLastApplyTime( );
+		}
+	}
+	Present();
+}
+
+/*
+================
+rvJumpPad::Spawn
+================
+*/
+void rvJumpPad::Spawn( void ) {
+	forceField.SetApplyType( FORCEFIELD_APPLY_VELOCITY );
+	forceField.SetOwner( this );
+}
+
+/*
+================
+rvJumpPad::Event_FindTargets
+================
+*/
+void rvJumpPad::Event_FindTargets( void ) {
+	FindTargets();
+	RemoveNullTargets();
+	if ( targets.Num() ) {
+		idEntity* ent;
+		ent = targets[0].GetEntity();
+		assert( ent );
+		
+		idVec3 vert;
+		idVec3 diff;
+		idVec3 vel;
+		idVec3 localGravity( gameLocal.GetCurrentGravity(this) );
+		idVec3 localGravityNormal( localGravity.ToNormal() );
+		float  time;
+		float  dist;
+		
+		// Find the distance along the gravity vector between the jump pad and its target
+		diff = (ent->GetPhysics()->GetOrigin() - GetPhysics()->GetOrigin());
+		vert = (diff * localGravityNormal) * localGravityNormal;
+		
+		// Determine how long it would take to cover the distance along the gravity vector
+		time = idMath::Sqrt( vert.Length() / (0.5f * localGravity.Length()) );
+		if ( !time ) {
+			PostEventMS( &EV_Remove, 0 );
+			return;
+		}
+
+		// The final velocity is the direction between the jump pad and its target using
+		// the travel time to determine the forward vector and adding in an inverse gravity vector.
+		vel  = diff - vert;
+		dist = vel.Normalize();
+		
+		vel = vel * (dist / time);
+		vel += (localGravity * -time);
+
+		forceField.Uniform( vel );
+
+		// calculate a coordinate axis where the vector to the jumppad target is forward
+		// use this to play the fx_jump fx
+		diff.Normalize();
+		effectAxis = diff.ToMat3();
+	}
+}
+
+/*
+===============
+rvJumpPad::ClientReceiveEvent
+===============
+*/
+bool rvJumpPad::ClientReceiveEvent( int event, int time, const idBitMsg &msg ) {
+	switch ( event ) {
+	case EVENT_JUMPFX: {
+		if ( spawnArgs.GetString( "fx_jump" )[ 0 ] ) {
+			PlayEffect( "fx_jump", renderEntity.origin, effectAxis, false, vec3_origin, false );
+		}
+		StartSound( "snd_jump", SND_CHANNEL_ITEM, 0, false, NULL );
+		return true;
+	}
+	default:
+		return idEntity::ClientReceiveEvent( event, time, msg );
+	}
+}
+
+// RAVEN END
 
 /*
 ===============================================================================
@@ -853,6 +1431,11 @@ const idEventDef EV_LaunchMissilesUpdate( "<launchMissiles>", "dddd" );
 const idEventDef EV_AnimDone( "<AnimDone>", "d" );
 const idEventDef EV_StartRagdoll( "startRagdoll" );
 
+// RAVEN BEGIN
+// bdube: script object
+const idEventDef EV_SetAnimState ( "setAnimState", "sd" );
+// RAVEN END
+
 CLASS_DECLARATION( idAFEntity_Gibbable, idAnimated )
 	EVENT( EV_Activate,				idAnimated::Event_Activate )
 	EVENT( EV_Animated_Start,		idAnimated::Event_Start )
@@ -863,6 +1446,15 @@ CLASS_DECLARATION( idAFEntity_Gibbable, idAnimated )
 	EVENT( EV_FootstepRight,		idAnimated::Event_Footstep )
 	EVENT( EV_LaunchMissiles,		idAnimated::Event_LaunchMissiles )
 	EVENT( EV_LaunchMissilesUpdate,	idAnimated::Event_LaunchMissilesUpdate )
+
+// RAVEN BEGIN
+// bdube: script object
+	EVENT( EV_SetAnimState,			idAnimated::Event_SetAnimState )
+	EVENT( AI_PlayAnim,				idAnimated::Event_PlayAnim )
+	EVENT( AI_PlayCycle,			idAnimated::Event_PlayCycle )
+	EVENT( AI_AnimDone,				idAnimated::Event_AnimDone2 )
+// RAVEN END
+
 END_CLASS
 
 /*
@@ -871,6 +1463,8 @@ idAnimated::idAnimated
 ================
 */
 idAnimated::idAnimated() {
+	int		i;
+
 	anim = 0;
 	blendFrames = 0;
 	soundJoint = INVALID_JOINT;
@@ -879,7 +1473,13 @@ idAnimated::idAnimated() {
 	activator = NULL;
 	current_anim_index = 0;
 	num_anims = 0;
-
+// RAVEN BEGIN
+// bdube: script control
+	scriptThread = NULL;
+	for( i = 0; i < ANIM_NumAnimChannels; i++ ) {
+		animDoneTime[i] = 0;
+	}
+// RAVEN END
 }
 
 /*
@@ -890,6 +1490,11 @@ idAnimated::idAnimated
 idAnimated::~idAnimated() {
 	delete combatModel;
 	combatModel = NULL;
+	
+// RAVEN BEGIN
+// bdube: kill script object
+	delete scriptThread;
+// RAVEN END		
 }
 
 /*
@@ -898,13 +1503,24 @@ idAnimated::Save
 ================
 */
 void idAnimated::Save( idSaveGame *savefile ) const {
-	savefile->WriteInt( current_anim_index );
+	int		i;
+
 	savefile->WriteInt( num_anims );
+	savefile->WriteInt( current_anim_index );
 	savefile->WriteInt( anim );
 	savefile->WriteInt( blendFrames );
 	savefile->WriteJoint( soundJoint );
 	activator.Save( savefile );
 	savefile->WriteBool( activated );
+
+// RAVEN BEGIN
+	savefile->WriteObject( scriptThread );
+	savefile->WriteString( state );
+	savefile->WriteString( idealState );
+	for( i = 0; i < ANIM_NumAnimChannels; i++ ) {
+		savefile->WriteInt( animDoneTime[i] );
+	}
+// RAVEN END
 }
 
 /*
@@ -913,13 +1529,24 @@ idAnimated::Restore
 ================
 */
 void idAnimated::Restore( idRestoreGame *savefile ) {
-	savefile->ReadInt( current_anim_index );
+	int		i;
+
 	savefile->ReadInt( num_anims );
+	savefile->ReadInt( current_anim_index );
 	savefile->ReadInt( anim );
 	savefile->ReadInt( blendFrames );
 	savefile->ReadJoint( soundJoint );
 	activator.Restore( savefile );
 	savefile->ReadBool( activated );
+
+// RAVEN BEGIN
+	savefile->ReadObject( reinterpret_cast<idClass *&>( scriptThread ) );
+	savefile->ReadString( state );
+	savefile->ReadString( idealState );
+	for( i = 0; i < ANIM_NumAnimChannels; i++ ) {
+		savefile->ReadInt( animDoneTime[i] );
+	}
+// RAVEN END
 }
 
 /*
@@ -939,11 +1566,19 @@ void idAnimated::Spawn( void ) {
 		gameLocal.Warning( "idAnimated '%s' at (%s): cannot find joint '%s' for sound playback", name.c_str(), GetPhysics()->GetOrigin().ToString(0), joint );
 	}
 
-	LoadAF();
+	LoadAF( NULL );
 
 	// allow bullets to collide with a combat model
 	if ( spawnArgs.GetBool( "combatModel", "0" ) ) {
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+		RV_PUSH_HEAP_MEM(this);
+// RAVEN END
 		combatModel = new idClipModel( modelDefHandle );
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+		RV_POP_HEAP();
+// RAVEN END
 	}
 
 	// allow the entity to take damage
@@ -952,6 +1587,45 @@ void idAnimated::Spawn( void ) {
 	}
 
 	blendFrames = 0;
+
+// RAVEN BEGIN
+// bdube: script control
+	// setup script object
+	const char* scriptObjectName;
+	if ( spawnArgs.GetString( "scriptobject", NULL, &scriptObjectName ) ) {
+		if ( !scriptObject.SetType( scriptObjectName ) ) {
+			gameLocal.Error( "Script object '%s' not found on entity '%s'.", scriptObjectName, name.c_str() );
+		}
+
+		// init the script object's data
+		scriptObject.ClearObject();
+
+		// call script object's constructor
+		const function_t *constructor;
+		constructor = scriptObject.GetConstructor();
+		if ( constructor ) {
+			// start a thread that will initialize after Spawn is done being called
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+			RV_PUSH_HEAP_MEM(this);
+// RAVEN END
+			scriptThread = new idThread();
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+			RV_POP_HEAP();
+// RAVEN END
+			scriptThread->ManualDelete();
+			scriptThread->ManualControl();
+			scriptThread->SetThreadName( name.c_str() );
+			scriptThread->CallFunction( this, constructor, true );
+			scriptThread->Execute ( );
+		}
+	
+		fl.takedamage = true;
+
+		return;
+	}	
+// RAVEN END
 
 	current_anim_index = 0;
 	spawnArgs.GetInt( "num_anims", "0", num_anims );
@@ -982,7 +1656,10 @@ void idAnimated::Spawn( void ) {
 		animator.CycleAnim( ANIMCHANNEL_ALL, anim2, gameLocal.time, 0 );
 	} else if ( anim ) {
 		// init joints to the first frame of the animation
-		animator.SetFrame( ANIMCHANNEL_ALL, anim, 1, gameLocal.time, 0 );		
+// RAVEN BEGIN
+		frameBlend_t frameBlend = { 0, 0, 0, 1.0f, 0 };
+		animator.SetFrame( ANIMCHANNEL_ALL, anim, frameBlend );		
+// RAVEN END
 
 		if ( !num_anims ) {
 			blendFrames = 0;
@@ -1001,10 +1678,14 @@ void idAnimated::Spawn( void ) {
 idAnimated::LoadAF
 ===============
 */
-bool idAnimated::LoadAF( void ) {
+bool idAnimated::LoadAF( const char* keyname ) {
 	idStr fileName;
 
-	if ( !spawnArgs.GetString( "ragdoll", "*unknown*", fileName ) ) {
+	if ( !keyname || !*keyname ) {
+		keyname = "ragdoll";
+	}
+
+	if ( !spawnArgs.GetString( keyname, "*unknown*", fileName ) ) {
 		return false;
 	}
 	af.SetAnimator( GetAnimator() );
@@ -1147,6 +1828,14 @@ idAnimated::Event_Activate
 ================
 */
 void idAnimated::Event_Activate( idEntity *_activator ) {
+// RAVEN BEGIN
+// bdube: script object support
+	if ( scriptThread ) {
+		CallHandler ( "onActivate" );
+		return;
+	}
+// RAVEN END
+
 	if ( num_anims ) {
 		PlayNextAnim();
 		activator = _activator;
@@ -1239,14 +1928,25 @@ void idAnimated::Event_LaunchMissilesUpdate( int launchjoint, int targetjoint, i
 	animator.GetJointTransform( ( jointHandle_t )launchjoint, gameLocal.time, launchPos, axis );
 	launchPos = renderEntity.origin + launchPos * renderEntity.axis;
 	
-	animator.GetJointTransform( ( jointHandle_t )targetjoint, gameLocal.time, targetPos, axis );
-	targetPos = renderEntity.origin + targetPos * renderEntity.axis;
+// RAVEN BEGIN
+// bdube: with no target bone it will just shoot out the direction of the bones orientation
+	if ( targetjoint != INVALID_JOINT ) {
+		animator.GetJointTransform( ( jointHandle_t )targetjoint, gameLocal.time, targetPos, axis );
+		targetPos = renderEntity.origin + targetPos * renderEntity.axis;
+		dir = targetPos - launchPos;
+	} else {
+		axis *= renderEntity.axis;
+		dir = axis[0];
+	}
+// RAVEN END
 
-	dir = targetPos - launchPos;
 	dir.Normalize();
 
 	gameLocal.SpawnEntityDef( *projectileDef, &ent, false );
-	if ( !ent || !ent->IsType( idProjectile::Type ) ) {
+// RAVEN BEGIN
+// jnewquist: Use accessor for static class type 
+	if ( !ent || !ent->IsType( idProjectile::GetClassType() ) ) {
+// RAVEN END
 		gameLocal.Error( "idAnimated '%s' at (%s): in 'launchMissiles' call '%s' is not an idProjectile", name.c_str(), GetPhysics()->GetOrigin().ToString(0), projectilename );
 	}
 	projectile = ( idProjectile * )ent;
@@ -1281,17 +1981,201 @@ void idAnimated::Event_LaunchMissiles( const char *projectilename, const char *s
 	}
 
 	target = animator.GetJointHandle( targetjoint );
-	if ( target == INVALID_JOINT ) {
-		gameLocal.Warning( "idAnimated '%s' at (%s): unknown target joint '%s'", name.c_str(), GetPhysics()->GetOrigin().ToString(0), targetjoint );
-	}
+// RAVEN BEGIN
+// bdube: invalid is ok now, it means shoot out the direction of the bone
+//	if ( target == INVALID_JOINT ) {
+//		gameLocal.Warning( "idAnimated '%s' at (%s): unknown target joint '%s'", name.c_str(), GetPhysics()->GetOrigin().ToString(0), targetjoint );
+//	}
+// RAVEN END
 
 	spawnArgs.Set( "projectilename", projectilename );
 	spawnArgs.Set( "missilesound", sound );
 
 	CancelEvents( &EV_LaunchMissilesUpdate );
-	ProcessEvent( &EV_LaunchMissilesUpdate, launch, target, numshots - 1, framedelay );
+// RAVEN BEGIN
+// nmckenzie: Do this now.  No delays.  No event loops or updates.  Just a straightforward DO THIS.  Tacky.
+	if ( numshots == 1 && framedelay == 0 ){
+		Event_LaunchMissilesUpdate ( launch, target, 1, 0 );
+	}
+	else{
+		ProcessEvent( &EV_LaunchMissilesUpdate, launch, target, numshots - 1, framedelay );
+	}
+// RAVEN END
 }
 
+// RAVEN BEGIN
+// bdube: added
+/*
+=====================
+idAnimated::ShouldConstructScriptObjectAtSpawn
+=====================
+*/
+bool idAnimated::ShouldConstructScriptObjectAtSpawn( void ) const {
+	return false;
+}
+
+/*
+=====================
+idAnimated::Think
+=====================
+*/
+void idAnimated::Think ( void ) {
+	UpdateScript ( );
+	idAFEntity_Gibbable::Think ( );
+}
+
+/*
+=====================
+idAnimated::Think
+=====================
+*/
+void idAnimated::Damage ( idEntity* inflictor, idEntity* attacker, const idVec3& dir, const char* damageDefName, const float damageScale, const int location ) {
+	if ( !scriptThread ) {
+		return;
+	}
+
+	CallHandler ( "onDamage" );	
+}
+
+/*
+=====================
+idAnimated::Event_PlayAnim
+=====================
+*/
+void idAnimated::Event_PlayAnim( int channel, const char *animname ) {
+	int anim;
+	
+	anim = animator.GetAnim( animname );
+	if ( !anim ) {
+		gameLocal.Warning( "missing '%s' animation on '%s' (%s)", animname, name.c_str(), GetEntityDefName() );
+		animator.Clear( channel, gameLocal.time, FRAME2MS( blendFrames ) );
+		animDoneTime[channel] = 0;
+		idThread::ReturnFloat( false );
+	} else {
+		animator.PlayAnim( channel, anim, gameLocal.time, FRAME2MS( blendFrames ) );
+		animDoneTime[channel] = animator.CurrentAnim( channel )->GetEndTime();
+		idThread::ReturnFloat( MS2SEC( animDoneTime[channel] - gameLocal.time ) );
+	}
+	blendFrames = 0;
+}
+
+/*
+===============
+idAnimated::Event_PlayCycle
+===============
+*/
+void idAnimated::Event_PlayCycle( int channel, const char *animname ) {
+	int anim;
+
+	anim = animator.GetAnim( animname );
+	if ( !anim ) {
+		gameLocal.Warning( "missing '%s' animation on '%s' (%s)", animname, name.c_str(), GetEntityDefName() );
+		animator.Clear( channel, gameLocal.time, FRAME2MS( blendFrames ) );
+		animDoneTime[channel] = 0;
+	} else {
+		animator.CycleAnim( channel, anim, gameLocal.time, FRAME2MS( blendFrames ) );
+		animDoneTime[channel] = animator.CurrentAnim( channel )->GetEndTime();
+	}
+	blendFrames = 0;
+}
+
+/*
+===============
+idAnimated::Event_AnimDone2
+===============
+*/
+void idAnimated::Event_AnimDone2( int channel, int blend ) {
+	if ( animDoneTime[channel] - FRAME2MS( blend ) <= gameLocal.time ) {
+		idThread::ReturnInt( true );
+	} else {
+		idThread::ReturnInt( false );
+	}
+}
+
+/*
+===============
+idAnimated::Event_SetAnimState 
+===============
+*/
+void idAnimated::Event_SetAnimState  ( const char* statename, int blend ) {
+	const function_t *func;
+
+	func = scriptObject.GetFunction( statename );
+	if ( !func ) {
+		gameLocal.Error( "Can't find function '%s' in object '%s'", statename, scriptObject.GetTypeName() );
+	}
+
+	idealState = statename;
+	blendFrames = blend;
+	scriptThread->DoneProcessing();
+}
+
+/*
+================
+idAnimated::UpdateScript
+================
+*/
+void idAnimated::UpdateScript( void ) {
+	int	count;
+
+	if ( !scriptThread || !gameLocal.isNewFrame  ) {
+		return;
+	}
+
+	if ( idealState.Length() ) {
+		SetState( idealState, blendFrames );
+	}
+	
+	// If no state has been set then dont execute nothing
+	if ( !state.Length ( ) || scriptThread->IsWaiting() ) {
+		return;
+	}
+
+	// update script state
+	count = 10;
+	while( ( scriptThread->Execute() || idealState.Length() ) && count-- ) {
+		if ( idealState.Length() ) {
+			SetState( idealState, blendFrames );
+		}
+	}
+}
+
+/*
+=====================
+idAnimated::CallHandler
+=====================
+*/
+void idAnimated::CallHandler ( const char* handler ) {
+	const function_t *func;
+	func = scriptObject.GetFunction( handler );
+	if ( !func ) {
+		return;
+	}
+
+	scriptThread->CallFunction( this, func, false );
+	scriptThread->Execute ( );
+}
+
+/*
+=====================
+idAnimated::SetState
+=====================
+*/
+void idAnimated::SetState( const char *statename, int frames ) {
+	const function_t *func;
+
+	func = scriptObject.GetFunction( statename );
+	if ( !func ) {
+		gameLocal.Error( "Can't find function '%s' in object '%s'", statename, scriptObject.GetTypeName() );
+	}
+
+	scriptThread->CallFunction( this, func, true );
+	state = statename;
+	blendFrames = frames;
+	idealState = "";
+}
+
+// RAVEN END
 
 /*
 ===============================================================================
@@ -1360,17 +2244,28 @@ idStaticEntity::Spawn
 void idStaticEntity::Spawn( void ) {
 	bool solid;
 	bool hidden;
+	bool keepContents;
+
+// RAVEN BEGIN
+// rjohnson: inline models can be solid, since the entities hang around anyway (don't know why it was done that way)
+	solid = spawnArgs.GetBool( "solid" );
 
 	// an inline static model will not do anything at all
 	if ( spawnArgs.GetBool( "inline" ) || gameLocal.world->spawnArgs.GetBool( "inlineAllStatics" ) ) {
 		Hide();
+		if ( solid ) {
+			GetPhysics()->SetContents( CONTENTS_SOLID );
+		}
 		return;
 	}
+// RAVEN END
 
-	solid = spawnArgs.GetBool( "solid" );
 	hidden = spawnArgs.GetBool( "hide" );
+	keepContents = spawnArgs.GetBool( "KeepContents" );
 
-	if ( solid && !hidden ) {
+	if ( keepContents ) {
+		// do nothing, keep the contents from the model
+	} else if ( solid && !hidden ) {
 		GetPhysics()->SetContents( CONTENTS_SOLID );
 	} else {
 		GetPhysics()->SetContents( 0 );
@@ -1404,7 +2299,10 @@ idStaticEntity::ShowEditingDialog
 ================
 */
 void idStaticEntity::ShowEditingDialog( void ) {
-	common->InitTool( EDITOR_PARTICLE, &spawnArgs );
+// RAVEN BEGIN
+// bdube: not using
+//	common->InitTool( EDITOR_PARTICLE, &spawnArgs );
+// RAVEN END
 }
 /*
 ================
@@ -1418,12 +2316,10 @@ void idStaticEntity::Think( void ) {
 			idPlayer *player = gameLocal.GetLocalPlayer();
 			if ( player ) {
 				if ( !player->objectiveSystemOpen ) {
-					renderEntity.gui[0]->StateChanged( gameLocal.time, true );
-					if ( renderEntity.gui[1] ) {
-						renderEntity.gui[1]->StateChanged( gameLocal.time, true );
-					}
-					if ( renderEntity.gui[2] ) {
-						renderEntity.gui[2]->StateChanged( gameLocal.time, true );
+					for( int i = 0; i < MAX_RENDERENTITY_GUI; i++ ) {
+						if ( renderEntity.gui[ i ] ) {
+							renderEntity.gui[ i ]->StateChanged( gameLocal.time, true );
+						}
 					}
 				}
 			}
@@ -1708,116 +2604,6 @@ void idFuncSplat::Event_Activate( idEntity *activator ) {
 /*
 ===============================================================================
 
-idFuncSmoke
-
-===============================================================================
-*/
-
-CLASS_DECLARATION( idEntity, idFuncSmoke )
-EVENT( EV_Activate,				idFuncSmoke::Event_Activate )
-END_CLASS
-
-/*
-===============
-idFuncSmoke::idFuncSmoke
-===============
-*/
-idFuncSmoke::idFuncSmoke() {
-	smokeTime = 0;
-	smoke = NULL;
-	restart = false;
-}
-
-/*
-===============
-idFuncSmoke::Save
-===============
-*/
-void idFuncSmoke::Save(	idSaveGame *savefile ) const {
-	savefile->WriteInt( smokeTime );
-	savefile->WriteParticle( smoke );
-	savefile->WriteBool( restart );
-}
-
-/*
-===============
-idFuncSmoke::Restore
-===============
-*/
-void idFuncSmoke::Restore( idRestoreGame *savefile ) {
-	savefile->ReadInt( smokeTime );
-	savefile->ReadParticle( smoke );
-	savefile->ReadBool( restart );
-}
-
-/*
-===============
-idFuncSmoke::Spawn
-===============
-*/
-void idFuncSmoke::Spawn( void ) {
-	const char *smokeName = spawnArgs.GetString( "smoke" );
-	if ( *smokeName != '\0' ) {
-		smoke = static_cast<const idDeclParticle *>( declManager->FindType( DECL_PARTICLE, smokeName ) );
-	} else {
-		smoke = NULL;
-	}
-	if ( spawnArgs.GetBool( "start_off" ) ) {
-		smokeTime = 0;
-		restart = false;
-	} else if ( smoke ) {
-		smokeTime = gameLocal.time;
-		BecomeActive( TH_UPDATEPARTICLES );
-		restart = true;
-	}
-	GetPhysics()->SetContents( 0 );
-}
-
-/*
-================
-idFuncSmoke::Event_Activate
-================
-*/
-void idFuncSmoke::Event_Activate( idEntity *activator ) {
-	if ( thinkFlags & TH_UPDATEPARTICLES ) {
-		restart = false;
-		return;
-	} else {
-		BecomeActive( TH_UPDATEPARTICLES );
-		restart = true;
-		smokeTime = gameLocal.time;
-	}
-}
-
-/*
-===============
-idFuncSmoke::Think
-================
-*/
-void idFuncSmoke::Think( void ) {
-
-	// if we are completely closed off from the player, don't do anything at all
-	if ( CheckDormant() || smoke == NULL || smokeTime == -1 ) {
-		return;
-	}
-
-	if ( ( thinkFlags & TH_UPDATEPARTICLES) && !IsHidden() ) {
-		if ( !gameLocal.smokeParticles->EmitSmoke( smoke, smokeTime, gameLocal.random.CRandomFloat(), GetPhysics()->GetOrigin(), GetPhysics()->GetAxis() ) ) {
-			if ( restart ) {
-				smokeTime = gameLocal.time;
-			} else {
-				smokeTime = 0;
-				BecomeInactive( TH_UPDATEPARTICLES );
-			}
-		}
-	}
-
-}
-
-
-/*
-===============================================================================
-
 	idTextEntity
 
 ===============================================================================
@@ -1878,6 +2664,25 @@ void idTextEntity::Think( void ) {
 		BecomeInactive( TH_ALL );
 	}
 }
+
+/*
+================
+idTextEntity::Think
+================
+*/
+void idTextEntity::ClientPredictionThink( void ) {
+	if ( thinkFlags & TH_THINK ) {
+		gameRenderWorld->DrawText( text, GetPhysics()->GetOrigin(), 0.25, colorWhite, playerOriented ? gameLocal.GetLocalPlayer()->viewAngles.ToMat3() : GetPhysics()->GetAxis().Transpose(), 1 );
+		for ( int i = 0; i < targets.Num(); i++ ) {
+			if ( targets[i].GetEntity() ) {
+				gameRenderWorld->DebugArrow( colorBlue, GetPhysics()->GetOrigin(), targets[i].GetEntity()->GetPhysics()->GetOrigin(), 1 );
+			}
+		}
+	} else {
+		BecomeInactive( TH_ALL );
+	}
+}
+
 
 
 /*
@@ -2015,6 +2820,262 @@ void idVacuumEntity::Spawn() {
 	gameLocal.vacuumAreaNum = gameRenderWorld->PointInArea( org );
 }
 
+// RAVEN BEGIN
+// abahr:
+/*
+===============================================================================
+
+	rvGravitySeparatorEntity
+
+===============================================================================
+*/
+
+CLASS_DECLARATION( idEntity, rvGravitySeparatorEntity )
+	EVENT( EV_Activate,		rvGravitySeparatorEntity::Event_Activate )
+END_CLASS
+
+
+/*
+================
+rvGravitySeparatorEntity::idVacuumSeparatorEntity
+================
+*/
+rvGravitySeparatorEntity::rvGravitySeparatorEntity( void ) {
+	portal = 0;
+}
+
+/*
+================
+rvGravitySeparatorEntity::Save
+================
+*/
+void rvGravitySeparatorEntity::Save( idSaveGame *savefile ) const {
+	savefile->WriteInt( (int)portal );
+	savefile->WriteInt( gameRenderWorld->GetPortalState( portal ) );
+}
+
+/*
+================
+rvGravitySeparatorEntity::Restore
+================
+*/
+void rvGravitySeparatorEntity::Restore( idRestoreGame *savefile ) {
+	int state;
+
+	savefile->ReadInt( (int &)portal );
+	savefile->ReadInt( state );
+
+	gameLocal.SetPortalState( portal, state );
+}
+
+/*
+================
+rvGravitySeparatorEntity::Spawn
+================
+*/
+void rvGravitySeparatorEntity::Spawn() {
+	idBounds b;
+
+	b = idBounds( spawnArgs.GetVector( "origin" ) ).Expand( 16 );
+	portal = gameRenderWorld->FindPortal( b );
+	if ( !portal ) {
+		gameLocal.Warning( "GravitySeparator '%s' didn't contact a portal", spawnArgs.GetString( "name" ) );
+		return;
+	}
+	gameLocal.SetPortalState( portal, gameRenderWorld->GetPortalState(portal) | PS_BLOCK_GRAVITY );
+}
+
+/*
+================
+rvGravitySeparatorEntity::Event_Activate
+================
+*/
+void rvGravitySeparatorEntity::Event_Activate( idEntity *activator ) {
+	if ( !portal ) {
+		return;
+	}
+
+	int portalState = gameRenderWorld->GetPortalState( portal );
+	gameLocal.SetPortalState( portal, (portalState & PS_BLOCK_GRAVITY) > 0 ? (portalState & ~PS_BLOCK_GRAVITY) : portalState | PS_BLOCK_GRAVITY );
+}
+
+/*
+===============================================================================
+
+	rvGravityEntity
+
+===============================================================================
+*/
+ABSTRACT_DECLARATION( idEntity, rvGravityArea )
+END_CLASS
+
+/*
+================
+rvGravityArea::Spawn
+================
+*/
+void rvGravityArea::Spawn() {
+	area = gameRenderWorld->PointInArea( spawnArgs.GetVector("origin") );
+	gameLocal.AddUniqueGravityInfo( this );
+}
+
+/*
+================
+rvGravityArea::Save
+================
+*/
+void rvGravityArea::Save( idSaveGame *savefile ) const {
+	savefile->WriteInt( area );
+}
+
+/*
+================
+rvGravityArea::Restore
+================
+*/
+void rvGravityArea::Restore( idRestoreGame *savefile ) {
+	savefile->ReadInt( area );
+}
+
+/*
+================
+rvGravityArea::IsEqualTo
+================
+*/
+bool rvGravityArea::IsEqualTo( const rvGravityArea* area ) const {
+	assert( area );
+	return !idStr::Icmp( GetName(), area->GetName() );
+}
+
+/*
+================
+rvGravityArea::operator==
+================
+*/
+bool rvGravityArea::operator==( const rvGravityArea* area ) const {
+	return IsEqualTo( area );
+}
+
+/*
+================
+rvGravityArea::operator==
+================
+*/
+bool rvGravityArea::operator==( const rvGravityArea& area ) const {
+	return IsEqualTo( &area );
+}
+
+/*
+================
+rvGravityArea::operator!=
+================
+*/
+bool rvGravityArea::operator!=( const rvGravityArea* area ) const {
+	return !IsEqualTo( area );
+}
+
+/*
+================
+rvGravityArea::operator!=
+================
+*/
+bool rvGravityArea::operator!=( const rvGravityArea& area ) const {
+	return !IsEqualTo( &area );
+}
+
+/*
+===============================================================================
+
+	rvGravityEntity_Static
+
+===============================================================================
+*/
+CLASS_DECLARATION( rvGravityArea, rvGravityArea_Static )
+END_CLASS
+
+/*
+================
+rvGravityArea_Static::Spawn
+================
+*/
+void rvGravityArea_Static::Spawn() {
+	gravity = spawnArgs.GetVector( "gravity" );// * gameLocal.GetGravity().Length();
+}
+
+/*
+================
+rvGravityArea_Static::Save
+================
+*/
+void rvGravityArea_Static::Save( idSaveGame *savefile ) const {
+	savefile->WriteVec3( gravity );
+}
+
+/*
+================
+rvGravityArea_Static::Restore
+================
+*/
+void rvGravityArea_Static::Restore( idRestoreGame *savefile ) {
+	savefile->ReadVec3( gravity );
+}
+
+/*
+===============================================================================
+
+	rvGravityArea_SurfaceNormal
+
+===============================================================================
+*/
+CLASS_DECLARATION( rvGravityArea, rvGravityArea_SurfaceNormal )
+END_CLASS
+
+/*
+================
+rvGravityArea_SurfaceNormal::GetGravity
+================
+*/
+const idVec3 rvGravityArea_SurfaceNormal::GetGravity( const idVec3& origin, const idMat3& axis, int clipMask, idEntity* passEntity ) const {
+	trace_t results;
+
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+	if( !gameLocal.TracePoint( this, results, origin, origin + -axis[2] * 50.0f, clipMask, passEntity ) ) {
+// RAVEN END
+		return gameLocal.GetGravity();
+	}
+
+	return -results.c.normal * gameLocal.GetGravity().Length();
+}
+
+/*
+================
+rvGravityArea_SurfaceNormal::GetGravity
+================
+*/
+const idVec3 rvGravityArea_SurfaceNormal::GetGravity( const idEntity* ent ) const {
+	return GetGravity( ent->GetPhysics() );
+}
+
+/*
+================
+rvGravityArea_SurfaceNormal::GetGravity
+================
+*/
+const idVec3 rvGravityArea_SurfaceNormal::GetGravity( const rvClientEntity* ent ) const {
+	return GetGravity( ent->GetPhysics() );
+}
+
+/*
+================
+rvGravityArea_SurfaceNormal::GetGravity
+================
+*/
+const idVec3 rvGravityArea_SurfaceNormal::GetGravity( const idPhysics* physics ) const {
+	return GetGravity( physics->GetOrigin(), physics->GetAxis(), physics->GetClipMask(), physics->GetSelf() );
+}
+// RAVEN END
+
 
 /*
 ===============================================================================
@@ -2143,7 +3204,6 @@ idBeam::SetMaster
 void idBeam::SetMaster( idBeam *masterbeam ) {
 	master = masterbeam;
 }
-
 /*
 ================
 idBeam::SetBeamTarget
@@ -2273,6 +3333,7 @@ idLiquid::Save
 */
 void idLiquid::Save( idSaveGame *savefile ) const {
 	// Nothing to save
+	// cnicholson: It says nothing to save here, no mention of *model
 }
 
 /*
@@ -2338,6 +3399,11 @@ idShaking::idShaking() {
 	active = false;
 }
 
+
+idShaking::~idShaking() { 
+	SetPhysics( NULL );
+}
+
 /*
 ===============
 idShaking::Save
@@ -2366,7 +3432,15 @@ idShaking::Spawn
 */
 void idShaking::Spawn( void ) {
 	physicsObj.SetSelf( this );
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+	RV_PUSH_HEAP_MEM(this);
+// RAVEN END
 	physicsObj.SetClipModel( new idClipModel( GetPhysics()->GetClipModel() ), 1.0f );
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+	RV_POP_HEAP();
+// RAVEN END
 	physicsObj.SetOrigin( GetPhysics()->GetOrigin() );
 	physicsObj.SetAxis( GetPhysics()->GetAxis() );
 	physicsObj.SetClipMask( MASK_SOLID );
@@ -2416,6 +3490,7 @@ void idShaking::Event_Activate( idEntity *activator ) {
 
 ===============================================================================
 */
+idCVar g_earthquake( "g_earthquake", "1", 0, "controls earthquake effect" );
 
 CLASS_DECLARATION( idEntity, idEarthQuake )
 	EVENT( EV_Activate,				idEarthQuake::Event_Activate )
@@ -2535,6 +3610,11 @@ void idEarthQuake::Event_Activate( idEntity *activator ) {
 		StartSoundShader( shader, SND_CHANNEL_ANY, SSF_GLOBAL, false, NULL );
 	}
 
+// RAVEN BEGIN
+// kfuller: look for fx entities and the like that may want to be triggered when a mortar round (aka earthquake) goes off
+	AffectNearbyEntities(spawnArgs.GetFloat("affectEntities", "0"));
+// RAVEN END
+
 	if ( shakeTime > 0.0f ) {
 		shakeStopTime = gameLocal.time + SEC2MS( shakeTime );
 		BecomeActive( TH_THINK );
@@ -2551,6 +3631,49 @@ void idEarthQuake::Event_Activate( idEntity *activator ) {
 	}
 }
 
+// RAVEN BEGIN
+// kfuller: look for fx entities and the like that may want to be triggered when a mortar round, earthquake, etc goes off
+void idEarthQuake::AffectNearbyEntities(float affectRadius)
+{
+	if( !g_earthquake.GetBool() ) 
+	{
+		return;
+	}
+
+	if (affectRadius == 0)
+	{
+		return;
+	}
+	idVec3		affectOrigin(GetPhysics()->GetOrigin());
+	
+	if (playerOriented)
+	{
+		idPlayer *player = gameLocal.GetLocalPlayer();
+		if ( player == NULL )
+		{
+			return;
+		}
+		affectOrigin = player->GetPhysics()->GetOrigin();
+	}
+
+	idEntity *	entityList[ MAX_GENTITIES ];
+	int			numListedEntities = 0;
+	idEntity	*curEnt = NULL;
+	bool		requiresLOS = spawnArgs.GetBool("requiresLOS", "false");
+
+	// get all entities touching the bounds
+	numListedEntities = gameLocal.EntitiesWithinRadius(affectOrigin, affectRadius, entityList, MAX_GENTITIES );
+	for (int i = 0; i < numListedEntities; i++)
+	{
+		// only affect certain entities. first check if they have the "quakeChance" key/value, then send them an earthquake event
+		curEnt = entityList[i];
+		if (curEnt && curEnt->spawnArgs.GetFloat("quakeChance"))
+		{
+			curEnt->PostEventMS(&EV_Earthquake, 0, (float)requiresLOS);
+		}
+	}
+}
+// RAVEN END
 
 /*
 ===============
@@ -2566,7 +3689,7 @@ void idEarthQuake::Think( void ) {
 			}
 			return;
 		}
-		float shakeVolume = gameSoundWorld->CurrentShakeAmplitudeForPosition( gameLocal.time, gameLocal.GetLocalPlayer()->firstPersonViewOrigin );
+		float shakeVolume = soundSystem->CurrentShakeAmplitudeForPosition( SOUNDWORLD_GAME, gameLocal.time, gameLocal.GetLocalPlayer()->firstPersonViewOrigin );
 		gameLocal.RadiusPush( GetPhysics()->GetOrigin(), 256, 1500 * shakeVolume, this, this, 1.0f, true );
 	}
 	BecomeInactive( TH_UPDATEVISUALS );
@@ -2760,7 +3883,15 @@ void idFuncAASObstacle::Event_Activate( idEntity *activator ) {
 	gameLocal.SetAASAreaState( GetPhysics()->GetAbsBounds(), AREACONTENTS_OBSTACLE, state );
 }
 
-
+/*
+================
+idFuncAASObstacle::SetState
+================
+*/
+void idFuncAASObstacle::SetState ( bool _state ) {
+	state = _state;
+	gameLocal.SetAASAreaState( GetPhysics()->GetAbsBounds(), AREACONTENTS_OBSTACLE, state );
+}
 
 /*
 ===============================================================================
@@ -2771,11 +3902,12 @@ idFuncRadioChatter
 */
 
 const idEventDef EV_ResetRadioHud( "<resetradiohud>", "e" );
-
+idEntityPtr<idFuncRadioChatter> idFuncRadioChatter::lastRadioChatter = 0;
 
 CLASS_DECLARATION( idEntity, idFuncRadioChatter )
 EVENT( EV_Activate,				idFuncRadioChatter::Event_Activate )
 EVENT( EV_ResetRadioHud,		idFuncRadioChatter::Event_ResetRadioHud )
+EVENT( EV_IsActive,				idFuncRadioChatter::Event_IsActive )
 END_CLASS
 
 /*
@@ -2784,7 +3916,8 @@ idFuncRadioChatter::idFuncRadioChatter
 ===============
 */
 idFuncRadioChatter::idFuncRadioChatter() {
-	time = 0.0;
+	time = 0.0f;
+	isActive = false;
 }
 
 /*
@@ -2794,6 +3927,8 @@ idFuncRadioChatter::Save
 */
 void idFuncRadioChatter::Save( idSaveGame *savefile ) const {
 	savefile->WriteFloat( time );
+	savefile->WriteBool( isActive ); // cnicholson: Added unsaved var
+	lastRadioChatter.Save ( savefile );
 }
 
 /*
@@ -2803,6 +3938,8 @@ idFuncRadioChatter::Restore
 */
 void idFuncRadioChatter::Restore( idRestoreGame *savefile ) {
 	savefile->ReadFloat( time );
+	savefile->ReadBool( isActive ); // cnicholson: Added unrestored var
+	lastRadioChatter.Restore ( savefile );
 }
 
 /*
@@ -2824,25 +3961,43 @@ void idFuncRadioChatter::Event_Activate( idEntity *activator ) {
 	const char	*sound;
 	const idSoundShader *shader;
 	int length;
-	
-	if ( activator->IsType( idPlayer::Type ) ) {
+	bool isDirectedAtPlayer = false;	
+
+	lastRadioChatter = this;
+
+// RAVEN BEGIN
+// jnewquist: Use accessor for static class type 
+	if ( activator && activator->IsType( idPlayer::GetClassType() ) ) {
+// RAVEN END
 		player = static_cast<idPlayer *>( activator );
 	} else {
 		player = gameLocal.GetLocalPlayer();
 	}
 
-	player->hud->HandleNamedEvent( "radioChatterUp" );
+// RAVEN BEGIN
+// bdube: replaced named event with method
+	player->StartRadioChatter();
+// twhitaker: for isActive() script event
+	isActive = true;
+// RAVEN END
 
 	sound = spawnArgs.GetString( "snd_radiochatter", "" );
 	if ( sound && *sound ) {
 		shader = declManager->FindSound( sound );
+		if ( shader && shader->IsVO_ForPlayer()){
+			isDirectedAtPlayer = true;
+		}
 		player->StartSoundShader( shader, SND_CHANNEL_RADIO, SSF_GLOBAL, false, &length );
 		time = MS2SEC( length + 150 );
 	}
+
+	if ( player && player->GetHud() ) {
+		player->GetHud()->SetStateBool( "rhinochatter", isDirectedAtPlayer );
+	}
+
 	// we still put the hud up because this is used with no sound on 
 	// certain frame commands when the chatter is triggered
 	PostEventSec( &EV_ResetRadioHud, time, player );
-
 }
 
 /*
@@ -2851,11 +4006,38 @@ idFuncRadioChatter::Event_ResetRadioHud
 ================
 */
 void idFuncRadioChatter::Event_ResetRadioHud( idEntity *activator ) {
-	idPlayer *player = ( activator->IsType( idPlayer::Type ) ) ? static_cast<idPlayer *>( activator ) : gameLocal.GetLocalPlayer();
-	player->hud->HandleNamedEvent( "radioChatterDown" );
+// RAVEN BEGIN
+// jnewquist: Use accessor for static class type 
+	idPlayer *player = ( activator->IsType( idPlayer::GetClassType() ) ) ? static_cast<idPlayer *>( activator ) : gameLocal.GetLocalPlayer();
+// RAVEN END
+// RAVEN BEGIN
+// bdube: replaced named event with method
+	player->StopRadioChatter();
+// twhitaker: for isActive() script event
+	isActive = false;
+// RAVEN END
 	ActivateTargets( activator );
 }
 
+/*
+================
+idFuncRadioChatter::Event_ResetRadioHud
+================
+*/
+void idFuncRadioChatter::Event_IsActive( void ) {
+	idThread::ReturnFloat( static_cast< float >( isActive ) );
+}
+
+/*
+================
+idFuncRadioChatter::RepeatLast
+================
+*/
+void idFuncRadioChatter::RepeatLast( void ) {
+	if ( lastRadioChatter ) {
+		lastRadioChatter->Event_Activate( gameLocal.GetLocalPlayer() );
+	}
+}
 
 /*
 ===============================================================================
@@ -2994,7 +4176,10 @@ void idPhantomObjects::Event_Activate( idEntity *activator ) {
 		return;
 	}
 
-	if ( !activator || !activator->IsType( idActor::Type ) ) {
+// RAVEN BEGIN
+// jnewquist: Use accessor for static class type 
+	if ( !activator || !activator->IsType( idActor::GetClassType() ) ) {
+// RAVEN END
 		target = gameLocal.GetLocalPlayer();
 	} else {
 		target = static_cast<idActor *>( activator );
@@ -3086,7 +4271,10 @@ void idPhantomObjects::Think( void ) {
 		entPhys = ent->GetPhysics();
 		const idVec3 &entOrg = entPhys->GetOrigin();
 
-		gameLocal.clip.TracePoint( tr, entOrg, toPos, MASK_OPAQUE, ent );
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+		gameLocal.TracePoint( this, tr, entOrg, toPos, MASK_OPAQUE, ent );
+// RAVEN END
 		if ( tr.fraction >= 1.0f || ( gameLocal.GetTraceEntity( tr ) == targetEnt ) ) {
 			lastTargetPos[ i ] = toPos;
 		}
@@ -3101,7 +4289,10 @@ void idPhantomObjects::Think( void ) {
 			} else {
 				targetTime[ i ] = gameLocal.time + gameLocal.random.RandomInt( max_wait - min_wait ) + min_wait;
 			}
-			if ( ent->IsType( idMoveable::Type ) ) {
+// RAVEN BEGIN
+// jnewquist: Use accessor for static class type 
+			if ( ent->IsType( idMoveable::GetClassType() ) ) {
+// RAVEN END
 				idMoveable *ment = static_cast<idMoveable*>( ent );
 				ment->EnableDamage( true, 2.5f );
 			}
@@ -3116,4 +4307,53 @@ void idPhantomObjects::Think( void ) {
 	if ( !num ) {
 		BecomeInactive( TH_THINK );
 	}
+}
+
+// RAVEN BEGIN
+// bdube: jump points
+
+/*
+===============================================================================
+
+rvDebugJumpPoint
+
+===============================================================================
+*/
+
+CLASS_DECLARATION( idEntity, rvDebugJumpPoint )
+END_CLASS
+
+/*
+=====================
+rvDebugJumpPoint::Spawn
+=====================
+*/
+void rvDebugJumpPoint::Spawn() {
+	// Add the jump point
+	gameDebug.JumpAdd ( name, GetPhysics()->GetOrigin(), GetPhysics()->GetAxis().ToAngles ( ) );
+	
+	// Dont need the entity any more
+	PostEventMS( &EV_Remove, 0 );
+}
+
+
+/*
+===============================================================================
+
+rvFuncSaveGame
+
+===============================================================================
+*/
+
+CLASS_DECLARATION( idEntity, rvFuncSaveGame )
+	EVENT( EV_Activate,		rvFuncSaveGame::Event_Activate )
+END_CLASS
+
+void rvFuncSaveGame::Spawn( void ) {
+
+}
+
+void rvFuncSaveGame::Event_Activate( idEntity *activator ) {
+	// TODO: Xenon - request the player to save the game.
+	cmdSystem->BufferCommandText( CMD_EXEC_APPEND, "saveGame checkPoint" );
 }

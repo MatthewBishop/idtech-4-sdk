@@ -74,9 +74,8 @@ typedef enum {
 	CVAR_INIT				= BIT(15),	// can only be set from the command-line
 	CVAR_ROM				= BIT(16),	// display only, cannot be set by user at all
 	CVAR_ARCHIVE			= BIT(17),	// set to cause it to be saved to a config file
-	CVAR_LATCH				= BIT(18),	// will only change to the new value when UpdateLatched is called
-										// the modified flag is still set when the latched string changes
-	CVAR_MODIFIED			= BIT(19)	// set when the variable is modified
+	CVAR_MODIFIED			= BIT(18),	// set when the variable is modified
+	CVAR_INFO				= BIT(19)	// sent as part of the MOTD packet
 } cvarFlags_t;
 
 
@@ -114,7 +113,6 @@ public:
 	bool					IsModified( void ) const { return ( internalVar->flags & CVAR_MODIFIED ) != 0; }
 	void					SetModified( void ) { internalVar->flags |= CVAR_MODIFIED; }
 	void					ClearModified( void ) { internalVar->flags &= ~CVAR_MODIFIED; }
-	void					UpdateLatched( void ) { internalVar->InternalUpdateLatched(); }
 
 	const char *			GetString( void ) const { return internalVar->value; }
 	bool					GetBool( void ) const { return ( internalVar->integerValue != 0 ); }
@@ -148,7 +146,6 @@ private:
 	void					Init( const char *name, const char *value, int flags, const char *description,
 									float valueMin, float valueMax, const char **valueStrings, argCompletion_t valueCompletion );
 
-	virtual void			InternalUpdateLatched( void ) {}
 	virtual void			InternalSetString( const char *newValue ) {}
 	virtual void			InternalSetBool( const bool newValue ) {}
 	virtual void			InternalSetInteger( const int newValue ) {}
@@ -175,6 +172,70 @@ ID_INLINE idCVar::idCVar( const char *name, const char *value, int flags, const 
 	Init( name, value, flags, description, 1, -1, valueStrings, valueCompletion );
 }
 
+// RAVEN BEGIN
+// rjohnson: new help system for cvar ui
+
+/*
+===============================================================================
+
+	idCVarHelp
+
+===============================================================================
+*/
+
+typedef enum {
+	CVARHELP_ALL			= -1,		// all categories
+	CVARHELP_GAME			= BIT(0),	// game menu
+	CVARHELP_RENDERER		= BIT(1),	// renderer menu
+	CVARHELP_PHYSICS		= BIT(2),	// physics menu
+	CVARHELP_SOUND			= BIT(3),	// sound menu
+	CVARHELP_AI				= BIT(4),	// AI menu
+} cvarHelpCategory_t;
+
+
+class idCVarHelp {
+public:
+								// Never use the default constructor.
+								idCVarHelp( void ) { assert( typeid(this) != typeid(idCVarHelp) ); }
+
+								// Always use one of the following constructors.
+								idCVarHelp( const char *cvarName, const char *friendlyName, const char *choices, const char *values, cvarHelpCategory_t category );
+
+								idCVarHelp( const idCVarHelp &copy );
+
+	const char *				GetCVarName( void ) const { return cvarName; }	
+	const char *				GetFriendlyName( void ) const { return friendlyName; }	
+	const char *				GetChoices( void ) const { return choices; }	
+	const char *				GetValues( void ) const { return values; }	
+	const cvarHelpCategory_t	GetCategory( void ) const { return category; }	
+	const idCVarHelp *			GetNext( void ) const { return next; }
+
+	void						SetNext( const idCVarHelp *value ) { next = value; }
+
+	static void					RegisterStatics( void );
+
+private:
+	const char *				cvarName;				// the cvar this help belongs to
+	const char *				friendlyName;			// a textual name for the cvar impaired
+	const char *				choices;				// a textual list of choices for the cvar impaired
+	const char *				values;					// the list of values that goes with the choices
+	cvarHelpCategory_t			category;				// the category(s) this cvar should appear under
+	const idCVarHelp *			next;					// next statically declared cvar helper
+
+	static idCVarHelp *			staticCVarHelps;
+	static idCVarHelp *			staticCVarHelpsTail;
+};
+
+ID_INLINE idCVarHelp::idCVarHelp( const idCVarHelp &copy ) {
+	cvarName = copy.cvarName;
+	friendlyName = copy.friendlyName;
+	choices = copy.choices;
+	values = copy.values;
+	category = copy.category;
+	next = NULL;
+}
+
+// RAVEN END
 
 /*
 ===============================================================================
@@ -194,6 +255,13 @@ public:
 
 							// Registers a CVar.
 	virtual void			Register( idCVar *cvar ) = 0;
+
+// RAVEN BEGIN
+// rjohnson: new help system for cvar ui
+							// Registers a CVarHelp.
+	virtual void			Register( const idCVarHelp *cvarHelp ) = 0;
+	virtual idCVarHelp *	GetHelps( cvarHelpCategory_t category ) = 0;
+// RAVEN END
 
 							// Finds the CVar with the given name.
 							// Returns NULL if there is no CVar with the given name.
@@ -232,6 +300,12 @@ public:
 
 							// Writes variables with one of the given flags set to the given file.
 	virtual void			WriteFlaggedVariables( int flags, const char *setCmd, idFile *f ) const = 0;
+// RAVEN BEGIN
+// nrausch: memory cvar support
+	virtual unsigned int	WriteFlaggedVariables( int flags, const char *setCmd, byte *buf, unsigned int bufSize ) const = 0;
+	virtual void			ApplyFlaggedVariables( byte *buf, unsigned int bufSize ) = 0;
+	virtual idStr			WriteFlaggedVariables( int flags ) const = 0;
+// RAVEN END
 
 							// Moves CVars to and from dictionaries.
 	virtual const idDict *	MoveCVarsToDict( int flags ) const = 0;
@@ -277,6 +351,10 @@ ID_INLINE void idCVar::Init( const char *name, const char *value, int flags, con
 }
 
 ID_INLINE void idCVar::RegisterStaticVars( void ) {
+// RAVEN BEGIN
+// jnewquist: Tag scope and callees to track allocations using "new".
+	MEM_SCOPED_TAG(tag,MA_CVAR);
+// RAVEN END
 	if ( staticVars != (idCVar *)0xFFFFFFFF ) {
 		for ( idCVar *cvar = staticVars; cvar; cvar = cvar->next ) {
 			cvarSystem->Register( cvar );
@@ -284,5 +362,46 @@ ID_INLINE void idCVar::RegisterStaticVars( void ) {
 		staticVars = (idCVar *)0xFFFFFFFF;
 	}
 }
+
+// RAVEN BEGIN
+// rjohnson: new help system for cvar ui
+ID_INLINE idCVarHelp::idCVarHelp( const char *cvarName, const char *friendlyName, const char *choices, const char *values, cvarHelpCategory_t category ) {
+// RAVEN BEGIN
+// jnewquist: Tag scope and callees to track allocations using "new".
+	MEM_SCOPED_TAG(tag,MA_CVAR);
+// RAVEN END
+	this->cvarName = cvarName;
+	this->friendlyName = friendlyName;
+	this->choices = choices;
+	this->values = values;
+	this->category = category;
+	this->next = NULL;
+
+	if ( staticCVarHelps != (idCVarHelp *)0xFFFFFFFF ) {
+		if ( !staticCVarHelpsTail ) {
+			staticCVarHelps = this;
+		} else {
+			staticCVarHelpsTail->next = this;
+		}
+		staticCVarHelpsTail = this;
+		staticCVarHelpsTail->next = NULL;
+	} else {
+		cvarSystem->Register( this );
+	}
+}
+
+ID_INLINE void idCVarHelp::RegisterStatics( void ) {
+// RAVEN BEGIN
+// jnewquist: Tag scope and callees to track allocations using "new".
+	MEM_SCOPED_TAG(tag,MA_CVAR);
+// RAVEN END
+	if ( staticCVarHelps != (idCVarHelp *)0xFFFFFFFF ) {
+		for ( const idCVarHelp *cvarHelp = staticCVarHelps; cvarHelp; cvarHelp = cvarHelp->next ) {
+			cvarSystem->Register( cvarHelp );
+		}
+		staticCVarHelps = (idCVarHelp *)0xFFFFFFFF;
+	}
+}
+// RAVEN END
 
 #endif /* !__CVARSYSTEM_H__ */

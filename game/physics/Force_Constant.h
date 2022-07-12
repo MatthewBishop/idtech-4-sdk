@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __FORCE_CONSTANT_H__
 #define __FORCE_CONSTANT_H__

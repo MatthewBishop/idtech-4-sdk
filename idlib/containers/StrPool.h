@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __STRPOOL_H__
 #define __STRPOOL_H__
@@ -48,6 +46,18 @@ public:
 	const idPoolStr *	CopyString( const idPoolStr *poolStr );
 	void				Clear( void );
 
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+	void				SetAllocatorHeap ( rvHeap* heap )
+	{
+		assert(heap);
+		pool.SetAllocatorHeap(heap);
+		poolHash.SetAllocatorHeap(heap);
+	}
+#endif
+// RAVEN END
+
 private:
 	bool				caseSensitive;
 	idList<idPoolStr *>	pool;
@@ -89,7 +99,19 @@ ID_INLINE const idPoolStr *idStrPool::AllocString( const char *string ) {
 		}
 	}
 
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+	RV_PUSH_SYS_HEAP_ID(RV_HEAP_ID_PERMANENT);
+#endif
+// RAVEN END
 	poolStr = new idPoolStr;
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+	RV_POP_HEAP();
+#endif
+// RAVEN END
 	*static_cast<idStr *>(poolStr) = string;
 	poolStr->pool = this;
 	poolStr->numUsers = 1;

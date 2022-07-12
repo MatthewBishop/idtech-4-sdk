@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __BTREE_H__
 #define __BTREE_H__
@@ -51,7 +49,10 @@ public:
 
 private:
 	idBTreeNode<objType,keyType> *	root;
-	idBlockAlloc<idBTreeNode<objType,keyType>,128>	nodeAllocator;
+// RAVEN BEGIN
+// jnewquist: Mark memory tags for idBlockAlloc
+	idBlockAlloc<idBTreeNode<objType,keyType>,128,MA_DEFAULT>	nodeAllocator;
+// RAVEN END
 
 	idBTreeNode<objType,keyType> *	AllocNode( void );
 	void							FreeNode( idBTreeNode<objType,keyType> *node );

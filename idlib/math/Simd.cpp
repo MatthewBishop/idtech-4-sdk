@@ -1,16 +1,24 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../precompiled.h"
 #pragma hdrstop
 
-#include "Simd_Generic.h"
+#include "Simd_generic.h"
+#ifdef _WINDOWS
 #include "Simd_MMX.h"
 #include "Simd_3DNow.h"
 #include "Simd_SSE.h"
 #include "Simd_SSE2.h"
 #include "Simd_SSE3.h"
+#endif // _WINDOWS
+#ifdef MACOS_X
 #include "Simd_AltiVec.h"
+#endif
+#ifdef _XENON
+// RAVEN BEGIN
+// jsinger: Adding Xenon processor support
+#include "Simd_Xenon.h"
+// RAVEN END
+#endif
 
 
 idSIMDProcessor	*	processor = NULL;			// pointer to SIMD processor
@@ -24,8 +32,17 @@ idSIMD::Init
 ================
 */
 void idSIMD::Init( void ) {
+// RAVEN BEGIN
+// jnewquist: Tag scope and callees to track allocations using "new".
+	MEM_SCOPED_TAG(tag,MA_DEFAULT);
+// jsinger: xenon uses idSIMD_Xenon always
+#ifdef _XENON
+	generic = new idSIMD_Xenon;
+#else
 	generic = new idSIMD_Generic;
 	generic->cpuid = CPUID_GENERIC;
+#endif
+// RAVEN END
 	processor = NULL;
 	SIMDProcessor = generic;
 }
@@ -48,8 +65,19 @@ void idSIMD::InitProcessor( const char *module, bool forceGeneric ) {
 	} else {
 
 		if ( !processor ) {
+// RAVEN BEGIN
+// jsinger: on xenon even the generic is idSIMD_Xenon so this is exactly what we want
+#ifdef _XENON
+			processor = generic;	// generic will actually be the xenon SIMD processor on xenon
+#else
 			if ( ( cpuid & CPUID_ALTIVEC ) ) {
+#ifdef MACOS_X
 				processor = new idSIMD_AltiVec;
+#else
+				assert( false );
+				processor = generic;
+#endif
+#ifdef _WINDOWS
 			} else if ( ( cpuid & CPUID_MMX ) && ( cpuid & CPUID_SSE ) && ( cpuid & CPUID_SSE2 ) && ( cpuid & CPUID_SSE3 ) ) {
 				processor = new idSIMD_SSE3;
 			} else if ( ( cpuid & CPUID_MMX ) && ( cpuid & CPUID_SSE ) && ( cpuid & CPUID_SSE2 ) ) {
@@ -60,10 +88,13 @@ void idSIMD::InitProcessor( const char *module, bool forceGeneric ) {
 				processor = new idSIMD_3DNow;
 			} else if ( ( cpuid & CPUID_MMX ) ) {
 				processor = new idSIMD_MMX;
+#endif // _WINDOWS
 			} else {
 				processor = generic;
 			}
 			processor->cpuid = cpuid;
+#endif
+// RAVEN END
 		}
 
 		newProcessor = processor;
@@ -116,7 +147,7 @@ idSIMDProcessor *p_simd;
 idSIMDProcessor *p_generic;
 long baseClocks = 0;
 
-#ifdef _WIN32
+#ifdef _WINDOWS
 
 #define TIME_TYPE int
 
@@ -253,7 +284,7 @@ TIME_TYPE time_in_millisec( void ) {
 #define StopRecordTime( end )				\
 	end = 1;
 
-#endif
+#endif // _WINDOWS
 
 #define GetBest( start, end, best )			\
 	if ( !best || end - start < best ) {	\
@@ -270,7 +301,10 @@ void PrintClocks( char *string, int dataCount, int clocks, int otherClocks = 0 )
 	int i;
 
 	idLib::common->Printf( string );
-	for ( i = idStr::LengthWithoutColors(string); i < 48; i++ ) {
+// RAVEN BEGIN
+// bdube: escape codes
+	for ( i = idStr::LengthWithoutEscapes(string); i < 48; i++ ) {
+// RAVEN END
 		idLib::common->Printf(" ");
 	}
 	clocks -= baseClocks;
@@ -2261,6 +2295,7 @@ void TestBlendJoints( void ) {
 		baseJoints[i].t[0] = srnd.CRandomFloat() * 10.0f;
 		baseJoints[i].t[1] = srnd.CRandomFloat() * 10.0f;
 		baseJoints[i].t[2] = srnd.CRandomFloat() * 10.0f;
+		baseJoints[i].w = 0.0f;
 		angles[0] = srnd.CRandomFloat() * 180.0f;
 		angles[1] = srnd.CRandomFloat() * 180.0f;
 		angles[2] = srnd.CRandomFloat() * 180.0f;
@@ -2268,6 +2303,7 @@ void TestBlendJoints( void ) {
 		blendJoints[i].t[0] = srnd.CRandomFloat() * 10.0f;
 		blendJoints[i].t[1] = srnd.CRandomFloat() * 10.0f;
 		blendJoints[i].t[2] = srnd.CRandomFloat() * 10.0f;
+		blendJoints[i].w = 0.0f;
 		index[i] = i;
 	}
 
@@ -2541,19 +2577,26 @@ void TestUntransformJoints( void ) {
 
 /*
 ============
-TestTransformVerts
+TestTransformVertsNew
 ============
 */
-#define NUMJOINTS	64
-#define NUMVERTS	COUNT/2
-void TestTransformVerts( void ) {
+#undef NUMJOINTS
+#undef NUMVERTS
+
+#define NUMJOINTS			64
+#define NUMVERTS			COUNT
+#define NUMWEIGHTSPERVERT	2
+#define NUMWEIGHTS			(NUMVERTS*NUMWEIGHTSPERVERT)
+
+void TestTransformVertsNew( void ) {
 	int i;
 	TIME_TYPE start, end, bestClocksGeneric, bestClocksSIMD;
 	ALIGN16( idDrawVert drawVerts1[NUMVERTS]; )
 	ALIGN16( idDrawVert drawVerts2[NUMVERTS]; )
 	ALIGN16( idJointMat joints[NUMJOINTS]; )
-	ALIGN16( idVec4 weights[COUNT]; )
-	ALIGN16( int weightIndex[COUNT*2]; )
+	ALIGN16( idVec4 base[NUMWEIGHTS*3]; )
+	ALIGN16( jointWeight_t weights[NUMWEIGHTS]; )
+	idBounds bounds1, bounds2;
 	const char *result;
 
 	idRandom srnd( RANDOM_SEED );
@@ -2571,28 +2614,32 @@ void TestTransformVerts( void ) {
 		joints[i].SetTranslation( v );
 	}
 
-	for ( i = 0; i < COUNT; i++ ) {
-		weights[i][0] = srnd.CRandomFloat() * 2.0f;
-		weights[i][1] = srnd.CRandomFloat() * 2.0f;
-		weights[i][2] = srnd.CRandomFloat() * 2.0f;
-		weights[i][3] = srnd.CRandomFloat();
-		weightIndex[i*2+0] = ( i * NUMJOINTS / COUNT ) * sizeof( idJointMat );
-		weightIndex[i*2+1] = i & 1;
+	for ( i = 0; i < NUMWEIGHTS*3; i++ ) {
+		base[i][0] = srnd.CRandomFloat() * 2.0f;
+		base[i][1] = srnd.CRandomFloat() * 2.0f;
+		base[i][2] = srnd.CRandomFloat() * 2.0f;
+		base[i][3] = srnd.CRandomFloat();
+	}
+
+	for ( i = 0; i < NUMWEIGHTS; i++ ) {
+		weights[i].weight = srnd.CRandomFloat();
+		weights[i].jointMatOffset = idMath::ClampInt( 0, NUMJOINTS-1, i * NUMJOINTS / NUMWEIGHTS + 0 ) * JOINTMAT_SIZE;
+		weights[i].nextVertexOffset = ( NUMWEIGHTSPERVERT - ( i % NUMWEIGHTSPERVERT ) ) * JOINTWEIGHT_SIZE;
 	}
 
 	bestClocksGeneric = 0;
 	for ( i = 0; i < NUMTESTS; i++ ) {
 		StartRecordTime( start );
-		p_generic->TransformVerts( drawVerts1, NUMVERTS, joints, weights, weightIndex, COUNT );
+		p_generic->TransformVertsNew( drawVerts1, NUMVERTS, bounds1, joints, base, weights, NUMWEIGHTS );
 		StopRecordTime( end );
 		GetBest( start, end, bestClocksGeneric );
 	}
-	PrintClocks( "generic->TransformVerts()", COUNT, bestClocksGeneric );
+	PrintClocks( "generic->TransformVertsNew()", NUMVERTS, bestClocksGeneric );
 
 	bestClocksSIMD = 0;
 	for ( i = 0; i < NUMTESTS; i++ ) {
 		StartRecordTime( start );
-		p_simd->TransformVerts( drawVerts2, NUMVERTS, joints, weights, weightIndex, COUNT );
+		p_simd->TransformVertsNew( drawVerts2, NUMVERTS, bounds2, joints, base, weights, NUMWEIGHTS );
 		StopRecordTime( end );
 		GetBest( start, end, bestClocksSIMD );
 	}
@@ -2602,8 +2649,70 @@ void TestTransformVerts( void ) {
 			break;
 		}
 	}
-	result = ( i >= NUMVERTS ) ? "ok" : S_COLOR_RED"X";
-	PrintClocks( va( "   simd->TransformVerts() %s", result ), COUNT, bestClocksSIMD, bestClocksGeneric );
+	result = ( i >= NUMVERTS && bounds1.Compare( bounds2, 1e-4f ) ) ? "ok" : S_COLOR_RED"X";
+	PrintClocks( va( "   simd->TransformVertsNew() %s", result ), NUMVERTS, bestClocksSIMD, bestClocksGeneric );
+
+	bestClocksGeneric = 0;
+	for ( i = 0; i < NUMTESTS; i++ ) {
+		StartRecordTime( start );
+		p_generic->TransformVertsAndTangents( drawVerts1, NUMVERTS, bounds1, joints, base, weights, NUMWEIGHTS );
+		StopRecordTime( end );
+		GetBest( start, end, bestClocksGeneric );
+	}
+	PrintClocks( "generic->TransformVertsAndTangents()", NUMVERTS, bestClocksGeneric );
+
+	bestClocksSIMD = 0;
+	for ( i = 0; i < NUMTESTS; i++ ) {
+		StartRecordTime( start );
+		p_simd->TransformVertsAndTangents( drawVerts2, NUMVERTS, bounds2, joints, base, weights, NUMWEIGHTS );
+		StopRecordTime( end );
+		GetBest( start, end, bestClocksSIMD );
+	}
+
+	for ( i = 0; i < NUMVERTS; i++ ) {
+		if ( !drawVerts1[i].xyz.Compare( drawVerts2[i].xyz, 0.5f ) ) {
+			break;
+		}
+		if ( !drawVerts1[i].normal.Compare( drawVerts2[i].normal, 0.1f ) ) {
+			break;
+		}
+		if ( !drawVerts1[i].tangents[0].Compare( drawVerts2[i].tangents[0], 0.1f ) ) {
+			break;
+		}
+	}
+	result = ( i >= NUMVERTS && bounds1.Compare( bounds2, 1e-4f ) ) ? "ok" : S_COLOR_RED"X";
+	PrintClocks( va( "   simd->TransformVertsAndTangents() %s", result ), NUMVERTS, bestClocksSIMD, bestClocksGeneric );
+
+	bestClocksGeneric = 0;
+	for ( i = 0; i < NUMTESTS; i++ ) {
+		StartRecordTime( start );
+		p_generic->TransformVertsAndTangentsFast( drawVerts1, NUMVERTS, bounds1, joints, base, weights, NUMWEIGHTS );
+		StopRecordTime( end );
+		GetBest( start, end, bestClocksGeneric );
+	}
+	PrintClocks( "generic->TransformVertsAndTangentsFast()", NUMVERTS, bestClocksGeneric );
+
+	bestClocksSIMD = 0;
+	for ( i = 0; i < NUMTESTS; i++ ) {
+		StartRecordTime( start );
+		p_simd->TransformVertsAndTangentsFast( drawVerts2, NUMVERTS, bounds2, joints, base, weights, NUMWEIGHTS );
+		StopRecordTime( end );
+		GetBest( start, end, bestClocksSIMD );
+	}
+
+	for ( i = 0; i < NUMVERTS; i++ ) {
+		if ( !drawVerts1[i].xyz.Compare( drawVerts2[i].xyz, 0.5f ) ) {
+			break;
+		}
+		if ( !drawVerts1[i].normal.Compare( drawVerts2[i].normal, 0.1f ) ) {
+			break;
+		}
+		if ( !drawVerts1[i].tangents[0].Compare( drawVerts2[i].tangents[0], 0.1f ) ) {
+			break;
+		}
+	}
+	result = ( i >= NUMVERTS && bounds1.Compare( bounds2, 1e-4f ) ) ? "ok" : S_COLOR_RED"X";
+	PrintClocks( va( "   simd->TransformVertsAndTangentsFast() %s", result ), NUMVERTS, bestClocksSIMD, bestClocksGeneric );
 }
 
 /*
@@ -3229,7 +3338,7 @@ void TestCreateShadowCache( void ) {
 			vertRemap1[j] = originalVertRemap[j];
 		}
 		StartRecordTime( start );
-		numVerts1 =p_generic->CreateShadowCache( vertexCache1, vertRemap1, lightOrigin, drawVerts, COUNT );
+		numVerts1 = p_generic->CreateShadowCache( vertexCache1, vertRemap1, lightOrigin, drawVerts, COUNT );
 		StopRecordTime( end );
 		GetBest( start, end, bestClocksGeneric );
 	}
@@ -3291,6 +3400,117 @@ void TestCreateShadowCache( void ) {
 	result = ( i >= COUNT ) ? "ok" : S_COLOR_RED"X";
 	PrintClocks( va( "   simd->CreateVertexProgramShadowCache() %s", result ), COUNT, bestClocksSIMD, bestClocksGeneric );
 }
+
+#if 0 
+#include "Simd_TestData.h"
+
+/*
+============
+TestShadowVolumes
+============
+*/
+void TestShadowVolumes( void ) {
+	int i;
+	TIME_TYPE start, end, bestClocksGeneric, bestClocksSIMD;
+	ALIGN16( int shadowIndexes1[8129]; )
+	ALIGN16( int shadowIndexes2[8129]; )
+	int numFacing1, numFacing2;
+	const char *result;
+
+	numFacing1 = numFacing2 = 0;
+	bestClocksGeneric = 0;
+	for ( i = 0; i < NUMTESTS; i++ ) {
+		StartRecordTime( start );
+		numFacing1 = p_generic->ShadowVolume_CountFacing( SIMD_testFacing, SIMD_numTestFacing );
+		StopRecordTime( end );
+		GetBest( start, end, bestClocksGeneric );
+	}
+	PrintClocks( "generic->ShadowVolume_CountFacing()", COUNT, bestClocksGeneric );
+
+	bestClocksSIMD = 0;
+	for ( i = 0; i < NUMTESTS; i++ ) {
+		StartRecordTime( start );
+		numFacing2 = p_simd->ShadowVolume_CountFacing( SIMD_testFacing, SIMD_numTestFacing );
+		StopRecordTime( end );
+		GetBest( start, end, bestClocksSIMD );
+	}
+
+	result = ( numFacing1 == numFacing2 ) ? "ok" : S_COLOR_RED"X";
+	PrintClocks( va( "   simd->ShadowVolume_CountFacing() %s", result ), COUNT, bestClocksSIMD, bestClocksGeneric );
+
+	bestClocksGeneric = 0;
+	for ( i = 0; i < NUMTESTS; i++ ) {
+		StartRecordTime( start );
+		numFacing1 = p_generic->ShadowVolume_CountFacingCull( SIMD_testFacing, SIMD_numTestFacing, SIMD_testIndexes, SIMD_testCullBits );
+		StopRecordTime( end );
+		GetBest( start, end, bestClocksGeneric );
+	}
+	PrintClocks( "generic->ShadowVolume_CountFacing()", COUNT, bestClocksGeneric );
+
+	bestClocksSIMD = 0;
+	for ( i = 0; i < NUMTESTS; i++ ) {
+		StartRecordTime( start );
+		numFacing2 = p_simd->ShadowVolume_CountFacingCull( SIMD_testFacing, SIMD_numTestFacing, SIMD_testIndexes, SIMD_testCullBits );
+		StopRecordTime( end );
+		GetBest( start, end, bestClocksSIMD );
+	}
+
+	result = ( numFacing1 == numFacing2 ) ? "ok" : S_COLOR_RED"X";
+	PrintClocks( va( "   simd->ShadowVolume_CountFacingCull() %s", result ), COUNT, bestClocksSIMD, bestClocksGeneric );
+
+	bestClocksGeneric = 0;
+	for ( i = 0; i < NUMTESTS; i++ ) {
+		StartRecordTime( start );
+		numFacing1 = p_generic->ShadowVolume_CreateSilTriangles( shadowIndexes1, SIMD_testFacing, ( const silEdge_s *)SIMD_testSilEdges, SIMD_numTestSilEdges );
+		StopRecordTime( end );
+		GetBest( start, end, bestClocksGeneric );
+	}
+	PrintClocks( "generic->ShadowVolume_CreateSilTriangles()", COUNT, bestClocksGeneric );
+
+	bestClocksSIMD = 0;
+	for ( i = 0; i < NUMTESTS; i++ ) {
+		StartRecordTime( start );
+		numFacing2 = p_simd->ShadowVolume_CreateSilTriangles( shadowIndexes2, SIMD_testFacing, ( const silEdge_s *)SIMD_testSilEdges, SIMD_numTestSilEdges );
+		StopRecordTime( end );
+		GetBest( start, end, bestClocksSIMD );
+	}
+
+	for ( i = 0; i < numFacing1; i++ ) {
+		if ( shadowIndexes1[i] != shadowIndexes2[i] ) {
+			break;
+		}
+	}
+
+	result = ( i >= numFacing1 && numFacing1 == numFacing2 ) ? "ok" : S_COLOR_RED"X";
+	PrintClocks( va( "   simd->ShadowVolume_CreateSilTriangles() %s", result ), COUNT, bestClocksSIMD, bestClocksGeneric );
+
+	bestClocksGeneric = 0;
+	for ( i = 0; i < NUMTESTS; i++ ) {
+		StartRecordTime( start );
+		numFacing1 = p_generic->ShadowVolume_CreateCapTriangles( shadowIndexes1, SIMD_testFacing, SIMD_testIndexes, SIMD_numTestIndexes );
+		StopRecordTime( end );
+		GetBest( start, end, bestClocksGeneric );
+	}
+	PrintClocks( "generic->ShadowVolume_CreateCapTriangles()", COUNT, bestClocksGeneric );
+
+	bestClocksSIMD = 0;
+	for ( i = 0; i < NUMTESTS; i++ ) {
+		StartRecordTime( start );
+		numFacing2 = p_simd->ShadowVolume_CreateCapTriangles( shadowIndexes2, SIMD_testFacing, SIMD_testIndexes, SIMD_numTestIndexes );
+		StopRecordTime( end );
+		GetBest( start, end, bestClocksSIMD );
+	}
+
+	for ( i = 0; i < numFacing1; i++ ) {
+		if ( shadowIndexes1[i] != shadowIndexes2[i] ) {
+			break;
+		}
+	}
+
+	result = ( i >= numFacing1 && numFacing1 == numFacing2 ) ? "ok" : S_COLOR_RED"X";
+	PrintClocks( va( "   simd->ShadowVolume_CreateCapTriangles() %s", result ), COUNT, bestClocksSIMD, bestClocksGeneric );
+}
+#endif
 
 /*
 ============
@@ -3989,10 +4209,12 @@ idSIMD::Test_f
 ============
 */
 void idSIMD::Test_f( const idCmdArgs &args ) {
-
-#ifdef _WIN32
+// RAVEN BEGIN
+// jsinger: at the moment this doesn't compile on xenon, but we also shouldn't need it anyway
+#ifndef _XENON
+#ifdef _WINDOWS
 	SetThreadPriority( GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL );
-#endif /* _WIN32 */
+#endif // _WINDOWS
 
 	p_simd = processor;
 	p_generic = generic;
@@ -4003,6 +4225,7 @@ void idSIMD::Test_f( const idCmdArgs &args ) {
 
 		argString.Replace( " ", "" );
 
+#ifdef _WINDOWS
 		if ( idStr::Icmp( argString, "MMX" ) == 0 ) {
 			if ( !( cpuid & CPUID_MMX ) ) {
 				common->Printf( "CPU does not support MMX\n" );
@@ -4033,12 +4256,16 @@ void idSIMD::Test_f( const idCmdArgs &args ) {
 				return;
 			}
 			p_simd = new idSIMD_SSE3();
-		} else if ( idStr::Icmp( argString, "AltiVec" ) == 0 ) {
+		} else 
+#endif // _WINDOWS
+			if ( idStr::Icmp( argString, "AltiVec" ) == 0 ) {
 			if ( !( cpuid & CPUID_ALTIVEC ) ) {
 				common->Printf( "CPU does not support AltiVec\n" );
 				return;
 			}
+#ifdef MACOS_X
 			p_simd = new idSIMD_AltiVec();
+#endif
 		} else {
 			common->Printf( "invalid argument, use: MMX, 3DNow, SSE, SSE2, SSE3, AltiVec\n" );
 			return;
@@ -4050,7 +4277,7 @@ void idSIMD::Test_f( const idCmdArgs &args ) {
 	idLib::common->Printf( "using %s for SIMD processing\n", p_simd->GetName() );
 
 	GetBaseClocks();
-
+/*
 	TestMath();
 	TestAdd();
 	TestSub();
@@ -4076,14 +4303,14 @@ void idSIMD::Test_f( const idCmdArgs &args ) {
 	TestMatXLDLTFactor();
 
 	idLib::common->Printf("====================================\n" );
-
+*/
 	TestBlendJoints();
 	TestConvertJointQuatsToJointMats();
 	TestConvertJointMatsToJointQuats();
 	TestTransformJoints();
 	TestUntransformJoints();
-	TestTransformVerts();
-	TestTracePointCull();
+	TestTransformVertsNew();
+/*	TestTracePointCull();
 	TestDecalPointCull();
 	TestOverlayPointCull();
 	TestDeriveTriPlanes();
@@ -4098,7 +4325,7 @@ void idSIMD::Test_f( const idCmdArgs &args ) {
 
 	TestSoundUpSampling();
 	TestSoundMixing();
-
+*/
 	idLib::common->SetRefreshOnPrint( false );
 
 	if ( p_simd != processor ) {
@@ -4107,7 +4334,9 @@ void idSIMD::Test_f( const idCmdArgs &args ) {
 	p_simd = NULL;
 	p_generic = NULL;
 
-#ifdef _WIN32
+#ifdef _WINDOWS
 	SetThreadPriority( GetCurrentThread(), THREAD_PRIORITY_NORMAL );
-#endif /* _WIN32 */
+#endif // _WINDOWS
+#endif
+// RAVEN END
 }

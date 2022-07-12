@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../idlib/precompiled.h"
 #pragma hdrstop
@@ -103,6 +101,7 @@ void idSound::Spawn( void ) {
 	} else {
 		timerOn = false;
 	}
+
 }
 
 /*
@@ -124,13 +123,19 @@ void idSound::Event_Trigger( idEntity *activator ) {
 		}
 	} else {
 		if ( gameLocal.isMultiplayer ) {
-			if ( refSound.referenceSound && ( gameLocal.time < playingUntilTime ) ) {
+// RAVEN BEGIN
+			idSoundEmitter *emitter = soundSystem->EmitterForIndex( SOUNDWORLD_GAME, refSound.referenceSoundHandle );
+			if ( emitter && ( gameLocal.time < playingUntilTime ) ) {
+// RAVEN END
 				DoSound( false );
 			} else {
 				DoSound( true );
 			}
 		} else {
-			if ( refSound.referenceSound && refSound.referenceSound->CurrentlyPlaying() ) {
+// RAVEN BEGIN
+			idSoundEmitter *emitter = soundSystem->EmitterForIndex( SOUNDWORLD_GAME, refSound.referenceSoundHandle );
+			if ( emitter && emitter->CurrentlyPlaying() ) {
+// RAVEN END
 				DoSound( false );
 			} else {
 				DoSound( true );
@@ -175,10 +180,10 @@ void idSound::UpdateChangeableSpawnArgs( const idDict *source ) {
 
 	if ( source ) {
 		FreeSoundEmitter( true );
+		refSound.referenceSoundHandle = soundSystem->AllocSoundEmitter( SOUNDWORLD_GAME );
+
 		spawnArgs.Copy( *source );
-		idSoundEmitter *saveRef = refSound.referenceSound;
 		gameEdit->ParseSpawnArgsToRefSound( &spawnArgs, &refSound );
-		refSound.referenceSound = saveRef;
 
 		idVec3 origin;
 		idMat3 axis;
@@ -202,10 +207,16 @@ void idSound::UpdateChangeableSpawnArgs( const idDict *source ) {
 			DoSound( false );
 			CancelEvents( &EV_Speaker_Timer );
 			PostEventSec( &EV_Speaker_Timer, wait + gameLocal.random.CRandomFloat() * random );
-		} else  if ( !refSound.waitfortrigger && !(refSound.referenceSound && refSound.referenceSound->CurrentlyPlaying() ) ) {
-			// start it if it isn't already playing, and we aren't waitForTrigger
-			DoSound( true );
-			timerOn = false;
+// RAVEN BEGIN
+		} else  if ( !refSound.waitfortrigger ) {
+
+			idSoundEmitter *emitter = soundSystem->EmitterForIndex( SOUNDWORLD_GAME, refSound.referenceSoundHandle );
+			if( !( emitter && emitter->CurrentlyPlaying() ) ) {
+// RAVEN END
+				// start it if it isn't already playing, and we aren't waitForTrigger
+				DoSound( true );
+				timerOn = false;
+			}
 		}
 	}
 }
@@ -222,10 +233,14 @@ void idSound::SetSound( const char *sound, int channel ) {
 	}
 	gameEdit->ParseSpawnArgsToRefSound(&spawnArgs, &refSound);
 	refSound.shader = shader;
+// RAVEN BEGIN
 	// start it if it isn't already playing, and we aren't waitForTrigger
-	if ( !refSound.waitfortrigger && !(refSound.referenceSound && refSound.referenceSound->CurrentlyPlaying() ) ) {
+	idSoundEmitter *emitter = soundSystem->EmitterForIndex( SOUNDWORLD_GAME, refSound.referenceSoundHandle );
+    if ( !refSound.waitfortrigger && !( emitter && emitter->CurrentlyPlaying() ) ) {
+// RAVEN END
 		DoSound( true );
 	}
+
 }
 
 /*
@@ -269,6 +284,30 @@ void idSound::Event_Off( void ) {
 	DoSound( false );
 }
 
+// RAVEN BEGIN
+// abahr: so we only set the referenceSounds on our targets once
+/*
+================
+idSound::FindTargets
+================
+*/
+void idSound::FindTargets() {
+	idEntity::FindTargets();
+
+	if( !targets.Num() ) {// I don't think we ever get in here unless we have targets
+		return;
+	}
+
+	idSoundEmitter *emitter = soundSystem->EmitterForIndex( SOUNDWORLD_GAME, refSound.referenceSoundHandle );
+	if ( !emitter ) { 
+		// if we have targets lets get an emitter
+		refSound.referenceSoundHandle = soundSystem->AllocSoundEmitter( SOUNDWORLD_GAME );
+	}
+
+	SetTargetSoundHandles();
+}
+// RAVEN END
+
 /*
 ===============
 idSound::ShowEditingDialog
@@ -278,3 +317,55 @@ void idSound::ShowEditingDialog( void ) {
 	common->InitTool( EDITOR_SOUND, &spawnArgs );
 }
 
+// RAVEN BEGIN
+// jshepard: Allow speakers to target lights and have those lights use this speaker's refSound
+/*
+===============
+idSound::SetSoundHandles
+===============
+*/
+void idSound::SetTargetSoundHandles( void ) {
+//this code is mostly boosted from a similar function in light.cpp
+	int i;
+	idEntity *targetEnt;
+
+	//is this check really necessary? We are a speaker after all...
+	if ( !soundSystem->EmitterForIndex( SOUNDWORLD_GAME, refSound.referenceSoundHandle ) ) {
+		return;
+	}
+	
+	for ( i = 0; i < targets.Num(); i++ ) {
+		targetEnt = targets[ i ].GetEntity();
+// RAVEN BEGIN
+// jnewquist: Use accessor for static class type 
+		if ( targetEnt && targetEnt->IsType( idLight::GetClassType() ) ) {
+// RAVEN END
+			idLight	*light = static_cast<idLight*>(targetEnt);
+
+			//no need to make this speaker a lightparent....
+			//light->lightParent = this;
+
+			// explicitly delete any sounds on the entity
+			light->FreeSoundEmitter( true );
+
+			// manually set the refSound to this light's refSound
+			light->SetRefSound(refSound.referenceSoundHandle);
+
+			// update the renderEntity to the renderer
+			light->UpdateVisuals();
+		}
+	}	
+}
+
+// abahr:
+/*
+================
+idSound::GetPhysicsToSoundTransform
+================
+*/
+bool idSound::GetPhysicsToSoundTransform( idVec3 &origin, idMat3 &axis ) {
+	origin = shakeTranslate.Random( spawnArgs.GetVector("move_random_delta"), gameLocal.random );
+	axis = shakeRotate.Random( spawnArgs.GetVector("shake_random_delta"), gameLocal.random ).ToMat3();
+	return true;
+}
+// RAVEN END

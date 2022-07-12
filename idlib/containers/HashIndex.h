@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __HASHINDEX_H__
 #define __HASHINDEX_H__
@@ -62,6 +60,12 @@ public:
 	int				GenerateKey( const idVec3 &v ) const;
 					// returns a key for two integers
 	int				GenerateKey( const int n1, const int n2 ) const;
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+	void			SetAllocatorHeap ( rvHeap* heap );					// set the heap used for all allocations
+#endif
+// RAVEN END
 
 private:
 	int				hashSize;
@@ -71,6 +75,13 @@ private:
 	int				granularity;
 	int				hashMask;
 	int				lookupMask;
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+	rvHeap*			allocatorHeap;
+#endif
+// RAVEN END
 
 	static int		INVALID_INDEX[1];
 
@@ -139,6 +150,16 @@ ID_INLINE idHashIndex &idHashIndex::operator=( const idHashIndex &other ) {
 		Free();
 	}
 	else {
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+		if(allocatorHeap)
+		{
+			RV_PUSH_HEAP_PTR(allocatorHeap);
+		}
+#endif
+// RAVEN END
+
 		if ( other.hashSize != hashSize || hash == INVALID_INDEX ) {
 			if ( hash != INVALID_INDEX ) {
 				delete[] hash;
@@ -153,6 +174,16 @@ ID_INLINE idHashIndex &idHashIndex::operator=( const idHashIndex &other ) {
 			indexSize = other.indexSize;
 			indexChain = new int[indexSize];
 		}
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+		if(allocatorHeap)
+		{
+			RV_POP_HEAP();
+		}
+#endif
+// RAVEN END
+
 		memcpy( hash, other.hash, hashSize * sizeof( hash[0] ) );
 		memcpy( indexChain, other.indexChain, indexSize * sizeof( indexChain[0] ) );
 	}
@@ -167,6 +198,10 @@ idHashIndex::Add
 */
 ID_INLINE void idHashIndex::Add( const int key, const int index ) {
 	int h;
+// RAVEN BEGIN
+// jnewquist: Tag scope and callees to track allocations using "new".
+	MEM_SCOPED_TAG(tag,MA_DEFAULT);
+// RAVEN END
 
 	assert( index >= 0 );
 	if ( hash == INVALID_INDEX ) {
@@ -366,6 +401,7 @@ idHashIndex::GenerateKey
 */
 ID_INLINE int idHashIndex::GenerateKey( const idVec3 &v ) const {
 	return ( (((int) v[0]) + ((int) v[1]) + ((int) v[2])) & hashMask );
+//	return ( ( idMath::FtoiFast( v[0] ) + idMath::FtoiFast( v[1] ) + idMath::FtoiFast( v[2] ) ) & hashMask );
 }
 
 /*

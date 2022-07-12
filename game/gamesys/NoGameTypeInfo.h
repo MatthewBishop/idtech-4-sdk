@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __GAMETYPEINFO_H__
 #define __GAMETYPEINFO_H__

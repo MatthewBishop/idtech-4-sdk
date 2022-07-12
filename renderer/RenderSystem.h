@@ -33,24 +33,46 @@ typedef struct glconfig_s {
 	float				maxTextureAnisotropy;
 
 	int					colorBits, depthBits, stencilBits;
+// RAVEN BEGIN
+	int					alphaBits;
+// RAVEN END
 
 	bool				multitextureAvailable;
-	bool				textureCompressionAvailable;
 	bool				anisotropicAvailable;
 	bool				textureLODBiasAvailable;
 	bool				textureEnvAddAvailable;
 	bool				textureEnvCombineAvailable;
+// RAVEN BEGIN
+// jscott: added
+	bool				blendSquareAvailable;
+// RAVEN END
 	bool				registerCombinersAvailable;
 	bool				cubeMapAvailable;
 	bool				envDot3Available;
 	bool				texture3DAvailable;
 	bool				sharedTexturePaletteAvailable;
+// RAVEN BEGIN
+// dluetscher: added
+	bool				drawRangeElementsAvailable;
+	bool				blendMinMaxAvailable;
+	bool				floatBufferAvailable;
+// RAVEN END
 	bool				ARBVertexBufferObjectAvailable;
 	bool				ARBVertexProgramAvailable;
 	bool				ARBFragmentProgramAvailable;
 	bool				twoSidedStencilAvailable;
 	bool				textureNonPowerOfTwoAvailable;
 	bool				depthBoundsTestAvailable;
+
+// RAVEN BEGIN
+// rjohnson: new shader stage system
+	bool				GLSLProgramAvailable;
+// RAVEN END
+
+// RAVEN BEGIN
+// dluetscher: added check for NV_vertex_program and NV_fragment_program support
+	bool				nvProgramsAvailable;
+// RAVEN END
 
 	// ati r200 extensions
 	bool				atiFragmentShaderAvailable;
@@ -64,62 +86,82 @@ typedef struct glconfig_s {
 
 	bool				isFullscreen;
 
-	bool				allowNV30Path;
+#ifndef _CONSOLE
+	bool				preferNV20Path;			// for FX5200 cards
+// RAVEN BEGIN
+// dluetscher: added preferSimpleLighting flag
+	bool				preferSimpleLighting;	// for the ATI 9700 cards
+// RAVEN END
+#endif
+
 	bool				allowNV20Path;
 	bool				allowNV10Path;
 	bool				allowR200Path;
 	bool				allowARB2Path;
-	bool				allowCgPath;
-	bool				allowExpPath;
 
 	bool				isInitialized;
+// INTEL BEGIN 
+// Anu adding support to toggle SMP
+#ifdef ENABLE_INTEL_SMP
+	bool				isSmpAvailable;
+	bool				isSmpActive;
+#endif
+// INTEL END
+
 } glconfig_t;
 
 
 // font support 
-const int GLYPH_START			= 0;
-const int GLYPH_END				= 255;
-const int GLYPH_CHARSTART		= 32;
-const int GLYPH_CHAREND			= 127;
-const int GLYPHS_PER_FONT		= GLYPH_END - GLYPH_START + 1;
+#define GLYPH_COUNT			256
 
-typedef struct {
-	int					height;			// number of scan lines
-	int					top;			// top of glyph in buffer
-	int					bottom;			// bottom of glyph in buffer
-	int					pitch;			// width for copying
-	int					xSkip;			// x adjustment
-	int					imageWidth;		// width of actual image
-	int					imageHeight;	// height of actual image
-	float				s;				// x offset in image where glyph starts
-	float				t;				// y offset in image where glyph starts
-	float				s2;
-	float				t2;
-	const idMaterial *	glyph;			// shader with the glyph
-	char				shaderName[32];
+typedef struct glyphInfo_s
+{
+	float			width;					// number of pixels wide
+	float			height;					// number of scan lines
+	float			horiAdvance;			// number of pixels to advance to the next char
+	float			horiBearingX;			// x offset into space to render glyph
+	float			horiBearingY;			// y offset 
+	float			s1;						// x start tex coord
+	float			t1;						// y start tex coord
+	float			s2;						// x end tex coord
+	float			t2;						// y end tex coord
 } glyphInfo_t;
 
-typedef struct {
-	glyphInfo_t			glyphs [GLYPHS_PER_FONT];
-	float				glyphScale;
-	char				name[64];
+typedef struct fontInfo_s
+{
+	glyphInfo_t		glyphs[GLYPH_COUNT];
+
+	float			pointSize;
+	float			fontHeight;				// max height of font
+	float			ascender;
+	float			descender;
+
+	idMaterial		*material;
 } fontInfo_t;
 
 typedef struct {
 	fontInfo_t			fontInfoSmall;
 	fontInfo_t			fontInfoMedium;
 	fontInfo_t			fontInfoLarge;
-	int					maxHeight;
-	int					maxWidth;
-	int					maxHeightSmall;
-	int					maxWidthSmall;
-	int					maxHeightMedium;
-	int					maxWidthMedium;
-	int					maxHeightLarge;
-	int					maxWidthLarge;
+	float				maxHeight;
+	float				maxWidth;
+	float				maxHeightSmall;
+	float				maxWidthSmall;
+	float				maxHeightMedium;
+	float				maxWidthMedium;
+	float				maxHeightLarge;
+	float				maxWidthLarge;
 	char				name[64];
+// RAVEN BEGIN
+// mwhitlock: Xenon texture streaming
+#if defined(_XENON)
+	idList<idMaterial*> allMaterials;
+#endif
+// RAVEN END
 } fontInfoEx_t;
 
+const int TINYCHAR_WIDTH		= 4;
+const int TINYCHAR_HEIGHT		= 8;
 const int SMALLCHAR_WIDTH		= 8;
 const int SMALLCHAR_HEIGHT		= 16;
 const int BIGCHAR_WIDTH			= 16;
@@ -129,6 +171,17 @@ const int BIGCHAR_HEIGHT		= 16;
 // and will be automatically scaled to the real resolution
 const int SCREEN_WIDTH			= 640;
 const int SCREEN_HEIGHT			= 480;
+
+// RAVEN BEGIN
+// rjohnson: new blur special effect
+typedef enum
+{
+	SPECIAL_EFFECT_NONE = 0,
+	SPECIAL_EFFECT_BLUR		= 0x00000001,
+	SPECIAL_EFFECT_AL		= 0x00000002,
+	SPECIAL_EFFECT_MAX,
+} ESpecialEffectType;
+// RAVEN END
 
 class idRenderWorld;
 
@@ -140,10 +193,21 @@ public:
 
 	// set up cvars and basic data structures, but don't
 	// init OpenGL, so it can also be used for dedicated servers
+// RAVEN BEGIN
+	// nrausch: Init things that touch the render state seperately
+	virtual void			DeferredInit( void ) { }
+// RAVEN END
 	virtual void			Init( void ) = 0;
 
 	// only called before quitting
 	virtual void			Shutdown( void ) = 0;
+
+// RAVEN BEGIN
+// mwhitlock: Dynamic memory consolidation
+#if defined(_RV_MEM_SYS_SUPPORT)
+	virtual void			FlushLevelImages( void ) = 0;
+#endif
+// RAVEN END
 
 	virtual void			InitOpenGL( void ) = 0;
 
@@ -159,6 +223,10 @@ public:
 	virtual idRenderWorld *	AllocRenderWorld( void ) = 0;
 	virtual	void			FreeRenderWorld( idRenderWorld * rw ) = 0;
 
+// RAVEN BEGIN
+	virtual void			RemoveAllModelReferences( idRenderModel *model ) = 0;
+// RAVEN BEGIN
+
 	// All data that will be used in a level should be
 	// registered before rendering any frames to prevent disk hits,
 	// but they can still be registered at a later time
@@ -166,9 +234,56 @@ public:
 	virtual void			BeginLevelLoad( void ) = 0;
 	virtual void			EndLevelLoad( void ) = 0;
 
+// RAVEN BEGIN
+// mwhitlock: changes for Xenon to enable us to use texture resources from .xpr
+// bundles.
+#if defined(_XENON)
+	// Like BeginLevelLoad and EndLevelLoad, but only deals with textures.
+	virtual void			XenonBeginLevelLoadTextures( void ) = 0;
+	virtual	void			XenonEndLevelLoadTextures( void ) = 0;
+#endif
+// RAVEN END
+
+#ifdef Q4SDK_MD5R
+
+	virtual	void			ExportMD5R( bool compressed ) = 0;
+	virtual void			CopyPrimBatchTriangles( idDrawVert *destDrawVerts, glIndex_t *destIndices, void *primBatchMesh, void *silTraceVerts ) = 0;
+
+#else	// Q4SDK_MD5R
+
+// RAVEN BEGIN
+// dluetscher: added call to write out the MD5R models that have been converted at load,
+//			   also added call to retrieve idDrawVert geometry from a MD5R primitive batch 
+//			   from the game DLL
+#if defined( _MD5R_WRITE_SUPPORT ) && defined( _MD5R_SUPPORT )
+	virtual	void			ExportMD5R( bool compressed ) = 0;
+#endif
+#if defined( _MD5R_SUPPORT )
+	virtual void			CopyPrimBatchTriangles( idDrawVert *destDrawVerts, glIndex_t *destIndices, rvMesh *primBatchMesh, const rvSilTraceVertT *silTraceVerts ) = 0;
+#endif
+
+#endif // !Q4SDK_MD5R
+
+// jnewquist: Track texture usage during cinematics for streaming purposes
+#ifndef _CONSOLE
+	enum TextureTrackCommand {
+		TEXTURE_TRACK_BEGIN,
+		TEXTURE_TRACK_UPDATE,
+		TEXTURE_TRACK_END
+	};
+	virtual void			TrackTextureUsage( TextureTrackCommand command, int frametime = 0, const char *name=NULL ) = 0;
+#endif
+#if defined(_CONSOLE) || defined(TEST_MANUAL_STREAMING)
+	virtual void			BeginManualStreaming( idList<dword> &imageTable, idList<int> &imageCmds ) = 0;
+	virtual void			UpdateManualStreaming( int frametime ) = 0;
+	virtual bool			ServiceManualStreaming( void ) = 0;
+	virtual void			EndManualStreaming( void ) = 0;
+	virtual bool			IsManuallyStreaming( void ) = 0;
+#endif
+// RAVEN END
+
 	// font support
 	virtual bool			RegisterFont( const char *fontName, fontInfoEx_t &font ) = 0;
-
 	// GUI drawing just involves shader parameter setting and axial image subsections
 	virtual void			SetColor( const idVec4 &rgba ) = 0;
 	virtual void			SetColor4( float r, float g, float b, float a ) = 0;
@@ -176,7 +291,18 @@ public:
 	virtual void			DrawStretchPic( const idDrawVert *verts, const glIndex_t *indexes, int vertCount, int indexCount, const idMaterial *material,
 											bool clip = true, float min_x = 0.0f, float min_y = 0.0f, float max_x = 640.0f, float max_y = 480.0f ) = 0;
 	virtual void			DrawStretchPic( float x, float y, float w, float h, float s1, float t1, float s2, float t2, const idMaterial *material ) = 0;
+// RAVEN BEGIN
+// jnewquist: Deal with flipped back-buffer copies on Xenon
+	virtual void			DrawStretchCopy( float x, float y, float w, float h, float s1, float t1, float s2, float t2, const idMaterial *material ) = 0;
+// RAVEN END
 
+	virtual void			DrawStretchTri ( idVec2 p1, idVec2 p2, idVec2 p3, idVec2 t1, idVec2 t2, idVec2 t3, const idMaterial *material ) = 0;
+	virtual void			GlobalToNormalizedDeviceCoordinates( const idVec3 &global, idVec3 &ndc ) = 0;
+	virtual void			GetGLSettings( int& width, int& height ) = 0;
+	virtual void			PrintMemInfo( MemInfo *mi ) = 0;
+
+	virtual void			DrawTinyChar( int x, int y, int ch, const idMaterial *material ) = 0;
+	virtual void			DrawTinyStringExt( int x, int y, const char *string, const idVec4 &setColor, bool forceColor, const idMaterial *material ) = 0;
 	virtual void			DrawSmallChar( int x, int y, int ch, const idMaterial *material ) = 0;
 	virtual void			DrawSmallStringExt( int x, int y, const char *string, const idVec4 &setColor, bool forceColor, const idMaterial *material ) = 0;
 	virtual void			DrawBigChar( int x, int y, int ch, const idMaterial *material ) = 0;
@@ -194,9 +320,22 @@ public:
 	// a frame cam consist of 2D drawing and potentially multiple 3D scenes
 	// window sizes are needed to convert SCREEN_WIDTH / SCREEN_HEIGHT values
 	virtual void			BeginFrame( int windowWidth, int windowHeight ) = 0;
+// RAVEN BEGIN
+	virtual void			BeginFrame( struct viewDef_s *viewDef, int windowWidth, int windowHeight ) = 0;
+	virtual	void			RenderLightFrustum( const struct renderLight_s &renderLight, idPlane lightFrustum[6] ) = 0;
+	virtual	void			LightProjectionMatrix( const idVec3 &origin, const idPlane &rearPlane, idVec4 mat[4] ) = 0;
+	virtual void			ToggleSmpFrame( void ) = 0;
+// RAVEN END
+
+// RAVEN BEGIN
+// rjohnson: new blur special effect
+	virtual void			SetSpecialEffect( ESpecialEffectType Which, bool Enabled ) = 0;
+	virtual void			SetSpecialEffectParm( ESpecialEffectType Which, int Parm, float Value ) = 0;
+	virtual void			ShutdownSpecialEffects( void ) = 0;
+// RAVEN END
 
 	// if the pointers are not NULL, timing info will be returned
-	virtual void			EndFrame( int *frontEndMsec, int *backEndMsec ) = 0;
+	virtual void			EndFrame( int *frontEndMsec = NULL, int *backEndMsec = NULL, int *numVerts = NULL, int *numIndexes = NULL ) = 0;
 
 	// aviDemo uses this.
 	// Will automatically tile render large screen shots if necessary
@@ -205,7 +344,11 @@ public:
 	// This will perform swapbuffers, so it is NOT an approppriate way to
 	// generate image files that happen during gameplay, as for savegame
 	// markers.  Use WriteRender() instead.
-	virtual void			TakeScreenshot( int width, int height, const char *fileName, int samples, struct renderView_s *ref ) = 0;
+// RAVEN BEGIN
+// rjohnson: added basePath
+	virtual	void			TakeJPGScreenshot( int width, int height, const char *fileName, int blends, struct renderView_s *ref, const char *basePath = "fs_savepath" ) = 0;
+	virtual void			TakeScreenshot( int width, int height, const char *fileName, int blends, struct renderView_s *ref, const char *basePath = "fs_savepath" ) = 0;
+// RAVEN END
 
 	// the render output can be cropped down to a subset of the real screen, as
 	// for save-game reviews and split-screen multiplayer.  Users of the renderer
@@ -216,28 +359,20 @@ public:
 	// to render to a texture, first set the crop size with makePowerOfTwo = true,
 	// then perform all desired rendering, then capture to an image
 	// if the specified physical dimensions are larger than the current cropped region, they will be cut down to fit
-	virtual void			CropRenderSize( int width, int height, bool makePowerOfTwo = false ) = 0;
+	virtual void			CropRenderSize( int width, int height, bool makePowerOfTwo = false, bool forceDimensions = false ) = 0;
 	virtual void			CaptureRenderToImage( const char *imageName ) = 0;
+	virtual void			CaptureRenderToMemory( void *buffer ) = 0;
 	// fixAlpha will set all the alpha channel values to 0xff, which allows screen captures
 	// to use the default tga loading code without having dimmed down areas in many places
 	virtual void			CaptureRenderToFile( const char *fileName, bool fixAlpha = false ) = 0;
 	virtual void			UnCrop() = 0;
 	virtual void			GetCardCaps( bool &oldCard, bool &nv10or20 ) = 0;
+	virtual bool			UploadImage( const char *imageName, const byte *data, int width, int height ) = 0;
+
+	virtual void			DebugGraph( float cur, float min, float max, const idVec4 &color ) = 0;
+	virtual void			ShowDebugGraph( void ) = 0;
 };
 
-extern idRenderSystem *			renderSystem;
-
-//
-// functions mainly intended for editor and dmap integration
-//
-
-// returns the frustum planes in world space
-void R_RenderLightFrustum( const struct renderLight_s &renderLight, idPlane lightFrustum[6] );
-
-// for use by dmap to do the carving-on-light-boundaries and for the editor for display
-void R_LightProjectionMatrix( const idVec3 &origin, const idPlane &rearPlane, idVec4 mat[4] );
-
-// used by the view shot taker
-void R_ScreenshotFilename( int &lastNumber, const char *base, idStr &fileName );
+extern idRenderSystem *		renderSystem;
 
 #endif /* !__RENDERER_H__ */

@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __BV_BOX_H__
 #define __BV_BOX_H__

@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 #ifndef __SCRIPT_COMPILER_H__
 #define __SCRIPT_COMPILER_H__
 

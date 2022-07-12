@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #ifndef __WINDING_H__
 #define __WINDING_H__
@@ -30,6 +28,9 @@ public:
 					// add a point to the end of the winding point array
 	idWinding &		operator+=( const idVec3 &v );
 	idWinding &		operator+=( const idVec5 &v );
+// RAVEN BEGIN
+	idWinding &		operator+=( const idDrawVert &dv );
+// RAVEN END
 	void			AddPoint( const idVec3 &v );
 	void			AddPoint( const idVec5 &v );
 
@@ -73,6 +74,11 @@ public:
 
 	float			GetArea( void ) const;
 	idVec3			GetCenter( void ) const;
+
+// RAVEN BEGIN
+// scork: Splash Damage's light-resize code
+	idVec3			GetNormal( void ) const;
+// RAVEN END
 	float			GetRadius( const idVec3 &center ) const;
 	void			GetPlane( idVec3 &normal, float &dist ) const;
 	void			GetPlane( idPlane &plane ) const;
@@ -194,6 +200,17 @@ ID_INLINE idWinding &idWinding::operator+=( const idVec5 &v ) {
 	return *this;
 }
 
+// RAVEN BEGIN
+ID_INLINE idWinding &idWinding::operator+=( const idDrawVert &dv ) {
+	if ( !EnsureAlloced(numPoints+1, true) ) {
+		return *this;
+	}
+	p[numPoints] = idVec5( dv.xyz, dv.st );
+	numPoints++;
+	return *this;
+}
+// RAVEN END
+
 ID_INLINE void idWinding::AddPoint( const idVec3 &v ) {
 	if ( !EnsureAlloced(numPoints+1, true) ) {
 		return;
@@ -223,6 +240,10 @@ ID_INLINE void idWinding::SetNumPoints( int n ) {
 
 ID_INLINE void idWinding::Clear( void ) {
 	numPoints = 0;
+	// RAVENBEGIN
+	// cdr: need to clear the allocated size too, or we wont' be able to readd points
+	allocedSize = 0;
+	// RAVENEND
 	delete[] p;
 	p = NULL;
 }

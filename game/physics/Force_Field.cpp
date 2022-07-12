@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../../idlib/precompiled.h"
 #pragma hdrstop
@@ -23,6 +21,11 @@ idForce_Field::idForce_Field( void ) {
 	playerOnly		= false;
 	monsterOnly		= false;
 	clipModel		= NULL;
+// RAVEN BEGIN
+// bdube: added last apply time
+	lastApplyTime   = -1;
+	owner			= NULL;
+// RAVEN END
 }
 
 /*
@@ -50,6 +53,9 @@ void idForce_Field::Save( idSaveGame *savefile ) const {
 	savefile->WriteBool( playerOnly );
 	savefile->WriteBool( monsterOnly );
 	savefile->WriteClipModel( clipModel );
+
+	savefile->WriteInt ( lastApplyTime );	// cnicholson: Added unsaved var
+	// TOSAVE: idEntity*			owner;
 }
 
 /*
@@ -66,6 +72,8 @@ void idForce_Field::Restore( idRestoreGame *savefile ) {
 	savefile->ReadBool( playerOnly );
 	savefile->ReadBool( monsterOnly );
 	savefile->ReadClipModel( clipModel );
+
+	savefile->ReadInt ( lastApplyTime );	// cnicholson: Added unrestored var
 }
 
 /*
@@ -134,7 +142,10 @@ void idForce_Field::Evaluate( int time ) {
 	assert( clipModel );
 
 	bounds.FromTransformedBounds( clipModel->GetBounds(), clipModel->GetOrigin(), clipModel->GetAxis() );
-	numClipModels = gameLocal.clip.ClipModelsTouchingBounds( bounds, -1, clipModelList, MAX_GENTITIES );
+// RAVEN BEGIN
+// ddynerman: multiple clip worlds
+	numClipModels = gameLocal.ClipModelsTouchingBounds( owner, bounds, -1, clipModelList, MAX_GENTITIES );
+// RAVEN END
 
 	for ( i = 0; i < numClipModels; i++ ) {
 		cm = clipModelList[ i ];
@@ -152,17 +163,41 @@ void idForce_Field::Evaluate( int time ) {
 		idPhysics *physics = entity->GetPhysics();
 
 		if ( playerOnly ) {
-			if ( !physics->IsType( idPhysics_Player::Type ) ) {
+// RAVEN BEGIN
+// jnewquist: Use accessor for static class type 
+			if ( !physics->IsType( idPhysics_Player::GetClassType() ) ) {
+// RAVEN END
 				continue;
 			}
 		} else if ( monsterOnly ) {
-			if ( !physics->IsType( idPhysics_Monster::Type ) ) {
+// RAVEN BEGIN
+// jnewquist: Use accessor for static class type 
+			if ( !physics->IsType( idPhysics_Monster::GetClassType() ) ) {
+
 				continue;
 			}
 		}
 
-		if ( !gameLocal.clip.ContentsModel( cm->GetOrigin(), cm, cm->GetAxis(), -1,
-									clipModel->Handle(), clipModel->GetOrigin(), clipModel->GetAxis() ) ) {
+// nrausch: It was undesireable to have gibs and discarded weapons bouncing on jump pads
+		if ( gameLocal.isMultiplayer ) {
+			if ( entity->IsType( idItem::GetClassType() ) ) {
+				continue;
+			}
+			if ( entity->IsType( rvClientPhysics::GetClassType() ) ) {
+				continue;
+			}
+			if ( entity->IsType( idPlayer::GetClassType() ) ) {
+				if ( ((idPlayer*)entity)->health <= 0 ) {
+					continue;
+				}
+			}			
+		
+		}
+
+// ddynerman: multiple clip worlds
+		if ( !gameLocal.ContentsModel( owner, cm->GetOrigin(), cm, cm->GetAxis(), -1,
+									clipModel->GetCollisionModel(), clipModel->GetOrigin(), clipModel->GetAxis() ) ) {
+// RAVEN END
 			continue;
 		}
 
@@ -228,5 +263,10 @@ void idForce_Field::Evaluate( int time ) {
 				break;
 			}
 		}
+
+// RAVEN BEGIN
+// bdube: added last apply time			
+		lastApplyTime = time;
+// RAVEN END
 	}
 }

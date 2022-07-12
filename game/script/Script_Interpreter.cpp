@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../../idlib/precompiled.h"
 #pragma hdrstop
@@ -15,6 +13,7 @@ idInterpreter::idInterpreter() {
 	localstackUsed = 0;
 	terminateOnExit = true;
 	debug = 0;
+	LastScriptVariable = 0;
 	memset( localstack, 0, sizeof( localstack ) );
 	memset( callStack, 0, sizeof( callStack ) );
 	Reset();
@@ -55,6 +54,7 @@ void idInterpreter::Save( idSaveGame *savefile ) const {
 
 	savefile->WriteInt( popParms );
 
+	// TOSAVE: idVarDef			*LastScriptVariable;
 	if ( multiFrameEvent ) {
 		savefile->WriteString( multiFrameEvent->GetName() );
 	} else {
@@ -111,6 +111,8 @@ void idInterpreter::Restore( idRestoreGame *savefile ) {
 
 	savefile->ReadInt( popParms );
 
+	// TORESTORE: idVarDef			*LastScriptVariable;
+
 	savefile->ReadString( funcname );
 	if ( funcname.Length() ) {
 		multiFrameEvent = idEventDef::FindEvent( funcname );
@@ -159,14 +161,16 @@ used primarily for the debugger and debugging
 //FIXME:  This is pretty much wrong.  won't access data in most situations.
 ================
 */
+// RAVEN BEGIN
+// bdube: took this over again
 bool idInterpreter::GetRegisterValue( const char *name, idStr &out, int scopeDepth ) {
 	varEval_t		reg;
 	idVarDef		*d;
 	char			funcObject[ 1024 ];
 	char			*funcName;
-	const idVarDef	*scope;
+	const idVarDef	*scope = NULL;
+	const idVarDef	*scopeObj;
 	const idTypeDef	*field;
-	const idScriptObject *obj;
 	const function_t *func;
 
 	out.Empty();
@@ -188,35 +192,44 @@ bool idInterpreter::GetRegisterValue( const char *name, idStr &out, int scopeDep
 	funcName = strstr( funcObject, "::" );
 	if ( funcName ) {
 		*funcName = '\0';
-		scope = gameLocal.program.GetDef( NULL, funcObject, &def_namespace );
-		funcName += 2;
+		scopeObj = gameLocal.program.GetDef( NULL, funcObject, &def_namespace );
+		funcName += 2;				
+		if ( scopeObj )
+		{
+			scope = gameLocal.program.GetDef( NULL, funcName, scopeObj );
+		}
 	} else {
 		funcName = funcObject;
-		scope = &def_namespace;
+		scope = gameLocal.program.GetDef( NULL, func->Name(), &def_namespace );
+		scopeObj = NULL;
 	}
 
-	// Get the function from the object
-	d = gameLocal.program.GetDef( NULL, funcName, scope );
-	if ( !d ) {
+	if ( !scope )
+	{
+		return false;
+	}
+
+	d = gameLocal.program.GetDef( NULL, name, scope );
+	
+	// Check the objects for it if it wasnt local to the function
+	if ( !d )
+	{
+		for ( ; scopeObj && scopeObj->TypeDef()->SuperClass(); scopeObj = scopeObj->TypeDef()->SuperClass()->def )
+		{
+			d = gameLocal.program.GetDef( NULL, name, scopeObj );
+			if ( d )
+			{
+				break;
+			}
+		}
+	}	
+
+	if ( !d )
+	{
+		out = "???";
 		return false;
 	}
 	
-	// Get the variable itself and check various namespaces
-	d = gameLocal.program.GetDef( NULL, name, d );
-	if ( !d ) {
-		if ( scope == &def_namespace ) {
-			return false;
-		}
-		
-		d = gameLocal.program.GetDef( NULL, name, scope );
-		if ( !d ) {
-			d = gameLocal.program.GetDef( NULL, name, &def_namespace );
-			if ( !d ) {
-				return false;
-			}
-		}
-	}
-		
 	reg = GetVariable( d );
 	switch( d->Type() ) {
 	case ev_float:
@@ -247,30 +260,55 @@ bool idInterpreter::GetRegisterValue( const char *name, idStr &out, int scopeDep
 		break;
 
 	case ev_field:
+	{
+		idEntity*		entity;			
+		idScriptObject*	obj;
+		
 		if ( scope == &def_namespace ) {
 			// should never happen, but handle it safely anyway
 			return false;
 		}
 
-		field = scope->TypeDef()->GetParmType( reg.ptrOffset )->FieldType();
-		obj   = *reinterpret_cast<const idScriptObject **>( &localstack[ callStack[ callStackDepth ].stackbase ] );
-		if ( !field || !obj ) {
+		field  = d->TypeDef()->FieldType();
+		entity = GetEntity ( *((int*)&localstack[ localstackBase ]) );
+		if ( !entity || !field )
+		{
 			return false;
 		}
-								
+
+		obj = &entity->scriptObject;
+		if ( !obj ) {
+			return false;
+		}
+		
 		switch ( field->Type() ) {
-		case ev_boolean:
-			out = va( "%d", *( reinterpret_cast<int *>( &obj->data[ reg.ptrOffset ] ) ) );
-			return true;
+			case ev_boolean:
+				out = va( "%d", *( reinterpret_cast<int *>( &obj->data[ reg.ptrOffset ] ) ) );
+				return true;
 
-		case ev_float:
-			out = va( "%g", *( reinterpret_cast<float *>( &obj->data[ reg.ptrOffset ] ) ) );
-			return true;
+			case ev_float:
+				out = va( "%g", *( reinterpret_cast<float *>( &obj->data[ reg.ptrOffset ] ) ) );
+				return true;
+				
+			case ev_string:	{
+				const char* str;
+				str = reinterpret_cast<const char*>( &obj->data[ reg.ptrOffset ] );
+				if ( !str ) {
+					out = "\"\"";
+				} else {
+					out  = "\"";
+					out += str;			
+					out += "\"";
+				}
+				return true;
+			}
 
-		default:
-			return false;
+			default:
+				return false;
 		}
+		
 		break;
+	}
 
 	case ev_string:
 		if ( reg.stringPtr ) {
@@ -286,6 +324,7 @@ bool idInterpreter::GetRegisterValue( const char *name, idStr &out, int scopeDep
 		return false;
 	}
 }
+// RAVEN END
 
 /*
 ================
@@ -485,7 +524,10 @@ Copys the args from the calling thread's stack
 void idInterpreter::ThreadCall( idInterpreter *source, const function_t *func, int args ) {
 	Reset();
 
-	memcpy( localstack, &source->localstack[ source->localstackUsed - args ], args );
+// RAVEN BEGIN
+// JSinger: Changed to call optimized memcpy
+	SIMDProcessor->Memcpy( localstack, &source->localstack[ source->localstackUsed - args ], args );
+// RAVEN END
 
 	localstackUsed = args;
 	localstackBase = 0;
@@ -677,10 +719,23 @@ void idInterpreter::CallEvent( const function_t *func, int argsize ) {
 	eventEntity = GetEntity( *var.entityNumberPtr );
 
 	if ( !eventEntity || !eventEntity->RespondsTo( *evdef ) ) {
+// RAVEN BEGIN
+// jshepard: added catch for entities that don't exist 
 		if ( eventEntity && developer.GetBool() ) {
 			// give a warning in developer mode
 			Warning( "Function '%s' not supported on entity '%s'", evdef->GetName(), eventEntity->name.c_str() );
+		} else if( !eventEntity )	{
+			//check the last script variable.
+			if(!!LastScriptVariable)	{
+				//if it's $null_entity, then we should ignore this.
+				if(idStr::Cmp( "$null_entity", LastScriptVariable->Name()) ) {
+					Warning( "Entity '%s' is a null entity", LastScriptVariable->Name() );
+				}
+			} else {
+				Warning( "Null entity referenced -- check entity name spelling.");
+			}		
 		}
+// RAVEN END
 		// always return a safe value when an object doesn't exist
 		switch( evdef->GetReturnType() ) {
 		case D_EVENT_INTEGER :
@@ -766,8 +821,7 @@ void idInterpreter::CallEvent( const function_t *func, int argsize ) {
 	}
 
 	popParms = argsize;
-	eventEntity->ProcessEventArgPtr( evdef, data );
-
+	eventEntity->ProcessEventArgPtr( evdef, data );	
 	if ( !multiFrameEvent ) {
 		if ( popParms ) {
 			PopParms( popParms );
@@ -919,6 +973,10 @@ bool idInterpreter::Execute( void ) {
 	float		floatVal;
 	idScriptObject *obj;
 	const function_t *func;
+// RAVEN BEGIN
+// jnewquist: Tag scope and callees to track allocations using "new".
+	MEM_SCOPED_TAG(tag,MA_SCRIPT);
+// RAVEN END
 
 	if ( threadDying || !currentFunction ) {
 		return true;
@@ -941,6 +999,22 @@ bool idInterpreter::Execute( void ) {
 
 		// next statement
 		st = &gameLocal.program.GetStatement( instructionPointer );
+
+// RAVEN BEGIN
+// bdube: if the debugger is running then we need to check to see if any breakpoints have beeng hit
+		if ( gameLocal.editors & EDITOR_DEBUGGER ) {
+			common->DebuggerCheckBreakpoint ( this, &gameLocal.program, instructionPointer );
+		} else if ( g_debugScript.GetBool ( ) ) {
+			static int lastLineNumber = -1;
+			if ( lastLineNumber != gameLocal.program.GetStatement ( instructionPointer ).linenumber ) {				
+				gameLocal.Printf ( "%s (%d)\n", 
+					gameLocal.program.GetFilename ( gameLocal.program.GetStatement ( instructionPointer ).file ),
+					gameLocal.program.GetStatement ( instructionPointer ).linenumber
+					);
+				lastLineNumber = gameLocal.program.GetStatement ( instructionPointer ).linenumber;
+			}
+		}
+// RAVEN END
 
 		switch( st->op ) {
 		case OP_RETURN:
@@ -1774,6 +1848,13 @@ bool idInterpreter::Execute( void ) {
 
 		case OP_PUSH_ENT:
 			var_a = GetVariable( st->a );
+// RAVEN BEGIN
+// jshepard: keep tabs on this guy, he's the last referenced script variable.
+			assert(st->a);
+			LastScriptVariable = st->a;
+			//This line leads to memory corruption, I need to come up with a better way of keeping track.
+			//LastScriptVariable->initialized = idVarDef::stackVariable;
+// RAVEN END
 			Push( *var_a.entityNumberPtr );
 			break;
 

@@ -1,5 +1,3 @@
-// Copyright (C) 2004 Id Software, Inc.
-//
 
 #include "../precompiled.h"
 #pragma hdrstop
@@ -7,6 +5,7 @@
 idVec2 vec2_origin( 0.0f, 0.0f );
 idVec3 vec3_origin( 0.0f, 0.0f, 0.0f );
 idVec4 vec4_origin( 0.0f, 0.0f, 0.0f, 0.0f );
+idVec4 vec4_one( 1.0f, 1.0f, 1.0f, 1.0f );
 idVec5 vec5_origin( 0.0f, 0.0f, 0.0f, 0.0f, 0.0f );
 idVec6 vec6_origin( 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f );
 idVec6 vec6_infinity( idMath::INFINITY, idMath::INFINITY, idMath::INFINITY, idMath::INFINITY, idMath::INFINITY, idMath::INFINITY );
@@ -62,7 +61,7 @@ float idVec3::ToYaw( void ) const {
 	if ( ( y == 0.0f ) && ( x == 0.0f ) ) {
 		yaw = 0.0f;
 	} else {
-		yaw = RAD2DEG( atan2( y, x ) );
+		yaw = RAD2DEG( idMath::ATan( y, x ) );
 		if ( yaw < 0.0f ) {
 			yaw += 360.0f;
 		}
@@ -88,7 +87,7 @@ float idVec3::ToPitch( void ) const {
 		}
 	} else {
 		forward = ( float )idMath::Sqrt( x * x + y * y );
-		pitch = RAD2DEG( atan2( z, forward ) );
+		pitch = RAD2DEG( idMath::ATan( z, forward ) );
 		if ( pitch < 0.0f ) {
 			pitch += 360.0f;
 		}
@@ -115,13 +114,13 @@ idAngles idVec3::ToAngles( void ) const {
 			pitch = 270.0f;
 		}
 	} else {
-		yaw = RAD2DEG( atan2( y, x ) );
+		yaw = RAD2DEG( idMath::ATan( y, x ) );
 		if ( yaw < 0.0f ) {
 			yaw += 360.0f;
 		}
 
 		forward = ( float )idMath::Sqrt( x * x + y * y );
-		pitch = RAD2DEG( atan2( z, forward ) );
+		pitch = RAD2DEG( idMath::ATan( z, forward ) );
 		if ( pitch < 0.0f ) {
 			pitch += 360.0f;
 		}
@@ -129,6 +128,50 @@ idAngles idVec3::ToAngles( void ) const {
 
 	return idAngles( -pitch, yaw, 0.0f );
 }
+
+// RAVEN BEGIN
+/*
+=============
+idVec3::ToRadians
+=============
+*/
+rvAngles idVec3::ToRadians( void ) const 
+{
+	float forward;
+	float yaw;
+	float pitch;
+	
+	if( !x && !y ) 
+	{
+		yaw = 0.0f;
+		if( z > 0.0f ) 
+		{
+			pitch = idMath::HALF_PI;
+		}
+		else 
+		{
+			pitch = idMath::THREEFOURTHS_PI;
+		}
+	} 
+	else 
+	{
+		yaw = idMath::ATan( y, x );
+		if( yaw < 0.0f ) 
+		{
+			yaw += idMath::TWO_PI;
+		}
+
+		forward = ( float )idMath::Sqrt( x * x + y * y );
+		pitch = idMath::ATan( z, forward );
+		if( pitch < 0.0f ) 
+		{
+			pitch += idMath::TWO_PI;
+		}
+	}
+
+	return( rvAngles( -pitch, yaw, 0.0f ) );
+}
+// RAVEN END
 
 /*
 =============
@@ -148,13 +191,13 @@ idPolar3 idVec3::ToPolar( void ) const {
 			pitch = 270.0f;
 		}
 	} else {
-		yaw = RAD2DEG( atan2( y, x ) );
+		yaw = RAD2DEG( idMath::ATan( y, x ) );
 		if ( yaw < 0.0f ) {
 			yaw += 360.0f;
 		}
 
 		forward = ( float )idMath::Sqrt( x * x + y * y );
-		pitch = RAD2DEG( atan2( z, forward ) );
+		pitch = RAD2DEG( idMath::ATan( z, forward ) );
 		if ( pitch < 0.0f ) {
 			pitch += 360.0f;
 		}
@@ -187,6 +230,66 @@ idMat3 idVec3::ToMat3( void ) const {
 
 	return mat;
 }
+
+/*
+=============
+idVec3::ToMat3
+=============
+*/
+// RAVEN BEGIN
+// abahr: added axis so we can create matrix with non-x vector
+idMat3 idVec3::ToMat3( int axis ) const {
+	idMat3	mat;
+	float	d;
+	int		index_x = axis % GetDimension();
+	int		index_y = (axis + 1) % GetDimension();
+	int		index_z = (axis + 2) % GetDimension();
+	float	local_x = (*this)[index_x];
+	float	local_y = (*this)[index_y];
+
+	mat[axis] = *this;
+	d = local_x * local_x + local_y * local_y;
+	if ( !d ) {
+		mat[index_y][index_x] = 1.0f;
+		mat[index_y][index_y] = 0.0f;
+		mat[index_y][index_z] = 0.0f;
+	} else {
+		d = idMath::InvSqrt( d );
+		mat[index_y][index_x] = -local_y * d;
+		mat[index_y][index_y] = local_x * d;
+		mat[index_y][index_z] = 0.0f;
+	}
+	mat[index_z] = Cross( mat[index_y] );
+
+	return mat;
+}
+// RAVEN END
+
+// RAVEN BEGIN
+// jscott: slightly quicker version without the copy
+idMat3 &idVec3::ToMat3( idMat3 &mat ) const 
+{
+	float	d;
+
+	mat[0] = *this;
+	d = x * x + y * y;
+	if ( !d ) 
+	{
+		mat[1][0] = 1.0f;
+		mat[1][1] = 0.0f;
+		mat[1][2] = 0.0f;
+	} 
+	else 
+	{
+		d = idMath::InvSqrt( d );
+		mat[1][0] = -y * d;
+		mat[1][1] = x * d;
+		mat[1][2] = 0.0f;
+	}
+	mat[2] = Cross( mat[1] );
+	return( mat );
+}
+// RAVEN END
 
 /*
 =============
@@ -238,9 +341,9 @@ void idVec3::SLerp( const idVec3 &v1, const idVec3 &v2, const float t ) {
 	cosom = v1 * v2;
 	if ( ( 1.0f - cosom ) > LERP_DELTA ) {
 		omega = acos( cosom );
-		sinom = sin( omega );
-		scale0 = sin( ( 1.0f - t ) * omega ) / sinom;
-		scale1 = sin( t * omega ) / sinom;
+		sinom = idMath::Sin( omega );
+		scale0 = idMath::Sin( ( 1.0f - t ) * omega ) / sinom;
+		scale1 = idMath::Sin( t * omega ) / sinom;
 	} else {
 		scale0 = 1.0f - t;
 		scale1 = t;
@@ -260,13 +363,11 @@ void idVec3::ProjectSelfOntoSphere( const float radius ) {
 	float rsqr = radius * radius;
 	float len = Length();
 	if ( len  < rsqr * 0.5f ) {
-		z = sqrt( rsqr - len );
+		z = idMath::Sqrt( rsqr - len );
 	} else {
-		z = rsqr / ( 2.0f * sqrt( len ) );
+		z = rsqr / ( 2.0f * idMath::Sqrt( len ) );
 	}
 }
-
-
 
 //===============================================================
 //
@@ -290,16 +391,7 @@ Lerp
 Linearly inperpolates one vector to another.
 =============
 */
-void idVec4::Lerp( const idVec4 &v1, const idVec4 &v2, const float l ) {
-	if ( l <= 0.0f ) {
-		(*this) = v1;
-	} else if ( l >= 1.0f ) {
-		(*this) = v2;
-	} else {
-		(*this) = v1 + l * ( v2 - v1 );
-	}
-}
-
+// jsinger: moved to inline in the header file for Xenon
 
 //===============================================================
 //
@@ -351,15 +443,16 @@ const char *idVec6::ToString( int precision ) const {
 	return idStr::FloatArrayToString( ToFloatPtr(), GetDimension(), precision );
 }
 
-
 //===============================================================
 //
 //	idVecX
 //
 //===============================================================
 
-float	idVecX::temp[VECX_MAX_TEMP+4];
-float *	idVecX::tempPtr = (float *) ( ( (int) idVecX::temp + 15 ) & ~15 );
+// RAVEN BEGIN
+float	idVecX::tempPtr[VECX_MAX_TEMP];
+//float *	idVecX::tempPtr = (float *) ( ( (int) idVecX::temp + 15 ) & ~15 );
+// RAVEN END
 int		idVecX::tempIndex = 0;
 
 /*
